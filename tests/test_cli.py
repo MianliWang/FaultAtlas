@@ -1,3 +1,4 @@
+import re
 import subprocess
 import sys
 from importlib.metadata import version
@@ -20,10 +21,15 @@ def _run_module(*arguments: str) -> subprocess.CompletedProcess[str]:
 
 def test_cli_help() -> None:
     result = runner.invoke(app, ["--help"])
+    plain_output = re.sub(
+        r"\x1b\[[0-?]*[ -/]*[@-~]",
+        "",
+        result.output,
+    )
 
     assert result.exit_code == 0
-    assert "Usage:" in result.output
-    assert "--version" in result.output
+    assert "Usage:" in plain_output
+    assert "--version" in plain_output
 
 
 def test_cli_version() -> None:
