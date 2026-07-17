@@ -18,7 +18,7 @@ From the repository root:
 
 ```bash
 uv python install 3.13
-uv sync --frozen --group dev
+uv sync --locked --group dev
 ```
 
 uv creates and maintains the repository-local `.venv` from `uv.lock`.
