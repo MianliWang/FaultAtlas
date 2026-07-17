@@ -32,7 +32,7 @@ jobs:
           enable-cache: false
 
       - name: Sync locked development environment
-        run: uv sync --frozen --group dev
+        run: uv sync --locked --group dev
 
       - name: Check formatting
         run: uv run --frozen ruff format --check .
