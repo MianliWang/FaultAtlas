@@ -1,0 +1,42 @@
+[project]
+name = "faultatlas"
+version = "0.1.0"
+description = "Governed evidence foundations for reliable fault analysis."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2,<3",
+    "typer>=0.27.0",
+]
+
+[project.scripts]
+faultatlas = "faultatlas.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.11.19,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[tool.pyright]
+include = ["src/faultatlas", "tests"]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+addopts = ["--strict-config", "--strict-markers"]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+    "ruff>=0.15.22",
+]
