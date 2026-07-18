@@ -20,6 +20,7 @@ unset \
   2>/dev/null || true
 
 export UV_CACHE_DIR="${TMPDIR:-/tmp}/faultatlas-uv-cache"
+export UV_MANAGED_PYTHON=1
 mkdir -p "$UV_CACHE_DIR"
 
 command -v uv >/dev/null 2>&1
@@ -62,6 +63,7 @@ set -eu
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
+export UV_MANAGED_PYTHON=1
 
 unset VIRTUAL_ENV PYTHONHOME CONDA_DEFAULT_ENV CONDA_PREFIX CONDA_PROMPT_MODIFIER \
   2>/dev/null || true
@@ -103,6 +105,7 @@ set -eu
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
+export UV_MANAGED_PYTHON=1
 
 unset VIRTUAL_ENV PYTHONHOME CONDA_DEFAULT_ENV CONDA_PREFIX CONDA_PROMPT_MODIFIER \
   2>/dev/null || true
