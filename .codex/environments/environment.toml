@@ -44,7 +44,20 @@ PY'''
 [setup.win32]
 script = '''
 $ErrorActionPreference = "Stop"
-$PSNativeCommandUseErrorActionPreference = $true
+
+function Assert-NativeSuccess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Operation,
+
+        [Parameter(Mandatory = $true)]
+        [int] $ExitCode
+    )
+
+    if ($ExitCode -ne 0) {
+        throw "$Operation failed with exit code $ExitCode."
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($env:CODEX_WORKTREE_PATH)) {
     throw "CODEX_WORKTREE_PATH is required for FaultAtlas setup."
@@ -78,11 +91,25 @@ if ($null -eq (Get-Command uv -CommandType Application -ErrorAction SilentlyCont
 }
 
 uv --version
-uv lock --check
-uv sync --locked --group dev
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv --version" -ExitCode $exitCode
 
-$uvPythonDir = (& uv python dir).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($uvPythonDir)) {
+uv lock --check
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv lock --check" -ExitCode $exitCode
+
+uv sync --locked --group dev
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv sync --locked --group dev" -ExitCode $exitCode
+
+$uvPythonDirOutput = & uv python dir
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv python dir" -ExitCode $exitCode
+
+$uvPythonDir = ([string](
+    $uvPythonDirOutput | Select-Object -First 1
+)).Trim()
+if ([string]::IsNullOrWhiteSpace($uvPythonDir)) {
     throw "uv python dir did not return the managed Python directory."
 }
 
@@ -144,7 +171,9 @@ print(f"sys_base_executable={base_executable}")
 print(f"uv_python_dir={uv_python_dir}")
 '@
 
-$verificationScript | uv run --frozen python - $uvPythonDir'''
+$verificationScript | uv run --frozen python - $uvPythonDir
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv run --frozen python interpreter probe" -ExitCode $exitCode'''
 
 [cleanup]
 script = ""
@@ -236,10 +265,29 @@ name = "Validate"
 icon = "tool"
 command = '''
 $ErrorActionPreference = "Stop"
-$PSNativeCommandUseErrorActionPreference = $true
 
-$root = (& git rev-parse --show-toplevel).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($root)) {
+function Assert-NativeSuccess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Operation,
+
+        [Parameter(Mandatory = $true)]
+        [int] $ExitCode
+    )
+
+    if ($ExitCode -ne 0) {
+        throw "$Operation failed with exit code $ExitCode."
+    }
+}
+
+$rootOutput = & git rev-parse --show-toplevel
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "git rev-parse --show-toplevel" -ExitCode $exitCode
+
+$root = ([string](
+    $rootOutput | Select-Object -First 1
+)).Trim()
+if ([string]::IsNullOrWhiteSpace($root)) {
     throw "Unable to determine the FaultAtlas Git root."
 }
 Set-Location -LiteralPath $root
@@ -266,11 +314,28 @@ $env:UV_CACHE_DIR = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath
 [System.IO.Directory]::CreateDirectory($env:UV_CACHE_DIR) | Out-Null
 
 uv lock --check
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv lock --check" -ExitCode $exitCode
+
 uv sync --locked --group dev
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv sync --locked --group dev" -ExitCode $exitCode
+
 uv run --frozen ruff format --check .
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv run --frozen ruff format --check ." -ExitCode $exitCode
+
 uv run --frozen ruff check .
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv run --frozen ruff check ." -ExitCode $exitCode
+
 uv run --frozen pyright
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv run --frozen pyright" -ExitCode $exitCode
+
 uv run --frozen pytest
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv run --frozen pytest" -ExitCode $exitCode
 
 $dist = Join-Path -Path $root -ChildPath "dist"
 $distItem = Get-Item -LiteralPath $dist -Force -ErrorAction SilentlyContinue
@@ -284,7 +349,9 @@ if ($null -ne $distItem) {
     Remove-Item -LiteralPath $dist -Recurse -Force
 }
 
-uv build'''
+uv build
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv build" -ExitCode $exitCode'''
 platform = "win32"
 
 [[actions]]
@@ -292,10 +359,29 @@ name = "Test"
 icon = "tool"
 command = '''
 $ErrorActionPreference = "Stop"
-$PSNativeCommandUseErrorActionPreference = $true
 
-$root = (& git rev-parse --show-toplevel).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($root)) {
+function Assert-NativeSuccess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Operation,
+
+        [Parameter(Mandatory = $true)]
+        [int] $ExitCode
+    )
+
+    if ($ExitCode -ne 0) {
+        throw "$Operation failed with exit code $ExitCode."
+    }
+}
+
+$rootOutput = & git rev-parse --show-toplevel
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "git rev-parse --show-toplevel" -ExitCode $exitCode
+
+$root = ([string](
+    $rootOutput | Select-Object -First 1
+)).Trim()
+if ([string]::IsNullOrWhiteSpace($root)) {
     throw "Unable to determine the FaultAtlas Git root."
 }
 Set-Location -LiteralPath $root
@@ -321,7 +407,9 @@ $env:UV_MANAGED_PYTHON = "1"
 $env:UV_CACHE_DIR = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "faultatlas-uv-cache"
 [System.IO.Directory]::CreateDirectory($env:UV_CACHE_DIR) | Out-Null
 
-uv run --frozen pytest'''
+uv run --frozen pytest
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "uv run --frozen pytest" -ExitCode $exitCode'''
 platform = "win32"
 
 [[actions]]
@@ -329,16 +417,46 @@ name = "Git status"
 icon = "tool"
 command = '''
 $ErrorActionPreference = "Stop"
-$PSNativeCommandUseErrorActionPreference = $true
 
-$root = (& git rev-parse --show-toplevel).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($root)) {
+function Assert-NativeSuccess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Operation,
+
+        [Parameter(Mandatory = $true)]
+        [int] $ExitCode
+    )
+
+    if ($ExitCode -ne 0) {
+        throw "$Operation failed with exit code $ExitCode."
+    }
+}
+
+$rootOutput = & git rev-parse --show-toplevel
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "git rev-parse --show-toplevel" -ExitCode $exitCode
+
+$root = ([string](
+    $rootOutput | Select-Object -First 1
+)).Trim()
+if ([string]::IsNullOrWhiteSpace($root)) {
     throw "Unable to determine the FaultAtlas Git root."
 }
 Set-Location -LiteralPath $root
 
 git status --short --branch
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "git status --short --branch" -ExitCode $exitCode
+
 git diff --check
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "git diff --check" -ExitCode $exitCode
+
 git diff --stat
-git diff --cached --name-only'''
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "git diff --stat" -ExitCode $exitCode
+
+git diff --cached --name-only
+$exitCode = $LASTEXITCODE
+Assert-NativeSuccess -Operation "git diff --cached --name-only" -ExitCode $exitCode'''
 platform = "win32"
