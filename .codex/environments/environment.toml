@@ -102,7 +102,7 @@ uv sync --locked --group dev
 $exitCode = $LASTEXITCODE
 Assert-NativeSuccess -Operation "uv sync --locked --group dev" -ExitCode $exitCode
 
-$uvPythonDirOutput = & uv python dir
+$uvPythonDirOutput = & uv --color never python dir
 $exitCode = $LASTEXITCODE
 Assert-NativeSuccess -Operation "uv python dir" -ExitCode $exitCode
 
