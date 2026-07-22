@@ -46,9 +46,10 @@ case before formalizing the Stage 1 contracts. pytest-dev/pytest Issue
 `#4412` and PR `#4414` form the accepted canonical candidate. Their external
 objects and payloads are not part of this documentation Slice.
 
-`S1.P00.S01` is complete. `S1.P00.S02` is active as the reference-case
-selection and capture-policy Slice. It absorbs the earlier provisional
-candidate investigation and canonical-case selection work.
+`S1.P00.S01` and `S1.P00.S02` are complete. `S1.P00.S03` is active as the
+acquisition-procedure and manifest-boundary planning Slice. `S1.P00.S04` has
+not begun and is blocked on publication of the S03 acquisition plan plus
+explicit authorization to retain bytes.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -57,9 +58,11 @@ declaring provisional models to be public or complete contracts.
 The current `S1.P00` Slice sequence is:
 
 1. `S1.P00.S01` — Roadmap and Terminology Reconciliation (complete)
-2. `S1.P00.S02` — Reference-Case Selection and Capture Policy (active)
-3. `S1.P00.S03` — Acquisition Procedure and Capture Manifest Plan
-4. `S1.P00.S04` — Immutable Reference Evidence Capture
+2. `S1.P00.S02` — Reference-Case Selection and Capture Policy (complete)
+3. `S1.P00.S03` — Acquisition Procedure and Capture Manifest Plan (active)
+4. `S1.P00.S04` — Immutable Reference Evidence Capture (not begun; blocked on
+   publication of the S03 acquisition plan and explicit byte-retention
+   authorization)
 5. `S1.P00.S05` — Case Manifest and Relationship Lock
 6. `S1.P00.S06` — Current-Contract Gap Matrix
 7. `S1.P00.S07` — Identity, Revision, and Provenance Decision
