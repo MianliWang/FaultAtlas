@@ -1,12 +1,18 @@
 # FaultAtlas
 
-FaultAtlas is a governed Python foundation for reliable fault-analysis
-evidence. The current package intentionally provides only metadata and a
-minimal command-line entry point.
+FaultAtlas is an early governed contract prototype for reliable fault-analysis
+evidence. Its current product-domain capability is limited to the provisional
+internal `SourceLocator` and `ArtifactSnapshot` models. The command-line
+interface currently provides only help and version behavior.
+
+FaultAtlas does not yet implement source ingestion, persistence, retrieval,
+graphs, RAG, model routing, or artifact generation. See the
+[project roadmap](docs/roadmap.md) for the authoritative current status and
+Stage numbering.
 
 ## Requirements
 
-- WSL or Linux
+- WSL or Linux (the canonical development workflow is VS Code/Codex in WSL)
 - [uv](https://docs.astral.sh/uv/)
 - uv-managed CPython 3.13
 
