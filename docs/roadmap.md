@@ -42,26 +42,30 @@ aspirational Slice as scheduled work.
 
 The objective of `S1.P00` is to calibrate FaultAtlas identity, revision,
 provenance, and evidence-boundary decisions against one bounded real-world
-case before formalizing the Stage 1 contracts. pytest `#4412` / `#4414` is the
-accepted candidate for later calibration; its external objects and payloads
-are not part of this documentation Slice.
+case before formalizing the Stage 1 contracts. pytest-dev/pytest Issue
+`#4412` and PR `#4414` form the accepted canonical candidate. Their external
+objects and payloads are not part of this documentation Slice.
+
+`S1.P00.S01` is complete. `S1.P00.S02` is active as the reference-case
+selection and capture-policy Slice. It absorbs the earlier provisional
+candidate investigation and canonical-case selection work.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
 declaring provisional models to be public or complete contracts.
 
-The provisional `S1.P00` Slice sequence is:
+The current `S1.P00` Slice sequence is:
 
-1. `S1.P00.S01` — Roadmap and Terminology Reconciliation
-2. `S1.P00.S02` — Reference-Case Selection Criteria
-3. `S1.P00.S03` — Candidate Case Investigation
-4. `S1.P00.S04` — Canonical Case and Capture Plan
-5. `S1.P00.S05` — Existing-Contract Gap Matrix
-6. `S1.P00.S06` — Identity and Locator Decision
-7. `S1.P00.S07` — Revision and Provenance Decision
-8. `S1.P00.S08` — Snapshot and Evidence Boundary Decision
-9. `S1.P00.S09` — Compatibility and Corpus Layout Plan
-10. `S1.P00.S10` — Calibration Implementation and Validation Plan
+1. `S1.P00.S01` — Roadmap and Terminology Reconciliation (complete)
+2. `S1.P00.S02` — Reference-Case Selection and Capture Policy (active)
+3. `S1.P00.S03` — Acquisition Procedure and Capture Manifest Plan
+4. `S1.P00.S04` — Immutable Reference Evidence Capture
+5. `S1.P00.S05` — Case Manifest and Relationship Lock
+6. `S1.P00.S06` — Current-Contract Gap Matrix
+7. `S1.P00.S07` — Identity, Revision, and Provenance Decision
+8. `S1.P00.S08` — Snapshot Boundary and Compatibility Decision
+9. `S1.P00.S09` — Deterministic Corpus Tests
+10. `S1.P00.S10` — Integration and Phase Closure
 
 ## Preserved Stage 1 phases
 
