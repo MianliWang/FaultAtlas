@@ -1,0 +1,45 @@
+diff --git a/changelog/4412.bugfix.rst b/changelog/4412.bugfix.rst
+new file mode 100644
+index 00000000000..7a28b610837
+--- /dev/null
++++ b/changelog/4412.bugfix.rst
+@@ -0,0 +1 @@
++Fix assertion rewriting involving ``Starred`` + side-effects.
+diff --git a/src/_pytest/assertion/rewrite.py b/src/_pytest/assertion/rewrite.py
+index ecb24ff7ca8..7b9aa500654 100644
+--- a/src/_pytest/assertion/rewrite.py
++++ b/src/_pytest/assertion/rewrite.py
+@@ -946,7 +946,8 @@ def visit_Call_35(self, call):
+     def visit_Starred(self, starred):
+         # From Python 3.5, a Starred node can appear in a function call
+         res, expl = self.visit(starred.value)
+-        return starred, "*" + expl
++        new_starred = ast.Starred(res, starred.ctx)
++        return new_starred, "*" + expl
+ 
+     def visit_Call_legacy(self, call):
+         """
+diff --git a/testing/test_assertrewrite.py b/testing/test_assertrewrite.py
+index acbabb68bcf..a02433cd62a 100644
+--- a/testing/test_assertrewrite.py
++++ b/testing/test_assertrewrite.py
+@@ -413,6 +413,19 @@ def test_multmat_operator():
+         )
+         testdir.runpytest().assert_outcomes(passed=1)
+ 
++    @pytest.mark.skipif("sys.version_info < (3,5)")
++    def test_starred_with_side_effect(self, testdir):
++        """See #4412"""
++        testdir.makepyfile(
++            """\
++            def test():
++                f = lambda x: x
++                x = iter([1, 2, 3])
++                assert 2 * next(x) == f(*[next(x)])
++            """
++        )
++        testdir.runpytest().assert_outcomes(passed=1)
++
+     def test_call(self):
+         def g(a=42, *args, **kwargs):
+             return False
