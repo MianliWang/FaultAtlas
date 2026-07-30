@@ -518,3 +518,56 @@ not make those decisions or implement their outcomes.
 This analytical layer is internal and case-specific. It is not a universal
 production schema, loader, migration contract, persistence contract, or
 public API. No production model was changed, and S07 was not started.
+
+## S1.P00.S07 Identity, Revision, and Provenance Decision Publication
+
+`S1.P00.S07` publishes the case-calibrated decision layer at
+`reference_corpus/pytest-4412/decisions/s07-identity-revision-provenance/`.
+Canonical `decision.json` is the durable semantic authority,
+`decision.sha256` locks its exact bytes, and derived `decision.md` embeds the
+primary JSON SHA-256
+`60ecb66565525cb21a924508794635072ae50e935d4791d9d91da5b6399ce866`.
+
+The decision record directly locks these immutable inputs:
+
+- S04 acquisition SHA-256
+  `1c29093bf1537e9b824a18df1848b71a8da014f544bc9f385707eb0e000a1318`;
+- S04.C01 correction SHA-256
+  `44491ee512d2c2022110b83967fb6fa86d13045bc8404ea490d7a08b7aef24a2`;
+- S05 case-manifest SHA-256
+  `fc1439a8f9766bdf55b95e9d63f3bf19db44da1724dfb7cd2e889771384b9efa`;
+  and
+- S06 gap-matrix SHA-256
+  `55dacf5193aedc5493ac369dd0e3fb74a0f59f0c1f88bab1b625a2e4f4ff5f13`
+  plus derived Markdown SHA-256
+  `6a569af7f9b1c691fc397e356d365664dcc14cbebe6ae589bd4501e23ac1893a`.
+
+For this case, stable repository identity is provider `github` plus provider
+repository ID `37489525`; `pytest-dev/pytest` remains a mutable, timed alias
+observation. Repository-scoped Issue and PR numbers, global REST IDs, and
+GraphQL node IDs have distinct typed roles. Comments and reviews use their
+provider-assigned stable IDs with explicit parent scope. A public login is
+attribution metadata, not repository identity.
+
+Git commit, tree, and blob identities are object-kind-, algorithm-, and
+full-digest-qualified. Base, head, merge first parent, and merge are case roles
+over commit identities, and ordered parents remain evidence-bearing. Mutable
+refs are timed observations rather than immutable revisions; deleting a ref
+does not invalidate its target commit. Revision-qualified paths and bounded
+line, byte, and hunk locators remain separate S1.P02 concerns.
+
+The controlled field states are `present`, `observed_null`, `missing`,
+`unavailable`, `inaccessible`, `deleted`, `unknown`, `unsupported`, and
+`conflict`. Source authority, repository and object identity, immutable
+revision or artifact, mutable alias or ref observation, request, response,
+acquisition, retained artifact, transformation, correction, case relationship,
+reviewed interpretation, and FaultAtlas publication remain fourteen distinct,
+non-overwriting provenance layers.
+
+Legacy `SourceLocator` remains internal, provisional, unchanged, Issue-only,
+and ambiguous: `repository` is an alias and `object_id` is not retroactively
+interpreted as either a repository-scoped number or a global provider ID. The
+record makes only the limited S07 observation that `ArtifactSnapshot` is not a
+stable source-identity carrier. S08 still owns its preserve, evolve, or replace
+compatibility choice and remains not started. No S1.P01, S1.P02, or S1.P03
+production implementation is included.
