@@ -79,6 +79,17 @@ For the Git blob endpoint, `application/vnd.github.raw+json` denotes the blob
 content bytes. Those bytes may be retained exactly only after the revision,
 path, blob, media, encoding, and license checks pass.
 
+The requested `Accept` selector, the observed response `Content-Type`, provider
+selection metadata such as `X-GitHub-Media-Type`, and the retained entity-body
+classification are separate observations. A syntactically valid generic
+response type such as `text/plain` may describe the blob content and need not
+echo the requested custom media type. When the complete entity body matches
+the locked byte length, SHA-256, and Git blob identity, is not a JSON envelope,
+and any provider selection metadata is compatible with `raw`, that generic
+response type is retained as a warning rather than treated as a representation
+conflict. Missing, duplicate, malformed, or explicitly contradictory media
+metadata remains a hard failure.
+
 ### Exact compare-diff byte representation
 
 For compare commits, `application/vnd.github.diff` denotes the entity body
@@ -307,6 +318,10 @@ Digest scopes are:
 - `normalized-acquisition-json`
 - `normalized-case-json`
 
+The S04 historical LICENSE descriptor uses `git-blob-content`, and the
+`acquisition.sha256` sidecar uses `normalized-acquisition-json`. These names
+are controlled vocabulary; composite or ad hoc synonyms are not permitted.
+
 Transfer framing is excluded. The HTTP entity body is retained exactly after
 requiring absent or identity content encoding. No newline conversion, Unicode
 normalization, decoding/re-encoding, whitespace repair, or byte-order mark is
@@ -369,8 +384,13 @@ or prior edited representations.
 ### Hard failures
 
 - The pinned API version is unsupported, an authority-changing redirect occurs,
-  the retained media type differs from the selected representation, or content
-  encoding is neither absent nor identity.
+  provider metadata or the entity body contradicts the selected representation,
+  or content encoding is neither absent nor identity. For a raw Git-blob
+  request, contradictions include a JSON envelope or a provider media selector
+  that explicitly selects a non-raw representation; a valid generic response
+  `Content-Type` alone is not a contradiction.
+- Required response `Content-Type` metadata is missing, duplicated, malformed,
+  or explicitly incompatible with the verified entity-body representation.
 - Every object must resolve to repository ID `37489525`.
 - Repository-scoped Issue/PR numbers must remain distinct from global IDs.
 - Issue comments, PR comments, reviews, and inline comments must have the
@@ -409,6 +429,9 @@ or prior edited representations.
   remains unchanged.
 - Optional node IDs, cache validators, or provider precision are absent or
   differ without changing the locked source chain.
+- A valid response `Content-Type` differs from the requested Git-blob custom
+  media type while the raw selection, complete entity bytes, SHA-256, and Git
+  blob identity are independently verified without contradiction.
 - A first mutable-surface attempt is discarded and the one allowed retry
   succeeds.
 
