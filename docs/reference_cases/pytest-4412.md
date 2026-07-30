@@ -366,6 +366,44 @@ ArtifactSnapshot remains an immutable retrieval observation. Later outer
 layers own relationships, provenance, transformations, claims, confidence,
 review, and transfer.
 
+## S1.P00.S05 Case-Manifest Publication
+
+`S1.P00.S05` publishes the case-specific relationship layer under
+`reference_corpus/pytest-4412/case/` as canonical `case.json` plus its exact
+`case.sha256` sidecar. The case record directly locks both the authoritative
+S04 acquisition and the append-only S04.C01 correction by path and SHA-256.
+The correction supplements the acquisition; it does not replace it or create a
+synthetic corrected acquisition.
+
+The manifest owns the bounded case identity, entity registry, relationship
+classification, selected chronology, negative-evidence order, final selection
+linkage, and case-level gaps. It keeps `observed`,
+`deterministically_derived`, `reviewed_derived_interpretation`, `hypothesis`,
+`unknown`, and `unsupported` distinct. Where retained cross-reference events
+omit their nested target identity, the event remains observed while the
+Issue/PR pair-level linkage remains a reviewed case interpretation.
+
+The negative-evidence lock preserves this order:
+
+1. `439722704` — apparent failure report;
+2. `439729234` — independent success report;
+3. `439731167` — stale-cache hypothesis; and
+4. `439732047` — resolution report.
+
+Those roles are case-derived, not provider-authored event types. The
+stale-cache explanation remains an unverified hypothesis and is not promoted
+to established causation.
+
+The bounded reviewed invariant is: “Transformation or instrumentation must
+preserve evaluation count and execution order for side-effecting expressions.”
+It is supported only within this reviewed case evidence. Universal pattern and
+transfer status remain deferred to `S1.P07` and `S1.P08`.
+
+This manifest format remains provisional, internal, and case-specific.
+Production schemas, loaders, migrations, persistence, and public APIs are not
+introduced. `SourceLocator` and `ArtifactSnapshot` remain unchanged internal
+seeds whose representational gaps are recorded rather than repaired in S05.
+
 ## Known Gaps, Risks, and Stop Conditions
 
 Known gaps and risks include:
