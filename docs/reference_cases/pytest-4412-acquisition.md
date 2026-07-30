@@ -477,6 +477,39 @@ exact artifacts become immutable. S05 must not modify them. A partial
 diagnostic acquisition uses a separately identified run directory and explicit
 partial state; it never overwrites a complete or earlier run.
 
+### Published S04 correction addenda
+
+The future-tense S03 plan above remains historical planning context; current
+program status is recorded in `docs/roadmap.md`. A local seal does not establish
+publication or operational closure.
+
+`S1.P00.S04.C01` records that a locally committed, sealed pre-publication S04
+candidate was semantically reconciled in place before final publication. The
+repair changed two classification fields and the canonical record bytes, but
+not the live observation fields or retained artifact bytes; the acquisition's
+reversible ledger preserves the prior candidate identity. This rewrite remains
+a procedural immutability nonconformance rather than accepted practice.
+
+The published S04 acquisition is authoritative, and its run directory,
+acquisition record, sidecar, and retained artifacts are now immutable. No
+further in-place correction is permitted. A later correction must be a
+separately identified, append-only acquisition-layer record outside the run
+directory that directly locks the authoritative published acquisition digest
+and neither replaces nor silently reinterprets the acquisition.
+
+For this case, the correction lives under
+`reference_corpus/pytest-4412/corrections/s04-c01-acquisition-closure/` as
+`correction.json` and `correction.sha256`. Supplemental observations in a
+correction retain their own request and observation timestamps and provenance;
+they are not backdated or represented as observations from the original S04
+run. Current-visible provider state does not prove complete historical state.
+
+Correction records may supplement or disposition acquisition metadata, but
+they do not own case identity, observed-versus-derived relationship
+classification, negative-evidence ordering, or the relationship lock reserved
+for S05. S05 must reference the authoritative acquisition and each applicable
+correction without modifying either.
+
 ### S05 case manifest
 
 S05 creates separate files, provisionally named:
