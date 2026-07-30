@@ -475,3 +475,46 @@ revisit case selection, and this record does not begin it.
 - [Regression test](https://github.com/pytest-dev/pytest/blob/690a63b9218f72662cd3a67c6c200b758c88ce12/testing/test_assertrewrite.py#L416-L427)
 - [Changelog entry](https://github.com/pytest-dev/pytest/blob/690a63b9218f72662cd3a67c6c200b758c88ce12/changelog/4412.bugfix.rst#L1)
 - [Historical MIT license](https://github.com/pytest-dev/pytest/blob/690a63b9218f72662cd3a67c6c200b758c88ce12/LICENSE)
+
+## S1.P00.S06 Current-Contract Gap Matrix Publication
+
+`S1.P00.S06` publishes a derived, case-grounded analytical layer at
+`reference_corpus/pytest-4412/analysis/s06-current-contract-gap-matrix/`.
+Canonical `gap-matrix.json` is the durable semantic authority,
+`gap-matrix.sha256` locks its exact bytes, and `gap-matrix.md` is a derived
+human-readable view that embeds the primary JSON digest.
+
+The analysis directly locks these immutable inputs:
+
+- S04 acquisition SHA-256
+  `1c29093bf1537e9b824a18df1848b71a8da014f544bc9f385707eb0e000a1318`;
+- S04.C01 correction SHA-256
+  `44491ee512d2c2022110b83967fb6fa86d13045bc8404ea490d7a08b7aef24a2`;
+  and
+- S05 case-manifest SHA-256
+  `fc1439a8f9766bdf55b95e9d63f3bf19db44da1724dfb7cd2e889771384b9efa`.
+
+The matrix covers each of the 33 S05 entities and 53 S05 relationships
+exactly once, and includes 81 explicit concept rows across identity, revision
+and location, evidence representation, completeness and omission, case
+semantics, and compatibility and lifecycle. Coverage uses only
+`representable`, `partially_representable`, `not_representable`,
+`intentionally_deferred`, and `unsupported_by_current_evidence`.
+
+Current `SourceLocator` support remains limited to an Issue-only GitHub
+identity with an ambiguous numeric `object_id`. Current `ArtifactSnapshot`
+support remains limited to an Issue-bound UTF-8 `application/json` text
+observation with semantic Pydantic serialization. Neither current model gains
+case-relationship, revision, exact-artifact, acquisition-envelope, migration,
+or persistence semantics from this analysis.
+
+The matrix routes identity, revision, and provenance questions to S07;
+snapshot-boundary and compatibility questions to S08; bounded deterministic
+corpus-test obligations to S09; and integration and closure obligations to
+S10. Recommended S07 and S08 defaults remain
+`owner_decision_required`: S06 identifies gaps and decision pressure but does
+not make those decisions or implement their outcomes.
+
+This analytical layer is internal and case-specific. It is not a universal
+production schema, loader, migration contract, persistence contract, or
+public API. No production model was changed, and S07 was not started.
