@@ -49,7 +49,8 @@ objects and payloads are not part of this documentation Slice.
 `S1.P00.S01`, `S1.P00.S02`, and `S1.P00.S03` are complete.
 `S1.P00.S04` is published and operationally complete. Its contractual closure
 is provided by the corrective `S1.P00.S04.C01` acquisition-closure addendum.
-`S1.P00.S05` has not begun and remains the next product Slice.
+`S1.P00.S05` is complete. `S1.P00.S06` has not begun and remains the next
+product Slice. No later Stage or Phase has begun.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -63,9 +64,8 @@ The current `S1.P00` Slice sequence is:
 4. `S1.P00.S04` — Immutable Reference Evidence Capture (published and
    operationally complete; contractual closure provided by corrective
    `S1.P00.S04.C01`)
-5. `S1.P00.S05` — Case Manifest and Relationship Lock (not begun; next product
-   Slice)
-6. `S1.P00.S06` — Current-Contract Gap Matrix
+5. `S1.P00.S05` — Case Manifest and Relationship Lock (complete)
+6. `S1.P00.S06` — Current-Contract Gap Matrix (not begun; next product Slice)
 7. `S1.P00.S07` — Identity, Revision, and Provenance Decision
 8. `S1.P00.S08` — Snapshot Boundary and Compatibility Decision
 9. `S1.P00.S09` — Deterministic Corpus Tests
