@@ -49,10 +49,10 @@ objects and payloads are not part of this documentation Slice.
 `S1.P00.S01`, `S1.P00.S02`, and `S1.P00.S03` are complete.
 `S1.P00.S04` is published and operationally complete. Its contractual closure
 is provided by the corrective `S1.P00.S04.C01` acquisition-closure addendum.
-`S1.P00.S05`, `S1.P00.S06`, and `S1.P00.S07` are complete. `S1.P00.S08`
-remains not started and is the next product Slice. S04 and its corrective C01
-remain closed, and no preserved future Stage 1 Phase or later Stage has begun;
-in particular, no `S1.P01` implementation has begun.
+`S1.P00.S05`, `S1.P00.S06`, `S1.P00.S07`, and `S1.P00.S08` are complete.
+`S1.P00.S09` remains not started and is the next product Slice. S04 and its
+corrective C01 remain closed, as do S05-S07. No preserved future Stage 1 Phase
+or later Stage has begun; in particular, no `S1.P03` implementation has begun.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -69,9 +69,8 @@ The current `S1.P00` Slice sequence is:
 5. `S1.P00.S05` — Case Manifest and Relationship Lock (complete)
 6. `S1.P00.S06` — Current-Contract Gap Matrix (complete)
 7. `S1.P00.S07` — Identity, Revision, and Provenance Decision (complete)
-8. `S1.P00.S08` — Snapshot Boundary and Compatibility Decision (not begun;
-   next product Slice)
-9. `S1.P00.S09` — Deterministic Corpus Tests
+8. `S1.P00.S08` — Snapshot Boundary and Compatibility Decision (complete)
+9. `S1.P00.S09` — Deterministic Corpus Tests (not started; next product Slice)
 10. `S1.P00.S10` — Integration and Phase Closure
 
 ## Preserved Stage 1 phases
