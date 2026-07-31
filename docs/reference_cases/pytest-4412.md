@@ -607,7 +607,28 @@ supersession records scoped precedence; none may overwrite an immutable
 published source.
 
 This decision introduces no production model, adapter, reader, writer,
-migration, persistence contract, public API, or universal schema. S09
-deterministic corpus testing is next and remains not started. S1.P03 evidence
-implementation and all other preserved future-phase implementations remain
-deferred.
+migration, persistence contract, public API, or universal schema. S1.P03
+evidence implementation and all other preserved future-phase implementations
+remain deferred.
+
+## S1.P00.S09 Deterministic Corpus Tests
+
+`S1.P00.S09` adds tracked, offline deterministic tests for the published
+S04 acquisition, S04.C01 correction, S05 case manifest, S06 gap matrix, S07
+identity/revision/provenance decision, and S08 snapshot-boundary/compatibility
+decision. A test-only table independently locks all 17 accepted corpus files;
+it is not derived from the sidecars at test time. The tests also replay all six
+canonical JSON records and sidecars, exact diff and historical LICENSE bytes,
+the append-only source-lock DAG, published evidence pointers, case integrity,
+and the S05-S08 semantic boundaries.
+
+Failure-sensitivity tests corrupt only in-memory values, temporary copies, or
+synthetic archive members. They do not rewrite accepted corpus files. Actual
+isolated `uv build --offline --no-create-gitignore` runs prove that wheels and
+sdists exclude `reference_corpus/`, every S04-S08 corpus path, and the retained
+historical pytest LICENSE while preserving the FaultAtlas project LICENSE.
+
+S09 introduces no production corpus reader, canonicalizer, validator, schema,
+adapter, migration, or model change. Comprehensive production compatibility
+implementation remains deferred to its preserved future owners. S10 is the
+next S1.P00 Slice and has not started.
