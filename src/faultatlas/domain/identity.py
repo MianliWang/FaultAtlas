@@ -1,8 +1,9 @@
-"""Internal, case-calibrated provider and repository identity primitives.
+"""Internal, case-calibrated provider, repository, and source-object identity.
 
 The models in this module support semantic Pydantic JSON round trips. They do
 not define FaultAtlas's durable canonical byte format, retrieval provenance,
-source-object identity, revision identity, or evidence envelopes.
+revision identity, lifecycle or field states, relationships, or evidence
+envelopes.
 """
 
 import re
@@ -23,19 +24,28 @@ from pydantic import (
 
 __all__ = [
     "AuthorityRole",
+    "NumberedSourceObjectIdentity",
     "ProviderAuthority",
+    "ProviderGlobalId",
     "ProviderKey",
+    "ProviderNodeId",
     "ProviderRepositoryId",
+    "ProviderScopedSourceObjectIdentity",
     "RepositoryAliasObservation",
     "RepositoryIdentity",
+    "RepositoryScopedNumber",
+    "SourceObjectKind",
 ]
 
 _PROVIDER_KEY_PATTERN = re.compile(r"[a-z][a-z0-9-]*")
 _DNS_LABEL_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+_REPOSITORY_SCOPED_NUMBER_PATTERN = re.compile(r"[1-9][0-9]{0,19}")
 _MAX_PROVIDER_KEY_LENGTH = 64
 _MAX_AUTHORITY_HOST_LENGTH = 253
 _MAX_PROVIDER_REPOSITORY_ID_LENGTH = 255
 _MAX_OBSERVED_ALIAS_LENGTH = 255
+_MAX_PROVIDER_GLOBAL_ID_LENGTH = 255
+_MAX_PROVIDER_NODE_ID_LENGTH = 512
 
 _ProviderKeyValue = Annotated[
     str,
@@ -56,11 +66,31 @@ _ObservedAlias = Annotated[
     str,
     StringConstraints(min_length=1, max_length=_MAX_OBSERVED_ALIAS_LENGTH),
 ]
+_RepositoryScopedNumberValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=20),
+]
+_ProviderGlobalIdValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=_MAX_PROVIDER_GLOBAL_ID_LENGTH),
+]
+_ProviderNodeIdValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=_MAX_PROVIDER_NODE_ID_LENGTH),
+]
 
 
 def _require_unpadded_printable(value: str, *, field_name: str) -> str:
     if value != value.strip():
         raise ValueError(f"{field_name} must not have surrounding whitespace")
+    if not value.isprintable():
+        raise ValueError(f"{field_name} must contain only printable characters")
+    return value
+
+
+def _require_unspaced_printable(value: str, *, field_name: str) -> str:
+    if any(character.isspace() for character in value):
+        raise ValueError(f"{field_name} must not contain whitespace")
     if not value.isprintable():
         raise ValueError(f"{field_name} must contain only printable characters")
     return value
@@ -206,5 +236,166 @@ class RepositoryAliasObservation(BaseModel):
         if self.authority.provider != self.repository_identity.provider:
             raise ValueError(
                 "authority provider must match repository identity provider"
+            )
+        return self
+
+
+class SourceObjectKind(StrEnum):
+    """Closed source-object vocabulary for the first object identity slice."""
+
+    ISSUE = "issue"
+    PULL_REQUEST = "pull_request"
+    ISSUE_COMMENT = "issue_comment"
+    PULL_REQUEST_COMMENT = "pull_request_comment"
+    PULL_REQUEST_REVIEW = "pull_request_review"
+    PULL_REQUEST_REVIEW_COMMENT = "pull_request_review_comment"
+    TIMELINE_EVENT = "timeline_event"
+
+
+class RepositoryScopedNumber(RootModel[_RepositoryScopedNumberValue]):
+    """Canonical positive decimal number scoped to one repository."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _RepositoryScopedNumberValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_repository_scoped_number(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _REPOSITORY_SCOPED_NUMBER_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "repository-scoped number must be a canonical positive "
+                "ASCII decimal lexeme of at most 20 digits"
+            )
+        return value
+
+
+class ProviderGlobalId(RootModel[_ProviderGlobalIdValue]):
+    """Opaque provider-assigned global identifier for a source object."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _ProviderGlobalIdValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_provider_global_id(cls, value: str) -> str:
+        return _require_unspaced_printable(
+            value,
+            field_name="provider global ID",
+        )
+
+
+class ProviderNodeId(RootModel[_ProviderNodeIdValue]):
+    """Opaque optional provider node identifier, without decode semantics."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _ProviderNodeIdValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_provider_node_id(cls, value: str) -> str:
+        return _require_unspaced_printable(
+            value,
+            field_name="provider node ID",
+        )
+
+
+_NUMBERED_SOURCE_OBJECT_KINDS: frozenset[SourceObjectKind] = frozenset(
+    {
+        SourceObjectKind.ISSUE,
+        SourceObjectKind.PULL_REQUEST,
+    }
+)
+_PROVIDER_SCOPED_PARENT_KINDS: dict[
+    SourceObjectKind,
+    frozenset[SourceObjectKind],
+] = {
+    SourceObjectKind.ISSUE_COMMENT: frozenset({SourceObjectKind.ISSUE}),
+    SourceObjectKind.PULL_REQUEST_COMMENT: frozenset({SourceObjectKind.PULL_REQUEST}),
+    SourceObjectKind.PULL_REQUEST_REVIEW: frozenset({SourceObjectKind.PULL_REQUEST}),
+    SourceObjectKind.PULL_REQUEST_REVIEW_COMMENT: frozenset(
+        {SourceObjectKind.PULL_REQUEST}
+    ),
+    SourceObjectKind.TIMELINE_EVENT: frozenset(
+        {
+            SourceObjectKind.ISSUE,
+            SourceObjectKind.PULL_REQUEST,
+        }
+    ),
+}
+
+
+class NumberedSourceObjectIdentity(BaseModel):
+    """Stable identity for an issue or pull request in one repository."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    schema_version: Literal[1] = 1
+    repository_identity: RepositoryIdentity
+    kind: SourceObjectKind
+    repository_scoped_number: RepositoryScopedNumber
+
+    @model_validator(mode="after")
+    def _validate_numbered_kind(self) -> Self:
+        if self.kind not in _NUMBERED_SOURCE_OBJECT_KINDS:
+            raise ValueError(
+                "numbered source object kind must be issue or pull_request"
+            )
+        return self
+
+
+class ProviderScopedSourceObjectIdentity(BaseModel):
+    """Stable child-object identity under an issue or pull request parent."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    schema_version: Literal[1] = 1
+    kind: SourceObjectKind
+    provider_global_id: ProviderGlobalId
+    parent: NumberedSourceObjectIdentity
+
+    @model_validator(mode="after")
+    def _validate_parent_kind(self) -> Self:
+        allowed_parent_kinds = _PROVIDER_SCOPED_PARENT_KINDS.get(self.kind)
+        if allowed_parent_kinds is None:
+            raise ValueError(
+                "provider-scoped source object kind must be a comment, review, "
+                "review comment, or timeline event"
+            )
+        if self.parent.kind not in allowed_parent_kinds:
+            raise ValueError(
+                f"{self.kind.value} cannot use {self.parent.kind.value} as its parent"
             )
         return self
