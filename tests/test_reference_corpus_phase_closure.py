@@ -370,6 +370,8 @@ EXPECTED_PRODUCTION_FILES = {
 
 EXPECTED_IDENTITY_SYMBOLS = {
     "AuthorityRole",
+    "IdentityFieldState",
+    "IdentityValueState",
     "NumberedSourceObjectIdentity",
     "ProviderAuthority",
     "ProviderGlobalId",
@@ -380,6 +382,28 @@ EXPECTED_IDENTITY_SYMBOLS = {
     "RepositoryAliasObservation",
     "RepositoryIdentity",
     "RepositoryScopedNumber",
+    "SourceIdentity",
+    "SourceIdentityLifecycleObservation",
+    "SourceIdentityLifecycleState",
+    "SourceObjectKind",
+}
+
+EXPECTED_IDENTITY_CLASSES = {
+    "AuthorityRole",
+    "IdentityFieldState",
+    "IdentityValueState",
+    "NumberedSourceObjectIdentity",
+    "ProviderAuthority",
+    "ProviderGlobalId",
+    "ProviderKey",
+    "ProviderNodeId",
+    "ProviderRepositoryId",
+    "ProviderScopedSourceObjectIdentity",
+    "RepositoryAliasObservation",
+    "RepositoryIdentity",
+    "RepositoryScopedNumber",
+    "SourceIdentityLifecycleObservation",
+    "SourceIdentityLifecycleState",
     "SourceObjectKind",
 }
 
@@ -390,6 +414,14 @@ EXPECTED_S02_IDENTITY_SYMBOLS = {
     "ProviderScopedSourceObjectIdentity",
     "RepositoryScopedNumber",
     "SourceObjectKind",
+}
+
+EXPECTED_S03_IDENTITY_SYMBOLS = {
+    "IdentityFieldState",
+    "IdentityValueState",
+    "SourceIdentity",
+    "SourceIdentityLifecycleObservation",
+    "SourceIdentityLifecycleState",
 }
 
 EXPECTED_S10_CHANGED_PATHS = {
@@ -466,12 +498,12 @@ def _identity_symbol_inventory(
 
 def _validate_identity_symbol_inventory(source: bytes) -> None:
     exports, public_symbols, public_classes = _identity_symbol_inventory(source)
-    assert len(exports) == len(EXPECTED_IDENTITY_SYMBOLS) == 12
+    assert len(exports) == len(EXPECTED_IDENTITY_SYMBOLS) == 17
     assert exports == EXPECTED_IDENTITY_SYMBOLS
-    assert len(public_symbols) == 12
+    assert len(public_symbols) == 17
     assert public_symbols == EXPECTED_IDENTITY_SYMBOLS
-    assert len(public_classes) == 12
-    assert public_classes == EXPECTED_IDENTITY_SYMBOLS
+    assert len(public_classes) == len(EXPECTED_IDENTITY_CLASSES) == 16
+    assert public_classes == EXPECTED_IDENTITY_CLASSES
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -1193,6 +1225,17 @@ def test_omitting_authorized_s02_identity_export_is_rejected(symbol: str) -> Non
         _validate_identity_symbol_inventory(mutated)
 
 
+@pytest.mark.parametrize("symbol", sorted(EXPECTED_S03_IDENTITY_SYMBOLS))
+def test_omitting_authorized_s03_identity_export_is_rejected(symbol: str) -> None:
+    source = (REPOSITORY_ROOT / "src/faultatlas/domain/identity.py").read_text(
+        encoding="utf-8"
+    )
+    mutated = source.replace(f'    "{symbol}",\n', "", 1).encode()
+
+    with pytest.raises(AssertionError):
+        _validate_identity_symbol_inventory(mutated)
+
+
 def test_unexpected_synthetic_identity_symbol_is_rejected() -> None:
     source = (REPOSITORY_ROOT / "src/faultatlas/domain/identity.py").read_bytes()
     mutated = source + b"\nclass SyntheticIdentity:\n    pass\n"
@@ -1242,7 +1285,11 @@ def test_roadmap_and_case_documentation_match_candidate_semantics() -> None:
         in normalized_roadmap
     )
     assert (
-        "`S1.P01.S03` — Identity States, Lifecycle, and Conflict "
+        "`S1.P01.S03` — Identity States, Lifecycle, and Conflict (complete)"
+        in normalized_roadmap
+    )
+    assert (
+        "`S1.P01.S04` — Legacy SourceLocator Compatibility Mapping "
         "(next; not started)" in normalized_roadmap
     )
     assert "s1-p00-phase-closure" in case_doc
