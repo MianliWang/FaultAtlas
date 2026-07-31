@@ -23,9 +23,9 @@ aspirational Slice as scheduled work.
   CI. This status does not assert that every aspirational S0 item from earlier
   external planning has been implemented.
 - **S1** is active. Preparatory Phase `S1.P00` is operationally complete;
-  `S1.P01` is active: `S1.P01.S01` through `S1.P01.S03` are complete, and
-  `S1.P01.S04` is next but not started. `S1.P02` through `S1.P10` remain not
-  started.
+  `S1.P01` is active: `S1.P01.S01` through `S1.P01.S04` are complete,
+  `S1.P01.S05` is next but not started, and `S1.P01.S06` is not started.
+  `S1.P02` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -55,8 +55,8 @@ is provided by the corrective `S1.P00.S04.C01` acquisition-closure addendum.
 `S1.P00.S05`, `S1.P00.S06`, `S1.P00.S07`, `S1.P00.S08`, `S1.P00.S09`, and
 `S1.P00.S10` are complete. S04 and its corrective C01 remain closed, as do
 S05-S10. The protected S10 publication closes `S1.P00`; `S1.P01` is now
-active. `S1.P01.S04` through `S1.P01.S06`, `S1.P02` through `S1.P10`, and
-`S2-S9` remain unimplemented.
+active. `S1.P01.S05` and `S1.P01.S06`, `S1.P02` through `S1.P10`, and `S2-S9`
+remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -84,19 +84,18 @@ The `S1.P01` Slice sequence is provisional:
 1. `S1.P01.S01` — Provider and Repository Identity Foundation (complete)
 2. `S1.P01.S02` — Source Object Identity and Typed Identifiers (complete)
 3. `S1.P01.S03` — Identity States, Lifecycle, and Conflict (complete)
-4. `S1.P01.S04` — Legacy SourceLocator Compatibility Mapping (next; not
-   started)
-5. `S1.P01.S05` — Identity Contract Corpus (not started)
+4. `S1.P01.S04` — Legacy SourceLocator Compatibility Mapping (complete)
+5. `S1.P01.S05` — Identity Contract Corpus (next; not started)
 6. `S1.P01.S06` — Integration and Phase Closure (not started)
 
-S01-S03 implement only internal provider, repository, and source-object
+S01-S04 implement only internal provider, repository, and source-object
 identity; typed provider authorities and identifiers; time-qualified repository
 alias observations; explicit identity field states and unresolved typed
-conflicts; and lifecycle/availability observations of known source identities.
-Mutable aliases remain separate from stable identity. Retrieval provenance,
-legacy compatibility mapping, conflict resolution, lifecycle transition
-history, revisions, locators, evidence envelopes, and later P01 Slices remain
-unimplemented.
+conflicts; lifecycle/availability observations of known source identities; and
+explicit, loss-aware legacy `SourceLocator` compatibility mapping. Mutable
+aliases remain separate from stable identity. Retrieval provenance, conflict
+resolution, lifecycle transition history, revisions, locators, evidence
+envelopes, migration, and later P01 Slices remain unimplemented.
 
 ## Preserved later Stage 1 phases
 
