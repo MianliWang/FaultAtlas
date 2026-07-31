@@ -668,11 +668,17 @@ def test_identity_model_field_sets_are_exact() -> None:
 def test_identity_types_are_not_package_or_domain_root_exports() -> None:
     expected_names = {
         "AuthorityRole",
+        "NumberedSourceObjectIdentity",
         "ProviderAuthority",
+        "ProviderGlobalId",
         "ProviderKey",
+        "ProviderNodeId",
         "ProviderRepositoryId",
+        "ProviderScopedSourceObjectIdentity",
         "RepositoryAliasObservation",
         "RepositoryIdentity",
+        "RepositoryScopedNumber",
+        "SourceObjectKind",
     }
 
     assert faultatlas.__all__ == ["__version__"]

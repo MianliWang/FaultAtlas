@@ -368,6 +368,30 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/source.py",
 }
 
+EXPECTED_IDENTITY_SYMBOLS = {
+    "AuthorityRole",
+    "NumberedSourceObjectIdentity",
+    "ProviderAuthority",
+    "ProviderGlobalId",
+    "ProviderKey",
+    "ProviderNodeId",
+    "ProviderRepositoryId",
+    "ProviderScopedSourceObjectIdentity",
+    "RepositoryAliasObservation",
+    "RepositoryIdentity",
+    "RepositoryScopedNumber",
+    "SourceObjectKind",
+}
+
+EXPECTED_S02_IDENTITY_SYMBOLS = {
+    "NumberedSourceObjectIdentity",
+    "ProviderGlobalId",
+    "ProviderNodeId",
+    "ProviderScopedSourceObjectIdentity",
+    "RepositoryScopedNumber",
+    "SourceObjectKind",
+}
+
 EXPECTED_S10_CHANGED_PATHS = {
     "reference_corpus/pytest-4412/closures/s1-p00-phase-closure/closure.json",
     "reference_corpus/pytest-4412/closures/s1-p00-phase-closure/closure.sha256",
@@ -380,6 +404,74 @@ EXPECTED_S10_CHANGED_PATHS = {
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _validate_production_file_inventory(production_files: set[str]) -> None:
+    assert production_files == EXPECTED_PRODUCTION_FILES
+
+
+def _identity_symbol_inventory(
+    source: bytes,
+) -> tuple[set[str], set[str], set[str]]:
+    tree = ast.parse(source)
+    export_values: object | None = None
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in node.targets
+        ):
+            export_values = ast.literal_eval(node.value)
+            break
+    assert isinstance(export_values, list)
+    exports: set[str] = set()
+    raw_exports = cast(list[object], export_values)
+    for export_value in raw_exports:
+        assert isinstance(export_value, str)
+        exports.add(export_value)
+    assert len(exports) == len(raw_exports)
+    public_symbols: set[str] = set()
+    public_classes: set[str] = set()
+    public_symbol_count = 0
+    public_class_count = 0
+    for node in tree.body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not node.name.startswith("_"):
+                public_symbols.add(node.name)
+                public_symbol_count += 1
+            if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
+                public_classes.add(node.name)
+                public_class_count += 1
+        elif isinstance(node, ast.Assign):
+            assigned_names = {
+                target.id
+                for target in node.targets
+                if isinstance(target, ast.Name) and not target.id.startswith("_")
+            }
+            public_symbols.update(assigned_names)
+            public_symbol_count += len(assigned_names)
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and not node.target.id.startswith("_"):
+                public_symbols.add(node.target.id)
+                public_symbol_count += 1
+        elif isinstance(node, ast.TypeAlias):
+            if not node.name.id.startswith("_"):
+                public_symbols.add(node.name.id)
+                public_symbol_count += 1
+    assert len(public_symbols) == public_symbol_count
+    assert len(public_classes) == public_class_count
+    return exports, public_symbols, public_classes
+
+
+def _validate_identity_symbol_inventory(source: bytes) -> None:
+    exports, public_symbols, public_classes = _identity_symbol_inventory(source)
+    assert len(exports) == len(EXPECTED_IDENTITY_SYMBOLS) == 12
+    assert exports == EXPECTED_IDENTITY_SYMBOLS
+    assert len(public_symbols) == 12
+    assert public_symbols == EXPECTED_IDENTITY_SYMBOLS
+    assert len(public_classes) == 12
+    assert public_classes == EXPECTED_IDENTITY_SYMBOLS
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -1056,12 +1148,16 @@ def test_p01_is_eligible_but_not_started_and_scope_is_guarded() -> None:
     _validate_entry_readiness(closure)
 
 
-def test_production_surface_and_legacy_models_are_unchanged() -> None:
+def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
     production_files = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
-    assert production_files == EXPECTED_PRODUCTION_FILES
+    _validate_production_file_inventory(production_files)
+    identity_source = (
+        REPOSITORY_ROOT / "src/faultatlas/domain/identity.py"
+    ).read_bytes()
+    _validate_identity_symbol_inventory(identity_source)
     source_path = REPOSITORY_ROOT / "src/faultatlas/domain/source.py"
     source = source_path.read_bytes()
     assert len(source) == 4336
@@ -1086,6 +1182,34 @@ def test_production_surface_and_legacy_models_are_unchanged() -> None:
     assert not (REPOSITORY_ROOT / "reference_corpus/pytest-4412/phases/S1.P01").exists()
 
 
+@pytest.mark.parametrize("symbol", sorted(EXPECTED_S02_IDENTITY_SYMBOLS))
+def test_omitting_authorized_s02_identity_export_is_rejected(symbol: str) -> None:
+    source = (REPOSITORY_ROOT / "src/faultatlas/domain/identity.py").read_text(
+        encoding="utf-8"
+    )
+    mutated = source.replace(f'    "{symbol}",\n', "", 1).encode()
+
+    with pytest.raises(AssertionError):
+        _validate_identity_symbol_inventory(mutated)
+
+
+def test_unexpected_synthetic_identity_symbol_is_rejected() -> None:
+    source = (REPOSITORY_ROOT / "src/faultatlas/domain/identity.py").read_bytes()
+    mutated = source + b"\nclass SyntheticIdentity:\n    pass\n"
+
+    with pytest.raises(AssertionError):
+        _validate_identity_symbol_inventory(mutated)
+
+
+def test_unexpected_production_module_is_rejected() -> None:
+    mutated = EXPECTED_PRODUCTION_FILES | {
+        "src/faultatlas/domain/unexpected_identity.py"
+    }
+
+    with pytest.raises(AssertionError):
+        _validate_production_file_inventory(mutated)
+
+
 def test_publication_contract_requires_protected_external_completion() -> None:
     _, closure = _load_closure()
     _validate_publication_contract(closure)
@@ -1107,12 +1231,20 @@ def test_closure_files_are_private_path_and_payload_safe() -> None:
 
 def test_roadmap_and_case_documentation_match_candidate_semantics() -> None:
     roadmap = (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
+    normalized_roadmap = " ".join(roadmap.split())
     case_doc = (REPOSITORY_ROOT / "docs/reference_cases/pytest-4412.md").read_text(
         encoding="utf-8"
     )
     assert "S1.P00.S10" in roadmap
     assert "S1.P01" in roadmap
-    assert "not started" in roadmap
+    assert (
+        "`S1.P01.S02` — Source Object Identity and Typed Identifiers (complete)"
+        in normalized_roadmap
+    )
+    assert (
+        "`S1.P01.S03` — Identity States, Lifecycle, and Conflict "
+        "(next; not started)" in normalized_roadmap
+    )
     assert "s1-p00-phase-closure" in case_doc
     assert "eligible" in case_doc
     assert "not started" in case_doc
