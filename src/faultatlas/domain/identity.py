@@ -1,16 +1,18 @@
-"""Internal, case-calibrated provider, repository, and source-object identity.
+"""Internal, case-calibrated identity primitives and explicit identity states.
 
-The models in this module support semantic Pydantic JSON round trips. They do
-not define FaultAtlas's durable canonical byte format, retrieval provenance,
-revision identity, lifecycle or field states, relationships, or evidence
-envelopes.
+The models in this module support semantic Pydantic JSON round trips. Identity
+field states preserve absence and unresolved conflict without selecting a
+winner. Lifecycle observations record only the availability of an already
+known source identity; they do not define transitions or source-object business
+state. This module does not define FaultAtlas's durable canonical byte format,
+retrieval provenance, revision identity, relationships, or evidence envelopes.
 """
 
 import re
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from ipaddress import ip_address
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, cast
 
 from pydantic import (
     AwareDatetime,
@@ -18,12 +20,15 @@ from pydantic import (
     ConfigDict,
     RootModel,
     StringConstraints,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
 
 __all__ = [
     "AuthorityRole",
+    "IdentityFieldState",
+    "IdentityValueState",
     "NumberedSourceObjectIdentity",
     "ProviderAuthority",
     "ProviderGlobalId",
@@ -34,6 +39,9 @@ __all__ = [
     "RepositoryAliasObservation",
     "RepositoryIdentity",
     "RepositoryScopedNumber",
+    "SourceIdentity",
+    "SourceIdentityLifecycleObservation",
+    "SourceIdentityLifecycleState",
     "SourceObjectKind",
 ]
 
@@ -398,4 +406,189 @@ class ProviderScopedSourceObjectIdentity(BaseModel):
             raise ValueError(
                 f"{self.kind.value} cannot use {self.parent.kind.value} as its parent"
             )
+        return self
+
+
+class IdentityFieldState(StrEnum):
+    """Exact state of one identity-bearing field or typed identity value."""
+
+    PRESENT = "present"
+    OBSERVED_NULL = "observed_null"
+    MISSING = "missing"
+    UNAVAILABLE = "unavailable"
+    INACCESSIBLE = "inaccessible"
+    DELETED = "deleted"
+    UNKNOWN = "unknown"
+    UNSUPPORTED = "unsupported"
+    CONFLICT = "conflict"
+
+
+type SourceIdentity = (
+    RepositoryIdentity
+    | NumberedSourceObjectIdentity
+    | ProviderScopedSourceObjectIdentity
+)
+type _IdentityValue = (
+    ProviderGlobalId | ProviderNodeId | RepositoryScopedNumber | SourceIdentity
+)
+
+_SOURCE_IDENTITY_TYPES = (
+    RepositoryIdentity,
+    NumberedSourceObjectIdentity,
+    ProviderScopedSourceObjectIdentity,
+)
+_IDENTITY_VALUE_TYPES = (
+    ProviderGlobalId,
+    ProviderNodeId,
+    RepositoryScopedNumber,
+    RepositoryIdentity,
+    NumberedSourceObjectIdentity,
+    ProviderScopedSourceObjectIdentity,
+)
+
+
+class IdentityValueState[IdentityValueT: _IdentityValue](BaseModel):
+    """Typed value, explicit absence, or unresolved ordered conflict."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    schema_version: Literal[1] = 1
+    state: IdentityFieldState
+    value: IdentityValueT | None = None
+    conflict_candidates: tuple[IdentityValueT, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_explicit_specialization(cls, value: object) -> object:
+        if cls is IdentityValueState:
+            raise ValueError("IdentityValueState must be explicitly specialized")
+        return value
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def _require_typed_python_value(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, _IDENTITY_VALUE_TYPES)
+        ):
+            raise ValueError("Python value must use a supported identity type")
+        return value
+
+    @field_validator("conflict_candidates", mode="before")
+    @classmethod
+    def _require_typed_python_candidates(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json" and isinstance(value, list):
+            return tuple(cast(list[object], value))
+        if info.mode == "python" and isinstance(value, tuple):
+            if any(
+                not isinstance(candidate, _IDENTITY_VALUE_TYPES)
+                for candidate in cast(tuple[object, ...], value)
+            ):
+                raise ValueError(
+                    "Python conflict candidates must use supported identity types"
+                )
+        return cast(object, value)
+
+    @model_validator(mode="after")
+    def _validate_state_shape(self) -> Self:
+        if self.state is IdentityFieldState.PRESENT:
+            if self.value is None:
+                raise ValueError("present state requires exactly one typed value")
+            if self.conflict_candidates:
+                raise ValueError("present state cannot retain conflict candidates")
+            return self
+
+        if self.state is IdentityFieldState.CONFLICT:
+            if self.value is not None:
+                raise ValueError("conflict state cannot select a value")
+            if len(self.conflict_candidates) < 2:
+                raise ValueError("conflict state requires at least two candidates")
+            for index, candidate in enumerate(self.conflict_candidates):
+                if any(
+                    candidate == prior for prior in self.conflict_candidates[:index]
+                ):
+                    raise ValueError("conflict candidates must be semantically unique")
+            return self
+
+        if self.value is not None:
+            raise ValueError(f"{self.state.value} state cannot retain a value")
+        if self.conflict_candidates:
+            raise ValueError(
+                f"{self.state.value} state cannot retain conflict candidates"
+            )
+        return self
+
+
+class SourceIdentityLifecycleState(StrEnum):
+    """Availability state for a known source identity, not business state."""
+
+    OBSERVED_PRESENT = "observed_present"
+    DELETED = "deleted"
+    UNAVAILABLE = "unavailable"
+    INACCESSIBLE = "inaccessible"
+    UNKNOWN = "unknown"
+
+
+def _source_identity_provider(identity: SourceIdentity) -> ProviderKey:
+    if isinstance(identity, RepositoryIdentity):
+        return identity.provider
+    if isinstance(identity, NumberedSourceObjectIdentity):
+        return identity.repository_identity.provider
+    return identity.parent.repository_identity.provider
+
+
+class SourceIdentityLifecycleObservation(BaseModel):
+    """One availability observation about an already known source identity."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    schema_version: Literal[1] = 1
+    identity: SourceIdentity
+    state: SourceIdentityLifecycleState
+    authority: ProviderAuthority
+    observed_at: AwareDatetime
+
+    @field_validator("identity", mode="before")
+    @classmethod
+    def _require_known_python_identity(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, _SOURCE_IDENTITY_TYPES):
+            raise ValueError("identity must be a known source identity")
+        return value
+
+    @field_validator("observed_at")
+    @classmethod
+    def _normalize_observed_at(cls, value: datetime) -> datetime:
+        if value.utcoffset() != timedelta(0):
+            raise ValueError("observed_at must use a zero UTC offset")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def _validate_provider_match(self) -> Self:
+        if self.authority.provider != _source_identity_provider(self.identity):
+            raise ValueError("authority provider must match source identity provider")
         return self

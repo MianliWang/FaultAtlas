@@ -668,6 +668,8 @@ def test_identity_model_field_sets_are_exact() -> None:
 def test_identity_types_are_not_package_or_domain_root_exports() -> None:
     expected_names = {
         "AuthorityRole",
+        "IdentityFieldState",
+        "IdentityValueState",
         "NumberedSourceObjectIdentity",
         "ProviderAuthority",
         "ProviderGlobalId",
@@ -678,6 +680,9 @@ def test_identity_types_are_not_package_or_domain_root_exports() -> None:
         "RepositoryAliasObservation",
         "RepositoryIdentity",
         "RepositoryScopedNumber",
+        "SourceIdentity",
+        "SourceIdentityLifecycleObservation",
+        "SourceIdentityLifecycleState",
         "SourceObjectKind",
     }
 
