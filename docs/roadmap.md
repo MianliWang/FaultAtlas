@@ -22,7 +22,8 @@ aspirational Slice as scheduled work.
   governance, packaging, a minimal CLI, locked development tooling, tests, and
   CI. This status does not assert that every aspirational S0 item from earlier
   external planning has been implemented.
-- **S1** is active through the preparatory `S1.P00` Phase.
+- **S1** is active. Preparatory Phase `S1.P00` is operationally complete;
+  `S1.P01` is eligible to begin next but has not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -49,11 +50,11 @@ objects and payloads are not part of this documentation Slice.
 `S1.P00.S01`, `S1.P00.S02`, and `S1.P00.S03` are complete.
 `S1.P00.S04` is published and operationally complete. Its contractual closure
 is provided by the corrective `S1.P00.S04.C01` acquisition-closure addendum.
-`S1.P00.S05`, `S1.P00.S06`, `S1.P00.S07`, `S1.P00.S08`, and `S1.P00.S09`
-are complete. `S1.P00.S10` is next and has not started. S04 and its corrective
-C01 remain closed, as do S05-S09. No preserved future Stage 1 Phase or later
-Stage has begun; in particular, no `S1.P01` or `S1.P03` implementation has
-begun.
+`S1.P00.S05`, `S1.P00.S06`, `S1.P00.S07`, `S1.P00.S08`, `S1.P00.S09`, and
+`S1.P00.S10` are complete. S04 and its corrective C01 remain closed, as do
+S05-S10. The protected S10 publication closes `S1.P00`; `S1.P01` is eligible
+to begin next but remains not started. No preserved future Stage 1 Phase or
+later Stage is represented as implemented, and `S2-S9` remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -72,8 +73,7 @@ The current `S1.P00` Slice sequence is:
 7. `S1.P00.S07` — Identity, Revision, and Provenance Decision (complete)
 8. `S1.P00.S08` — Snapshot Boundary and Compatibility Decision (complete)
 9. `S1.P00.S09` — Deterministic Corpus Tests (complete)
-10. `S1.P00.S10` — Integration and Phase Closure (not started; next product
-    Slice)
+10. `S1.P00.S10` — Integration and Phase Closure (complete; closes `S1.P00`)
 
 ## Preserved Stage 1 phases
 

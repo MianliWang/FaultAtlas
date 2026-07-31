@@ -630,5 +630,35 @@ historical pytest LICENSE while preserving the FaultAtlas project LICENSE.
 
 S09 introduces no production corpus reader, canonicalizer, validator, schema,
 adapter, migration, or model change. Comprehensive production compatibility
-implementation remains deferred to its preserved future owners. S10 is the
-next S1.P00 Slice and has not started.
+implementation remains deferred to its preserved future owners.
+
+## S1.P00.S10 Integration and Phase Closure
+
+`S1.P00.S10` publishes the case-specific phase-closure layer at
+`reference_corpus/pytest-4412/closures/s1-p00-phase-closure/`. Its canonical
+JSON directly locks all 17 immutable S04-S08 files; its exact sidecar locks
+the JSON; and its Markdown is a synchronized derived view. The append-only
+chain remains acquisition, correction, case, gap analysis,
+identity/revision/provenance decision, snapshot/compatibility decision,
+deterministic tests, and phase closure. No earlier layer is rewritten.
+
+The S09 tracked tests remain active. The S10 tests independently lock the new
+closure bytes, replay the upstream locks and evidence pointers, prove ledger
+ordering and chain acyclicity, validate all exit criteria and deferred owners,
+and reject bounded corruptions. Offline wheel and sdist inspection continues
+to exclude the full reference corpus and retained historical LICENSE.
+
+P00 establishes that stable identity differs from mutable aliases, Git object
+identity differs from revision role, source identity differs from provenance,
+exact bytes differ from normalized representations, correction is append-only,
+negative evidence is first-class, and deterministic offline replay is
+practical. It does not generalize the single case to private, enterprise,
+multi-provider, non-Git, or cross-repository behavior, and it does not define
+a production Evidence Envelope, reader/writer/migration contract, persistence,
+ingestion, retrieval, graph, transfer, model-provider, or RAG implementation.
+
+The closure carries 25 normalized deferred semantic subjects with valid
+immediate and preserved Phase owners while retaining every still-live S07 and
+S08 source reference. `S1.P01` is eligible to begin with identity primitives
+only, but it remains not started. The closure is not a universal phase-closure
+schema or a production API.
