@@ -1494,7 +1494,7 @@ def test_closure_files_are_private_path_and_payload_safe() -> None:
     _validate_privacy()
 
 
-def test_roadmap_and_case_documentation_match_candidate_semantics() -> None:
+def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     roadmap = (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
     normalized_roadmap = " ".join(roadmap.split())
     case_doc = (REPOSITORY_ROOT / "docs/reference_cases/pytest-4412.md").read_text(
@@ -1514,12 +1514,9 @@ def test_roadmap_and_case_documentation_match_candidate_semantics() -> None:
         "`S1.P01.S04` — Legacy SourceLocator Compatibility Mapping (complete)"
         in normalized_roadmap
     )
+    assert "`S1.P01.S05` — Identity Contract Corpus (complete)" in normalized_roadmap
     assert (
-        "`S1.P01.S05` — Identity Contract Corpus (next; not started)"
-        in normalized_roadmap
-    )
-    assert (
-        "`S1.P01.S06` — Integration and Phase Closure (not started)"
+        "`S1.P01.S06` — Integration and Phase Closure (next; not started)"
         in normalized_roadmap
     )
     assert "s1-p00-phase-closure" in case_doc
