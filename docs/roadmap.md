@@ -23,7 +23,8 @@ aspirational Slice as scheduled work.
   CI. This status does not assert that every aspirational S0 item from earlier
   external planning has been implemented.
 - **S1** is active. Preparatory Phase `S1.P00` is operationally complete;
-  `S1.P01` is eligible to begin next but has not started.
+  `S1.P01` is active: `S1.P01.S01` is complete, and `S1.P01.S02` is next
+  but not started. `S1.P02` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -52,9 +53,9 @@ objects and payloads are not part of this documentation Slice.
 is provided by the corrective `S1.P00.S04.C01` acquisition-closure addendum.
 `S1.P00.S05`, `S1.P00.S06`, `S1.P00.S07`, `S1.P00.S08`, `S1.P00.S09`, and
 `S1.P00.S10` are complete. S04 and its corrective C01 remain closed, as do
-S05-S10. The protected S10 publication closes `S1.P00`; `S1.P01` is eligible
-to begin next but remains not started. No preserved future Stage 1 Phase or
-later Stage is represented as implemented, and `S2-S9` remain unimplemented.
+S05-S10. The protected S10 publication closes `S1.P00`; `S1.P01` is now
+active. Later `S1.P01` Slices, `S1.P02` through `S1.P10`, and `S2-S9`
+remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -75,9 +76,26 @@ The current `S1.P00` Slice sequence is:
 9. `S1.P00.S09` — Deterministic Corpus Tests (complete)
 10. `S1.P00.S10` — Integration and Phase Closure (complete; closes `S1.P00`)
 
-## Preserved Stage 1 phases
+## S1.P01 — Identity Primitives
 
-- **S1.P01 — Identity Primitives**
+The `S1.P01` Slice sequence is provisional:
+
+1. `S1.P01.S01` — Provider and Repository Identity Foundation (complete)
+2. `S1.P01.S02` — Source Object Identity and Typed Identifiers (next; not
+   started)
+3. `S1.P01.S03` — Identity States, Lifecycle, and Conflict (not started)
+4. `S1.P01.S04` — Legacy SourceLocator Compatibility Mapping (not started)
+5. `S1.P01.S05` — Identity Contract Corpus (not started)
+6. `S1.P01.S06` — Integration and Phase Closure (not started)
+
+S01 implements only internal provider identity, typed provider authorities,
+stable repository identity, and time-qualified repository alias observations.
+Mutable aliases remain separate from stable identity, and retrieval provenance,
+legacy compatibility mapping, source-object identity, field states, revisions,
+locators, evidence envelopes, and later P01 Slices remain unimplemented.
+
+## Preserved later Stage 1 phases
+
 - **S1.P02 — Revision-qualified Locators**
 - **S1.P03 — Evidence Envelope**
 - **S1.P04 — Repository Snapshot Model**

@@ -364,6 +364,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__main__.py",
     "src/faultatlas/cli.py",
     "src/faultatlas/domain/__init__.py",
+    "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/source.py",
 }
 
