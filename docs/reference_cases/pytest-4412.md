@@ -568,6 +568,46 @@ Legacy `SourceLocator` remains internal, provisional, unchanged, Issue-only,
 and ambiguous: `repository` is an alias and `object_id` is not retroactively
 interpreted as either a repository-scoped number or a global provider ID. The
 record makes only the limited S07 observation that `ArtifactSnapshot` is not a
-stable source-identity carrier. S08 still owns its preserve, evolve, or replace
-compatibility choice and remains not started. No S1.P01, S1.P02, or S1.P03
-production implementation is included.
+stable source-identity carrier. S07 left its preserve, evolve, or replace
+compatibility choice to S08; the S08 publication below now resolves that
+choice. No S1.P01, S1.P02, or S1.P03 production implementation is included.
+
+## S1.P00.S08 Snapshot Boundary and Compatibility Decision Publication
+
+`S1.P00.S08` publishes the case-calibrated decision layer at
+`reference_corpus/pytest-4412/decisions/s08-snapshot-boundary-compatibility/`.
+Canonical `decision.json` is the durable semantic authority,
+`decision.sha256` locks its exact bytes, and derived `decision.md` embeds the
+primary JSON SHA-256
+`f788116f3b9ea470c370a56e55eb6f37e05be200f285ac9f2572c641215f5f40`.
+
+The record directly locks the exact S04 acquisition and retained artifacts,
+S04.C01 correction, S05 case manifest, S06 gap matrix, and S07 decision. It
+also locks synchronized FaultAtlas baseline
+`0a997e192583aab7c6a41bc8cb9c00909e8cbcbf`, the current source and test
+blobs, and the pre-S08 governing-document blobs.
+
+Legacy `ArtifactSnapshot` schema version 1 remains unchanged, internal, and
+provisional behind a future outer compositional boundary. It remains one
+Issue-bound UTF-8 `application/json` text observation under its current size,
+timestamp, digest, limitation-state, and strict/frozen validation behavior.
+It is not reinterpreted as a complete evidence contract.
+
+Representation observation, normalized metadata, and retained exact artifacts
+remain distinct. Exact diff and LICENSE bytes are not mappable to legacy v1;
+future byte-oriented evidence must preserve arbitrary exact bytes without a
+UTF-8 or JSON requirement, and every digest must declare its scope. The
+controlled compatibility statuses are `native`, `losslessly_mappable`,
+`partially_mappable`, `not_mappable`, `unsupported_version`, and `conflict`.
+
+Compatibility mappings are explicit, versioned, source-preserving, and
+loss-aware. Future-to-legacy projection is conditional and non-default.
+Migration translates contracts, correction addresses a defect, and
+supersession records scoped precedence; none may overwrite an immutable
+published source.
+
+This decision introduces no production model, adapter, reader, writer,
+migration, persistence contract, public API, or universal schema. S09
+deterministic corpus testing is next and remains not started. S1.P03 evidence
+implementation and all other preserved future-phase implementations remain
+deferred.
