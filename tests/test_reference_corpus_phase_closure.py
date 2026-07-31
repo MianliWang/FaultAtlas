@@ -364,8 +364,35 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__main__.py",
     "src/faultatlas/cli.py",
     "src/faultatlas/domain/__init__.py",
+    "src/faultatlas/domain/compatibility.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/source.py",
+}
+
+EXPECTED_COMPATIBILITY_SYMBOLS = {
+    "CompatibilityStatus",
+    "LegacyCompatibilityReason",
+    "LegacyObjectIdInterpretation",
+    "LegacySourceLocatorMappingResult",
+    "LegacySourceLocatorProjectionResult",
+    "map_legacy_source_locator",
+    "project_source_identity_to_legacy",
+}
+
+EXPECTED_COMPATIBILITY_ENUMS = {
+    "CompatibilityStatus",
+    "LegacyCompatibilityReason",
+    "LegacyObjectIdInterpretation",
+}
+
+EXPECTED_COMPATIBILITY_MODELS = {
+    "LegacySourceLocatorMappingResult",
+    "LegacySourceLocatorProjectionResult",
+}
+
+EXPECTED_COMPATIBILITY_FUNCTIONS = {
+    "map_legacy_source_locator",
+    "project_source_identity_to_legacy",
 }
 
 EXPECTED_IDENTITY_SYMBOLS = {
@@ -504,6 +531,126 @@ def _validate_identity_symbol_inventory(source: bytes) -> None:
     assert public_symbols == EXPECTED_IDENTITY_SYMBOLS
     assert len(public_classes) == len(EXPECTED_IDENTITY_CLASSES) == 16
     assert public_classes == EXPECTED_IDENTITY_CLASSES
+
+
+def _compatibility_symbol_inventory(
+    source: bytes,
+) -> tuple[set[str], set[str], set[str], set[str], set[str]]:
+    tree = ast.parse(source)
+    export_values: object | None = None
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in node.targets
+        ):
+            export_values = ast.literal_eval(node.value)
+            break
+    assert isinstance(export_values, list)
+    raw_exports = cast(list[object], export_values)
+    assert all(isinstance(item, str) for item in raw_exports)
+    exports = {cast(str, item) for item in raw_exports}
+    assert len(exports) == len(raw_exports)
+
+    public_symbols: set[str] = set()
+    enums: set[str] = set()
+    models: set[str] = set()
+    functions: set[str] = set()
+    public_symbol_count = 0
+    enum_count = 0
+    model_count = 0
+    function_count = 0
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
+            public_symbols.add(node.name)
+            public_symbol_count += 1
+            base_names = {base.id for base in node.bases if isinstance(base, ast.Name)}
+            if "StrEnum" in base_names:
+                enums.add(node.name)
+                enum_count += 1
+            if "BaseModel" in base_names:
+                models.add(node.name)
+                model_count += 1
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not (
+            node.name.startswith("_")
+        ):
+            public_symbols.add(node.name)
+            functions.add(node.name)
+            public_symbol_count += 1
+            function_count += 1
+        elif isinstance(node, ast.Assign):
+            assigned_names = {
+                target.id
+                for target in node.targets
+                if isinstance(target, ast.Name) and not target.id.startswith("_")
+            }
+            public_symbols.update(assigned_names)
+            public_symbol_count += len(assigned_names)
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and not node.target.id.startswith("_"):
+                public_symbols.add(node.target.id)
+                public_symbol_count += 1
+        elif isinstance(node, ast.TypeAlias) and not node.name.id.startswith("_"):
+            public_symbols.add(node.name.id)
+            public_symbol_count += 1
+    assert len(public_symbols) == public_symbol_count
+    assert len(enums) == enum_count
+    assert len(models) == model_count
+    assert len(functions) == function_count
+    return exports, public_symbols, enums, models, functions
+
+
+def _validate_compatibility_symbol_inventory(source: bytes) -> None:
+    exports, public_symbols, enums, models, functions = _compatibility_symbol_inventory(
+        source
+    )
+    assert len(exports) == len(EXPECTED_COMPATIBILITY_SYMBOLS) == 7
+    assert exports == EXPECTED_COMPATIBILITY_SYMBOLS
+    assert len(public_symbols) == 7
+    assert public_symbols == EXPECTED_COMPATIBILITY_SYMBOLS
+    assert len(enums) == 3
+    assert enums == EXPECTED_COMPATIBILITY_ENUMS
+    assert len(models) == 2
+    assert models == EXPECTED_COMPATIBILITY_MODELS
+    assert len(functions) == 2
+    assert functions == EXPECTED_COMPATIBILITY_FUNCTIONS
+
+
+def _validate_source_locator_method_inventory(source: bytes) -> None:
+    tree = ast.parse(source)
+    source_locator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "SourceLocator"
+    )
+    methods = [
+        node.name
+        for node in source_locator.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    assert methods == ["_normalize_repository"]
+
+
+def _validate_package_root_exports(source: bytes) -> None:
+    tree = ast.parse(source)
+    imports = [
+        (node.module, tuple(alias.name for alias in node.names))
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+    ]
+    assert imports == [("importlib.metadata", ("version",))]
+    export_values: object | None = None
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in node.targets
+        ):
+            export_values = ast.literal_eval(node.value)
+            break
+    assert export_values == ["__version__"]
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -1190,6 +1337,10 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
         REPOSITORY_ROOT / "src/faultatlas/domain/identity.py"
     ).read_bytes()
     _validate_identity_symbol_inventory(identity_source)
+    compatibility_source = (
+        REPOSITORY_ROOT / "src/faultatlas/domain/compatibility.py"
+    ).read_bytes()
+    _validate_compatibility_symbol_inventory(compatibility_source)
     source_path = REPOSITORY_ROOT / "src/faultatlas/domain/source.py"
     source = source_path.read_bytes()
     assert len(source) == 4336
@@ -1201,16 +1352,22 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
         "SourceLocator",
         "ArtifactSnapshot",
     ]
-    package_root = ast.parse(
+    _validate_source_locator_method_inventory(source)
+    _validate_package_root_exports(
         (REPOSITORY_ROOT / "src/faultatlas/__init__.py").read_bytes()
     )
-    exports = [
-        alias.name
-        for node in package_root.body
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
-    ]
-    assert exports == ["version"]
+    domain_root = ast.parse(
+        (REPOSITORY_ROOT / "src/faultatlas/domain/__init__.py").read_bytes()
+    )
+    assert not any(
+        isinstance(node, (ast.Import, ast.ImportFrom)) for node in domain_root.body
+    )
+    complete_production_source = b"\n".join(
+        (REPOSITORY_ROOT / path).read_bytes() for path in sorted(production_files)
+    )
+    assert b"AlternateIdBinding" not in complete_production_source
+    assert b"EvidenceEnvelope" not in complete_production_source
+    assert b"MigrationRegistry" not in complete_production_source
     assert not (REPOSITORY_ROOT / "reference_corpus/pytest-4412/phases/S1.P01").exists()
 
 
@@ -1244,6 +1401,39 @@ def test_unexpected_synthetic_identity_symbol_is_rejected() -> None:
         _validate_identity_symbol_inventory(mutated)
 
 
+@pytest.mark.parametrize("symbol", sorted(EXPECTED_COMPATIBILITY_SYMBOLS))
+def test_omitting_expected_compatibility_export_is_rejected(symbol: str) -> None:
+    source = (REPOSITORY_ROOT / "src/faultatlas/domain/compatibility.py").read_text(
+        encoding="utf-8"
+    )
+    mutated = source.replace(f'    "{symbol}",\n', "", 1).encode()
+
+    with pytest.raises(AssertionError):
+        _validate_compatibility_symbol_inventory(mutated)
+
+
+def test_unexpected_compatibility_export_is_rejected() -> None:
+    source = (REPOSITORY_ROOT / "src/faultatlas/domain/compatibility.py").read_text(
+        encoding="utf-8"
+    )
+    mutated = source.replace(
+        '    "CompatibilityStatus",\n',
+        '    "CompatibilityStatus",\n    "UnexpectedCompatibility",\n',
+        1,
+    )
+    mutated += "\nclass UnexpectedCompatibility:\n    pass\n"
+
+    with pytest.raises(AssertionError):
+        _validate_compatibility_symbol_inventory(mutated.encode())
+
+
+def test_omitting_compatibility_module_from_production_inventory_is_rejected() -> None:
+    mutated = EXPECTED_PRODUCTION_FILES - {"src/faultatlas/domain/compatibility.py"}
+
+    with pytest.raises(AssertionError):
+        _validate_production_file_inventory(mutated)
+
+
 def test_unexpected_production_module_is_rejected() -> None:
     mutated = EXPECTED_PRODUCTION_FILES | {
         "src/faultatlas/domain/unexpected_identity.py"
@@ -1251,6 +1441,38 @@ def test_unexpected_production_module_is_rejected() -> None:
 
     with pytest.raises(AssertionError):
         _validate_production_file_inventory(mutated)
+
+
+@pytest.mark.parametrize(
+    "function_name",
+    ["map_legacy_source_locator", "project_source_identity_to_legacy"],
+)
+def test_compatibility_function_added_to_source_locator_is_rejected(
+    function_name: str,
+) -> None:
+    source = (REPOSITORY_ROOT / "src/faultatlas/domain/source.py").read_text(
+        encoding="utf-8"
+    )
+    addition = f"\n    def {function_name}(self) -> None:\n        pass\n"
+    mutated = source.replace(
+        "\n\nclass ArtifactSnapshot", addition + "\n\nclass ArtifactSnapshot", 1
+    )
+
+    with pytest.raises(AssertionError):
+        _validate_source_locator_method_inventory(mutated.encode())
+
+
+def test_package_root_compatibility_export_is_rejected() -> None:
+    source = (REPOSITORY_ROOT / "src/faultatlas/__init__.py").read_text(
+        encoding="utf-8"
+    )
+    mutated = source + (
+        "\nfrom faultatlas.domain.compatibility import CompatibilityStatus\n"
+        '__all__.append("CompatibilityStatus")\n'
+    )
+
+    with pytest.raises(AssertionError):
+        _validate_package_root_exports(mutated.encode())
 
 
 def test_publication_contract_requires_protected_external_completion() -> None:
@@ -1289,8 +1511,16 @@ def test_roadmap_and_case_documentation_match_candidate_semantics() -> None:
         in normalized_roadmap
     )
     assert (
-        "`S1.P01.S04` — Legacy SourceLocator Compatibility Mapping "
-        "(next; not started)" in normalized_roadmap
+        "`S1.P01.S04` — Legacy SourceLocator Compatibility Mapping (complete)"
+        in normalized_roadmap
+    )
+    assert (
+        "`S1.P01.S05` — Identity Contract Corpus (next; not started)"
+        in normalized_roadmap
+    )
+    assert (
+        "`S1.P01.S06` — Integration and Phase Closure (not started)"
+        in normalized_roadmap
     )
     assert "s1-p00-phase-closure" in case_doc
     assert "eligible" in case_doc
