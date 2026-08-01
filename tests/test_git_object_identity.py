@@ -36,6 +36,9 @@ EXPECTED_EXPORTS = [
     "RevisionRole",
     "RevisionRoleAssignment",
     "GitCommitParentTopology",
+    "GitRefNamespace",
+    "GitRefName",
+    "GitRefObservation",
 ]
 EXPECTED_FIELDS = ("schema_version", "kind", "algorithm", "full_digest")
 type _ObjectIdentityRuntime = GitCommitIdentity | GitTreeIdentity | GitBlobIdentity
@@ -542,6 +545,12 @@ def test_exports_fields_and_no_io_boundary_are_exact() -> None:
         "repository_identity",
         "role",
         "ref",
+        "namespace",
+        "name",
+        "state",
+        "authority",
+        "observed_at",
+        "observed_target",
         "path",
         "parent",
         "parents",
@@ -600,7 +609,9 @@ def test_exports_fields_and_no_io_boundary_are_exact() -> None:
                 assert node.func.attr not in forbidden_calls
     assert imported_modules == {
         "collections.abc",
+        "datetime",
         "enum",
+        "faultatlas.domain.identity",
         "pydantic",
         "re",
         "typing",

@@ -209,6 +209,9 @@ EXPECTED_REVISION_EXPORTS = {
     "GitHashAlgorithm",
     "GitObjectIdentity",
     "GitObjectKind",
+    "GitRefName",
+    "GitRefNamespace",
+    "GitRefObservation",
     "GitRevisionIdentity",
     "GitTreeIdentity",
     "RevisionRole",
@@ -218,6 +221,11 @@ EXPECTED_S02_REVISION_EXPORTS = {
     "GitCommitParentTopology",
     "RevisionRole",
     "RevisionRoleAssignment",
+}
+EXPECTED_S03_REVISION_EXPORTS = {
+    "GitRefName",
+    "GitRefNamespace",
+    "GitRefObservation",
 }
 EXPECTED_CORRECTION_PERMISSION_PATHS = {
     *(f"{CORPUS_RELATIVE}/{filename}" for filename in EXPECTED_FILES),
@@ -1978,7 +1986,9 @@ def test_p02_revision_surface_is_outside_the_immutable_p01_contract() -> None:
     }
     assert not EXPECTED_REVISION_EXPORTS & p01_targets
     assert EXPECTED_S02_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
+    assert EXPECTED_S03_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
     assert not EXPECTED_S02_REVISION_EXPORTS & p01_targets
+    assert not EXPECTED_S03_REVISION_EXPORTS & p01_targets
     assert manifest["scope"]["production_modules"] == [
         "faultatlas.domain.identity",
         "faultatlas.domain.compatibility",

@@ -1,24 +1,35 @@
-"""Internal Git object identity, revision-role, and topology primitives.
+"""Internal Git object identity, revision-role, topology, and ref primitives.
 
 These models validate explicit object identities and separately supplied role
-or ordered-parent records. They do not inspect a repository, establish
-repository membership or reachability, reconcile roles with topology, resolve
-refs, qualify paths, or define durable canonical serialization. Pydantic JSON
+or ordered-parent records, plus immutable observations of mutable refs. They do
+not inspect a repository, establish repository membership or reachability,
+reconcile roles with topology or refs, resolve symbolic refs, qualify paths,
+model ref history, or define durable canonical serialization. Pydantic JSON
 support is semantic rather than a canonical wire format.
 """
 
 import re
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal, Self, cast
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
+    RootModel,
+    StringConstraints,
     ValidationInfo,
     field_validator,
     model_validator,
+)
+
+from faultatlas.domain.identity import (
+    ProviderAuthority,
+    RepositoryIdentity,
+    SourceIdentityLifecycleState,
 )
 
 __all__ = [
@@ -32,9 +43,22 @@ __all__ = [
     "RevisionRole",
     "RevisionRoleAssignment",
     "GitCommitParentTopology",
+    "GitRefNamespace",
+    "GitRefName",
+    "GitRefObservation",
 ]
 
 _LOWERCASE_ASCII_HEX = re.compile(r"[0-9a-f]+")
+_GIT_REF_NAMESPACE_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,63}")
+
+_GitRefNamespaceValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=64),
+]
+_GitRefNameValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=255),
+]
 
 
 class GitHashAlgorithm(StrEnum):
@@ -225,4 +249,189 @@ class GitCommitParentTopology(_RevisionRecordBase):
             for parent in self.ordered_parents
         ):
             raise ValueError("parent algorithms must match the commit algorithm")
+        return self
+
+
+class GitRefNamespace(RootModel[_GitRefNamespaceValue]):
+    """One conservative namespace segment beneath ``refs/``."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _GitRefNamespaceValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_namespace(cls, value: str) -> str:
+        if not value.isascii() or _GIT_REF_NAMESPACE_PATTERN.fullmatch(value) is None:
+            raise ValueError(
+                "Git ref namespace must begin with a lowercase ASCII letter and "
+                "contain only lowercase ASCII letters, digits, hyphens, or "
+                "underscores"
+            )
+        if value == "refs":
+            raise ValueError("Git ref namespace must be a segment beneath refs")
+        return value
+
+
+class GitRefName(RootModel[_GitRefNameValue]):
+    """Conservative ASCII ref-relative path beneath one namespace."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _GitRefNameValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_ref_name(cls, value: str) -> str:
+        if not value.isascii():
+            raise ValueError("Git ref name must contain only ASCII characters")
+        if value.startswith("refs/"):
+            raise ValueError("Git ref name must not include the refs prefix")
+        if value == "@":
+            raise ValueError("Git ref name must not be exactly @")
+        if value.startswith("/") or value.endswith("/") or "//" in value:
+            raise ValueError(
+                "Git ref name must not contain leading, trailing, or repeated slash"
+            )
+        if ".." in value:
+            raise ValueError("Git ref name must not contain two consecutive dots")
+        if "@{" in value:
+            raise ValueError("Git ref name must not contain @{ sequence")
+        if value.endswith("."):
+            raise ValueError("Git ref name must not have a trailing dot")
+        if any(
+            character == " " or ord(character) < 32 or ord(character) == 127
+            for character in value
+        ):
+            raise ValueError("Git ref name must not contain space or ASCII control")
+        if any(character in value for character in "\\~^:?*["):
+            raise ValueError("Git ref name contains forbidden punctuation")
+        segments = value.split("/")
+        if any(segment.startswith(".") for segment in segments):
+            raise ValueError("Git ref name segments must not start with a dot")
+        if any(segment.endswith(".lock") for segment in segments):
+            raise ValueError("Git ref name segments must not end in .lock")
+        return value
+
+
+class GitRefObservation(_RevisionRecordBase):
+    """One immutable, repository-qualified observation of a mutable Git ref."""
+
+    repository_identity: RepositoryIdentity
+    namespace: GitRefNamespace
+    name: GitRefName
+    state: SourceIdentityLifecycleState
+    authority: ProviderAuthority
+    observed_at: AwareDatetime
+    observed_target: GitRevisionIdentity | None
+
+    @field_validator("repository_identity", mode="before")
+    @classmethod
+    def _require_typed_python_repository(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, RepositoryIdentity):
+            raise ValueError(
+                "repository_identity must be a RepositoryIdentity in Python input"
+            )
+        return value
+
+    @field_validator("namespace", mode="before")
+    @classmethod
+    def _require_typed_python_namespace(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitRefNamespace):
+            raise ValueError("namespace must be a GitRefNamespace in Python input")
+        return value
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _require_typed_python_name(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitRefName):
+            raise ValueError("name must be a GitRefName in Python input")
+        return value
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def _require_typed_python_state(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value, SourceIdentityLifecycleState
+        ):
+            raise ValueError(
+                "state must be a SourceIdentityLifecycleState in Python input"
+            )
+        return value
+
+    @field_validator("authority", mode="before")
+    @classmethod
+    def _require_typed_python_authority(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ProviderAuthority):
+            raise ValueError("authority must be a ProviderAuthority in Python input")
+        return value
+
+    @field_validator("observed_at")
+    @classmethod
+    def _normalize_observed_at(cls, value: datetime) -> datetime:
+        if value.utcoffset() != timedelta(0):
+            raise ValueError("observed_at must use a zero UTC offset")
+        return value.astimezone(UTC)
+
+    @field_validator("observed_target", mode="before")
+    @classmethod
+    def _require_typed_python_target(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, GitCommitIdentity)
+        ):
+            raise ValueError(
+                "observed_target must be a GitCommitIdentity or None in Python input"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_observation_shape(self) -> Self:
+        if self.authority.provider != self.repository_identity.provider:
+            raise ValueError(
+                "authority provider must match repository identity provider"
+            )
+        if self.state is SourceIdentityLifecycleState.OBSERVED_PRESENT:
+            if self.observed_target is None:
+                raise ValueError("observed_present state requires a commit target")
+            return self
+        if self.state is SourceIdentityLifecycleState.DELETED:
+            return self
+        if self.observed_target is not None:
+            raise ValueError(f"{self.state.value} state cannot retain a target")
         return self
