@@ -66,6 +66,8 @@ EXPECTED_EXPORTS = [
     "GitRefNamespace",
     "GitRefName",
     "GitRefObservation",
+    "GitRepositoryPath",
+    "RevisionQualifiedPath",
 ]
 
 EXPECTED_PRODUCTION_FILES = {
@@ -818,30 +820,27 @@ def test_canonical_evidence_use_is_bounded_and_synthetic_fields_are_explicit() -
 
 def test_exports_are_exact_and_internal_only() -> None:
     assert revision_module.__all__ == EXPECTED_EXPORTS
-    assert len(revision_module.__all__) == len(set(revision_module.__all__)) == 13
+    assert len(revision_module.__all__) == len(set(revision_module.__all__)) == 15
     assert faultatlas.__all__ == ["__version__"]
     assert not any(hasattr(faultatlas, name) for name in EXPECTED_EXPORTS)
     assert not any(hasattr(domain_package, name) for name in EXPECTED_EXPORTS)
     _validate_revision_public_surface(REVISION_SOURCE.read_text(encoding="utf-8"))
 
 
-@pytest.mark.parametrize("mutation", ("missing", "unexpected", "s04-path"))
-def test_revision_export_and_s04_surface_mutations_are_rejected(
+@pytest.mark.parametrize("mutation", ("missing", "unexpected"))
+def test_revision_export_surface_mutations_are_rejected(
     mutation: str,
 ) -> None:
     source = REVISION_SOURCE.read_text(encoding="utf-8")
     if mutation == "missing":
         mutated = source.replace('    "GitRefObservation",\n', "", 1)
-    elif mutation == "unexpected":
+    else:
+        assert mutation == "unexpected"
         mutated = source.replace(
             '    "GitRefObservation",\n',
             '    "GitRefObservation",\n    "UnexpectedRevision",\n',
             1,
         )
-    else:
-        assert mutation == "s04-path"
-        mutated = source + "\n\nclass RevisionQualifiedPath:\n    pass\n"
-
     with pytest.raises(AssertionError):
         _validate_revision_public_surface(mutated)
 
@@ -924,7 +923,6 @@ def test_no_symbolic_ref_tag_object_history_graph_locator_or_io_surface() -> Non
         "RepositoryMembership",
         "RepositoryReachability",
         "RepositoryHistoryGraph",
-        "RevisionQualifiedPath",
         "LineLocator",
         "ByteLocator",
         "HunkLocator",

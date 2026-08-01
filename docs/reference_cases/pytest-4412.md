@@ -692,6 +692,21 @@ time `2018-11-18T00:17:28Z` is deletion-event evidence, not FaultAtlas
 observation time. Repository- and namespace-qualified ref subjects and
 observation times used by S03 tests are therefore explicitly synthetic.
 
+S1.P02.S04 projects four canonical revision-qualified path vectors from the
+locked acquisition’s directly observed head-path inventory under stable
+repository identity `github` / `37489525`: `LICENSE`,
+`src/_pytest/assertion/rewrite.py`, `testing/test_assertrewrite.py`, and
+`changelog/4412.bugfix.rst`, each bound only to commit
+`690a63b9218f72662cd3a67c6c200b758c88ce12`. Diff-header and locator
+occurrences remain retained-artifact or deterministic-derivation evidence. The
+qualified-path value itself claims no existence, entry kind, file mode,
+blob/tree identity, content digest, ref, role, topology, coordinates, or
+history. Its bounded UTF-8 path lexeme is preserved exactly without case,
+Unicode, or separator normalization; non-UTF-8 Git path bytes remain
+unsupported, and lexical, cross-repository, cross-revision, and SHA-256
+coverage is explicitly synthetic.
+
 Current status: the case-calibrated `S1.P01` Identity Primitives Phase is
 complete. `S1.P02` is active, `S1.P02.S01` is complete, `S1.P02.S02` is
-complete, `S1.P02.S03` is complete, and `S1.P02.S04` is next and not started.
+complete, `S1.P02.S03` is complete, and `S1.P02.S04` is complete.
+`S1.P02.S05` is next and not started.

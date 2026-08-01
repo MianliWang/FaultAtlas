@@ -407,8 +407,10 @@ EXPECTED_REVISION_SYMBOLS = {
     "GitRefName",
     "GitRefNamespace",
     "GitRefObservation",
+    "GitRepositoryPath",
     "GitRevisionIdentity",
     "GitTreeIdentity",
+    "RevisionQualifiedPath",
     "RevisionRole",
     "RevisionRoleAssignment",
 }
@@ -422,7 +424,9 @@ EXPECTED_REVISION_CLASSES = {
     "GitRefName",
     "GitRefNamespace",
     "GitRefObservation",
+    "GitRepositoryPath",
     "GitTreeIdentity",
+    "RevisionQualifiedPath",
     "RevisionRole",
     "RevisionRoleAssignment",
 }
@@ -593,11 +597,11 @@ def _validate_identity_symbol_inventory(source: bytes) -> None:
 
 def _validate_revision_symbol_inventory(source: bytes) -> None:
     exports, public_symbols, public_classes = _identity_symbol_inventory(source)
-    assert len(exports) == len(EXPECTED_REVISION_SYMBOLS) == 13
+    assert len(exports) == len(EXPECTED_REVISION_SYMBOLS) == 15
     assert exports == EXPECTED_REVISION_SYMBOLS
-    assert len(public_symbols) == 13
+    assert len(public_symbols) == 15
     assert public_symbols == EXPECTED_REVISION_SYMBOLS
-    assert len(public_classes) == len(EXPECTED_REVISION_CLASSES) == 11
+    assert len(public_classes) == len(EXPECTED_REVISION_CLASSES) == 13
     assert public_classes == EXPECTED_REVISION_CLASSES
 
 
@@ -1449,7 +1453,6 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
         b"GitRefHistory",
         b"GitSymbolicRef",
         b"RepositorySnapshot",
-        b"RevisionQualifiedPath",
         b"LineLocator",
         b"ByteLocator",
         b"HunkLocator",
@@ -1569,11 +1572,17 @@ def test_unexpected_production_module_is_rejected() -> None:
         _validate_production_file_inventory(mutated)
 
 
-def test_revision_export_inventory_mutations_are_rejected() -> None:
+@pytest.mark.parametrize(
+    "missing_symbol",
+    ("GitRepositoryPath", "RevisionQualifiedPath", "GitRefObservation"),
+)
+def test_revision_export_inventory_mutations_are_rejected(
+    missing_symbol: str,
+) -> None:
     source = (REPOSITORY_ROOT / "src/faultatlas/domain/revision.py").read_text(
         encoding="utf-8"
     )
-    missing = source.replace('    "GitRefObservation",\n', "", 1)
+    missing = source.replace(f'    "{missing_symbol}",\n', "", 1)
     with pytest.raises(AssertionError):
         _validate_revision_symbol_inventory(missing.encode())
     unexpected = source.replace(
@@ -1609,6 +1618,7 @@ def test_compatibility_function_added_to_source_locator_is_rejected(
     (
         ("compatibility", "CompatibilityStatus"),
         ("revision", "GitRefObservation"),
+        ("revision", "RevisionQualifiedPath"),
     ),
 )
 def test_package_root_domain_export_is_rejected(module: str, symbol: str) -> None:
@@ -1677,7 +1687,8 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P02.S01` is complete" in normalized_roadmap
     assert "`S1.P02.S02` is complete" in normalized_roadmap
     assert "`S1.P02.S03` is complete" in normalized_roadmap
-    assert "`S1.P02.S04` is next and not started" in normalized_roadmap
+    assert "`S1.P02.S04` is complete" in normalized_roadmap
+    assert "`S1.P02.S05` is next and not started" in normalized_roadmap
     for slice_id in range(5, 8):
         assert f"`S1.P02.S{slice_id:02d}`" in normalized_roadmap
     assert "s1-p00-phase-closure" in case_doc
@@ -1720,10 +1731,20 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         in normalized_case_doc
     )
     assert (
+        "S1.P02.S04 projects four canonical revision-qualified path vectors "
+        "from the locked acquisition’s directly observed head-path inventory"
+        in normalized_case_doc
+    )
+    assert (
+        "bounded UTF-8 path lexeme is preserved exactly without case, Unicode, "
+        "or separator normalization" in normalized_case_doc
+    )
+    assert (
         "Current status: the case-calibrated `S1.P01` Identity Primitives "
         "Phase is complete. `S1.P02` is active, `S1.P02.S01` is complete, "
         "`S1.P02.S02` is complete, `S1.P02.S03` is complete, and "
-        "`S1.P02.S04` is next and not started." in normalized_case_doc
+        "`S1.P02.S04` is complete. `S1.P02.S05` is next and not started."
+        in normalized_case_doc
     )
 
 

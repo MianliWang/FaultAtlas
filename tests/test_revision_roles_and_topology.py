@@ -56,6 +56,8 @@ EXPECTED_EXPORTS = [
     "GitRefNamespace",
     "GitRefName",
     "GitRefObservation",
+    "GitRepositoryPath",
+    "RevisionQualifiedPath",
 ]
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -690,6 +692,13 @@ def test_new_models_have_exact_fields_and_configuration() -> None:
         }
         & ref_observation_fields
     )
+    assert not {"repository_identity", "path"} & set(
+        RevisionRoleAssignment.model_fields
+    )
+    assert not {"repository_identity", "revision", "path"} & set(
+        GitCommitParentTopology.model_fields
+    )
+    assert "path" not in ref_observation_fields
 
 
 def test_role_and_topology_models_have_no_cross_record_reconciliation() -> None:
@@ -788,9 +797,9 @@ def test_json_rejects_non_commit_topology_members(position: str) -> None:
 
 @pytest.mark.parametrize(
     "symbol",
-    ("RevisionQualifiedPath", "GitRefObservationHistory"),
+    ("LineLocator", "GitRefObservationHistory"),
 )
-def test_later_path_and_history_symbol_mutations_are_rejected(symbol: str) -> None:
+def test_later_locator_and_history_symbol_mutations_are_rejected(symbol: str) -> None:
     source = REVISION_SOURCE.read_text(encoding="utf-8")
     mutated = source + f"\n\nclass {symbol}:\n    pass\n"
     with pytest.raises(AssertionError):

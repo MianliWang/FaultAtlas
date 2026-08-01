@@ -239,8 +239,10 @@ EXPECTED_REVISION_EXPORTS = {
     "GitRefName",
     "GitRefNamespace",
     "GitRefObservation",
+    "GitRepositoryPath",
     "GitRevisionIdentity",
     "GitTreeIdentity",
+    "RevisionQualifiedPath",
     "RevisionRole",
     "RevisionRoleAssignment",
 }
@@ -1180,7 +1182,7 @@ def _validate_revision_inventory(source: bytes) -> None:
     assert public_symbols == EXPECTED_REVISION_EXPORTS
 
 
-def _assert_only_s01_s02_s03_p02_surface() -> None:
+def _assert_only_s01_through_s04_p02_surface() -> None:
     production_files = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
@@ -1195,7 +1197,6 @@ def _assert_only_s01_s02_s03_p02_surface() -> None:
         "GitParentIdentity",
         "GitRepositoryMembership",
         "MutableRefObservation",
-        "RevisionQualifiedPath",
         "LineLocator",
         "ByteLocator",
         "HunkLocator",
@@ -1227,6 +1228,13 @@ def _assert_only_s01_s02_s03_p02_surface() -> None:
         "observed_at",
         "observed_target",
     )
+    assert tuple(revision_module.GitRepositoryPath.model_fields) == ("root",)
+    assert tuple(revision_module.RevisionQualifiedPath.model_fields) == (
+        "schema_version",
+        "repository_identity",
+        "revision",
+        "path",
+    )
     intrinsic_forbidden_fields = {
         "authority",
         "name",
@@ -1250,19 +1258,30 @@ def _assert_only_s01_s02_s03_p02_surface() -> None:
         assert not intrinsic_forbidden_fields & set(model.model_fields)
     later_slice_fields = {
         "byte_range",
+        "byte_start",
+        "byte_end",
+        "column",
+        "coordinate_index_base",
+        "diff_hunk",
         "events",
         "former_target",
         "history",
         "hunk",
+        "line",
+        "line_end",
         "line_range",
+        "line_start",
+        "new_side",
         "next_state",
         "observation_time",
-        "path",
+        "old_side",
         "previous_state",
         "previous_target",
         "prior_state",
+        "range",
         "ref",
         "repository",
+        "span",
         "timestamp",
         "transition",
         "transitions",
@@ -1418,10 +1437,16 @@ def test_group_g_production_inventory_exports_and_legacy_boundary_are_exact() ->
 def test_group_g_no_production_reader_or_later_p02_surface_exists() -> None:
     paths = [REPOSITORY_ROOT / relative for relative in CURRENT_PRODUCTION_FILES]
     _assert_no_production_reader(paths)
-    _assert_only_s01_s02_s03_p02_surface()
+    _assert_only_s01_through_s04_p02_surface()
 
 
-def test_current_revision_inventory_mutations_are_rejected() -> None:
+@pytest.mark.parametrize(
+    "missing_symbol",
+    ("GitRepositoryPath", "RevisionQualifiedPath", "GitRefObservation"),
+)
+def test_current_revision_inventory_mutations_are_rejected(
+    missing_symbol: str,
+) -> None:
     with pytest.raises(AssertionError):
         _validate_current_production_inventory(
             CURRENT_PRODUCTION_FILES - {"src/faultatlas/domain/revision.py"}
@@ -1434,7 +1459,7 @@ def test_current_revision_inventory_mutations_are_rejected() -> None:
     source = (REPOSITORY_ROOT / "src/faultatlas/domain/revision.py").read_text(
         encoding="utf-8"
     )
-    missing_export = source.replace('    "GitRefObservation",\n', "", 1)
+    missing_export = source.replace(f'    "{missing_symbol}",\n', "", 1)
     with pytest.raises(AssertionError):
         _validate_revision_inventory(missing_export.encode())
     unexpected_export = source.replace(
@@ -1616,7 +1641,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P02.S01` is complete" in roadmap
     assert "`S1.P02.S02` is complete" in roadmap
     assert "`S1.P02.S03` is complete" in roadmap
-    assert "`S1.P02.S04` is next and not started" in roadmap
+    assert "`S1.P02.S04` is complete" in roadmap
+    assert "`S1.P02.S05` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:
