@@ -52,6 +52,22 @@ ACQUISITION = REPOSITORY_ROOT / (
     "reference_corpus/pytest-4412/acquisitions/"
     "run-0001-s04-v1-base-4c9cde74-head-690a63b9/acquisition.json"
 )
+S06_CORPUS_RELATIVE = "reference_corpus/contracts/revision-locator/v1"
+S06_CORPUS_ROOT = REPOSITORY_ROOT / S06_CORPUS_RELATIVE
+EXPECTED_S06_CORPUS_FILES = {
+    "contract.md",
+    "invalid-vectors.json",
+    "invalid-vectors.sha256",
+    "manifest.json",
+    "manifest.sha256",
+    "replay-vectors.json",
+    "replay-vectors.sha256",
+    "valid-vectors.json",
+    "valid-vectors.sha256",
+}
+EXPECTED_S06_CORPUS_PATHS = {
+    f"{S06_CORPUS_RELATIVE}/{filename}" for filename in EXPECTED_S06_CORPUS_FILES
+}
 
 CANONICAL_PROVIDER = "github"
 CANONICAL_REPOSITORY_ID = "37489525"
@@ -1497,7 +1513,7 @@ def test_exports_package_roots_and_production_inventory_are_exact() -> None:
     _validate_production_inventory(paths)
 
 
-def test_s06_contract_corpus_and_later_surfaces_remain_absent() -> None:
+def test_s06_contract_corpus_is_exact_and_later_surfaces_remain_absent() -> None:
     forbidden_paths = {
         "reference_corpus/contracts/revision",
         "reference_corpus/contracts/locators",
@@ -1509,6 +1525,17 @@ def test_s06_contract_corpus_and_later_surfaces_remain_absent() -> None:
         for relative in forbidden_paths
         if (REPOSITORY_ROOT / relative).exists()
     }
+    actual_corpus_paths = {
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in S06_CORPUS_ROOT.iterdir()
+    }
+    assert actual_corpus_paths == EXPECTED_S06_CORPUS_PATHS
+    assert all(
+        path.is_file() and not path.is_symlink() for path in S06_CORPUS_ROOT.iterdir()
+    )
+    assert not (
+        REPOSITORY_ROOT / "reference_corpus/contracts/revision-locator/closures"
+    ).exists()
     _validate_no_deferred_surface(REVISION_SOURCE.read_text(encoding="utf-8"))
 
 
@@ -1548,15 +1575,18 @@ def test_package_root_export_mutation_is_rejected() -> None:
 
 
 def test_s06_corpus_path_mutation_is_rejected() -> None:
-    allowed_paths: set[str] = set()
-
     def validate(paths: set[str]) -> None:
+        assert paths == EXPECTED_S06_CORPUS_PATHS
         assert not paths & {
             "reference_corpus/contracts/revision/v1/manifest.json",
             "reference_corpus/contracts/locators/v1/manifest.json",
         }
 
-    validate(allowed_paths)
+    validate(EXPECTED_S06_CORPUS_PATHS)
+    with pytest.raises(AssertionError):
+        validate(EXPECTED_S06_CORPUS_PATHS - {f"{S06_CORPUS_RELATIVE}/contract.md"})
+    with pytest.raises(AssertionError):
+        validate(EXPECTED_S06_CORPUS_PATHS | {f"{S06_CORPUS_RELATIVE}/extra.json"})
     with pytest.raises(AssertionError):
         validate({"reference_corpus/contracts/locators/v1/manifest.json"})
 

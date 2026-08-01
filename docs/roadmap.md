@@ -26,8 +26,8 @@ aspirational Slice as scheduled work.
   `S1.P01` is complete: `S1.P01.S01` through `S1.P01.S06` and the
   `S1.P01.S05.C01` correction are complete. `S1.P02` is active:
   `S1.P02.S01` is complete, `S1.P02.S02` is complete, `S1.P02.S03` is
-  complete, `S1.P02.S04` is complete, and `S1.P02.S05` is complete.
-  `S1.P02.S06` is next and not started, and `S1.P02.S07` is not started.
+  complete, `S1.P02.S04` is complete, `S1.P02.S05` is complete, and
+  `S1.P02.S06` is complete. `S1.P02.S07` is next and not started.
   `S1.P03` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -61,8 +61,8 @@ S05-S10. The protected S10 publication closes `S1.P00`; `S1.P01` is complete,
 including `S1.P01.S01` through `S1.P01.S06` and the `S1.P01.S05.C01`
 correction. `S1.P02` is active: `S1.P02.S01` is complete,
 `S1.P02.S02` is complete, `S1.P02.S03` is complete, `S1.P02.S04` is complete,
-and `S1.P02.S05` is complete. `S1.P02.S06` is next and not started, and
-`S1.P02.S07` is not started.
+`S1.P02.S05` is complete, and `S1.P02.S06` is complete. `S1.P02.S07` is next
+and not started.
 `S1.P03` through `S1.P10` and `S2-S9` remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
@@ -113,9 +113,11 @@ and exact ordered commit-parent topology as separate internal records.
 S1.P02.S03 adds repository-, authority-, and time-qualified mutable ref
 observations while preserving immutable commit identity. S1.P02.S04 adds
 revision-qualified repository paths, and S1.P02.S05 adds separate bounded
-line, byte, and diff-hunk locators. Retrieval provenance, conflict resolution,
-lifecycle transition history, the revision and locator contract corpus,
-evidence envelopes, and migration remain unimplemented.
+line, byte, and diff-hunk locators. S1.P02.S06 publishes the internal,
+source-only revision and locator contract corpus without adding a production
+reader, resolver, or persistence contract. Retrieval provenance, conflict
+resolution, lifecycle transition history, evidence envelopes, and migration
+remain unimplemented.
 
 ## S1.P02 — Revision-qualified Locators
 
@@ -126,8 +128,8 @@ The provisional `S1.P02` Slice sequence is:
 3. `S1.P02.S03` — Mutable Ref Observations and Lifecycle (complete)
 4. `S1.P02.S04` — Revision-qualified Repository Paths (complete)
 5. `S1.P02.S05` — Line, Byte, and Diff-Hunk Locators (complete)
-6. `S1.P02.S06` — Revision and Locator Contract Corpus (next; not started)
-7. `S1.P02.S07` — Integration and Phase Closure (not started)
+6. `S1.P02.S06` — Revision and Locator Contract Corpus (complete)
+7. `S1.P02.S07` — Integration and Phase Closure (next; not started)
 
 S1.P02 is active. S01 implements internal, hash-algorithm-qualified Git commit,
 tree, and blob identity. S02 implements separate context-relative revision-role
@@ -137,8 +139,11 @@ exact, case-sensitive, non-normalizing revision-qualified repository paths in
 a bounded UTF-8 textual subset; non-UTF-8 Git path bytes remain unsupported. S05
 implements distinct one-based inclusive line spans, zero-based half-open byte
 spans, revision-line and exact-artifact-byte locators, old/new-side diff-hunk
-locators, and an explicitly discriminated bounded-locator union. S06-S07 remain
-provisional and are not implemented by S01-S05.
+locators, and an explicitly discriminated bounded-locator union. The
+seven-Slice sequence remains fixed: S06 is complete and publishes only the versioned,
+internal, source-only revision/locator contract corpus; S07 remains the next
+Phase-closure Slice and is not started. No production corpus reader, locator
+resolver, or persistence contract exists.
 
 ## Preserved later Stage 1 phases
 

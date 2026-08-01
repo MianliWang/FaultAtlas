@@ -721,8 +721,17 @@ relabelled as raw provider facts. Locator records do not prove existence,
 applicability, role, relationship, or history, and the artifact parent lock is
 not an Evidence Envelope or production reader.
 
+S1.P02.S06 publishes a versioned, internal, source-only revision and locator
+contract corpus with valid, invalid, and exact-replay vectors kept separate.
+The replay vectors reproduce the retained artifact bytes, selected-byte
+digests, exact unified-diff headers, and deterministic old/new hunk spans
+offline. Reviewed applicable-line ranges remain separately classified as
+reviewed derived interpretation and are not stored as production applicability
+semantics. The corpus adds no production reader, locator resolver, persistence
+contract, or public API; S1.P02.S07 Phase closure is not included.
+
 Current status: the case-calibrated `S1.P01` Identity Primitives Phase is
 complete. `S1.P02` is active, `S1.P02.S01` is complete, `S1.P02.S02` is
 complete, `S1.P02.S03` is complete, and `S1.P02.S04` is complete.
-`S1.P02.S05` is complete. `S1.P02.S06` is next and not started, and
-`S1.P02.S07` is not started.
+`S1.P02.S05` is complete and `S1.P02.S06` is complete. `S1.P02.S07` is next
+and not started.
