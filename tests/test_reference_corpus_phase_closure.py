@@ -400,19 +400,25 @@ EXPECTED_PRODUCTION_FILES = {
 EXPECTED_REVISION_SYMBOLS = {
     "GitBlobIdentity",
     "GitCommitIdentity",
+    "GitCommitParentTopology",
     "GitHashAlgorithm",
     "GitObjectIdentity",
     "GitObjectKind",
     "GitRevisionIdentity",
     "GitTreeIdentity",
+    "RevisionRole",
+    "RevisionRoleAssignment",
 }
 
 EXPECTED_REVISION_CLASSES = {
     "GitBlobIdentity",
     "GitCommitIdentity",
+    "GitCommitParentTopology",
     "GitHashAlgorithm",
     "GitObjectKind",
     "GitTreeIdentity",
+    "RevisionRole",
+    "RevisionRoleAssignment",
 }
 
 EXPECTED_COMPATIBILITY_SYMBOLS = {
@@ -1554,12 +1560,12 @@ def test_revision_export_inventory_mutations_are_rejected() -> None:
     source = (REPOSITORY_ROOT / "src/faultatlas/domain/revision.py").read_text(
         encoding="utf-8"
     )
-    missing = source.replace('    "GitObjectIdentity",\n', "", 1)
+    missing = source.replace('    "RevisionRoleAssignment",\n', "", 1)
     with pytest.raises(AssertionError):
         _validate_revision_symbol_inventory(missing.encode())
     unexpected = source.replace(
-        '    "GitObjectIdentity",\n',
-        '    "GitObjectIdentity",\n    "UnexpectedRevision",\n',
+        '    "RevisionRoleAssignment",\n',
+        '    "RevisionRoleAssignment",\n    "UnexpectedRevision",\n',
         1,
     )
     with pytest.raises(AssertionError):
@@ -1585,13 +1591,20 @@ def test_compatibility_function_added_to_source_locator_is_rejected(
         _validate_source_locator_method_inventory(mutated.encode())
 
 
-def test_package_root_compatibility_export_is_rejected() -> None:
+@pytest.mark.parametrize(
+    ("module", "symbol"),
+    (
+        ("compatibility", "CompatibilityStatus"),
+        ("revision", "RevisionRole"),
+    ),
+)
+def test_package_root_domain_export_is_rejected(module: str, symbol: str) -> None:
     source = (REPOSITORY_ROOT / "src/faultatlas/__init__.py").read_text(
         encoding="utf-8"
     )
     mutated = source + (
-        "\nfrom faultatlas.domain.compatibility import CompatibilityStatus\n"
-        '__all__.append("CompatibilityStatus")\n'
+        f"\nfrom faultatlas.domain.{module} import {symbol}\n"
+        f'__all__.append("{symbol}")\n'
     )
 
     with pytest.raises(AssertionError):
@@ -1649,8 +1662,9 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P01` is complete" in normalized_roadmap
     assert "`S1.P02` is active" in normalized_roadmap
     assert "`S1.P02.S01` is complete" in normalized_roadmap
-    assert "`S1.P02.S02` is next and not started" in normalized_roadmap
-    for slice_id in range(3, 8):
+    assert "`S1.P02.S02` is complete" in normalized_roadmap
+    assert "`S1.P02.S03` is next and not started" in normalized_roadmap
+    for slice_id in range(4, 8):
         assert f"`S1.P02.S{slice_id:02d}`" in normalized_roadmap
     assert "s1-p00-phase-closure" in case_doc
     normalized_case_doc = " ".join(case_doc.split())
@@ -1663,9 +1677,14 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         in normalized_case_doc
     )
     assert (
+        "S1.P02.S02 adds the four context-relative revision roles and an "
+        "ordered commit-parent topology record" in normalized_case_doc
+    )
+    assert (
         "Current status: the case-calibrated `S1.P01` Identity Primitives "
         "Phase is complete. `S1.P02` is active, `S1.P02.S01` is complete, "
-        "and `S1.P02.S02` is next and not started." in normalized_case_doc
+        "`S1.P02.S02` is complete, and `S1.P02.S03` is next and not started."
+        in normalized_case_doc
     )
 
 
