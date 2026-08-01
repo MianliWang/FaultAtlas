@@ -1398,7 +1398,7 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
     assert not (REPOSITORY_ROOT / "reference_corpus/pytest-4412/phases/S1.P01").exists()
 
 
-def test_identity_correction_is_append_only_while_s06_remains_absent() -> None:
+def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
     assert {path.name for path in IDENTITY_V1_DIRECTORY.iterdir()} == (
         EXPECTED_IDENTITY_V1_FILES
     )
@@ -1411,11 +1411,23 @@ def test_identity_correction_is_append_only_while_s06_remains_absent() -> None:
     )
     identity_root = IDENTITY_V1_DIRECTORY.parent
     assert {path.name for path in identity_root.iterdir()} == {
+        "closures",
         "corrections",
         "v1",
     }
-    assert not IDENTITY_S06_CLOSURE_DIRECTORY.exists()
-    assert not (REPOSITORY_ROOT / "tests/test_identity_phase_closure.py").exists()
+    closures_root = identity_root / "closures"
+    assert {path.name for path in closures_root.iterdir()} == {"s1-p01-phase-closure"}
+    assert {path.name for path in IDENTITY_S06_CLOSURE_DIRECTORY.iterdir()} == {
+        "closure.json",
+        "closure.md",
+        "closure.sha256",
+    }
+    assert all(
+        path.is_file() and not path.is_symlink()
+        for path in IDENTITY_S06_CLOSURE_DIRECTORY.iterdir()
+    )
+    closure_test = REPOSITORY_ROOT / "tests/test_identity_phase_closure.py"
+    assert closure_test.is_file() and not closure_test.is_symlink()
 
 
 @pytest.mark.parametrize("symbol", sorted(EXPECTED_S02_IDENTITY_SYMBOLS))
@@ -1567,16 +1579,21 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         "Assurance Correction (complete)" in normalized_roadmap
     )
     assert (
-        "`S1.P01.S06` — Integration and Phase Closure (next; not started)"
-        in normalized_roadmap
+        "`S1.P01.S06` — Integration and Phase Closure (complete; closes "
+        "`S1.P01`)" in normalized_roadmap
     )
-    assert (
-        "`S1.P02` is not started and is not yet eligible until `S1.P01.S06` "
-        "closes" in normalized_roadmap
-    )
+    assert "`S1.P01` is complete" in normalized_roadmap
+    assert "`S1.P02` is next, eligible to begin, and not started" in normalized_roadmap
     assert "s1-p00-phase-closure" in case_doc
     assert "eligible" in case_doc
     assert "not started" in case_doc
+    normalized_case_doc = " ".join(case_doc.split())
+    assert (
+        "Current status: the case-calibrated `S1.P01` Identity Primitives "
+        "Phase is complete, `S1.P02` is eligible to begin but remains not "
+        "started, and this closure did not modify the pytest #4412 corpus."
+        in normalized_case_doc
+    )
 
 
 def test_offline_build_excludes_closure_from_wheel_and_sdist(tmp_path: Path) -> None:

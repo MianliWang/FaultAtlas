@@ -662,3 +662,7 @@ immediate and preserved Phase owners while retaining every still-live S07 and
 S08 source reference. `S1.P01` is eligible to begin with identity primitives
 only, but it remains not started. The closure is not a universal phase-closure
 schema or a production API.
+
+Current status: the case-calibrated `S1.P01` Identity Primitives Phase is
+complete, `S1.P02` is eligible to begin but remains not started, and this
+closure did not modify the pytest #4412 corpus.

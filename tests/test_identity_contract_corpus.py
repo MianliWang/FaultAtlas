@@ -86,6 +86,7 @@ EXPECTED_EFFECTIVE_VECTOR_COUNT = 199
 S06_CLOSURE_RELATIVE = (
     "reference_corpus/contracts/identity/closures/s1-p01-phase-closure"
 )
+EXPECTED_S06_CLOSURE_FILES = {"closure.json", "closure.md", "closure.sha256"}
 
 
 @dataclass(frozen=True)
@@ -1085,6 +1086,7 @@ def _validate_corpus_inventory(corpus_root: Path) -> None:
         assert all(part not in {"", ".", ".."} for part in relative.parts)
     identity_contract_root = corpus_root.parent
     assert {path.name for path in identity_contract_root.iterdir()} == {
+        "closures",
         "corrections",
         "v1",
     }
@@ -1092,6 +1094,11 @@ def _validate_corpus_inventory(corpus_root: Path) -> None:
     assert {path.name for path in corrections.iterdir()} == {
         "s05-c01-ambiguous-union-round-trip"
     }
+    closure_root = identity_contract_root / "closures"
+    assert {path.name for path in closure_root.iterdir()} == {"s1-p01-phase-closure"}
+    closure = closure_root / "s1-p01-phase-closure"
+    assert {path.name for path in closure.iterdir()} == EXPECTED_S06_CLOSURE_FILES
+    assert all(path.is_file() and not path.is_symlink() for path in closure.iterdir())
     assert not any(
         path.name.casefold() in {"latest", "current"}
         for path in identity_contract_root.rglob("*")
@@ -1249,11 +1256,16 @@ def _validate_no_production_reader() -> None:
     assert not (REPOSITORY_ROOT / "reference_corpus/contracts/identity/v2").exists()
 
 
-def _assert_no_s06_closure(paths: set[str]) -> None:
-    assert not any(
-        path == S06_CLOSURE_RELATIVE or path.startswith(f"{S06_CLOSURE_RELATIVE}/")
+def _assert_exact_s06_closure(paths: set[str]) -> None:
+    actual = {
+        path
         for path in paths
-    )
+        if path == S06_CLOSURE_RELATIVE or path.startswith(f"{S06_CLOSURE_RELATIVE}/")
+    }
+    assert actual == {
+        S06_CLOSURE_RELATIVE,
+        *(f"{S06_CLOSURE_RELATIVE}/{name}" for name in EXPECTED_S06_CLOSURE_FILES),
+    }
 
 
 def _validate_registry_source() -> None:
@@ -1912,18 +1924,24 @@ def test_privacy_retention_and_no_raw_provider_payload() -> None:
     assert b"381866787" in combined
 
 
-def test_no_production_reader_new_module_package_export_or_s06_artifact() -> None:
+def test_no_production_reader_and_exact_external_s06_closure() -> None:
     _validate_no_production_reader()
     paths = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in REPOSITORY_ROOT.rglob("*")
     }
-    _assert_no_s06_closure(paths)
+    _assert_exact_s06_closure(paths)
 
 
-def test_s06_closure_artifact_appearing_early_is_rejected() -> None:
+def test_missing_or_extra_s06_closure_artifact_is_rejected() -> None:
+    exact = {
+        S06_CLOSURE_RELATIVE,
+        *(f"{S06_CLOSURE_RELATIVE}/{name}" for name in EXPECTED_S06_CLOSURE_FILES),
+    }
     with pytest.raises(AssertionError):
-        _assert_no_s06_closure({f"{S06_CLOSURE_RELATIVE}/closure.json"})
+        _assert_exact_s06_closure(exact - {f"{S06_CLOSURE_RELATIVE}/closure.md"})
+    with pytest.raises(AssertionError):
+        _assert_exact_s06_closure(exact | {f"{S06_CLOSURE_RELATIVE}/extra.json"})
 
 
 def test_current_correction_whole_source_inventory_is_exact() -> None:
@@ -2214,6 +2232,10 @@ def test_required_mutation_is_detected(mutation: str, tmp_path: Path) -> None:
         shutil.copytree(
             CORRECTION_ROOT,
             synthetic_root.parent / "corrections/s05-c01-ambiguous-union-round-trip",
+        )
+        shutil.copytree(
+            REPOSITORY_ROOT / S06_CLOSURE_RELATIVE,
+            synthetic_root.parent / "closures/s1-p01-phase-closure",
         )
         if mutation == "extra-corpus-file":
             (synthetic_root / "extra.json").write_bytes(b"{}\n")
