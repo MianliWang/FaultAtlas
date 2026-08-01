@@ -33,6 +33,9 @@ EXPECTED_EXPORTS = [
     "GitBlobIdentity",
     "GitObjectIdentity",
     "GitRevisionIdentity",
+    "RevisionRole",
+    "RevisionRoleAssignment",
+    "GitCommitParentTopology",
 ]
 EXPECTED_FIELDS = ("schema_version", "kind", "algorithm", "full_digest")
 type _ObjectIdentityRuntime = GitCommitIdentity | GitTreeIdentity | GitBlobIdentity

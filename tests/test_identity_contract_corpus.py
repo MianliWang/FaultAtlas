@@ -205,11 +205,19 @@ EXPECTED_PRODUCTION_FILES = {
 EXPECTED_REVISION_EXPORTS = {
     "GitBlobIdentity",
     "GitCommitIdentity",
+    "GitCommitParentTopology",
     "GitHashAlgorithm",
     "GitObjectIdentity",
     "GitObjectKind",
     "GitRevisionIdentity",
     "GitTreeIdentity",
+    "RevisionRole",
+    "RevisionRoleAssignment",
+}
+EXPECTED_S02_REVISION_EXPORTS = {
+    "GitCommitParentTopology",
+    "RevisionRole",
+    "RevisionRoleAssignment",
 }
 EXPECTED_CORRECTION_PERMISSION_PATHS = {
     *(f"{CORPUS_RELATIVE}/{filename}" for filename in EXPECTED_FILES),
@@ -1960,7 +1968,7 @@ def test_current_correction_whole_source_inventory_is_exact() -> None:
     assert len(working) == 8
 
 
-def test_revision_surface_is_outside_the_immutable_p01_contract() -> None:
+def test_p02_revision_surface_is_outside_the_immutable_p01_contract() -> None:
     manifest = _load_document("manifest.json")
     target_symbols = manifest["target_symbols"]
     p01_targets = {
@@ -1969,6 +1977,8 @@ def test_revision_surface_is_outside_the_immutable_p01_contract() -> None:
         for symbol in target_symbols[key]
     }
     assert not EXPECTED_REVISION_EXPORTS & p01_targets
+    assert EXPECTED_S02_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
+    assert not EXPECTED_S02_REVISION_EXPORTS & p01_targets
     assert manifest["scope"]["production_modules"] == [
         "faultatlas.domain.identity",
         "faultatlas.domain.compatibility",

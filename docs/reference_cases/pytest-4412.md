@@ -669,6 +669,19 @@ vectors. The retained-artifact SHA-256 remains a separate artifact digest; it
 is not reinterpreted as Git object identity, and the pytest #4412 corpus is
 unchanged.
 
+S1.P02.S02 adds the four context-relative revision roles and an ordered
+commit-parent topology record. The canonical roles bind base
+`4c9cde74ab40027b5761ab9e002af116a4a20df3`, head
+`690a63b9218f72662cd3a67c6c200b758c88ce12`, merge first parent
+`5fab0ca3127bc895b611cc03bb3af1ebf9a0dbed`, and merge
+`10cdae8e38ec448b7133cf163dca587ad806d262` to separate commit identities.
+The merge topology preserves parents in exact order: first
+`5fab0ca3127bc895b611cc03bb3af1ebf9a0dbed`, then
+`690a63b9218f72662cd3a67c6c200b758c88ce12`. The recorded base remains
+distinct from parent zero. These internal semantic records add no repository,
+ref, path, provenance, or graph claim, and the pytest #4412 corpus remains
+unchanged.
+
 Current status: the case-calibrated `S1.P01` Identity Primitives Phase is
-complete. `S1.P02` is active, `S1.P02.S01` is complete, and `S1.P02.S02` is
-next and not started.
+complete. `S1.P02` is active, `S1.P02.S01` is complete, `S1.P02.S02` is
+complete, and `S1.P02.S03` is next and not started.
