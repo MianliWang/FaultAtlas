@@ -229,7 +229,18 @@ EXPECTED_COMPATIBILITY_EXPORTS = {
     "map_legacy_source_locator",
     "project_source_identity_to_legacy",
 }
+EXPECTED_S05_REVISION_EXPORTS = {
+    "ArtifactByteLocator",
+    "BoundedLocator",
+    "DiffHunkLocator",
+    "LineEnding",
+    "OneBasedInclusiveLineSpan",
+    "RevisionLineLocator",
+    "TextEncoding",
+    "ZeroBasedHalfOpenByteSpan",
+}
 EXPECTED_REVISION_EXPORTS = {
+    *EXPECTED_S05_REVISION_EXPORTS,
     "GitBlobIdentity",
     "GitCommitIdentity",
     "GitCommitParentTopology",
@@ -1177,12 +1188,12 @@ def _validate_revision_inventory(source: bytes) -> None:
     raw_exports = cast(list[object], export_values)
     assert all(isinstance(item, str) for item in raw_exports)
     exports = {cast(str, item) for item in raw_exports}
-    assert len(raw_exports) == len(exports)
+    assert len(raw_exports) == len(exports) == 23
     assert exports == EXPECTED_REVISION_EXPORTS
     assert public_symbols == EXPECTED_REVISION_EXPORTS
 
 
-def _assert_only_s01_through_s04_p02_surface() -> None:
+def _assert_only_s01_through_s05_p02_surface() -> None:
     production_files = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
@@ -1200,6 +1211,10 @@ def _assert_only_s01_through_s04_p02_surface() -> None:
         "LineLocator",
         "ByteLocator",
         "HunkLocator",
+        "LocatorContractCorpus",
+        "LocatorReader",
+        "LocatorResolver",
+        "EvidenceEnvelope",
     }
     tree = ast.parse(revision_source)
     definitions = {
@@ -1207,7 +1222,19 @@ def _assert_only_s01_through_s04_p02_surface() -> None:
         for node in ast.walk(tree)
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
     }
+    definitions.update(
+        node.name.id for node in ast.walk(tree) if isinstance(node, ast.TypeAlias)
+    )
     assert not definitions & forbidden_symbols
+    for name in definitions:
+        compact_name = name.replace("_", "").lower()
+        assert not (
+            "locator" in compact_name
+            and any(
+                forbidden_role in compact_name
+                for forbidden_role in ("corpus", "reader", "resolver")
+            )
+        )
     assert tuple(revision_module.RevisionRoleAssignment.model_fields) == (
         "schema_version",
         "role",
@@ -1235,6 +1262,46 @@ def _assert_only_s01_through_s04_p02_surface() -> None:
         "revision",
         "path",
     )
+    assert tuple(member.value for member in revision_module.TextEncoding) == ("utf-8",)
+    assert tuple(member.value for member in revision_module.LineEnding) == (
+        "lf",
+        "crlf",
+    )
+    assert tuple(revision_module.OneBasedInclusiveLineSpan.model_fields) == (
+        "start_line",
+        "end_line",
+    )
+    assert tuple(revision_module.ZeroBasedHalfOpenByteSpan.model_fields) == (
+        "offset",
+        "length",
+    )
+    assert tuple(revision_module.RevisionLineLocator.model_fields) == (
+        "schema_version",
+        "locator_kind",
+        "parent",
+        "span",
+        "text_encoding",
+        "line_ending",
+    )
+    assert tuple(revision_module.ArtifactByteLocator.model_fields) == (
+        "schema_version",
+        "locator_kind",
+        "parent_artifact_sha256",
+        "parent_byte_length",
+        "span",
+    )
+    assert tuple(revision_module.DiffHunkLocator.model_fields) == (
+        "schema_version",
+        "locator_kind",
+        "artifact_bytes",
+        "artifact_lines",
+        "text_encoding",
+        "line_ending",
+        "old_file",
+        "old_lines",
+        "new_file",
+        "new_lines",
+    )
     intrinsic_forbidden_fields = {
         "authority",
         "name",
@@ -1256,32 +1323,28 @@ def _assert_only_s01_through_s04_p02_surface() -> None:
         revision_module.GitBlobIdentity,
     ):
         assert not intrinsic_forbidden_fields & set(model.model_fields)
-    later_slice_fields = {
-        "byte_range",
-        "byte_start",
-        "byte_end",
+    deferred_fields = {
+        "applicability",
+        "applicable",
         "column",
+        "confidence",
         "coordinate_index_base",
-        "diff_hunk",
         "events",
         "former_target",
         "history",
-        "hunk",
-        "line",
-        "line_end",
-        "line_range",
-        "line_start",
-        "new_side",
         "next_state",
         "observation_time",
-        "old_side",
         "previous_state",
         "previous_target",
         "prior_state",
         "range",
         "ref",
+        "relationship",
         "repository",
-        "span",
+        "review",
+        "review_state",
+        "selected_byte_digest",
+        "selected_slice_digest",
         "timestamp",
         "transition",
         "transitions",
@@ -1291,7 +1354,18 @@ def _assert_only_s01_through_s04_p02_surface() -> None:
         for node in ast.walk(tree)
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
     }
-    assert not fields & later_slice_fields
+    assert not fields & deferred_fields
+
+
+def _assert_no_s06_locator_contract_corpus() -> None:
+    contracts_root = REPOSITORY_ROOT / "reference_corpus/contracts"
+    assert {path.name for path in contracts_root.iterdir()} == {"identity"}
+    identity_root = contracts_root / "identity"
+    assert {path.name for path in identity_root.iterdir()} == {
+        "closures",
+        "corrections",
+        "v1",
+    }
 
 
 def _provider() -> ProviderKey:
@@ -1434,15 +1508,21 @@ def test_group_g_production_inventory_exports_and_legacy_boundary_are_exact() ->
     assert set(revision_module.__all__) == EXPECTED_REVISION_EXPORTS
 
 
-def test_group_g_no_production_reader_or_later_p02_surface_exists() -> None:
+def test_group_g_no_reader_resolver_or_s06_surface_exists() -> None:
     paths = [REPOSITORY_ROOT / relative for relative in CURRENT_PRODUCTION_FILES]
     _assert_no_production_reader(paths)
-    _assert_only_s01_through_s04_p02_surface()
+    _assert_only_s01_through_s05_p02_surface()
+    _assert_no_s06_locator_contract_corpus()
 
 
 @pytest.mark.parametrize(
     "missing_symbol",
-    ("GitRepositoryPath", "RevisionQualifiedPath", "GitRefObservation"),
+    tuple(
+        sorted(
+            EXPECTED_S05_REVISION_EXPORTS
+            | {"GitRepositoryPath", "RevisionQualifiedPath", "GitRefObservation"}
+        )
+    ),
 )
 def test_current_revision_inventory_mutations_are_rejected(
     missing_symbol: str,
@@ -1642,7 +1722,9 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P02.S02` is complete" in roadmap
     assert "`S1.P02.S03` is complete" in roadmap
     assert "`S1.P02.S04` is complete" in roadmap
-    assert "`S1.P02.S05` is next and not started" in roadmap
+    assert "`S1.P02.S05` is complete" in roadmap
+    assert "`S1.P02.S06` is next and not started" in roadmap
+    assert "`S1.P02.S07` is not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:

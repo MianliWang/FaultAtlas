@@ -706,7 +706,23 @@ Unicode, or separator normalization; non-UTF-8 Git path bytes remain
 unsupported, and lexical, cross-repository, cross-revision, and SHA-256
 coverage is explicitly synthetic.
 
+S1.P02.S05 classifies the three retained-diff coordinate layers without
+collapsing them. Offsets and lengths are direct exact-byte facts; old/new hunk
+spans are deterministic derivations from exact unified-diff headers; and the
+applicable new-file line ranges remain reviewed derived interpretation. The
+three exact byte selections are `(165, 77)`, `(439, 394)`, and `(1018, 622)`
+within the immutable 1640-byte diff locked by SHA-256
+`dca87a4df1edb2d1acb3fc821724483ee874c2feba6525b2c21e79cb3e8f7312`.
+Their artifact line spans are respectively `6–7`, `12–21`, and `26–45`, using
+one-based inclusive lines; byte selections use zero-based half-open spans.
+UTF-8 and LF describe the retained diff representation. The reviewed
+revision-line vectors remain `1–1`, `946–950`, and `416–427`; they are not
+relabelled as raw provider facts. Locator records do not prove existence,
+applicability, role, relationship, or history, and the artifact parent lock is
+not an Evidence Envelope or production reader.
+
 Current status: the case-calibrated `S1.P01` Identity Primitives Phase is
 complete. `S1.P02` is active, `S1.P02.S01` is complete, `S1.P02.S02` is
 complete, `S1.P02.S03` is complete, and `S1.P02.S04` is complete.
-`S1.P02.S05` is next and not started.
+`S1.P02.S05` is complete. `S1.P02.S06` is next and not started, and
+`S1.P02.S07` is not started.

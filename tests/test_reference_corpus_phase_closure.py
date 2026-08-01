@@ -398,6 +398,9 @@ EXPECTED_PRODUCTION_FILES = {
 }
 
 EXPECTED_REVISION_SYMBOLS = {
+    "ArtifactByteLocator",
+    "BoundedLocator",
+    "DiffHunkLocator",
     "GitBlobIdentity",
     "GitCommitIdentity",
     "GitCommitParentTopology",
@@ -410,12 +413,19 @@ EXPECTED_REVISION_SYMBOLS = {
     "GitRepositoryPath",
     "GitRevisionIdentity",
     "GitTreeIdentity",
+    "LineEnding",
+    "OneBasedInclusiveLineSpan",
     "RevisionQualifiedPath",
+    "RevisionLineLocator",
     "RevisionRole",
     "RevisionRoleAssignment",
+    "TextEncoding",
+    "ZeroBasedHalfOpenByteSpan",
 }
 
 EXPECTED_REVISION_CLASSES = {
+    "ArtifactByteLocator",
+    "DiffHunkLocator",
     "GitBlobIdentity",
     "GitCommitIdentity",
     "GitCommitParentTopology",
@@ -426,9 +436,25 @@ EXPECTED_REVISION_CLASSES = {
     "GitRefObservation",
     "GitRepositoryPath",
     "GitTreeIdentity",
+    "LineEnding",
+    "OneBasedInclusiveLineSpan",
     "RevisionQualifiedPath",
+    "RevisionLineLocator",
     "RevisionRole",
     "RevisionRoleAssignment",
+    "TextEncoding",
+    "ZeroBasedHalfOpenByteSpan",
+}
+
+EXPECTED_S05_REVISION_SYMBOLS = {
+    "ArtifactByteLocator",
+    "BoundedLocator",
+    "DiffHunkLocator",
+    "LineEnding",
+    "OneBasedInclusiveLineSpan",
+    "RevisionLineLocator",
+    "TextEncoding",
+    "ZeroBasedHalfOpenByteSpan",
 }
 
 EXPECTED_COMPATIBILITY_SYMBOLS = {
@@ -597,11 +623,11 @@ def _validate_identity_symbol_inventory(source: bytes) -> None:
 
 def _validate_revision_symbol_inventory(source: bytes) -> None:
     exports, public_symbols, public_classes = _identity_symbol_inventory(source)
-    assert len(exports) == len(EXPECTED_REVISION_SYMBOLS) == 15
+    assert len(exports) == len(EXPECTED_REVISION_SYMBOLS) == 23
     assert exports == EXPECTED_REVISION_SYMBOLS
-    assert len(public_symbols) == 15
+    assert len(public_symbols) == 23
     assert public_symbols == EXPECTED_REVISION_SYMBOLS
-    assert len(public_classes) == len(EXPECTED_REVISION_CLASSES) == 13
+    assert len(public_classes) == len(EXPECTED_REVISION_CLASSES) == 20
     assert public_classes == EXPECTED_REVISION_CLASSES
 
 
@@ -1453,11 +1479,37 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
         b"GitRefHistory",
         b"GitSymbolicRef",
         b"RepositorySnapshot",
-        b"LineLocator",
-        b"ByteLocator",
-        b"HunkLocator",
     ):
         assert forbidden not in complete_production_source
+    revision_tree = ast.parse(revision_source)
+    revision_definitions = {
+        node.name
+        for node in ast.walk(revision_tree)
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    revision_definitions.update(
+        node.name.id
+        for node in ast.walk(revision_tree)
+        if isinstance(node, ast.TypeAlias)
+    )
+    assert not revision_definitions & {
+        "ByteLocator",
+        "EvidenceEnvelope",
+        "HunkLocator",
+        "LineLocator",
+        "LocatorContractCorpus",
+        "LocatorReader",
+        "LocatorResolver",
+    }
+    for name in revision_definitions:
+        compact_name = name.replace("_", "").lower()
+        assert not (
+            "locator" in compact_name
+            and any(
+                forbidden_role in compact_name
+                for forbidden_role in ("corpus", "reader", "resolver")
+            )
+        )
     assert not (REPOSITORY_ROOT / "reference_corpus/pytest-4412/phases/S1.P01").exists()
 
 
@@ -1473,6 +1525,8 @@ def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
         for path in IDENTITY_CORRECTION_DIRECTORY.iterdir()
     )
     identity_root = IDENTITY_V1_DIRECTORY.parent
+    contracts_root = identity_root.parent
+    assert {path.name for path in contracts_root.iterdir()} == {"identity"}
     assert {path.name for path in identity_root.iterdir()} == {
         "closures",
         "corrections",
@@ -1574,7 +1628,12 @@ def test_unexpected_production_module_is_rejected() -> None:
 
 @pytest.mark.parametrize(
     "missing_symbol",
-    ("GitRepositoryPath", "RevisionQualifiedPath", "GitRefObservation"),
+    tuple(
+        sorted(
+            EXPECTED_S05_REVISION_SYMBOLS
+            | {"GitRepositoryPath", "RevisionQualifiedPath", "GitRefObservation"}
+        )
+    ),
 )
 def test_revision_export_inventory_mutations_are_rejected(
     missing_symbol: str,
@@ -1617,6 +1676,7 @@ def test_compatibility_function_added_to_source_locator_is_rejected(
     ("module", "symbol"),
     (
         ("compatibility", "CompatibilityStatus"),
+        ("revision", "BoundedLocator"),
         ("revision", "GitRefObservation"),
         ("revision", "RevisionQualifiedPath"),
     ),
@@ -1688,8 +1748,10 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P02.S02` is complete" in normalized_roadmap
     assert "`S1.P02.S03` is complete" in normalized_roadmap
     assert "`S1.P02.S04` is complete" in normalized_roadmap
-    assert "`S1.P02.S05` is next and not started" in normalized_roadmap
-    for slice_id in range(5, 8):
+    assert "`S1.P02.S05` is complete" in normalized_roadmap
+    assert "`S1.P02.S06` is next and not started" in normalized_roadmap
+    assert "`S1.P02.S07` is not started" in normalized_roadmap
+    for slice_id in range(6, 8):
         assert f"`S1.P02.S{slice_id:02d}`" in normalized_roadmap
     assert "s1-p00-phase-closure" in case_doc
     normalized_case_doc = " ".join(case_doc.split())
@@ -1740,10 +1802,24 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         "or separator normalization" in normalized_case_doc
     )
     assert (
+        "S1.P02.S05 classifies the three retained-diff coordinate layers "
+        "without collapsing them" in normalized_case_doc
+    )
+    assert (
+        "Offsets and lengths are direct exact-byte facts; old/new hunk spans "
+        "are deterministic derivations from exact unified-diff headers"
+        in normalized_case_doc
+    )
+    assert (
+        "applicable new-file line ranges remain reviewed derived interpretation"
+        in normalized_case_doc
+    )
+    assert (
         "Current status: the case-calibrated `S1.P01` Identity Primitives "
         "Phase is complete. `S1.P02` is active, `S1.P02.S01` is complete, "
         "`S1.P02.S02` is complete, `S1.P02.S03` is complete, and "
-        "`S1.P02.S04` is complete. `S1.P02.S05` is next and not started."
+        "`S1.P02.S04` is complete. `S1.P02.S05` is complete. `S1.P02.S06` "
+        "is next and not started, and `S1.P02.S07` is not started."
         in normalized_case_doc
     )
 

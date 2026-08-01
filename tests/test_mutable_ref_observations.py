@@ -68,6 +68,14 @@ EXPECTED_EXPORTS = [
     "GitRefObservation",
     "GitRepositoryPath",
     "RevisionQualifiedPath",
+    "TextEncoding",
+    "LineEnding",
+    "OneBasedInclusiveLineSpan",
+    "ZeroBasedHalfOpenByteSpan",
+    "RevisionLineLocator",
+    "ArtifactByteLocator",
+    "DiffHunkLocator",
+    "BoundedLocator",
 ]
 
 EXPECTED_PRODUCTION_FILES = {
@@ -496,6 +504,23 @@ def test_semantic_json_round_trip_restores_exact_types() -> None:
         "current",
         "path",
         "locator",
+        "locator_kind",
+        "parent",
+        "start_line",
+        "end_line",
+        "offset",
+        "length",
+        "span",
+        "text_encoding",
+        "line_ending",
+        "parent_artifact_sha256",
+        "parent_byte_length",
+        "artifact_bytes",
+        "artifact_lines",
+        "old_file",
+        "old_lines",
+        "new_file",
+        "new_lines",
         "parents",
         "reachability",
     ),
@@ -756,6 +781,23 @@ def test_ref_subject_fields_are_exact_without_separate_identity_model() -> None:
         "latest",
         "path",
         "locator",
+        "locator_kind",
+        "parent",
+        "start_line",
+        "end_line",
+        "offset",
+        "length",
+        "span",
+        "text_encoding",
+        "line_ending",
+        "parent_artifact_sha256",
+        "parent_byte_length",
+        "artifact_bytes",
+        "artifact_lines",
+        "old_file",
+        "old_lines",
+        "new_file",
+        "new_lines",
         "parents",
         "ancestry",
         "reachability",
@@ -820,7 +862,7 @@ def test_canonical_evidence_use_is_bounded_and_synthetic_fields_are_explicit() -
 
 def test_exports_are_exact_and_internal_only() -> None:
     assert revision_module.__all__ == EXPECTED_EXPORTS
-    assert len(revision_module.__all__) == len(set(revision_module.__all__)) == 15
+    assert len(revision_module.__all__) == len(set(revision_module.__all__)) == 23
     assert faultatlas.__all__ == ["__version__"]
     assert not any(hasattr(faultatlas, name) for name in EXPECTED_EXPORTS)
     assert not any(hasattr(domain_package, name) for name in EXPECTED_EXPORTS)
@@ -905,7 +947,7 @@ def test_package_root_export_mutation_is_rejected() -> None:
         assert exports == [["__version__"]] and not appended
 
 
-def test_no_symbolic_ref_tag_object_history_graph_locator_or_io_surface() -> None:
+def test_no_symbolic_ref_tag_object_history_graph_or_io_surface() -> None:
     source = REVISION_SOURCE.read_text(encoding="utf-8")
     _validate_revision_public_surface(source)
     tree = ast.parse(source)
@@ -923,9 +965,10 @@ def test_no_symbolic_ref_tag_object_history_graph_locator_or_io_surface() -> Non
         "RepositoryMembership",
         "RepositoryReachability",
         "RepositoryHistoryGraph",
-        "LineLocator",
-        "ByteLocator",
-        "HunkLocator",
+        "ColumnLocator",
+        "LocatorReader",
+        "LocatorResolver",
+        "EvidenceEnvelope",
     }
 
     forbidden_modules = {"git", "os", "pathlib", "socket", "subprocess"}
