@@ -12,7 +12,18 @@ import re
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from ipaddress import ip_address
-from typing import Annotated, Literal, Self, cast
+from types import UnionType
+from typing import (
+    Annotated,
+    Literal,
+    NewType,
+    Self,
+    TypeVar,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+)
 
 from pydantic import (
     AwareDatetime,
@@ -437,6 +448,16 @@ _SOURCE_IDENTITY_TYPES = (
     NumberedSourceObjectIdentity,
     ProviderScopedSourceObjectIdentity,
 )
+_SCALAR_IDENTITY_VALUE_TYPES = (
+    ProviderGlobalId,
+    ProviderNodeId,
+    RepositoryScopedNumber,
+)
+_AMBIGUOUS_SCALAR_STATE_ERROR = (
+    "IdentityValueState specialization has ambiguous scalar JSON "
+    "representations and requires a domain-discriminated carrier"
+)
+_MAX_IDENTITY_ANNOTATION_DEPTH = 32
 _IDENTITY_VALUE_TYPES = (
     ProviderGlobalId,
     ProviderNodeId,
@@ -445,6 +466,109 @@ _IDENTITY_VALUE_TYPES = (
     NumberedSourceObjectIdentity,
     ProviderScopedSourceObjectIdentity,
 )
+
+
+def _is_type_alias_like(annotation: object) -> bool:
+    return hasattr(annotation, "__value__") and hasattr(
+        annotation,
+        "__type_params__",
+    )
+
+
+def _identity_annotation_members(
+    annotation: object,
+    substitutions: dict[object, object] | None = None,
+    *,
+    depth: int = 0,
+) -> tuple[object, ...]:
+    if depth > _MAX_IDENTITY_ANNOTATION_DEPTH:
+        raise ValueError(_AMBIGUOUS_SCALAR_STATE_ERROR)
+
+    resolved = {} if substitutions is None else substitutions
+    if isinstance(annotation, NewType):
+        return _identity_annotation_members(
+            annotation.__supertype__,
+            resolved,
+            depth=depth + 1,
+        )
+    if isinstance(annotation, TypeVar):
+        replacement = resolved.get(annotation, annotation)
+        if replacement is not annotation:
+            return _identity_annotation_members(
+                replacement,
+                resolved,
+                depth=depth + 1,
+            )
+        if annotation.__constraints__:
+            return tuple(
+                member
+                for constraint in annotation.__constraints__
+                for member in _identity_annotation_members(
+                    constraint,
+                    resolved,
+                    depth=depth + 1,
+                )
+            )
+        if annotation.__bound__ is not None:
+            return _identity_annotation_members(
+                annotation.__bound__,
+                resolved,
+                depth=depth + 1,
+            )
+        raise ValueError(_AMBIGUOUS_SCALAR_STATE_ERROR)
+
+    origin = get_origin(annotation)
+    arguments = get_args(annotation)
+    if origin is Annotated:
+        return _identity_annotation_members(
+            arguments[0],
+            resolved,
+            depth=depth + 1,
+        )
+    if origin in (Union, UnionType):
+        return tuple(
+            member
+            for argument in arguments
+            for member in _identity_annotation_members(
+                argument,
+                resolved,
+                depth=depth + 1,
+            )
+        )
+    if origin is not None and _is_type_alias_like(origin):
+        parameters = tuple(cast(tuple[object, ...], getattr(origin, "__type_params__")))
+        if len(parameters) != len(arguments):
+            raise ValueError(_AMBIGUOUS_SCALAR_STATE_ERROR)
+        nested = dict(resolved)
+        nested.update(zip(parameters, arguments, strict=True))
+        return _identity_annotation_members(
+            cast(object, getattr(origin, "__value__")),
+            nested,
+            depth=depth + 1,
+        )
+    if _is_type_alias_like(annotation):
+        parameters = tuple(
+            cast(tuple[object, ...], getattr(annotation, "__type_params__"))
+        )
+        if parameters:
+            raise ValueError(_AMBIGUOUS_SCALAR_STATE_ERROR)
+        return _identity_annotation_members(
+            cast(object, getattr(annotation, "__value__")),
+            resolved,
+            depth=depth + 1,
+        )
+    if isinstance(annotation, type) and (
+        annotation is type(None) or issubclass(annotation, _IDENTITY_VALUE_TYPES)
+    ):
+        return (annotation,)
+    raise ValueError(_AMBIGUOUS_SCALAR_STATE_ERROR)
+
+
+def _is_scalar_identity_type(annotation: object) -> bool:
+    return isinstance(annotation, type) and issubclass(
+        annotation,
+        _SCALAR_IDENTITY_VALUE_TYPES,
+    )
 
 
 class IdentityValueState[IdentityValueT: _IdentityValue](BaseModel):
@@ -468,6 +592,15 @@ class IdentityValueState[IdentityValueT: _IdentityValue](BaseModel):
     def _require_explicit_specialization(cls, value: object) -> object:
         if cls is IdentityValueState:
             raise ValueError("IdentityValueState must be explicitly specialized")
+        scalar_types = {
+            member
+            for member in _identity_annotation_members(
+                cls.model_fields["value"].annotation
+            )
+            if _is_scalar_identity_type(member)
+        }
+        if len(scalar_types) >= 2:
+            raise ValueError(_AMBIGUOUS_SCALAR_STATE_ERROR)
         return value
 
     @field_validator("value", mode="before")

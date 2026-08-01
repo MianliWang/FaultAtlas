@@ -58,6 +58,10 @@ from faultatlas.domain.source import SourceLocator
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_ROOT = REPOSITORY_ROOT / "reference_corpus/contracts/identity/v1"
 CORPUS_RELATIVE = "reference_corpus/contracts/identity/v1"
+CORRECTION_RELATIVE = (
+    "reference_corpus/contracts/identity/corrections/s05-c01-ambiguous-union-round-trip"
+)
+CORRECTION_ROOT = REPOSITORY_ROOT / CORRECTION_RELATIVE
 EXPECTED_FILES = {
     "compatibility-vectors.json",
     "compatibility-vectors.sha256",
@@ -69,12 +73,32 @@ EXPECTED_FILES = {
     "valid-vectors.json",
     "valid-vectors.sha256",
 }
+EXPECTED_CORRECTION_FILES = {
+    "correction.json",
+    "correction.md",
+    "correction.sha256",
+    "regression-vectors.json",
+    "regression-vectors.sha256",
+}
+SUPERSEDED_V1_VECTOR_ID = "identity.valid.field-state.conflict-number-global"
+EXPECTED_CORRECTION_VECTOR_COUNT = 32
+EXPECTED_EFFECTIVE_VECTOR_COUNT = 199
+S06_CLOSURE_RELATIVE = (
+    "reference_corpus/contracts/identity/closures/s1-p01-phase-closure"
+)
 
 
 @dataclass(frozen=True)
 class LockedFile:
     byte_length: int
     sha256: str
+
+
+@dataclass(frozen=True)
+class ContractVectorPlanEntry:
+    source: str
+    filename: str
+    vector_id: str
 
 
 EXPECTED_LOCKS = {
@@ -175,6 +199,20 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/compatibility.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/source.py",
+}
+EXPECTED_CORRECTION_PERMISSION_PATHS = {
+    *(f"{CORPUS_RELATIVE}/{filename}" for filename in EXPECTED_FILES),
+    *(f"{CORRECTION_RELATIVE}/{filename}" for filename in EXPECTED_CORRECTION_FILES),
+    "docs/roadmap.md",
+    "tests/test_identity_contract_corpus.py",
+    "tests/test_identity_roundtrip_correction.py",
+    "tests/test_package.py",
+    "tests/test_reference_corpus_phase_closure.py",
+    "tests/test_source_locator_compatibility.py",
+}
+EXPECTED_NEW_PERMISSION_PATHS = {
+    *(f"{CORRECTION_RELATIVE}/{filename}" for filename in EXPECTED_CORRECTION_FILES),
+    "tests/test_identity_roundtrip_correction.py",
 }
 EXPECTED_VECTOR_COUNTS = {
     "valid-vectors.json": 58,
@@ -427,6 +465,10 @@ def _load_document(filename: str) -> dict[str, Any]:
     return _parse_canonical_json((CORPUS_ROOT / filename).read_bytes())
 
 
+def _load_correction_document(filename: str) -> dict[str, Any]:
+    return _parse_canonical_json((CORRECTION_ROOT / filename).read_bytes())
+
+
 def _json_input(value: Any) -> str:
     return json.dumps(
         value,
@@ -502,6 +544,96 @@ def _vector_by_id(document: dict[str, Any], vector_id: str) -> dict[str, Any]:
     matches = [vector for vector in _vectors(document) if vector["id"] == vector_id]
     assert len(matches) == 1
     return matches[0]
+
+
+def _build_effective_contract_plan(
+    v1_documents: dict[str, dict[str, Any]],
+    correction: dict[str, Any],
+    regressions: dict[str, Any],
+) -> tuple[ContractVectorPlanEntry, ...]:
+    assert set(v1_documents) == {
+        "valid-vectors.json",
+        "invalid-vectors.json",
+        "compatibility-vectors.json",
+    }
+    historical: dict[str, tuple[str, dict[str, Any]]] = {}
+    for filename, document in v1_documents.items():
+        for vector in _vectors(document):
+            vector_id = cast(str, vector["id"])
+            assert vector_id not in historical
+            historical[vector_id] = (filename, vector)
+    assert len(historical) == 168
+
+    correction_vectors = _vectors(regressions)
+    correction_by_id: dict[str, dict[str, Any]] = {}
+    for vector in correction_vectors:
+        vector_id = cast(str, vector["id"])
+        assert vector_id not in historical
+        assert vector_id not in correction_by_id
+        correction_by_id[vector_id] = vector
+    assert len(correction_by_id) == EXPECTED_CORRECTION_VECTOR_COUNT
+
+    supersession = correction["superseded_contract_vectors"]
+    items = cast(list[dict[str, Any]], supersession["items"])
+    assert supersession["count"] == len(items)
+    superseded_ids: set[str] = set()
+    forward_replacements: dict[str, set[str]] = {}
+    for item in items:
+        original_id = cast(str, item["original_vector_id"])
+        original_file = cast(str, item["original_corpus_file"])
+        assert original_id not in superseded_ids
+        assert original_id in historical
+        assert historical[original_id][0] == original_file
+        assert item["historical_artifact_bytes_remain_valid"] is True
+        assert item["effective_status"] == "superseded_by_append_only_correction"
+        replacements = cast(list[str], item["replacement_regression_vector_ids"])
+        assert replacements
+        assert len(replacements) == len(set(replacements))
+        assert all(replacement in correction_by_id for replacement in replacements)
+        superseded_ids.add(original_id)
+        forward_replacements[original_id] = set(replacements)
+
+    reverse_replacements: dict[str, set[str]] = {
+        original_id: set() for original_id in superseded_ids
+    }
+    for replacement_id, vector in correction_by_id.items():
+        reverse_ids = cast(list[str], vector["supersedes_v1_vector_ids"])
+        assert len(reverse_ids) == len(set(reverse_ids))
+        for original_id in reverse_ids:
+            assert original_id in reverse_replacements
+            reverse_replacements[original_id].add(replacement_id)
+    assert reverse_replacements == forward_replacements
+
+    active_ids = set(historical) - superseded_ids
+    assert active_ids.isdisjoint(superseded_ids)
+    assert active_ids | superseded_ids == set(historical)
+    assert len(active_ids) == 167
+    assert superseded_ids == {SUPERSEDED_V1_VECTOR_ID}
+
+    plan: list[ContractVectorPlanEntry] = []
+    for filename, document in v1_documents.items():
+        plan.extend(
+            ContractVectorPlanEntry("active_v1", filename, cast(str, vector["id"]))
+            for vector in _vectors(document)
+            if vector["id"] in active_ids
+        )
+    plan.extend(
+        ContractVectorPlanEntry(
+            "append_only_correction",
+            "regression-vectors.json",
+            cast(str, vector["id"]),
+        )
+        for vector in correction_vectors
+    )
+    assert len(plan) == EXPECTED_EFFECTIVE_VECTOR_COUNT
+    assert correction["replacement_contract"]["effective_contract"] == {
+        "active_v1_vectors": 167,
+        "correction_vectors": 32,
+        "historical_v1_vectors": 168,
+        "superseded_v1_vectors": 1,
+        "total_current_vectors": 199,
+    }
+    return tuple(plan)
 
 
 def _model_for_vector(vector: dict[str, Any]) -> type[BaseModel]:
@@ -949,10 +1081,17 @@ def _validate_corpus_inventory(corpus_root: Path) -> None:
         relative = path.relative_to(corpus_root.parent.parent.parent.parent)
         assert path.is_file()
         assert not path.is_symlink()
-        assert stat.S_IMODE(path.stat().st_mode) == 0o644
+        assert stat.S_IMODE(path.stat().st_mode) & 0o111 == 0
         assert all(part not in {"", ".", ".."} for part in relative.parts)
     identity_contract_root = corpus_root.parent
-    assert {path.name for path in identity_contract_root.iterdir()} == {"v1"}
+    assert {path.name for path in identity_contract_root.iterdir()} == {
+        "corrections",
+        "v1",
+    }
+    corrections = identity_contract_root / "corrections"
+    assert {path.name for path in corrections.iterdir()} == {
+        "s05-c01-ambiguous-union-round-trip"
+    }
     assert not any(
         path.name.casefold() in {"latest", "current"}
         for path in identity_contract_root.rglob("*")
@@ -1077,9 +1216,21 @@ def _production_files() -> set[str]:
     }
 
 
+def _validate_current_production_file_inventory(production_files: set[str]) -> None:
+    assert production_files == EXPECTED_PRODUCTION_FILES
+
+
+def _working_source_bytes() -> dict[str, bytes]:
+    production_files = _production_files()
+    _validate_current_production_file_inventory(production_files)
+    return {
+        relative: (REPOSITORY_ROOT / relative).read_bytes()
+        for relative in production_files
+    }
+
+
 def _validate_no_production_reader() -> None:
     production_files = _production_files()
-    assert production_files == EXPECTED_PRODUCTION_FILES
     combined = b"\n".join(
         (REPOSITORY_ROOT / path).read_bytes() for path in sorted(production_files)
     )
@@ -1096,6 +1247,13 @@ def _validate_no_production_reader() -> None:
         REPOSITORY_ROOT / "reference_corpus/contracts/identity/current"
     ).exists()
     assert not (REPOSITORY_ROOT / "reference_corpus/contracts/identity/v2").exists()
+
+
+def _assert_no_s06_closure(paths: set[str]) -> None:
+    assert not any(
+        path == S06_CLOSURE_RELATIVE or path.startswith(f"{S06_CLOSURE_RELATIVE}/")
+        for path in paths
+    )
 
 
 def _validate_registry_source() -> None:
@@ -1200,6 +1358,35 @@ def _sdist_members(path: Path) -> tuple[ArchiveMember, ...]:
     return tuple(members)
 
 
+def _archive_source_bytes(
+    members: tuple[ArchiveMember, ...],
+) -> dict[str, bytes]:
+    sources: dict[str, bytes] = {}
+    for member in members:
+        if member.kind != "file" or not member.name.endswith(".py"):
+            continue
+        parts = _archive_parts(member)
+        try:
+            package_index = parts.index("faultatlas")
+        except ValueError:
+            relative = f"__unexpected_archive_python__/{member.name}"
+        else:
+            relative = "src/" + "/".join(parts[package_index:])
+        assert relative not in sources
+        assert member.data is not None
+        sources[relative] = member.data
+    return sources
+
+
+def _assert_complete_package_sources(
+    packaged: dict[str, bytes],
+    working: dict[str, bytes],
+) -> None:
+    assert set(working) == EXPECTED_PRODUCTION_FILES
+    assert set(packaged) == EXPECTED_PRODUCTION_FILES
+    assert packaged == working
+
+
 def _assert_safe_archive(
     members: tuple[ArchiveMember, ...],
     *,
@@ -1208,6 +1395,9 @@ def _assert_safe_archive(
     assert members
     corpus_payloads = {
         (CORPUS_ROOT / filename).read_bytes() for filename in EXPECTED_FILES
+    } | {
+        (CORRECTION_ROOT / filename).read_bytes()
+        for filename in EXPECTED_CORRECTION_FILES
     }
     file_members: list[ArchiveMember] = []
     for member in members:
@@ -1233,15 +1423,11 @@ def _assert_safe_archive(
     assert packaged_licenses == [project_license]
 
     if expect_modules:
-        for relative in (
-            "faultatlas/domain/identity.py",
-            "faultatlas/domain/compatibility.py",
-        ):
-            matches = [
-                member for member in file_members if member.name.endswith(relative)
-            ]
-            assert len(matches) == 1
-            assert matches[0].data == (REPOSITORY_ROOT / "src" / relative).read_bytes()
+        working = {
+            relative: (REPOSITORY_ROOT / relative).read_bytes()
+            for relative in EXPECTED_PRODUCTION_FILES
+        }
+        _assert_complete_package_sources(_archive_source_bytes(members), working)
 
 
 def _git_status() -> bytes:
@@ -1270,6 +1456,104 @@ def _repository_file_snapshot() -> tuple[tuple[str, int, str], ...]:
             (relative.as_posix(), stat.S_IMODE(path.lstat().st_mode), _sha256(payload))
         )
     return tuple(sorted(snapshot))
+
+
+def _parse_git_stage_z(raw: bytes) -> dict[str, str]:
+    modes: dict[str, str] = {}
+    for entry in raw.split(b"\0"):
+        if not entry:
+            continue
+        header, path_bytes = entry.split(b"\t", 1)
+        mode, object_id, stage = header.decode("ascii").split(" ")
+        path = path_bytes.decode("utf-8")
+        assert re.fullmatch(r"[0-9a-f]{40,64}", object_id) is not None
+        assert stage == "0"
+        assert path not in modes
+        modes[path] = mode
+    return modes
+
+
+def _git_stage_modes(
+    paths: set[str], *, environment: dict[str, str] | None = None
+) -> dict[str, str]:
+    result = subprocess.run(
+        ["git", "ls-files", "--stage", "-z", "--", *sorted(paths)],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+    )
+    return _parse_git_stage_z(result.stdout)
+
+
+def _assert_fs_regular_0644(path: Path) -> None:
+    mode = path.lstat().st_mode
+    assert not stat.S_ISLNK(mode)
+    assert stat.S_ISREG(mode)
+    assert stat.S_IMODE(mode) == 0o644
+
+
+def _assert_git_modes_100644(modes: dict[str, str], expected: set[str]) -> None:
+    assert set(modes) == expected
+    assert set(modes.values()) == {"100644"}
+
+
+def _assert_untracked_path(relative: str) -> None:
+    result = subprocess.run(
+        [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+            relative,
+        ],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+    )
+    assert result.stdout == f"?? {relative}\0".encode()
+
+
+def _prospective_new_file_modes(paths: set[str], tmp_path: Path) -> dict[str, str]:
+    index = tmp_path / "prospective-index"
+    environment = os.environ.copy()
+    environment["GIT_INDEX_FILE"] = str(index)
+    subprocess.run(
+        ["git", "read-tree", "HEAD"],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "update-index", "--info-only", "--add", "--", *sorted(paths)],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+    )
+    return _git_stage_modes(paths, environment=environment)
+
+
+def _validate_current_permission_contract(tmp_path: Path) -> None:
+    for relative in EXPECTED_CORRECTION_PERMISSION_PATHS:
+        _assert_fs_regular_0644(REPOSITORY_ROOT / relative)
+
+    actual_modes = _git_stage_modes(EXPECTED_CORRECTION_PERMISSION_PATHS)
+    untracked = EXPECTED_CORRECTION_PERMISSION_PATHS - set(actual_modes)
+    assert untracked <= EXPECTED_NEW_PERMISSION_PATHS
+    _assert_git_modes_100644(
+        actual_modes,
+        EXPECTED_CORRECTION_PERMISSION_PATHS - untracked,
+    )
+
+    if untracked:
+        for relative in untracked:
+            _assert_untracked_path(relative)
+        prospective_modes = _prospective_new_file_modes(untracked, tmp_path)
+        _assert_git_modes_100644(prospective_modes, untracked)
 
 
 def _build_archives(tmp_path: Path) -> tuple[Path, Path]:
@@ -1344,10 +1628,29 @@ def _write_synthetic_archive(
 VALID_DOCUMENT = _load_document("valid-vectors.json")
 INVALID_DOCUMENT = _load_document("invalid-vectors.json")
 COMPATIBILITY_DOCUMENT = _load_document("compatibility-vectors.json")
-VALID_VECTOR_IDS = tuple(cast(str, item["id"]) for item in _vectors(VALID_DOCUMENT))
+CORRECTION_DOCUMENT = _load_correction_document("correction.json")
+REGRESSION_DOCUMENT = _load_correction_document("regression-vectors.json")
+V1_DOCUMENTS = {
+    "valid-vectors.json": VALID_DOCUMENT,
+    "invalid-vectors.json": INVALID_DOCUMENT,
+    "compatibility-vectors.json": COMPATIBILITY_DOCUMENT,
+}
+EFFECTIVE_CONTRACT_PLAN = _build_effective_contract_plan(
+    V1_DOCUMENTS,
+    CORRECTION_DOCUMENT,
+    REGRESSION_DOCUMENT,
+)
+VALID_VECTOR_IDS = tuple(
+    cast(str, item["id"])
+    for item in _vectors(VALID_DOCUMENT)
+    if item["id"] != SUPERSEDED_V1_VECTOR_ID
+)
 INVALID_VECTOR_IDS = tuple(cast(str, item["id"]) for item in _vectors(INVALID_DOCUMENT))
 COMPATIBILITY_VECTOR_IDS = tuple(
     cast(str, item["id"]) for item in _vectors(COMPATIBILITY_DOCUMENT)
+)
+CORRECTION_VECTOR_IDS = tuple(
+    cast(str, item["id"]) for item in _vectors(REGRESSION_DOCUMENT)
 )
 
 
@@ -1448,6 +1751,81 @@ def test_target_registry_is_explicit_complete_and_internal_only() -> None:
         _validate_fixture_graph(self_referencing_fixture_document)
 
 
+def test_effective_contract_plan_is_complete_and_distinguishes_history() -> None:
+    assert len(EFFECTIVE_CONTRACT_PLAN) == EXPECTED_EFFECTIVE_VECTOR_COUNT
+    active_v1 = [
+        entry for entry in EFFECTIVE_CONTRACT_PLAN if entry.source == "active_v1"
+    ]
+    correction = [
+        entry
+        for entry in EFFECTIVE_CONTRACT_PLAN
+        if entry.source == "append_only_correction"
+    ]
+    assert len(active_v1) == 167
+    assert len(correction) == EXPECTED_CORRECTION_VECTOR_COUNT
+    assert {entry.vector_id for entry in correction} == set(CORRECTION_VECTOR_IDS)
+    assert SUPERSEDED_V1_VECTOR_ID not in {
+        entry.vector_id for entry in EFFECTIVE_CONTRACT_PLAN
+    }
+    assert _vector_by_id(VALID_DOCUMENT, SUPERSEDED_V1_VECTOR_ID)["status"] == (
+        "locked"
+    )
+
+
+def test_superseded_historical_vector_is_retained_but_now_rejects() -> None:
+    vector = _vector_by_id(VALID_DOCUMENT, SUPERSEDED_V1_VECTOR_ID)
+    value = _resolve_value(vector["input"], _fixture_map(VALID_DOCUMENT))
+    model = _model_for_vector(vector)
+    with pytest.raises(ValidationError) as error:
+        _validate_model(model, value, cast(str, vector["input_mode"]))
+    assert len(error.value.errors()) == 1
+    item = error.value.errors()[0]
+    assert item["loc"] == ()
+    assert item["type"] == "value_error"
+    assert "ambiguous scalar JSON representations" in item["msg"]
+    assert "domain-discriminated carrier" in item["msg"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "correction-layer-removed",
+        "unknown-superseded-id",
+        "duplicate-superseded-id",
+        "superseded-without-replacement",
+        "unknown-replacement-id",
+        "replacement-without-reverse-reference",
+    ),
+)
+def test_effective_contract_overlay_mutation_is_rejected(mutation: str) -> None:
+    correction = copy.deepcopy(CORRECTION_DOCUMENT)
+    regressions = copy.deepcopy(REGRESSION_DOCUMENT)
+    item = correction["superseded_contract_vectors"]["items"][0]
+    if mutation == "correction-layer-removed":
+        correction = {}
+    elif mutation == "unknown-superseded-id":
+        item["original_vector_id"] = "identity.valid.field-state.unknown"
+    elif mutation == "duplicate-superseded-id":
+        correction["superseded_contract_vectors"]["items"].append(copy.deepcopy(item))
+        correction["superseded_contract_vectors"]["count"] += 1
+    elif mutation == "superseded-without-replacement":
+        item["replacement_regression_vector_ids"] = []
+    elif mutation == "unknown-replacement-id":
+        item["replacement_regression_vector_ids"] = [
+            "identity.correction.s05-c01.unknown"
+        ]
+    else:
+        assert mutation == "replacement-without-reverse-reference"
+        replacement = _vector_by_id(
+            regressions,
+            "identity.correction.s05-c01.generic-rejection."
+            "number-global.conflict-distinct-json",
+        )
+        replacement["supersedes_v1_vector_ids"] = []
+    with pytest.raises((AssertionError, KeyError)):
+        _build_effective_contract_plan(V1_DOCUMENTS, correction, regressions)
+
+
 @pytest.mark.parametrize("vector_id", VALID_VECTOR_IDS)
 def test_valid_vector_executes_and_round_trips(vector_id: str) -> None:
     _execute_valid_vector(_vector_by_id(VALID_DOCUMENT, vector_id), VALID_DOCUMENT)
@@ -1536,6 +1914,74 @@ def test_privacy_retention_and_no_raw_provider_payload() -> None:
 
 def test_no_production_reader_new_module_package_export_or_s06_artifact() -> None:
     _validate_no_production_reader()
+    paths = {
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in REPOSITORY_ROOT.rglob("*")
+    }
+    _assert_no_s06_closure(paths)
+
+
+def test_s06_closure_artifact_appearing_early_is_rejected() -> None:
+    with pytest.raises(AssertionError):
+        _assert_no_s06_closure({f"{S06_CLOSURE_RELATIVE}/closure.json"})
+
+
+def test_current_correction_whole_source_inventory_is_exact() -> None:
+    working = _working_source_bytes()
+    assert set(working) == EXPECTED_PRODUCTION_FILES
+    assert len(working) == 7
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("unexpected-source", "missing-source", "packaged-byte-mismatch"),
+)
+def test_whole_source_inventory_mutation_is_rejected(mutation: str) -> None:
+    working = _working_source_bytes()
+    packaged = dict(working)
+    if mutation == "unexpected-source":
+        packaged["src/faultatlas/domain/unexpected.py"] = b"pass\n"
+    elif mutation == "missing-source":
+        del packaged["src/faultatlas/cli.py"]
+    else:
+        assert mutation == "packaged-byte-mismatch"
+        packaged["src/faultatlas/domain/compatibility.py"] += b"\n"
+    with pytest.raises(AssertionError):
+        _assert_complete_package_sources(packaged, working)
+
+
+def test_current_git_and_filesystem_permission_contract_is_exact(
+    tmp_path: Path,
+) -> None:
+    _validate_current_permission_contract(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "mutation", ("filesystem-0755", "filesystem-0600", "symlink", "special-file")
+)
+def test_filesystem_permission_mutation_is_rejected(
+    mutation: str, tmp_path: Path
+) -> None:
+    target = tmp_path / "artifact"
+    if mutation == "symlink":
+        source = tmp_path / "source"
+        source.write_bytes(b"locked\n")
+        target.symlink_to(source)
+    elif mutation == "special-file":
+        os.mkfifo(target)
+    else:
+        target.write_bytes(b"locked\n")
+        target.chmod(0o755 if mutation == "filesystem-0755" else 0o600)
+    with pytest.raises(AssertionError):
+        _assert_fs_regular_0644(target)
+
+
+def test_git_mode_100755_mutation_is_rejected() -> None:
+    relative = f"{CORRECTION_RELATIVE}/correction.json"
+    raw = f"100755 {'0' * 40} 0\t{relative}\0".encode()
+    modes = _parse_git_stage_z(raw)
+    with pytest.raises(AssertionError):
+        _assert_git_modes_100644(modes, {relative})
 
 
 def test_actual_offline_wheel_and_sdist_exclude_corpus(tmp_path: Path) -> None:
@@ -1765,6 +2211,10 @@ def test_required_mutation_is_detected(mutation: str, tmp_path: Path) -> None:
     if mutation in {"extra-corpus-file", "mutable-latest-pointer"}:
         synthetic_root = tmp_path / "contracts/identity/v1"
         shutil.copytree(CORPUS_ROOT, synthetic_root)
+        shutil.copytree(
+            CORRECTION_ROOT,
+            synthetic_root.parent / "corrections/s05-c01-ambiguous-union-round-trip",
+        )
         if mutation == "extra-corpus-file":
             (synthetic_root / "extra.json").write_bytes(b"{}\n")
         else:
