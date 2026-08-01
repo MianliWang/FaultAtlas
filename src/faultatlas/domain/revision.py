@@ -1,11 +1,13 @@
-"""Internal Git object identity, revision-role, topology, ref, and path primitives.
+"""Internal Git identity, revision, path, and bounded-coordinate primitives.
 
 These models validate explicit object identities and separately supplied role
 or ordered-parent records, immutable observations of mutable refs, and exact
-revision-qualified repository paths. Repository paths intentionally cover only
-a bounded UTF-8 textual subset of Git path bytes. The models do not inspect a
-repository, establish path existence, entry kind, membership, or reachability,
-reconcile roles with topology or refs, resolve symbolic refs, add coordinates,
+revision-qualified repository paths. They also describe bounded logical-line,
+artifact-byte, and diff-hunk coordinates without reading or resolving their
+parents. Repository paths intentionally cover only the bounded UTF-8 textual subset of
+Git path bytes. The models do not inspect a repository, establish
+path existence, entry kind, membership, or reachability, reconcile roles with
+topology or refs, resolve symbolic refs or locators, verify coordinate content,
 model path or ref history, or define durable canonical serialization. Pydantic
 JSON support is semantic rather than a canonical wire format.
 """
@@ -51,11 +53,21 @@ __all__ = [
     "GitRefObservation",
     "GitRepositoryPath",
     "RevisionQualifiedPath",
+    "TextEncoding",
+    "LineEnding",
+    "OneBasedInclusiveLineSpan",
+    "ZeroBasedHalfOpenByteSpan",
+    "RevisionLineLocator",
+    "ArtifactByteLocator",
+    "DiffHunkLocator",
+    "BoundedLocator",
 ]
 
 _LOWERCASE_ASCII_HEX = re.compile(r"[0-9a-f]+")
 _GIT_REF_NAMESPACE_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 _WINDOWS_DRIVE_ABSOLUTE_PATTERN = re.compile(r"[A-Za-z]:/")
+_MAX_LINE_NUMBER = 2_147_483_647
+_MAX_SIGNED_64_BIT_INTEGER = 9_223_372_036_854_775_807
 
 _GitRefNamespaceValue = Annotated[
     str,
@@ -530,3 +542,270 @@ class RevisionQualifiedPath(_RevisionRecordBase):
         if info.mode == "python" and not isinstance(value, GitRepositoryPath):
             raise ValueError("path must be a GitRepositoryPath in Python input")
         return value
+
+
+class TextEncoding(StrEnum):
+    """Supported text encoding for logical-line coordinates."""
+
+    UTF8 = "utf-8"
+
+
+class LineEnding(StrEnum):
+    """Supported line-separator conventions for textual coordinates."""
+
+    LF = "lf"
+    CRLF = "crlf"
+
+
+class _CoordinateSpanBase(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+
+class OneBasedInclusiveLineSpan(_CoordinateSpanBase):
+    """Nonempty one-based line interval with both endpoints included."""
+
+    start_line: int
+    end_line: int
+
+    @field_validator("start_line", "end_line", mode="before")
+    @classmethod
+    def _validate_line_number(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("line numbers must be exact integers")
+        if not 1 <= value <= _MAX_LINE_NUMBER:
+            raise ValueError(
+                f"line numbers must be between 1 and {_MAX_LINE_NUMBER} inclusive"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_endpoint_order(self) -> Self:
+        if self.end_line < self.start_line:
+            raise ValueError("end_line must be greater than or equal to start_line")
+        return self
+
+
+class ZeroBasedHalfOpenByteSpan(_CoordinateSpanBase):
+    """Nonempty zero-based byte interval represented by offset and length."""
+
+    offset: int
+    length: int
+
+    @field_validator("offset", "length", mode="before")
+    @classmethod
+    def _require_exact_integer(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("byte coordinates must be exact integers")
+        return value
+
+    @field_validator("offset")
+    @classmethod
+    def _validate_offset(cls, value: int) -> int:
+        if not 0 <= value <= _MAX_SIGNED_64_BIT_INTEGER:
+            raise ValueError(
+                "offset must be between 0 and the signed 64-bit maximum inclusive"
+            )
+        return value
+
+    @field_validator("length")
+    @classmethod
+    def _validate_length(cls, value: int) -> int:
+        if not 1 <= value <= _MAX_SIGNED_64_BIT_INTEGER:
+            raise ValueError(
+                "length must be between 1 and the signed 64-bit maximum inclusive"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_end_exclusive(self) -> Self:
+        if self.offset + self.length > _MAX_SIGNED_64_BIT_INTEGER:
+            raise ValueError("offset plus length exceeds the signed 64-bit maximum")
+        return self
+
+
+class RevisionLineLocator(_RevisionRecordBase):
+    """Logical-line coordinates bound to one revision-qualified text path."""
+
+    locator_kind: Literal["revision_line"]
+    parent: RevisionQualifiedPath
+    span: OneBasedInclusiveLineSpan
+    text_encoding: TextEncoding
+    line_ending: LineEnding
+
+    @field_validator("parent", mode="before")
+    @classmethod
+    def _require_typed_python_parent(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, RevisionQualifiedPath):
+            raise ValueError("parent must be a RevisionQualifiedPath in Python input")
+        return value
+
+    @field_validator("span", mode="before")
+    @classmethod
+    def _require_typed_python_span(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, OneBasedInclusiveLineSpan):
+            raise ValueError("span must be a OneBasedInclusiveLineSpan in Python input")
+        return value
+
+
+class ArtifactByteLocator(_RevisionRecordBase):
+    """Exact byte coordinates bound to an immutable SHA-256 artifact parent."""
+
+    locator_kind: Literal["artifact_byte"]
+    parent_artifact_sha256: str
+    parent_byte_length: int
+    span: ZeroBasedHalfOpenByteSpan
+
+    @field_validator("parent_artifact_sha256")
+    @classmethod
+    def _validate_parent_artifact_sha256(cls, value: str) -> str:
+        if len(value) != 64:
+            raise ValueError(
+                "parent_artifact_sha256 must contain exactly 64 hexadecimal characters"
+            )
+        if not value.isascii() or _LOWERCASE_ASCII_HEX.fullmatch(value) is None:
+            raise ValueError(
+                "parent_artifact_sha256 must contain only lowercase ASCII "
+                "hexadecimal characters"
+            )
+        if not value.strip("0"):
+            raise ValueError("parent_artifact_sha256 must not be all zero")
+        return value
+
+    @field_validator("parent_byte_length", mode="before")
+    @classmethod
+    def _validate_parent_byte_length(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("parent_byte_length must be an exact integer")
+        if not 0 <= value <= _MAX_SIGNED_64_BIT_INTEGER:
+            raise ValueError(
+                "parent_byte_length must be between 0 and the signed 64-bit "
+                "maximum inclusive"
+            )
+        return value
+
+    @field_validator("span", mode="before")
+    @classmethod
+    def _require_typed_python_span(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ZeroBasedHalfOpenByteSpan):
+            raise ValueError("span must be a ZeroBasedHalfOpenByteSpan in Python input")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_span_within_parent(self) -> Self:
+        if self.span.offset + self.span.length > self.parent_byte_length:
+            raise ValueError("span must end within parent_byte_length")
+        return self
+
+
+class DiffHunkLocator(_RevisionRecordBase):
+    """One diff hunk with distinct artifact, old-side, and new-side bounds."""
+
+    locator_kind: Literal["diff_hunk"]
+    artifact_bytes: ArtifactByteLocator
+    artifact_lines: OneBasedInclusiveLineSpan
+    text_encoding: TextEncoding
+    line_ending: LineEnding
+    old_file: RevisionQualifiedPath | None
+    old_lines: OneBasedInclusiveLineSpan | None
+    new_file: RevisionQualifiedPath | None
+    new_lines: OneBasedInclusiveLineSpan | None
+
+    @field_validator("artifact_bytes", mode="before")
+    @classmethod
+    def _require_typed_python_artifact_bytes(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ArtifactByteLocator):
+            raise ValueError(
+                "artifact_bytes must be an ArtifactByteLocator in Python input"
+            )
+        return value
+
+    @field_validator("artifact_lines", mode="before")
+    @classmethod
+    def _require_typed_python_artifact_lines(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, OneBasedInclusiveLineSpan):
+            raise ValueError(
+                "artifact_lines must be a OneBasedInclusiveLineSpan in Python input"
+            )
+        return value
+
+    @field_validator("old_file", "new_file", mode="before")
+    @classmethod
+    def _require_typed_python_file(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, RevisionQualifiedPath)
+        ):
+            raise ValueError(
+                "diff files must be RevisionQualifiedPath values or None in "
+                "Python input"
+            )
+        return value
+
+    @field_validator("old_lines", "new_lines", mode="before")
+    @classmethod
+    def _require_typed_python_lines(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, OneBasedInclusiveLineSpan)
+        ):
+            raise ValueError(
+                "diff line spans must be OneBasedInclusiveLineSpan values or "
+                "None in Python input"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_sides(self) -> Self:
+        old_file_present = self.old_file is not None
+        old_lines_present = self.old_lines is not None
+        new_file_present = self.new_file is not None
+        new_lines_present = self.new_lines is not None
+        if old_file_present != old_lines_present:
+            raise ValueError("old_file and old_lines must be present together")
+        if new_file_present != new_lines_present:
+            raise ValueError("new_file and new_lines must be present together")
+        if not old_file_present and not new_file_present:
+            raise ValueError("at least one complete diff side must be present")
+        return self
+
+
+type BoundedLocator = Annotated[
+    RevisionLineLocator | ArtifactByteLocator | DiffHunkLocator,
+    Field(discriminator="locator_kind"),
+]

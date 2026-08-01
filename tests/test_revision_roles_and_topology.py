@@ -58,6 +58,14 @@ EXPECTED_EXPORTS = [
     "GitRefObservation",
     "GitRepositoryPath",
     "RevisionQualifiedPath",
+    "TextEncoding",
+    "LineEnding",
+    "OneBasedInclusiveLineSpan",
+    "ZeroBasedHalfOpenByteSpan",
+    "RevisionLineLocator",
+    "ArtifactByteLocator",
+    "DiffHunkLocator",
+    "BoundedLocator",
 ]
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -699,6 +707,28 @@ def test_new_models_have_exact_fields_and_configuration() -> None:
         GitCommitParentTopology.model_fields
     )
     assert "path" not in ref_observation_fields
+    locator_fields = {
+        "locator_kind",
+        "parent",
+        "start_line",
+        "end_line",
+        "offset",
+        "length",
+        "span",
+        "text_encoding",
+        "line_ending",
+        "parent_artifact_sha256",
+        "parent_byte_length",
+        "artifact_bytes",
+        "artifact_lines",
+        "old_file",
+        "old_lines",
+        "new_file",
+        "new_lines",
+    }
+    assert not locator_fields & set(RevisionRoleAssignment.model_fields)
+    assert not locator_fields & set(GitCommitParentTopology.model_fields)
+    assert not locator_fields & ref_observation_fields
 
 
 def test_role_and_topology_models_have_no_cross_record_reconciliation() -> None:
@@ -741,7 +771,7 @@ def test_exports_package_boundaries_and_production_inventory_are_exact() -> None
     assert production_files == EXPECTED_PRODUCTION_FILES
 
 
-def test_revision_module_has_no_later_slice_or_io_surface() -> None:
+def test_revision_module_has_exact_s01_through_s05_surface_and_no_io() -> None:
     source = REVISION_SOURCE.read_text(encoding="utf-8")
     _validate_revision_public_surface(source)
     tree = ast.parse(source)
@@ -797,9 +827,11 @@ def test_json_rejects_non_commit_topology_members(position: str) -> None:
 
 @pytest.mark.parametrize(
     "symbol",
-    ("LineLocator", "GitRefObservationHistory"),
+    ("ColumnLocator", "GitRefObservationHistory"),
 )
-def test_later_locator_and_history_symbol_mutations_are_rejected(symbol: str) -> None:
+def test_deferred_column_locator_and_history_symbol_mutations_are_rejected(
+    symbol: str,
+) -> None:
     source = REVISION_SOURCE.read_text(encoding="utf-8")
     mutated = source + f"\n\nclass {symbol}:\n    pass\n"
     with pytest.raises(AssertionError):

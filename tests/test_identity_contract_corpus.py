@@ -203,6 +203,9 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/source.py",
 }
 EXPECTED_REVISION_EXPORTS = {
+    "ArtifactByteLocator",
+    "BoundedLocator",
+    "DiffHunkLocator",
     "GitBlobIdentity",
     "GitCommitIdentity",
     "GitCommitParentTopology",
@@ -215,9 +218,14 @@ EXPECTED_REVISION_EXPORTS = {
     "GitRepositoryPath",
     "GitRevisionIdentity",
     "GitTreeIdentity",
+    "LineEnding",
+    "OneBasedInclusiveLineSpan",
     "RevisionQualifiedPath",
+    "RevisionLineLocator",
     "RevisionRole",
     "RevisionRoleAssignment",
+    "TextEncoding",
+    "ZeroBasedHalfOpenByteSpan",
 }
 EXPECTED_S02_REVISION_EXPORTS = {
     "GitCommitParentTopology",
@@ -232,6 +240,16 @@ EXPECTED_S03_REVISION_EXPORTS = {
 EXPECTED_S04_REVISION_EXPORTS = {
     "GitRepositoryPath",
     "RevisionQualifiedPath",
+}
+EXPECTED_S05_REVISION_EXPORTS = {
+    "ArtifactByteLocator",
+    "BoundedLocator",
+    "DiffHunkLocator",
+    "LineEnding",
+    "OneBasedInclusiveLineSpan",
+    "RevisionLineLocator",
+    "TextEncoding",
+    "ZeroBasedHalfOpenByteSpan",
 }
 EXPECTED_CORRECTION_PERMISSION_PATHS = {
     *(f"{CORPUS_RELATIVE}/{filename}" for filename in EXPECTED_FILES),
@@ -1994,9 +2012,11 @@ def test_p02_revision_surface_is_outside_the_immutable_p01_contract() -> None:
     assert EXPECTED_S02_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
     assert EXPECTED_S03_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
     assert EXPECTED_S04_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
+    assert EXPECTED_S05_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
     assert not EXPECTED_S02_REVISION_EXPORTS & p01_targets
     assert not EXPECTED_S03_REVISION_EXPORTS & p01_targets
     assert not EXPECTED_S04_REVISION_EXPORTS & p01_targets
+    assert not EXPECTED_S05_REVISION_EXPORTS & p01_targets
     assert manifest["scope"]["production_modules"] == [
         "faultatlas.domain.identity",
         "faultatlas.domain.compatibility",

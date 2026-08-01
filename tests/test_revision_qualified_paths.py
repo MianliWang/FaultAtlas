@@ -148,6 +148,14 @@ EXPECTED_EXPORTS = [
     "GitRefObservation",
     "GitRepositoryPath",
     "RevisionQualifiedPath",
+    "TextEncoding",
+    "LineEnding",
+    "OneBasedInclusiveLineSpan",
+    "ZeroBasedHalfOpenByteSpan",
+    "RevisionLineLocator",
+    "ArtifactByteLocator",
+    "DiffHunkLocator",
+    "BoundedLocator",
 ]
 
 EXPECTED_PRODUCTION_FILES = {
@@ -678,13 +686,29 @@ def test_qualified_path_schema_version_is_exact(schema_version: object) -> None:
         "line",
         "line_start",
         "line_end",
+        "start_line",
+        "end_line",
         "column",
         "byte_start",
         "byte_end",
+        "offset",
+        "length",
         "old_side",
         "new_side",
         "diff_hunk",
+        "locator_kind",
+        "parent",
         "span",
+        "text_encoding",
+        "line_ending",
+        "parent_artifact_sha256",
+        "parent_byte_length",
+        "artifact_bytes",
+        "artifact_lines",
+        "old_file",
+        "old_lines",
+        "new_file",
+        "new_lines",
         "range",
         "coordinate_index_base",
         "rename_from",
@@ -814,8 +838,25 @@ def test_alias_ref_role_topology_and_object_metadata_are_absent() -> None:
         "tree_identity",
         "content_digest",
         "line",
+        "start_line",
+        "end_line",
         "byte_start",
+        "offset",
+        "length",
         "diff_hunk",
+        "locator_kind",
+        "parent",
+        "span",
+        "text_encoding",
+        "line_ending",
+        "parent_artifact_sha256",
+        "parent_byte_length",
+        "artifact_bytes",
+        "artifact_lines",
+        "old_file",
+        "old_lines",
+        "new_file",
+        "new_lines",
         "path_history",
     }
 
@@ -867,7 +908,7 @@ def test_models_have_exact_strict_frozen_configuration() -> None:
 
 def test_exports_and_package_boundaries_are_exact() -> None:
     assert revision_module.__all__ == EXPECTED_EXPORTS
-    assert len(revision_module.__all__) == len(set(revision_module.__all__)) == 15
+    assert len(revision_module.__all__) == len(set(revision_module.__all__)) == 23
     assert faultatlas.__all__ == ["__version__"]
     assert not any(hasattr(faultatlas, name) for name in EXPECTED_EXPORTS)
     assert not any(hasattr(domain_package, name) for name in EXPECTED_EXPORTS)
@@ -897,9 +938,11 @@ def test_revision_surface_mutations_are_rejected(mutation: str) -> None:
 
 @pytest.mark.parametrize(
     "symbol",
-    ("LineLocator", "PathExistenceObservation", "PathHistory"),
+    ("ColumnLocator", "PathExistenceObservation", "PathHistory"),
 )
-def test_deferred_model_mutations_are_rejected(symbol: str) -> None:
+def test_deferred_column_existence_or_history_model_mutations_are_rejected(
+    symbol: str,
+) -> None:
     source = REVISION_SOURCE.read_text(encoding="utf-8")
     mutated = source + f"\n\nclass {symbol}:\n    pass\n"
     with pytest.raises(AssertionError):
@@ -933,7 +976,7 @@ def test_production_inventory_remains_exactly_eight_sources() -> None:
     assert len(production_files) == 8
 
 
-def test_no_io_normalization_existence_or_s05_surface() -> None:
+def test_no_io_normalization_existence_or_s06_surface() -> None:
     source = REVISION_SOURCE.read_text(encoding="utf-8")
     tree = ast.parse(source)
     forbidden_modules = {
@@ -984,10 +1027,10 @@ def test_no_io_normalization_existence_or_s05_surface() -> None:
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
     }
     assert not public_classes & {
-        "LineLocator",
-        "ByteLocator",
-        "DiffHunkLocator",
-        "LocatorUnion",
+        "ColumnLocator",
+        "LocatorReader",
+        "LocatorResolver",
+        "ReviewApplicability",
         "PathExistenceObservation",
         "PathEntryKind",
         "PathHistory",
