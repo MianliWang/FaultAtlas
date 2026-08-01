@@ -26,7 +26,6 @@ from faultatlas.domain.compatibility import (
 from faultatlas.domain.identity import (
     AuthorityRole,
     IdentityFieldState,
-    IdentityValueState,
     NumberedSourceObjectIdentity,
     ProviderAuthority,
     ProviderGlobalId,
@@ -584,9 +583,12 @@ def test_mapping_result_rejects_conflict_with_a_mapped_identity() -> None:
 
 def test_mapping_result_rejects_unresolved_state_with_selected_winner() -> None:
     result = _map(LegacyObjectIdInterpretation.UNRESOLVED)
-    selected = IdentityValueState[RepositoryScopedNumber | ProviderGlobalId](
-        state=IdentityFieldState.PRESENT,
-        value=RepositoryScopedNumber.model_validate("4412"),
+    selected = result.object_id_state.model_copy(
+        update={
+            "state": IdentityFieldState.PRESENT,
+            "value": RepositoryScopedNumber.model_validate("4412"),
+            "conflict_candidates": (),
+        }
     )
 
     with pytest.raises(ValidationError):
@@ -597,12 +599,13 @@ def test_mapping_result_rejects_unresolved_state_with_selected_winner() -> None:
 
 def test_mapping_result_rejects_wrong_candidate_order_and_types() -> None:
     result = _map(LegacyObjectIdInterpretation.UNRESOLVED)
-    reversed_candidates = IdentityValueState[RepositoryScopedNumber | ProviderGlobalId](
-        state=IdentityFieldState.CONFLICT,
-        conflict_candidates=(
-            ProviderGlobalId.model_validate("4412"),
-            RepositoryScopedNumber.model_validate("4412"),
-        ),
+    reversed_candidates = result.object_id_state.model_copy(
+        update={
+            "conflict_candidates": (
+                ProviderGlobalId.model_validate("4412"),
+                RepositoryScopedNumber.model_validate("4412"),
+            )
+        }
     )
 
     with pytest.raises(ValidationError):

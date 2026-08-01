@@ -85,9 +85,8 @@ class LegacyCompatibilityReason(StrEnum):
     )
 
 
-_LegacyObjectIdStateModel = IdentityValueState[
-    RepositoryScopedNumber | ProviderGlobalId
-]
+_RepositoryScopedObjectIdState = IdentityValueState[RepositoryScopedNumber]
+_ProviderGlobalObjectIdState = IdentityValueState[ProviderGlobalId]
 _SOURCE_IDENTITY_TYPES = (
     RepositoryIdentity,
     NumberedSourceObjectIdentity,
@@ -103,21 +102,54 @@ _ISSUE_PROJECTION_LOSSES = (
 )
 
 
+class _UnresolvedObjectIdConflictState(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    schema_version: Literal[1] = 1
+    state: Literal[IdentityFieldState.CONFLICT]
+    value: object | None = None
+    conflict_candidates: tuple[RepositoryScopedNumber, ProviderGlobalId]
+
+    @model_validator(mode="after")
+    def _require_no_selected_value(self) -> Self:
+        if self.value is not None:
+            raise ValueError("conflict state cannot select a value")
+        return self
+
+
+type _LegacyObjectIdState = (
+    _RepositoryScopedObjectIdState
+    | _ProviderGlobalObjectIdState
+    | _UnresolvedObjectIdConflictState
+)
+_LEGACY_OBJECT_ID_STATE_TYPES = (
+    _RepositoryScopedObjectIdState,
+    _ProviderGlobalObjectIdState,
+    _UnresolvedObjectIdConflictState,
+)
+
+
 def _typed_object_id_state(
     legacy_locator: SourceLocator,
     interpretation: LegacyObjectIdInterpretation,
-) -> IdentityValueState[RepositoryScopedNumber | ProviderGlobalId]:
+) -> _LegacyObjectIdState:
     if interpretation is LegacyObjectIdInterpretation.REPOSITORY_SCOPED_NUMBER:
-        return _LegacyObjectIdStateModel(
+        return _RepositoryScopedObjectIdState(
             state=IdentityFieldState.PRESENT,
             value=RepositoryScopedNumber.model_validate(legacy_locator.object_id),
         )
     if interpretation is LegacyObjectIdInterpretation.PROVIDER_GLOBAL_ID:
-        return _LegacyObjectIdStateModel(
+        return _ProviderGlobalObjectIdState(
             state=IdentityFieldState.PRESENT,
             value=ProviderGlobalId.model_validate(legacy_locator.object_id),
         )
-    return _LegacyObjectIdStateModel(
+    return _UnresolvedObjectIdConflictState(
         state=IdentityFieldState.CONFLICT,
         conflict_candidates=(
             RepositoryScopedNumber.model_validate(legacy_locator.object_id),
@@ -225,7 +257,11 @@ def _restore_json_object_id_state(
             )
             for index, candidate in enumerate(cast(list[object], raw_candidates))
         )
-    return _LegacyObjectIdStateModel.model_validate(state_data)
+    if interpretation is LegacyObjectIdInterpretation.REPOSITORY_SCOPED_NUMBER:
+        return _RepositoryScopedObjectIdState.model_validate(state_data)
+    if interpretation is LegacyObjectIdInterpretation.PROVIDER_GLOBAL_ID:
+        return _ProviderGlobalObjectIdState.model_validate(state_data)
+    return _UnresolvedObjectIdConflictState.model_validate(state_data)
 
 
 class LegacySourceLocatorMappingResult(BaseModel):
@@ -244,7 +280,7 @@ class LegacySourceLocatorMappingResult(BaseModel):
     legacy_locator: SourceLocator
     repository_alias_observation: RepositoryAliasObservation
     object_id_interpretation: LegacyObjectIdInterpretation
-    object_id_state: IdentityValueState[RepositoryScopedNumber | ProviderGlobalId]
+    object_id_state: _LegacyObjectIdState
     mapped_identity: NumberedSourceObjectIdentity | None = None
     reasons: tuple[LegacyCompatibilityReason, ...] = ()
     mapping_basis: Literal["legacy_locator_plus_explicit_repository_context"] = (
@@ -263,9 +299,9 @@ class LegacySourceLocatorMappingResult(BaseModel):
             if isinstance(interpretation, LegacyObjectIdInterpretation):
                 return _restore_json_object_id_state(value, interpretation)
             return value
-        if info.mode == "python" and not isinstance(value, IdentityValueState):
-            raise ValueError("object_id_state must use the specialized typed state")
-        return cast(object, value)
+        if info.mode == "python" and type(value) not in _LEGACY_OBJECT_ID_STATE_TYPES:
+            raise ValueError("object_id_state must use the domain-discriminated state")
+        return value
 
     @field_validator("reasons")
     @classmethod

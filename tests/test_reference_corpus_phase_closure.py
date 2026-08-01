@@ -28,6 +28,33 @@ CLOSURE_DIRECTORY = (
 CLOSURE_JSON = CLOSURE_DIRECTORY / "closure.json"
 CLOSURE_SIDECAR = CLOSURE_DIRECTORY / "closure.sha256"
 CLOSURE_MARKDOWN = CLOSURE_DIRECTORY / "closure.md"
+IDENTITY_V1_DIRECTORY = REPOSITORY_ROOT / "reference_corpus/contracts/identity/v1"
+IDENTITY_CORRECTION_DIRECTORY = (
+    REPOSITORY_ROOT / "reference_corpus/contracts/identity/corrections/"
+    "s05-c01-ambiguous-union-round-trip"
+)
+IDENTITY_S06_CLOSURE_DIRECTORY = (
+    REPOSITORY_ROOT
+    / "reference_corpus/contracts/identity/closures/s1-p01-phase-closure"
+)
+EXPECTED_IDENTITY_V1_FILES = {
+    "compatibility-vectors.json",
+    "compatibility-vectors.sha256",
+    "contract.md",
+    "invalid-vectors.json",
+    "invalid-vectors.sha256",
+    "manifest.json",
+    "manifest.sha256",
+    "valid-vectors.json",
+    "valid-vectors.sha256",
+}
+EXPECTED_IDENTITY_CORRECTION_FILES = {
+    "correction.json",
+    "correction.md",
+    "correction.sha256",
+    "regression-vectors.json",
+    "regression-vectors.sha256",
+}
 EXPECTED_CLOSURE_SHA256 = (
     "8c02d79c4a5a1d52b9fc2a3718e1b47888da6195588e62ab927388dbe972189e"
 )
@@ -1371,6 +1398,26 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
     assert not (REPOSITORY_ROOT / "reference_corpus/pytest-4412/phases/S1.P01").exists()
 
 
+def test_identity_correction_is_append_only_while_s06_remains_absent() -> None:
+    assert {path.name for path in IDENTITY_V1_DIRECTORY.iterdir()} == (
+        EXPECTED_IDENTITY_V1_FILES
+    )
+    assert {path.name for path in IDENTITY_CORRECTION_DIRECTORY.iterdir()} == (
+        EXPECTED_IDENTITY_CORRECTION_FILES
+    )
+    assert all(
+        path.is_file() and not path.is_symlink()
+        for path in IDENTITY_CORRECTION_DIRECTORY.iterdir()
+    )
+    identity_root = IDENTITY_V1_DIRECTORY.parent
+    assert {path.name for path in identity_root.iterdir()} == {
+        "corrections",
+        "v1",
+    }
+    assert not IDENTITY_S06_CLOSURE_DIRECTORY.exists()
+    assert not (REPOSITORY_ROOT / "tests/test_identity_phase_closure.py").exists()
+
+
 @pytest.mark.parametrize("symbol", sorted(EXPECTED_S02_IDENTITY_SYMBOLS))
 def test_omitting_authorized_s02_identity_export_is_rejected(symbol: str) -> None:
     source = (REPOSITORY_ROOT / "src/faultatlas/domain/identity.py").read_text(
@@ -1516,8 +1563,16 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     )
     assert "`S1.P01.S05` — Identity Contract Corpus (complete)" in normalized_roadmap
     assert (
+        "`S1.P01.S05.C01` — Ambiguous Identity Union Round-Trip and Contract "
+        "Assurance Correction (complete)" in normalized_roadmap
+    )
+    assert (
         "`S1.P01.S06` — Integration and Phase Closure (next; not started)"
         in normalized_roadmap
+    )
+    assert (
+        "`S1.P02` is not started and is not yet eligible until `S1.P01.S06` "
+        "closes" in normalized_roadmap
     )
     assert "s1-p00-phase-closure" in case_doc
     assert "eligible" in case_doc

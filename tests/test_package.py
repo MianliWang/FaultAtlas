@@ -64,9 +64,20 @@ CORPUS_ARTIFACT_NAMES = frozenset(
         "gap-matrix.json",
         "gap-matrix.md",
         "gap-matrix.sha256",
+        "regression-vectors.json",
+        "regression-vectors.sha256",
     }
 )
 WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
+EXPECTED_PRODUCTION_FILES = {
+    "src/faultatlas/__init__.py",
+    "src/faultatlas/__main__.py",
+    "src/faultatlas/cli.py",
+    "src/faultatlas/domain/__init__.py",
+    "src/faultatlas/domain/compatibility.py",
+    "src/faultatlas/domain/identity.py",
+    "src/faultatlas/domain/source.py",
+}
 
 type ArchiveKind = Literal["wheel", "sdist"]
 type MemberKind = Literal["file", "directory", "link", "special"]
@@ -148,11 +159,49 @@ def _archive_path_parts(member: ArchiveMember) -> tuple[str, ...]:
     return parts
 
 
+def _working_source_bytes() -> dict[str, bytes]:
+    observed = {
+        path.relative_to(REPOSITORY_ROOT).as_posix(): path.read_bytes()
+        for path in (REPOSITORY_ROOT / "src").rglob("*.py")
+    }
+    assert set(observed) == EXPECTED_PRODUCTION_FILES
+    return observed
+
+
+def _archive_source_bytes(
+    members: tuple[ArchiveMember, ...],
+) -> dict[str, bytes]:
+    observed: dict[str, bytes] = {}
+    for member in members:
+        if member.kind != "file" or not member.name.endswith(".py"):
+            continue
+        parts = _archive_path_parts(member)
+        try:
+            package_index = parts.index("faultatlas")
+        except ValueError:
+            relative = f"__unexpected_archive_python__/{member.name}"
+        else:
+            relative = "src/" + "/".join(parts[package_index:])
+        assert relative not in observed
+        assert member.data is not None
+        observed[relative] = member.data
+    return observed
+
+
+def _assert_complete_source_package(
+    packaged: dict[str, bytes], working: dict[str, bytes]
+) -> None:
+    assert set(working) == EXPECTED_PRODUCTION_FILES
+    assert set(packaged) == EXPECTED_PRODUCTION_FILES
+    assert packaged == working
+
+
 def _assert_safe_package_archive(
     members: tuple[ArchiveMember, ...],
     *,
     project_license: bytes,
     historical_license: bytes,
+    expect_sources: bool = False,
 ) -> None:
     packaged_project_licenses: list[bytes] = []
     assert members, "package archive is empty"
@@ -183,6 +232,11 @@ def _assert_safe_package_archive(
     assert packaged_project_licenses == [project_license], (
         "archive must contain exactly one byte-identical FaultAtlas project LICENSE"
     )
+    if expect_sources:
+        _assert_complete_source_package(
+            _archive_source_bytes(members),
+            _working_source_bytes(),
+        )
 
 
 def _git_status_snapshot() -> bytes | None:
@@ -246,6 +300,7 @@ def _write_synthetic_archive(
 
 def test_package_version_comes_from_distribution_metadata() -> None:
     assert faultatlas.__version__ == version("faultatlas")
+    assert faultatlas.__version__ == "0.1.0"
 
 
 def test_distribution_name_is_faultatlas() -> None:
@@ -309,7 +364,37 @@ def test_offline_build_excludes_reference_corpus_and_historical_license(
             _read_archive(path, kind),
             project_license=project_license,
             historical_license=historical_license,
+            expect_sources=True,
         )
+
+
+@pytest.mark.parametrize(
+    "mutation", ("unexpected-source", "missing-source", "source-byte-mismatch")
+)
+def test_package_source_inventory_mutation_is_rejected(mutation: str) -> None:
+    working = _working_source_bytes()
+    packaged = dict(working)
+    if mutation == "unexpected-source":
+        packaged["src/faultatlas/domain/unexpected.py"] = b"pass\n"
+    elif mutation == "missing-source":
+        del packaged["src/faultatlas/cli.py"]
+    else:
+        assert mutation == "source-byte-mismatch"
+        packaged["src/faultatlas/domain/identity.py"] += b"\n"
+    with pytest.raises(AssertionError):
+        _assert_complete_source_package(packaged, working)
+
+
+def test_archive_source_inventory_rejects_rogue_python_member() -> None:
+    working = _working_source_bytes()
+    members = tuple(
+        ArchiveMember(relative.removeprefix("src/"), "file", data)
+        for relative, data in working.items()
+    ) + (ArchiveMember("unexpected.py", "file", b"pass\n"),)
+    packaged = _archive_source_bytes(members)
+    assert "__unexpected_archive_python__/unexpected.py" in packaged
+    with pytest.raises(AssertionError):
+        _assert_complete_source_package(packaged, working)
 
 
 @pytest.mark.parametrize("kind", ("wheel", "sdist"))
