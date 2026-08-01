@@ -682,6 +682,16 @@ distinct from parent zero. These internal semantic records add no repository,
 ref, path, provenance, or graph claim, and the pytest #4412 corpus remains
 unchanged.
 
+S1.P02.S03 uses the locked case without fabricating a complete canonical ref
+observation. The corpus directly retains ref lexeme `starred_with_side_effect`
+with head SHA `690a63b9218f72662cd3a67c6c200b758c88ce12`; the later head-ref
+deletion is separately observed. Treating that SHA as the former target is a
+reviewed derivation over those observations. The original head repository
+identity remains unknown, and no ref namespace is retained. Provider event
+time `2018-11-18T00:17:28Z` is deletion-event evidence, not FaultAtlas
+observation time. Repository- and namespace-qualified ref subjects and
+observation times used by S03 tests are therefore explicitly synthetic.
+
 Current status: the case-calibrated `S1.P01` Identity Primitives Phase is
 complete. `S1.P02` is active, `S1.P02.S01` is complete, `S1.P02.S02` is
-complete, and `S1.P02.S03` is next and not started.
+complete, `S1.P02.S03` is complete, and `S1.P02.S04` is next and not started.

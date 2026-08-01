@@ -17,6 +17,7 @@ from faultatlas.domain.revision import (
     GitCommitParentTopology,
     GitHashAlgorithm,
     GitObjectKind,
+    GitRefObservation,
     GitTreeIdentity,
     RevisionRole,
     RevisionRoleAssignment,
@@ -52,6 +53,9 @@ EXPECTED_EXPORTS = [
     "RevisionRole",
     "RevisionRoleAssignment",
     "GitCommitParentTopology",
+    "GitRefNamespace",
+    "GitRefName",
+    "GitRefObservation",
 ]
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -658,6 +662,34 @@ def test_new_models_have_exact_fields_and_configuration() -> None:
     assert not {"role", "first_parent", "is_merge", "parent_count"} & set(
         GitCommitParentTopology.model_fields
     )
+    ref_observation_fields = set(GitRefObservation.model_fields)
+    assert not {
+        "repository_identity",
+        "namespace",
+        "name",
+        "state",
+        "authority",
+        "observed_at",
+        "observed_target",
+    } & set(RevisionRoleAssignment.model_fields)
+    assert not {
+        "repository_identity",
+        "namespace",
+        "name",
+        "state",
+        "authority",
+        "observed_at",
+        "observed_target",
+    } & set(GitCommitParentTopology.model_fields)
+    assert (
+        not {
+            "role",
+            "revision",
+            "commit",
+            "ordered_parents",
+        }
+        & ref_observation_fields
+    )
 
 
 def test_role_and_topology_models_have_no_cross_record_reconciliation() -> None:
@@ -673,9 +705,19 @@ def test_role_and_topology_models_have_no_cross_record_reconciliation() -> None:
         for node in ast.walk(classes["GitCommitParentTopology"])
         if isinstance(node, ast.Name)
     }
+    ref_observation_names = {
+        node.id
+        for node in ast.walk(classes["GitRefObservation"])
+        if isinstance(node, ast.Name)
+    }
     assert "GitCommitParentTopology" not in assignment_names
     assert "RevisionRoleAssignment" not in topology_names
     assert "RevisionRole" not in topology_names
+    assert "GitRefObservation" not in assignment_names
+    assert "GitRefObservation" not in topology_names
+    assert "RevisionRoleAssignment" not in ref_observation_names
+    assert "GitCommitParentTopology" not in ref_observation_names
+    assert "RevisionRole" not in ref_observation_names
 
 
 def test_exports_package_boundaries_and_production_inventory_are_exact() -> None:
@@ -746,9 +788,9 @@ def test_json_rejects_non_commit_topology_members(position: str) -> None:
 
 @pytest.mark.parametrize(
     "symbol",
-    ("MutableRefObservation", "RevisionQualifiedPath"),
+    ("RevisionQualifiedPath", "GitRefObservationHistory"),
 )
-def test_later_ref_and_locator_symbol_mutations_are_rejected(symbol: str) -> None:
+def test_later_path_and_history_symbol_mutations_are_rejected(symbol: str) -> None:
     source = REVISION_SOURCE.read_text(encoding="utf-8")
     mutated = source + f"\n\nclass {symbol}:\n    pass\n"
     with pytest.raises(AssertionError):

@@ -236,6 +236,9 @@ EXPECTED_REVISION_EXPORTS = {
     "GitHashAlgorithm",
     "GitObjectIdentity",
     "GitObjectKind",
+    "GitRefName",
+    "GitRefNamespace",
+    "GitRefObservation",
     "GitRevisionIdentity",
     "GitTreeIdentity",
     "RevisionRole",
@@ -1177,7 +1180,7 @@ def _validate_revision_inventory(source: bytes) -> None:
     assert public_symbols == EXPECTED_REVISION_EXPORTS
 
 
-def _assert_only_s01_s02_p02_surface() -> None:
+def _assert_only_s01_s02_s03_p02_surface() -> None:
     production_files = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
@@ -1214,11 +1217,27 @@ def _assert_only_s01_s02_p02_surface() -> None:
         "commit",
         "ordered_parents",
     )
+    assert tuple(revision_module.GitRefObservation.model_fields) == (
+        "schema_version",
+        "repository_identity",
+        "namespace",
+        "name",
+        "state",
+        "authority",
+        "observed_at",
+        "observed_target",
+    )
     intrinsic_forbidden_fields = {
+        "authority",
+        "name",
+        "namespace",
+        "observed_at",
+        "observed_target",
         "repository",
         "repository_identity",
         "role",
         "ref",
+        "state",
         "path",
         "parent",
         "parents",
@@ -1230,15 +1249,23 @@ def _assert_only_s01_s02_p02_surface() -> None:
     ):
         assert not intrinsic_forbidden_fields & set(model.model_fields)
     later_slice_fields = {
-        "repository",
-        "repository_identity",
-        "ref",
-        "path",
-        "timestamp",
-        "observation_time",
-        "line_range",
         "byte_range",
+        "events",
+        "former_target",
+        "history",
         "hunk",
+        "line_range",
+        "next_state",
+        "observation_time",
+        "path",
+        "previous_state",
+        "previous_target",
+        "prior_state",
+        "ref",
+        "repository",
+        "timestamp",
+        "transition",
+        "transitions",
     }
     fields = {
         node.target.id
@@ -1391,7 +1418,7 @@ def test_group_g_production_inventory_exports_and_legacy_boundary_are_exact() ->
 def test_group_g_no_production_reader_or_later_p02_surface_exists() -> None:
     paths = [REPOSITORY_ROOT / relative for relative in CURRENT_PRODUCTION_FILES]
     _assert_no_production_reader(paths)
-    _assert_only_s01_s02_p02_surface()
+    _assert_only_s01_s02_s03_p02_surface()
 
 
 def test_current_revision_inventory_mutations_are_rejected() -> None:
@@ -1407,12 +1434,12 @@ def test_current_revision_inventory_mutations_are_rejected() -> None:
     source = (REPOSITORY_ROOT / "src/faultatlas/domain/revision.py").read_text(
         encoding="utf-8"
     )
-    missing_export = source.replace('    "GitCommitParentTopology",\n', "", 1)
+    missing_export = source.replace('    "GitRefObservation",\n', "", 1)
     with pytest.raises(AssertionError):
         _validate_revision_inventory(missing_export.encode())
     unexpected_export = source.replace(
-        '    "GitCommitParentTopology",\n',
-        '    "GitCommitParentTopology",\n    "UnexpectedRevision",\n',
+        '    "GitRefObservation",\n',
+        '    "GitRefObservation",\n    "UnexpectedRevision",\n',
         1,
     )
     with pytest.raises(AssertionError):
@@ -1588,7 +1615,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P02` is active" in roadmap
     assert "`S1.P02.S01` is complete" in roadmap
     assert "`S1.P02.S02` is complete" in roadmap
-    assert "`S1.P02.S03` is next and not started" in roadmap
+    assert "`S1.P02.S03` is complete" in roadmap
+    assert "`S1.P02.S04` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:
