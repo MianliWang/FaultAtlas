@@ -24,8 +24,10 @@ aspirational Slice as scheduled work.
   external planning has been implemented.
 - **S1** is active. Preparatory Phase `S1.P00` is operationally complete;
   `S1.P01` is complete: `S1.P01.S01` through `S1.P01.S06` and the
-  `S1.P01.S05.C01` correction are complete. `S1.P02` is next, eligible to
-  begin, and not started; `S1.P03` through `S1.P10` remain not started.
+  `S1.P01.S05.C01` correction are complete. `S1.P02` is active:
+  `S1.P02.S01` is complete, `S1.P02.S02` is next and not started, and
+  `S1.P02.S03` through `S1.P02.S07` are not started. `S1.P03` through
+  `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -56,8 +58,10 @@ is provided by the corrective `S1.P00.S04.C01` acquisition-closure addendum.
 `S1.P00.S10` are complete. S04 and its corrective C01 remain closed, as do
 S05-S10. The protected S10 publication closes `S1.P00`; `S1.P01` is complete,
 including `S1.P01.S01` through `S1.P01.S06` and the `S1.P01.S05.C01`
-correction. `S1.P02` is next, eligible to begin, and not started;
-`S1.P03` through `S1.P10` and `S2-S9` remain unimplemented.
+correction. `S1.P02` is active: `S1.P02.S01` is complete,
+`S1.P02.S02` is next and not started, and `S1.P02.S03` through
+`S1.P02.S07` are not started. `S1.P03` through `S1.P10` and `S2-S9`
+remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -100,14 +104,31 @@ that behavior in a versioned, source-only internal contract corpus. S05.C01
 adds an append-only correction: ambiguous scalar-root generic states reject,
 while compatibility round trips retain exact types through explicit domain
 discrimination. S06 publishes the internal, case-calibrated Phase closure and
-establishes S1.P02 readiness without starting S1.P02. Mutable aliases remain
-separate from stable identity. Retrieval provenance, conflict resolution,
-lifecycle transition history, revisions, revision-qualified locators, evidence
-envelopes, and migration remain unimplemented.
+establishes S1.P02 readiness. Mutable aliases remain separate from stable
+identity. S1.P02.S01 now supplies intrinsic Git commit, tree, and blob
+identities only. Retrieval provenance, conflict resolution, lifecycle
+transition history, revision roles and topology, ref observations,
+revision-qualified locators, evidence envelopes, and migration remain
+unimplemented.
+
+## S1.P02 — Revision-qualified Locators
+
+The provisional `S1.P02` Slice sequence is:
+
+1. `S1.P02.S01` — Git Object Identity Foundation (complete)
+2. `S1.P02.S02` — Revision Roles and Ordered Commit Topology (next; not started)
+3. `S1.P02.S03` — Mutable Ref Observations and Lifecycle (not started)
+4. `S1.P02.S04` — Revision-qualified Repository Paths (not started)
+5. `S1.P02.S05` — Line, Byte, and Diff-Hunk Locators (not started)
+6. `S1.P02.S06` — Revision and Locator Contract Corpus (not started)
+7. `S1.P02.S07` — Integration and Phase Closure (not started)
+
+S1.P02 is active. S01 implements only internal, hash-algorithm-qualified Git
+commit, tree, and blob identity. S02-S07 remain provisional until each Slice
+begins and are not implemented by S01.
 
 ## Preserved later Stage 1 phases
 
-- **S1.P02 — Revision-qualified Locators**
 - **S1.P03 — Evidence Envelope**
 - **S1.P04 — Repository Snapshot Model**
 - **S1.P05 — Development History Model**

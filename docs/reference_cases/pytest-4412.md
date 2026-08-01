@@ -663,6 +663,12 @@ S08 source reference. `S1.P01` is eligible to begin with identity primitives
 only, but it remains not started. The closure is not a universal phase-closure
 schema or a production API.
 
+The four commit, one tree, and four blob Git SHA-1 values already retained by
+the case now serve as the nine canonical S1.P02.S01 Git object identity test
+vectors. The retained-artifact SHA-256 remains a separate artifact digest; it
+is not reinterpreted as Git object identity, and the pytest #4412 corpus is
+unchanged.
+
 Current status: the case-calibrated `S1.P01` Identity Primitives Phase is
-complete, `S1.P02` is eligible to begin but remains not started, and this
-closure did not modify the pytest #4412 corpus.
+complete. `S1.P02` is active, `S1.P02.S01` is complete, and `S1.P02.S02` is
+next and not started.

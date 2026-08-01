@@ -199,7 +199,17 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/__init__.py",
     "src/faultatlas/domain/compatibility.py",
     "src/faultatlas/domain/identity.py",
+    "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/source.py",
+}
+EXPECTED_REVISION_EXPORTS = {
+    "GitBlobIdentity",
+    "GitCommitIdentity",
+    "GitHashAlgorithm",
+    "GitObjectIdentity",
+    "GitObjectKind",
+    "GitRevisionIdentity",
+    "GitTreeIdentity",
 }
 EXPECTED_CORRECTION_PERMISSION_PATHS = {
     *(f"{CORPUS_RELATIVE}/{filename}" for filename in EXPECTED_FILES),
@@ -1947,7 +1957,24 @@ def test_missing_or_extra_s06_closure_artifact_is_rejected() -> None:
 def test_current_correction_whole_source_inventory_is_exact() -> None:
     working = _working_source_bytes()
     assert set(working) == EXPECTED_PRODUCTION_FILES
-    assert len(working) == 7
+    assert len(working) == 8
+
+
+def test_revision_surface_is_outside_the_immutable_p01_contract() -> None:
+    manifest = _load_document("manifest.json")
+    target_symbols = manifest["target_symbols"]
+    p01_targets = {
+        symbol
+        for key in ("identity_module", "compatibility_module", "legacy")
+        for symbol in target_symbols[key]
+    }
+    assert not EXPECTED_REVISION_EXPORTS & p01_targets
+    assert manifest["scope"]["production_modules"] == [
+        "faultatlas.domain.identity",
+        "faultatlas.domain.compatibility",
+    ]
+    assert "Git_object_identity" in manifest["non_goals"]
+    assert EXPECTED_EFFECTIVE_VECTOR_COUNT == 199
 
 
 @pytest.mark.parametrize(
@@ -1960,7 +1987,7 @@ def test_whole_source_inventory_mutation_is_rejected(mutation: str) -> None:
     if mutation == "unexpected-source":
         packaged["src/faultatlas/domain/unexpected.py"] = b"pass\n"
     elif mutation == "missing-source":
-        del packaged["src/faultatlas/cli.py"]
+        del packaged["src/faultatlas/domain/revision.py"]
     else:
         assert mutation == "packaged-byte-mismatch"
         packaged["src/faultatlas/domain/compatibility.py"] += b"\n"

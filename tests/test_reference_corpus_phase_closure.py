@@ -393,7 +393,26 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/__init__.py",
     "src/faultatlas/domain/compatibility.py",
     "src/faultatlas/domain/identity.py",
+    "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/source.py",
+}
+
+EXPECTED_REVISION_SYMBOLS = {
+    "GitBlobIdentity",
+    "GitCommitIdentity",
+    "GitHashAlgorithm",
+    "GitObjectIdentity",
+    "GitObjectKind",
+    "GitRevisionIdentity",
+    "GitTreeIdentity",
+}
+
+EXPECTED_REVISION_CLASSES = {
+    "GitBlobIdentity",
+    "GitCommitIdentity",
+    "GitHashAlgorithm",
+    "GitObjectKind",
+    "GitTreeIdentity",
 }
 
 EXPECTED_COMPATIBILITY_SYMBOLS = {
@@ -558,6 +577,13 @@ def _validate_identity_symbol_inventory(source: bytes) -> None:
     assert public_symbols == EXPECTED_IDENTITY_SYMBOLS
     assert len(public_classes) == len(EXPECTED_IDENTITY_CLASSES) == 16
     assert public_classes == EXPECTED_IDENTITY_CLASSES
+
+
+def _validate_revision_symbol_inventory(source: bytes) -> None:
+    exports, public_symbols, public_classes = _identity_symbol_inventory(source)
+    assert exports == EXPECTED_REVISION_SYMBOLS
+    assert public_symbols == EXPECTED_REVISION_SYMBOLS
+    assert public_classes == EXPECTED_REVISION_CLASSES
 
 
 def _compatibility_symbol_inventory(
@@ -1368,6 +1394,10 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
         REPOSITORY_ROOT / "src/faultatlas/domain/compatibility.py"
     ).read_bytes()
     _validate_compatibility_symbol_inventory(compatibility_source)
+    revision_source = (
+        REPOSITORY_ROOT / "src/faultatlas/domain/revision.py"
+    ).read_bytes()
+    _validate_revision_symbol_inventory(revision_source)
     source_path = REPOSITORY_ROOT / "src/faultatlas/domain/source.py"
     source = source_path.read_bytes()
     assert len(source) == 4336
@@ -1395,6 +1425,17 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
     assert b"AlternateIdBinding" not in complete_production_source
     assert b"EvidenceEnvelope" not in complete_production_source
     assert b"MigrationRegistry" not in complete_production_source
+    for forbidden in (
+        b"GitCommitRole",
+        b"GitParentIdentity",
+        b"GitRepositoryMembership",
+        b"MutableRefObservation",
+        b"RevisionQualifiedPath",
+        b"LineLocator",
+        b"ByteLocator",
+        b"HunkLocator",
+    ):
+        assert forbidden not in complete_production_source
     assert not (REPOSITORY_ROOT / "reference_corpus/pytest-4412/phases/S1.P01").exists()
 
 
@@ -1493,6 +1534,13 @@ def test_omitting_compatibility_module_from_production_inventory_is_rejected() -
         _validate_production_file_inventory(mutated)
 
 
+def test_omitting_revision_module_from_production_inventory_is_rejected() -> None:
+    mutated = EXPECTED_PRODUCTION_FILES - {"src/faultatlas/domain/revision.py"}
+
+    with pytest.raises(AssertionError):
+        _validate_production_file_inventory(mutated)
+
+
 def test_unexpected_production_module_is_rejected() -> None:
     mutated = EXPECTED_PRODUCTION_FILES | {
         "src/faultatlas/domain/unexpected_identity.py"
@@ -1500,6 +1548,22 @@ def test_unexpected_production_module_is_rejected() -> None:
 
     with pytest.raises(AssertionError):
         _validate_production_file_inventory(mutated)
+
+
+def test_revision_export_inventory_mutations_are_rejected() -> None:
+    source = (REPOSITORY_ROOT / "src/faultatlas/domain/revision.py").read_text(
+        encoding="utf-8"
+    )
+    missing = source.replace('    "GitObjectIdentity",\n', "", 1)
+    with pytest.raises(AssertionError):
+        _validate_revision_symbol_inventory(missing.encode())
+    unexpected = source.replace(
+        '    "GitObjectIdentity",\n',
+        '    "GitObjectIdentity",\n    "UnexpectedRevision",\n',
+        1,
+    )
+    with pytest.raises(AssertionError):
+        _validate_revision_symbol_inventory(unexpected.encode())
 
 
 @pytest.mark.parametrize(
@@ -1583,16 +1647,25 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         "`S1.P01`)" in normalized_roadmap
     )
     assert "`S1.P01` is complete" in normalized_roadmap
-    assert "`S1.P02` is next, eligible to begin, and not started" in normalized_roadmap
+    assert "`S1.P02` is active" in normalized_roadmap
+    assert "`S1.P02.S01` is complete" in normalized_roadmap
+    assert "`S1.P02.S02` is next and not started" in normalized_roadmap
+    for slice_id in range(3, 8):
+        assert f"`S1.P02.S{slice_id:02d}`" in normalized_roadmap
     assert "s1-p00-phase-closure" in case_doc
-    assert "eligible" in case_doc
-    assert "not started" in case_doc
     normalized_case_doc = " ".join(case_doc.split())
     assert (
-        "Current status: the case-calibrated `S1.P01` Identity Primitives "
-        "Phase is complete, `S1.P02` is eligible to begin but remains not "
-        "started, and this closure did not modify the pytest #4412 corpus."
+        "nine canonical S1.P02.S01 Git object identity test vectors"
         in normalized_case_doc
+    )
+    assert (
+        "retained-artifact SHA-256 remains a separate artifact digest"
+        in normalized_case_doc
+    )
+    assert (
+        "Current status: the case-calibrated `S1.P01` Identity Primitives "
+        "Phase is complete. `S1.P02` is active, `S1.P02.S01` is complete, "
+        "and `S1.P02.S02` is next and not started." in normalized_case_doc
     )
 
 
