@@ -1,11 +1,13 @@
-"""Internal Git object identity, revision-role, topology, and ref primitives.
+"""Internal Git object identity, revision-role, topology, ref, and path primitives.
 
 These models validate explicit object identities and separately supplied role
-or ordered-parent records, plus immutable observations of mutable refs. They do
-not inspect a repository, establish repository membership or reachability,
-reconcile roles with topology or refs, resolve symbolic refs, qualify paths,
-model ref history, or define durable canonical serialization. Pydantic JSON
-support is semantic rather than a canonical wire format.
+or ordered-parent records, immutable observations of mutable refs, and exact
+revision-qualified repository paths. Repository paths intentionally cover only
+a bounded UTF-8 textual subset of Git path bytes. The models do not inspect a
+repository, establish path existence, entry kind, membership, or reachability,
+reconcile roles with topology or refs, resolve symbolic refs, add coordinates,
+model path or ref history, or define durable canonical serialization. Pydantic
+JSON support is semantic rather than a canonical wire format.
 """
 
 import re
@@ -13,6 +15,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal, Self, cast
+from unicodedata import category
 
 from pydantic import (
     AwareDatetime,
@@ -46,10 +49,13 @@ __all__ = [
     "GitRefNamespace",
     "GitRefName",
     "GitRefObservation",
+    "GitRepositoryPath",
+    "RevisionQualifiedPath",
 ]
 
 _LOWERCASE_ASCII_HEX = re.compile(r"[0-9a-f]+")
 _GIT_REF_NAMESPACE_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,63}")
+_WINDOWS_DRIVE_ABSOLUTE_PATTERN = re.compile(r"[A-Za-z]:/")
 
 _GitRefNamespaceValue = Annotated[
     str,
@@ -59,6 +65,7 @@ _GitRefNameValue = Annotated[
     str,
     StringConstraints(min_length=1, max_length=255),
 ]
+_GitRepositoryPathValue = Annotated[str, StringConstraints(min_length=1)]
 
 
 class GitHashAlgorithm(StrEnum):
@@ -435,3 +442,91 @@ class GitRefObservation(_RevisionRecordBase):
         if self.observed_target is not None:
             raise ValueError(f"{self.state.value} state cannot retain a target")
         return self
+
+
+class GitRepositoryPath(RootModel[_GitRepositoryPathValue]):
+    """Exact repository-relative path in the supported UTF-8 textual subset."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _GitRepositoryPathValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_repository_path(cls, value: str) -> str:
+        try:
+            encoded = value.encode("utf-8")
+        except UnicodeEncodeError as error:
+            raise ValueError(
+                "Git repository path must be encodable as strict UTF-8 text"
+            ) from error
+        if len(encoded) > 4096:
+            raise ValueError(
+                "Git repository path must contain at most 4096 encoded UTF-8 bytes"
+            )
+        if value.startswith("/") or value.endswith("/") or "//" in value:
+            raise ValueError(
+                "Git repository path must not contain leading, trailing, or "
+                "repeated slash"
+            )
+        if "\\" in value:
+            raise ValueError("Git repository path must use forward slashes only")
+        if _WINDOWS_DRIVE_ABSOLUTE_PATTERN.match(value) is not None:
+            raise ValueError("Git repository path must not be Windows drive-absolute")
+        segments = value.split("/")
+        if any(segment in {".", ".."} for segment in segments):
+            raise ValueError("Git repository path must not contain . or .. segments")
+        if any(category(character) in {"Cc", "Cf"} for character in value):
+            raise ValueError(
+                "Git repository path must not contain Unicode control or format "
+                "characters"
+            )
+        return value
+
+
+class RevisionQualifiedPath(_RevisionRecordBase):
+    """Stable repository, immutable commit, and exact repository path."""
+
+    repository_identity: RepositoryIdentity
+    revision: GitRevisionIdentity
+    path: GitRepositoryPath
+
+    @field_validator("repository_identity", mode="before")
+    @classmethod
+    def _require_typed_python_repository(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, RepositoryIdentity):
+            raise ValueError(
+                "repository_identity must be a RepositoryIdentity in Python input"
+            )
+        return value
+
+    @field_validator("revision", mode="before")
+    @classmethod
+    def _require_typed_python_revision(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitCommitIdentity):
+            raise ValueError("revision must be a GitCommitIdentity in Python input")
+        return value
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def _require_typed_python_path(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitRepositoryPath):
+            raise ValueError("path must be a GitRepositoryPath in Python input")
+        return value

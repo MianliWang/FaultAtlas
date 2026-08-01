@@ -39,6 +39,8 @@ EXPECTED_EXPORTS = [
     "GitRefNamespace",
     "GitRefName",
     "GitRefObservation",
+    "GitRepositoryPath",
+    "RevisionQualifiedPath",
 ]
 EXPECTED_FIELDS = ("schema_version", "kind", "algorithm", "full_digest")
 type _ObjectIdentityRuntime = GitCommitIdentity | GitTreeIdentity | GitBlobIdentity
@@ -615,4 +617,5 @@ def test_exports_fields_and_no_io_boundary_are_exact() -> None:
         "pydantic",
         "re",
         "typing",
+        "unicodedata",
     }
