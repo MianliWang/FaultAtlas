@@ -57,6 +57,9 @@ C01_ROOT = (
     REPOSITORY_ROOT / "reference_corpus/contracts/identity/corrections/"
     "s05-c01-ambiguous-union-round-trip"
 )
+REVISION_LOCATOR_ROOT = (
+    REPOSITORY_ROOT / "reference_corpus/contracts/revision-locator/v1"
+)
 
 EXPECTED_CLOSURE_FILES = {"closure.json", "closure.md", "closure.sha256"}
 EXPECTED_V1_FILES = {
@@ -76,6 +79,17 @@ EXPECTED_C01_FILES = {
     "correction.sha256",
     "regression-vectors.json",
     "regression-vectors.sha256",
+}
+EXPECTED_REVISION_LOCATOR_FILES = {
+    "contract.md",
+    "invalid-vectors.json",
+    "invalid-vectors.sha256",
+    "manifest.json",
+    "manifest.sha256",
+    "replay-vectors.json",
+    "replay-vectors.sha256",
+    "valid-vectors.json",
+    "valid-vectors.sha256",
 }
 EXPECTED_JSON_BYTES = 112606
 EXPECTED_JSON_SHA256 = (
@@ -1357,15 +1371,29 @@ def _assert_only_s01_through_s05_p02_surface() -> None:
     assert not fields & deferred_fields
 
 
-def _assert_no_s06_locator_contract_corpus() -> None:
+def _assert_exact_s06_locator_contract_corpus() -> None:
     contracts_root = REPOSITORY_ROOT / "reference_corpus/contracts"
-    assert {path.name for path in contracts_root.iterdir()} == {"identity"}
+    assert {path.name for path in contracts_root.iterdir()} == {
+        "identity",
+        "revision-locator",
+    }
     identity_root = contracts_root / "identity"
     assert {path.name for path in identity_root.iterdir()} == {
         "closures",
         "corrections",
         "v1",
     }
+    revision_locator_root = contracts_root / "revision-locator"
+    assert {path.name for path in revision_locator_root.iterdir()} == {"v1"}
+    assert {path.name for path in REVISION_LOCATOR_ROOT.iterdir()} == (
+        EXPECTED_REVISION_LOCATOR_FILES
+    )
+    for path in REVISION_LOCATOR_ROOT.iterdir():
+        assert path.is_file() and not path.is_symlink()
+        assert stat.S_IMODE(path.stat().st_mode) == 0o644
+    assert not (revision_locator_root / "latest").exists()
+    assert not (revision_locator_root / "current").exists()
+    assert not (revision_locator_root / "closures").exists()
 
 
 def _provider() -> ProviderKey:
@@ -1508,11 +1536,11 @@ def test_group_g_production_inventory_exports_and_legacy_boundary_are_exact() ->
     assert set(revision_module.__all__) == EXPECTED_REVISION_EXPORTS
 
 
-def test_group_g_no_reader_resolver_or_s06_surface_exists() -> None:
+def test_group_g_s06_corpus_has_no_reader_resolver_or_s07_surface() -> None:
     paths = [REPOSITORY_ROOT / relative for relative in CURRENT_PRODUCTION_FILES]
     _assert_no_production_reader(paths)
     _assert_only_s01_through_s05_p02_surface()
-    _assert_no_s06_locator_contract_corpus()
+    _assert_exact_s06_locator_contract_corpus()
 
 
 @pytest.mark.parametrize(
@@ -1723,8 +1751,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P02.S03` is complete" in roadmap
     assert "`S1.P02.S04` is complete" in roadmap
     assert "`S1.P02.S05` is complete" in roadmap
-    assert "`S1.P02.S06` is next and not started" in roadmap
-    assert "`S1.P02.S07` is not started" in roadmap
+    assert "`S1.P02.S06` is complete" in roadmap
+    assert "`S1.P02.S07` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:

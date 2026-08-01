@@ -25,6 +25,7 @@ import faultatlas
 import faultatlas.domain as domain_package
 import faultatlas.domain.compatibility as compatibility_module
 import faultatlas.domain.identity as identity_module
+import faultatlas.domain.revision as revision_module
 from faultatlas.domain.compatibility import (
     CompatibilityStatus,
     LegacyCompatibilityReason,
@@ -58,6 +59,9 @@ from faultatlas.domain.source import SourceLocator
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_ROOT = REPOSITORY_ROOT / "reference_corpus/contracts/identity/v1"
 CORPUS_RELATIVE = "reference_corpus/contracts/identity/v1"
+REVISION_LOCATOR_CORPUS_ROOT = (
+    REPOSITORY_ROOT / "reference_corpus/contracts/revision-locator/v1"
+)
 CORRECTION_RELATIVE = (
     "reference_corpus/contracts/identity/corrections/s05-c01-ambiguous-union-round-trip"
 )
@@ -70,6 +74,17 @@ EXPECTED_FILES = {
     "invalid-vectors.sha256",
     "manifest.json",
     "manifest.sha256",
+    "valid-vectors.json",
+    "valid-vectors.sha256",
+}
+EXPECTED_REVISION_LOCATOR_FILES = {
+    "contract.md",
+    "invalid-vectors.json",
+    "invalid-vectors.sha256",
+    "manifest.json",
+    "manifest.sha256",
+    "replay-vectors.json",
+    "replay-vectors.sha256",
     "valid-vectors.json",
     "valid-vectors.sha256",
 }
@@ -2022,6 +2037,29 @@ def test_p02_revision_surface_is_outside_the_immutable_p01_contract() -> None:
         "faultatlas.domain.compatibility",
     ]
     assert "Git_object_identity" in manifest["non_goals"]
+    assert EXPECTED_EFFECTIVE_VECTOR_COUNT == 199
+
+
+def test_revision_locator_corpus_is_an_independent_contract_sibling() -> None:
+    contracts_root = CORPUS_ROOT.parents[1]
+    assert {path.name for path in contracts_root.iterdir()} == {
+        "identity",
+        "revision-locator",
+    }
+    assert CORPUS_ROOT.parent.name == "identity"
+    assert REVISION_LOCATOR_CORPUS_ROOT.parent.name == "revision-locator"
+    assert {path.name for path in REVISION_LOCATOR_CORPUS_ROOT.iterdir()} == (
+        EXPECTED_REVISION_LOCATOR_FILES
+    )
+    revision_manifest = json.loads(
+        (REVISION_LOCATOR_CORPUS_ROOT / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert revision_manifest["corpus_identity"]["id"] == (
+        "faultatlas-revision-locator-contract-corpus"
+    )
+    assert revision_manifest["target_symbols"] == list(revision_module.__all__)
+    for filename in EXPECTED_FILES:
+        _assert_locked_bytes(filename, (CORPUS_ROOT / filename).read_bytes())
     assert EXPECTED_EFFECTIVE_VECTOR_COUNT == 199
 
 

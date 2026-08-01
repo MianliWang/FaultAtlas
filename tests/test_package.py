@@ -403,6 +403,7 @@ def test_archive_source_inventory_rejects_rogue_python_member() -> None:
     "extra_name",
     (
         "reference_corpus/pytest-4412/case/case.json",
+        "reference_corpus/contracts/revision-locator/v1/manifest.json",
         "acquisitions/artifacts/acquisition.json",
         "corrections/correction.json",
         "case/case.json",

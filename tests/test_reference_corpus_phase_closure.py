@@ -37,6 +37,9 @@ IDENTITY_S06_CLOSURE_DIRECTORY = (
     REPOSITORY_ROOT
     / "reference_corpus/contracts/identity/closures/s1-p01-phase-closure"
 )
+REVISION_LOCATOR_V1_DIRECTORY = (
+    REPOSITORY_ROOT / "reference_corpus/contracts/revision-locator/v1"
+)
 EXPECTED_IDENTITY_V1_FILES = {
     "compatibility-vectors.json",
     "compatibility-vectors.sha256",
@@ -54,6 +57,17 @@ EXPECTED_IDENTITY_CORRECTION_FILES = {
     "correction.sha256",
     "regression-vectors.json",
     "regression-vectors.sha256",
+}
+EXPECTED_REVISION_LOCATOR_FILES = {
+    "contract.md",
+    "invalid-vectors.json",
+    "invalid-vectors.sha256",
+    "manifest.json",
+    "manifest.sha256",
+    "replay-vectors.json",
+    "replay-vectors.sha256",
+    "valid-vectors.json",
+    "valid-vectors.sha256",
 }
 EXPECTED_CLOSURE_SHA256 = (
     "8c02d79c4a5a1d52b9fc2a3718e1b47888da6195588e62ab927388dbe972189e"
@@ -1526,7 +1540,10 @@ def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
     )
     identity_root = IDENTITY_V1_DIRECTORY.parent
     contracts_root = identity_root.parent
-    assert {path.name for path in contracts_root.iterdir()} == {"identity"}
+    assert {path.name for path in contracts_root.iterdir()} == {
+        "identity",
+        "revision-locator",
+    }
     assert {path.name for path in identity_root.iterdir()} == {
         "closures",
         "corrections",
@@ -1545,6 +1562,20 @@ def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
     )
     closure_test = REPOSITORY_ROOT / "tests/test_identity_phase_closure.py"
     assert closure_test.is_file() and not closure_test.is_symlink()
+    revision_locator_root = contracts_root / "revision-locator"
+    assert {path.name for path in revision_locator_root.iterdir()} == {"v1"}
+    assert {path.name for path in REVISION_LOCATOR_V1_DIRECTORY.iterdir()} == (
+        EXPECTED_REVISION_LOCATOR_FILES
+    )
+    assert all(
+        path.is_file()
+        and not path.is_symlink()
+        and stat.S_IMODE(path.stat().st_mode) == 0o644
+        for path in REVISION_LOCATOR_V1_DIRECTORY.iterdir()
+    )
+    assert not (revision_locator_root / "latest").exists()
+    assert not (revision_locator_root / "current").exists()
+    assert not (revision_locator_root / "closures").exists()
 
 
 @pytest.mark.parametrize("symbol", sorted(EXPECTED_S02_IDENTITY_SYMBOLS))
@@ -1749,8 +1780,8 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P02.S03` is complete" in normalized_roadmap
     assert "`S1.P02.S04` is complete" in normalized_roadmap
     assert "`S1.P02.S05` is complete" in normalized_roadmap
-    assert "`S1.P02.S06` is next and not started" in normalized_roadmap
-    assert "`S1.P02.S07` is not started" in normalized_roadmap
+    assert "`S1.P02.S06` is complete" in normalized_roadmap
+    assert "`S1.P02.S07` is next and not started" in normalized_roadmap
     for slice_id in range(6, 8):
         assert f"`S1.P02.S{slice_id:02d}`" in normalized_roadmap
     assert "s1-p00-phase-closure" in case_doc
@@ -1815,11 +1846,21 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         in normalized_case_doc
     )
     assert (
+        "S1.P02.S06 publishes a versioned, internal, source-only revision and "
+        "locator contract corpus with valid, invalid, and exact-replay vectors "
+        "kept separate" in normalized_case_doc
+    )
+    assert (
+        "The corpus adds no production reader, locator resolver, persistence "
+        "contract, or public API; S1.P02.S07 Phase closure is not included"
+        in normalized_case_doc
+    )
+    assert (
         "Current status: the case-calibrated `S1.P01` Identity Primitives "
         "Phase is complete. `S1.P02` is active, `S1.P02.S01` is complete, "
         "`S1.P02.S02` is complete, `S1.P02.S03` is complete, and "
-        "`S1.P02.S04` is complete. `S1.P02.S05` is complete. `S1.P02.S06` "
-        "is next and not started, and `S1.P02.S07` is not started."
+        "`S1.P02.S04` is complete. `S1.P02.S05` is complete and "
+        "`S1.P02.S06` is complete. `S1.P02.S07` is next and not started."
         in normalized_case_doc
     )
 
