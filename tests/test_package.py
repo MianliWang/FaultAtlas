@@ -76,6 +76,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/__init__.py",
     "src/faultatlas/domain/compatibility.py",
     "src/faultatlas/domain/identity.py",
+    "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/source.py",
 }
 
@@ -377,7 +378,7 @@ def test_package_source_inventory_mutation_is_rejected(mutation: str) -> None:
     if mutation == "unexpected-source":
         packaged["src/faultatlas/domain/unexpected.py"] = b"pass\n"
     elif mutation == "missing-source":
-        del packaged["src/faultatlas/cli.py"]
+        del packaged["src/faultatlas/domain/revision.py"]
     else:
         assert mutation == "source-byte-mismatch"
         packaged["src/faultatlas/domain/identity.py"] += b"\n"

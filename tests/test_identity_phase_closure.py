@@ -22,6 +22,7 @@ from pydantic import BaseModel, ValidationError
 import faultatlas
 import faultatlas.domain.compatibility as compatibility_module
 import faultatlas.domain.identity as identity_module
+import faultatlas.domain.revision as revision_module
 from faultatlas.domain.compatibility import (
     LegacyObjectIdInterpretation,
     map_legacy_source_locator,
@@ -195,6 +196,10 @@ EXPECTED_PRODUCTION = {
         18898, "f4ef93d432da4fd0ebf05237c164e10d8f18eceaf538ff4ddc3372565b5c46db"
     ),
 }
+CURRENT_PRODUCTION_FILES = {
+    *EXPECTED_PRODUCTION,
+    "src/faultatlas/domain/revision.py",
+}
 
 EXPECTED_IDENTITY_EXPORTS = {
     "AuthorityRole",
@@ -223,6 +228,15 @@ EXPECTED_COMPATIBILITY_EXPORTS = {
     "LegacySourceLocatorProjectionResult",
     "map_legacy_source_locator",
     "project_source_identity_to_legacy",
+}
+EXPECTED_REVISION_EXPORTS = {
+    "GitBlobIdentity",
+    "GitCommitIdentity",
+    "GitHashAlgorithm",
+    "GitObjectIdentity",
+    "GitObjectKind",
+    "GitRevisionIdentity",
+    "GitTreeIdentity",
 }
 EXPECTED_LEDGER = (
     "S1.P01.S01",
@@ -1132,25 +1146,76 @@ def _assert_no_production_reader(paths: list[Path]) -> None:
                     )
 
 
-def _assert_no_p02_surface() -> None:
+def _validate_current_production_inventory(paths: set[str]) -> None:
+    assert paths == CURRENT_PRODUCTION_FILES
+
+
+def _validate_revision_inventory(source: bytes) -> None:
+    tree = ast.parse(source)
+    export_values: object | None = None
+    public_symbols: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in node.targets
+        ):
+            export_values = ast.literal_eval(node.value)
+        elif isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not node.name.startswith("_"):
+                public_symbols.add(node.name)
+        elif isinstance(node, ast.TypeAlias) and not node.name.id.startswith("_"):
+            public_symbols.add(node.name.id)
+    assert isinstance(export_values, list)
+    raw_exports = cast(list[object], export_values)
+    assert all(isinstance(item, str) for item in raw_exports)
+    exports = {cast(str, item) for item in raw_exports}
+    assert len(raw_exports) == len(exports)
+    assert exports == EXPECTED_REVISION_EXPORTS
+    assert public_symbols == EXPECTED_REVISION_EXPORTS
+
+
+def _assert_only_s01_p02_surface() -> None:
+    production_files = {
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in (REPOSITORY_ROOT / "src").rglob("*.py")
+    }
+    _validate_current_production_inventory(production_files)
+    revision_source = (
+        REPOSITORY_ROOT / "src/faultatlas/domain/revision.py"
+    ).read_bytes()
+    _validate_revision_inventory(revision_source)
     forbidden_symbols = {
-        "GitObjectIdentity",
-        "GitRevisionIdentity",
+        "GitCommitRole",
+        "GitParentIdentity",
+        "GitRepositoryMembership",
         "MutableRefObservation",
         "RevisionQualifiedPath",
         "LineLocator",
         "ByteLocator",
         "HunkLocator",
     }
-    for relative in EXPECTED_PRODUCTION:
-        source = (REPOSITORY_ROOT / relative).read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        definitions = {
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-        assert not definitions & forbidden_symbols
+    tree = ast.parse(revision_source)
+    definitions = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert not definitions & forbidden_symbols
+    forbidden_fields = {
+        "repository",
+        "repository_identity",
+        "role",
+        "ref",
+        "path",
+        "parent",
+        "parents",
+    }
+    fields = {
+        node.target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    }
+    assert not fields & forbidden_fields
 
 
 def _provider() -> ProviderKey:
@@ -1285,12 +1350,43 @@ def test_group_g_production_inventory_exports_and_legacy_boundary_are_exact() ->
         raw = (REPOSITORY_ROOT / relative).read_bytes()
         assert len(raw) == expected.byte_length
         assert _sha256(raw) == expected.sha256
+    current = {
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in (REPOSITORY_ROOT / "src").rglob("*.py")
+    }
+    _validate_current_production_inventory(current)
+    assert set(revision_module.__all__) == EXPECTED_REVISION_EXPORTS
 
 
-def test_group_g_no_production_reader_or_p02_surface_exists() -> None:
-    paths = [REPOSITORY_ROOT / relative for relative in EXPECTED_PRODUCTION]
+def test_group_g_no_production_reader_or_later_p02_surface_exists() -> None:
+    paths = [REPOSITORY_ROOT / relative for relative in CURRENT_PRODUCTION_FILES]
     _assert_no_production_reader(paths)
-    _assert_no_p02_surface()
+    _assert_only_s01_p02_surface()
+
+
+def test_current_revision_inventory_mutations_are_rejected() -> None:
+    with pytest.raises(AssertionError):
+        _validate_current_production_inventory(
+            CURRENT_PRODUCTION_FILES - {"src/faultatlas/domain/revision.py"}
+        )
+    with pytest.raises(AssertionError):
+        _validate_current_production_inventory(
+            CURRENT_PRODUCTION_FILES | {"src/faultatlas/domain/unexpected.py"}
+        )
+
+    source = (REPOSITORY_ROOT / "src/faultatlas/domain/revision.py").read_text(
+        encoding="utf-8"
+    )
+    missing_export = source.replace('    "GitRevisionIdentity",\n', "", 1)
+    with pytest.raises(AssertionError):
+        _validate_revision_inventory(missing_export.encode())
+    unexpected_export = source.replace(
+        '    "GitRevisionIdentity",\n',
+        '    "GitRevisionIdentity",\n    "UnexpectedRevision",\n',
+        1,
+    )
+    with pytest.raises(AssertionError):
+        _validate_revision_inventory(unexpected_export.encode())
 
 
 def test_group_h_effective_contract_overlay_is_exact() -> None:
@@ -1459,7 +1555,9 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
         (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
     )
     assert "`S1.P01` is complete" in roadmap
-    assert "`S1.P02` is next, eligible to begin, and not started" in roadmap
+    assert "`S1.P02` is active" in roadmap
+    assert "`S1.P02.S01` is complete" in roadmap
+    assert "`S1.P02.S02` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:
@@ -1559,7 +1657,7 @@ def test_group_o_offline_archives_exclude_source_only_material(tmp_path: Path) -
         archives.append(files)
     working = {
         relative: (REPOSITORY_ROOT / relative).read_bytes()
-        for relative in EXPECTED_PRODUCTION
+        for relative in CURRENT_PRODUCTION_FILES
     }
     project_license = (REPOSITORY_ROOT / "LICENSE").read_bytes()
     assert _sha256(project_license) == (
