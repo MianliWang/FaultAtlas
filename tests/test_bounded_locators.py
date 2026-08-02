@@ -4,6 +4,7 @@ import ast
 import hashlib
 import json
 import re
+import stat
 from pathlib import Path
 from typing import Any, cast
 
@@ -67,6 +68,18 @@ EXPECTED_S06_CORPUS_FILES = {
 }
 EXPECTED_S06_CORPUS_PATHS = {
     f"{S06_CORPUS_RELATIVE}/{filename}" for filename in EXPECTED_S06_CORPUS_FILES
+}
+S07_CLOSURE_RELATIVE = (
+    "reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure"
+)
+S07_CLOSURE_ROOT = REPOSITORY_ROOT / S07_CLOSURE_RELATIVE
+EXPECTED_S07_CLOSURE_FILES = {
+    "closure.json",
+    "closure.md",
+    "closure.sha256",
+}
+EXPECTED_S07_CLOSURE_PATHS = {
+    f"{S07_CLOSURE_RELATIVE}/{filename}" for filename in EXPECTED_S07_CLOSURE_FILES
 }
 
 CANONICAL_PROVIDER = "github"
@@ -1513,7 +1526,7 @@ def test_exports_package_roots_and_production_inventory_are_exact() -> None:
     _validate_production_inventory(paths)
 
 
-def test_s06_contract_corpus_is_exact_and_later_surfaces_remain_absent() -> None:
+def test_s06_contract_corpus_and_s07_closure_are_exact() -> None:
     forbidden_paths = {
         "reference_corpus/contracts/revision",
         "reference_corpus/contracts/locators",
@@ -1533,9 +1546,19 @@ def test_s06_contract_corpus_is_exact_and_later_surfaces_remain_absent() -> None
     assert all(
         path.is_file() and not path.is_symlink() for path in S06_CORPUS_ROOT.iterdir()
     )
-    assert not (
-        REPOSITORY_ROOT / "reference_corpus/contracts/revision-locator/closures"
-    ).exists()
+    closures_root = S07_CLOSURE_ROOT.parent
+    assert closures_root.is_dir() and not closures_root.is_symlink()
+    assert {entry.name for entry in closures_root.iterdir()} == {S07_CLOSURE_ROOT.name}
+    assert S07_CLOSURE_ROOT.is_dir() and not S07_CLOSURE_ROOT.is_symlink()
+    actual_closure_paths = {
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in S07_CLOSURE_ROOT.iterdir()
+    }
+    assert actual_closure_paths == EXPECTED_S07_CLOSURE_PATHS
+    for path in S07_CLOSURE_ROOT.iterdir():
+        mode = path.lstat().st_mode
+        assert stat.S_ISREG(mode)
+        assert stat.S_IMODE(mode) == 0o644
     _validate_no_deferred_surface(REVISION_SOURCE.read_text(encoding="utf-8"))
 
 

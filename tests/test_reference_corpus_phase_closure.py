@@ -1563,7 +1563,10 @@ def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
     closure_test = REPOSITORY_ROOT / "tests/test_identity_phase_closure.py"
     assert closure_test.is_file() and not closure_test.is_symlink()
     revision_locator_root = contracts_root / "revision-locator"
-    assert {path.name for path in revision_locator_root.iterdir()} == {"v1"}
+    assert {path.name for path in revision_locator_root.iterdir()} == {
+        "closures",
+        "v1",
+    }
     assert {path.name for path in REVISION_LOCATOR_V1_DIRECTORY.iterdir()} == (
         EXPECTED_REVISION_LOCATOR_FILES
     )
@@ -1575,7 +1578,27 @@ def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
     )
     assert not (revision_locator_root / "latest").exists()
     assert not (revision_locator_root / "current").exists()
-    assert not (revision_locator_root / "closures").exists()
+    revision_locator_closures = revision_locator_root / "closures"
+    assert (
+        revision_locator_closures.is_dir()
+        and not revision_locator_closures.is_symlink()
+    )
+    assert {path.name for path in revision_locator_closures.iterdir()} == {
+        "s1-p02-phase-closure"
+    }
+    phase_closure = revision_locator_closures / "s1-p02-phase-closure"
+    assert phase_closure.is_dir() and not phase_closure.is_symlink()
+    assert {path.name for path in phase_closure.iterdir()} == {
+        "closure.json",
+        "closure.md",
+        "closure.sha256",
+    }
+    assert all(
+        path.is_file()
+        and not path.is_symlink()
+        and stat.S_IMODE(path.stat().st_mode) == 0o644
+        for path in phase_closure.iterdir()
+    )
 
 
 @pytest.mark.parametrize("symbol", sorted(EXPECTED_S02_IDENTITY_SYMBOLS))
@@ -1774,14 +1797,15 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         "`S1.P01`)" in normalized_roadmap
     )
     assert "`S1.P01` is complete" in normalized_roadmap
-    assert "`S1.P02` is active" in normalized_roadmap
+    assert "`S1.P02` is complete" in normalized_roadmap
     assert "`S1.P02.S01` is complete" in normalized_roadmap
     assert "`S1.P02.S02` is complete" in normalized_roadmap
     assert "`S1.P02.S03` is complete" in normalized_roadmap
     assert "`S1.P02.S04` is complete" in normalized_roadmap
     assert "`S1.P02.S05` is complete" in normalized_roadmap
     assert "`S1.P02.S06` is complete" in normalized_roadmap
-    assert "`S1.P02.S07` is next and not started" in normalized_roadmap
+    assert "`S1.P02.S07` is complete" in normalized_roadmap
+    assert "`S1.P03` is next, eligible, and not started" in normalized_roadmap
     for slice_id in range(6, 8):
         assert f"`S1.P02.S{slice_id:02d}`" in normalized_roadmap
     assert "s1-p00-phase-closure" in case_doc
@@ -1852,17 +1876,21 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     )
     assert (
         "The corpus adds no production reader, locator resolver, persistence "
-        "contract, or public API; S1.P02.S07 Phase closure is not included"
-        in normalized_case_doc
+        "contract, or public API" in normalized_case_doc
     )
     assert (
-        "Current status: the case-calibrated `S1.P01` Identity Primitives "
-        "Phase is complete. `S1.P02` is active, `S1.P02.S01` is complete, "
-        "`S1.P02.S02` is complete, `S1.P02.S03` is complete, and "
-        "`S1.P02.S04` is complete. `S1.P02.S05` is complete and "
-        "`S1.P02.S06` is complete. `S1.P02.S07` is next and not started."
-        in normalized_case_doc
+        "`S1.P02.S07` publishes the internal, case-calibrated revision/locator "
+        "Phase closure" in normalized_case_doc
     )
+    assert (
+        "without rewriting the canonical pytest #4412 artifacts or the "
+        "immutable S06 contract corpus" in normalized_case_doc
+    )
+    assert (
+        "`S1.P02` is complete and `S1.P02.S01` through `S1.P02.S07` are "
+        "complete" in normalized_case_doc
+    )
+    assert "`S1.P03` is next, eligible, and not started" in normalized_case_doc
 
 
 def test_offline_build_excludes_closure_from_wheel_and_sdist(tmp_path: Path) -> None:

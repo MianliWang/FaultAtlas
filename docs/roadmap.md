@@ -24,11 +24,11 @@ aspirational Slice as scheduled work.
   external planning has been implemented.
 - **S1** is active. Preparatory Phase `S1.P00` is operationally complete;
   `S1.P01` is complete: `S1.P01.S01` through `S1.P01.S06` and the
-  `S1.P01.S05.C01` correction are complete. `S1.P02` is active:
+  `S1.P01.S05.C01` correction are complete. `S1.P02` is complete.
   `S1.P02.S01` is complete, `S1.P02.S02` is complete, `S1.P02.S03` is
   complete, `S1.P02.S04` is complete, `S1.P02.S05` is complete, and
-  `S1.P02.S06` is complete. `S1.P02.S07` is next and not started.
-  `S1.P03` through `S1.P10` remain not started.
+  `S1.P02.S06` is complete. `S1.P02.S07` is complete. `S1.P03` is next,
+  eligible, and not started. `S1.P04` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -59,11 +59,11 @@ is provided by the corrective `S1.P00.S04.C01` acquisition-closure addendum.
 `S1.P00.S10` are complete. S04 and its corrective C01 remain closed, as do
 S05-S10. The protected S10 publication closes `S1.P00`; `S1.P01` is complete,
 including `S1.P01.S01` through `S1.P01.S06` and the `S1.P01.S05.C01`
-correction. `S1.P02` is active: `S1.P02.S01` is complete,
+correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P02.S02` is complete, `S1.P02.S03` is complete, `S1.P02.S04` is complete,
-`S1.P02.S05` is complete, and `S1.P02.S06` is complete. `S1.P02.S07` is next
-and not started.
-`S1.P03` through `S1.P10` and `S2-S9` remain unimplemented.
+`S1.P02.S05` is complete, and `S1.P02.S06` is complete.
+`S1.P02.S07` is complete. `S1.P03` is next, eligible, and not started.
+`S1.P04` through `S1.P10` and `S2-S9` remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -121,7 +121,7 @@ remain unimplemented.
 
 ## S1.P02 — Revision-qualified Locators
 
-The provisional `S1.P02` Slice sequence is:
+The complete `S1.P02` Slice sequence is:
 
 1. `S1.P02.S01` — Git Object Identity Foundation (complete)
 2. `S1.P02.S02` — Revision Roles and Ordered Commit Topology (complete)
@@ -129,21 +129,22 @@ The provisional `S1.P02` Slice sequence is:
 4. `S1.P02.S04` — Revision-qualified Repository Paths (complete)
 5. `S1.P02.S05` — Line, Byte, and Diff-Hunk Locators (complete)
 6. `S1.P02.S06` — Revision and Locator Contract Corpus (complete)
-7. `S1.P02.S07` — Integration and Phase Closure (next; not started)
+7. `S1.P02.S07` — Integration and Phase Closure (complete; closes `S1.P02`)
 
-S1.P02 is active. S01 implements internal, hash-algorithm-qualified Git commit,
-tree, and blob identity. S02 implements separate context-relative revision-role
-assignments and ordered commit-parent topology. S03 implements immutable,
-repository-qualified observations of mutable revision refs. S04 implements
-exact, case-sensitive, non-normalizing revision-qualified repository paths in
-a bounded UTF-8 textual subset; non-UTF-8 Git path bytes remain unsupported. S05
-implements distinct one-based inclusive line spans, zero-based half-open byte
-spans, revision-line and exact-artifact-byte locators, old/new-side diff-hunk
-locators, and an explicitly discriminated bounded-locator union. The
-seven-Slice sequence remains fixed: S06 is complete and publishes only the versioned,
-internal, source-only revision/locator contract corpus; S07 remains the next
-Phase-closure Slice and is not started. No production corpus reader, locator
-resolver, or persistence contract exists.
+`S1.P02` is complete. S01 implements internal, hash-algorithm-qualified Git
+commit, tree, and blob identity. S02 implements separate context-relative
+revision-role assignments and ordered commit-parent topology. S03 implements
+immutable, repository-qualified observations of mutable revision refs. S04
+implements exact, case-sensitive, non-normalizing revision-qualified repository
+paths in a bounded UTF-8 textual subset; non-UTF-8 Git path bytes remain
+unsupported. S05 implements distinct one-based inclusive line spans, zero-based
+half-open byte spans, revision-line and exact-artifact-byte locators, old/new-side
+diff-hunk locators, and an explicitly discriminated bounded-locator union. The
+seven-Slice sequence remains fixed: S06 is complete and publishes only the
+versioned, internal, source-only revision/locator contract corpus; S07
+publishes the internal, case-calibrated Phase closure. `S1.P03` is next,
+eligible, and not started. No production corpus reader, locator resolver,
+Evidence Envelope, or persistence contract exists.
 
 ## Preserved later Stage 1 phases
 

@@ -730,8 +730,12 @@ reviewed derived interpretation and are not stored as production applicability
 semantics. The corpus adds no production reader, locator resolver, persistence
 contract, or public API; S1.P02.S07 Phase closure is not included.
 
-Current status: the case-calibrated `S1.P01` Identity Primitives Phase is
-complete. `S1.P02` is active, `S1.P02.S01` is complete, `S1.P02.S02` is
-complete, `S1.P02.S03` is complete, and `S1.P02.S04` is complete.
-`S1.P02.S05` is complete and `S1.P02.S06` is complete. `S1.P02.S07` is next
-and not started.
+`S1.P02.S07` publishes the internal, case-calibrated revision/locator Phase
+closure at
+`reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure/`
+without rewriting the canonical pytest #4412 artifacts or the immutable S06
+contract corpus, and without adding production revision/locator behavior, a
+corpus reader, locator resolver, Evidence Envelope, persistence contract, or
+public API. Current status: the case-calibrated `S1.P01` Identity Primitives
+Phase is complete. `S1.P02` is complete and `S1.P02.S01` through
+`S1.P02.S07` are complete. `S1.P03` is next, eligible, and not started.

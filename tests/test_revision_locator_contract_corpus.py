@@ -61,6 +61,10 @@ from faultatlas.domain.revision import (
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_RELATIVE = "reference_corpus/contracts/revision-locator/v1"
 CORPUS_ROOT = REPOSITORY_ROOT / CORPUS_RELATIVE
+CLOSURE_RELATIVE = (
+    "reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure"
+)
+CLOSURE_ROOT = REPOSITORY_ROOT / CLOSURE_RELATIVE
 ARTIFACT_RELATIVE = (
     "reference_corpus/pytest-4412/acquisitions/"
     "run-0001-s04-v1-base-4c9cde74-head-690a63b9/artifacts/base-to-head.diff"
@@ -82,6 +86,11 @@ EXPECTED_FILES = {
     "replay-vectors.sha256",
     "valid-vectors.json",
     "valid-vectors.sha256",
+}
+EXPECTED_CLOSURE_FILES = {
+    "closure.json",
+    "closure.md",
+    "closure.sha256",
 }
 JSON_FILES = {
     "manifest.json",
@@ -1035,12 +1044,27 @@ def _prospective_modes(paths: set[str], tmp_path: Path) -> dict[str, str]:
 def _assert_corpus_inventory(root: Path) -> None:
     assert root.is_dir()
     contract_root = root.parent
-    assert {entry.name for entry in contract_root.iterdir()} == {"v1"}
+    assert {entry.name for entry in contract_root.iterdir()} == {"closures", "v1"}
     entries = tuple(root.iterdir())
     assert {entry.name for entry in entries} == EXPECTED_FILES
     for entry in entries:
         _assert_fs_regular_0644(entry)
         relative = entry.relative_to(REPOSITORY_ROOT) if root == CORPUS_ROOT else None
+        if relative is not None:
+            pure = PurePosixPath(relative.as_posix())
+            assert not pure.is_absolute()
+            assert ".." not in pure.parts
+    _assert_phase_closure_inventory(contract_root / "closures" / CLOSURE_ROOT.name)
+
+
+def _assert_phase_closure_inventory(root: Path) -> None:
+    assert root.is_dir() and not root.is_symlink()
+    assert {entry.name for entry in root.parent.iterdir()} == {root.name}
+    entries = tuple(root.iterdir())
+    assert {entry.name for entry in entries} == EXPECTED_CLOSURE_FILES
+    for entry in entries:
+        _assert_fs_regular_0644(entry)
+        relative = entry.relative_to(REPOSITORY_ROOT) if root == CLOSURE_ROOT else None
         if relative is not None:
             pure = PurePosixPath(relative.as_posix())
             assert not pure.is_absolute()
@@ -1409,11 +1433,6 @@ def _assert_package_root_exports(exports: list[str]) -> None:
     assert exports == ["__version__"]
 
 
-def _assert_no_s07_artifacts(relative_paths: set[str]) -> None:
-    forbidden = "reference_corpus/contracts/revision-locator/closures/"
-    assert not any(path.startswith(forbidden) for path in relative_paths)
-
-
 def _assert_privacy_bytes(raw: bytes) -> None:
     lowered = raw.lower()
     for forbidden in (
@@ -1627,7 +1646,10 @@ def test_exact_sidecars(filename: str) -> None:
 
 def test_exact_inventory_and_permissions(tmp_path: Path) -> None:
     _assert_corpus_inventory(CORPUS_ROOT)
-    expected_paths = {f"{CORPUS_RELATIVE}/{name}" for name in EXPECTED_FILES}
+    expected_paths = {
+        *(f"{CORPUS_RELATIVE}/{name}" for name in EXPECTED_FILES),
+        *(f"{CLOSURE_RELATIVE}/{name}" for name in EXPECTED_CLOSURE_FILES),
+    }
     actual_modes = _git_stage_modes(expected_paths)
     untracked = expected_paths - set(actual_modes)
     _assert_git_modes_100644(actual_modes, expected_paths - untracked)
@@ -1826,7 +1848,14 @@ def test_export_coverage_and_semantic_boundaries() -> None:
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in REPOSITORY_ROOT.rglob("*")
     }
-    _assert_no_s07_artifacts(relative_paths)
+    expected_closure_paths = {
+        CLOSURE_RELATIVE,
+        *(f"{CLOSURE_RELATIVE}/{name}" for name in EXPECTED_CLOSURE_FILES),
+    }
+    assert {
+        path for path in relative_paths if path.startswith(CLOSURE_RELATIVE)
+    } == expected_closure_paths
+    _assert_phase_closure_inventory(CLOSURE_ROOT)
 
 
 def test_markdown_is_synchronized_and_non_authoritative() -> None:
@@ -1924,7 +1953,7 @@ REQUIRED_MUTATIONS = (
     "package-root-export-inserted",
     "synthetic-package-corpus-member",
     "historical-pytest-license-inserted",
-    "s07-closure-artifact-introduced",
+    "closure-artifact-inside-v1",
 )
 assert len(REQUIRED_MUTATIONS) == 47
 
@@ -2241,6 +2270,8 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
         contract_root = tmp_path / "revision-locator"
         root = contract_root / "v1"
         shutil.copytree(CORPUS_ROOT, root)
+        shutil.copytree(CLOSURE_ROOT.parent, contract_root / "closures")
+        _assert_corpus_inventory(root)
         extra = (
             root / "unexpected.json"
             if mutation == "extra-corpus-file"
@@ -2320,14 +2351,17 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             )
         return
 
-    assert mutation == "s07-closure-artifact-introduced"
+    assert mutation == "closure-artifact-inside-v1"
+    contract_root = tmp_path / "revision-locator"
+    root = contract_root / "v1"
+    shutil.copytree(CORPUS_ROOT, root)
+    shutil.copytree(CLOSURE_ROOT.parent, contract_root / "closures")
+    _assert_corpus_inventory(root)
+    misplaced = root / "closure.json"
+    misplaced.write_bytes(b"{}\n")
+    misplaced.chmod(0o644)
     with pytest.raises(AssertionError):
-        _assert_no_s07_artifacts(
-            {
-                "reference_corpus/contracts/revision-locator/closures/"
-                "s1-p02-phase-closure/closure.json"
-            }
-        )
+        _assert_corpus_inventory(root)
 
 
 def test_actual_offline_build_excludes_corpus(tmp_path: Path) -> None:

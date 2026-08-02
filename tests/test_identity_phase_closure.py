@@ -1384,7 +1384,10 @@ def _assert_exact_s06_locator_contract_corpus() -> None:
         "v1",
     }
     revision_locator_root = contracts_root / "revision-locator"
-    assert {path.name for path in revision_locator_root.iterdir()} == {"v1"}
+    assert {path.name for path in revision_locator_root.iterdir()} == {
+        "closures",
+        "v1",
+    }
     assert {path.name for path in REVISION_LOCATOR_ROOT.iterdir()} == (
         EXPECTED_REVISION_LOCATOR_FILES
     )
@@ -1393,7 +1396,15 @@ def _assert_exact_s06_locator_contract_corpus() -> None:
         assert stat.S_IMODE(path.stat().st_mode) == 0o644
     assert not (revision_locator_root / "latest").exists()
     assert not (revision_locator_root / "current").exists()
-    assert not (revision_locator_root / "closures").exists()
+    closures_root = revision_locator_root / "closures"
+    assert closures_root.is_dir() and not closures_root.is_symlink()
+    assert {path.name for path in closures_root.iterdir()} == {"s1-p02-phase-closure"}
+    phase_closure = closures_root / "s1-p02-phase-closure"
+    assert phase_closure.is_dir() and not phase_closure.is_symlink()
+    assert {path.name for path in phase_closure.iterdir()} == EXPECTED_CLOSURE_FILES
+    for path in phase_closure.iterdir():
+        assert path.is_file() and not path.is_symlink()
+        assert stat.S_IMODE(path.stat().st_mode) == 0o644
 
 
 def _provider() -> ProviderKey:
@@ -1745,14 +1756,15 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
         (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
     )
     assert "`S1.P01` is complete" in roadmap
-    assert "`S1.P02` is active" in roadmap
+    assert "`S1.P02` is complete" in roadmap
     assert "`S1.P02.S01` is complete" in roadmap
     assert "`S1.P02.S02` is complete" in roadmap
     assert "`S1.P02.S03` is complete" in roadmap
     assert "`S1.P02.S04` is complete" in roadmap
     assert "`S1.P02.S05` is complete" in roadmap
     assert "`S1.P02.S06` is complete" in roadmap
-    assert "`S1.P02.S07` is next and not started" in roadmap
+    assert "`S1.P02.S07` is complete" in roadmap
+    assert "`S1.P03` is next, eligible, and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:
