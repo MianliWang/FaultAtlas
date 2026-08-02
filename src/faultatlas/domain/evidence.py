@@ -37,6 +37,10 @@ __all__ = [
 _MAX_RUN_ID_LENGTH = 160
 _MAX_REQUEST_ORDINAL = 2_147_483_647
 _MAX_ROUTE_PATH_LENGTH = 4096
+_ASSERTED_UTC_STARTED_AT_PATTERN = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
+    r"(?:\.[0-9]{1,6})?(?:Z|\+00:00)"
+)
 _RUN_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,158}[a-z0-9])?")
 _INVALID_PERCENT_ENCODING = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
@@ -265,22 +269,26 @@ class RetrievalRequestReference(_RetrievalRecordBase):
 
     @field_validator("started_at", mode="before")
     @classmethod
-    def _reject_unknown_started_at_offset(
+    def _require_asserted_utc_started_at_json(
         cls,
         value: object,
         info: ValidationInfo,
     ) -> object:
-        if info.mode == "json" and isinstance(value, str):
-            if value.endswith("-00:00"):
-                raise ValueError(
-                    "started_at must assert UTC rather than an unknown offset"
-                )
-            parse_value = f"{value[:-1]}+00:00" if value.endswith("Z") else value
-            try:
-                return datetime.fromisoformat(parse_value)
-            except ValueError:
-                return value
-        return value
+        if info.mode != "json":
+            return value
+        if (
+            not isinstance(value, str)
+            or _ASSERTED_UTC_STARTED_AT_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "started_at JSON value must use asserted-UTC RFC 3339 form "
+                "ending in Z or +00:00"
+            )
+        parse_value = f"{value[:-1]}+00:00" if value.endswith("Z") else value
+        try:
+            return datetime.fromisoformat(parse_value)
+        except ValueError:
+            return value
 
     @field_validator("started_at")
     @classmethod
