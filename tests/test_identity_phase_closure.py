@@ -213,7 +213,31 @@ EXPECTED_PRODUCTION = {
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION,
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/evidence.py",
 }
+EVIDENCE_MODULE = "src/faultatlas/domain/evidence.py"
+EXPECTED_EVIDENCE_EXPORTS = (
+    "AcquisitionRunId",
+    "RetrievalRequestOrdinal",
+    "RetrievalRequestId",
+    "RetrievalMethod",
+    "RetrievalRoutePath",
+    "RetrievalRequestReference",
+)
+FORBIDDEN_POST_S01_EVIDENCE_SURFACE_FRAGMENTS = (
+    "adapter",
+    "artifact",
+    "completeness",
+    "corpus",
+    "correction",
+    "envelope",
+    "omission",
+    "publication",
+    "representation",
+    "response",
+    "supersession",
+    "transformation",
+)
 
 EXPECTED_IDENTITY_EXPORTS = {
     "AuthorityRole",
@@ -1183,6 +1207,55 @@ def _validate_current_production_inventory(paths: set[str]) -> None:
     assert paths == CURRENT_PRODUCTION_FILES
 
 
+def _validate_current_evidence_inventory(source: bytes) -> None:
+    tree = ast.parse(source)
+    export_values: object | None = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in node.targets
+        ):
+            export_values = ast.literal_eval(node.value)
+            break
+    assert isinstance(export_values, list)
+    raw_exports = cast(list[object], export_values)
+    assert all(isinstance(item, str) for item in raw_exports)
+    exports = tuple(cast(str, item) for item in raw_exports)
+    assert exports == EXPECTED_EVIDENCE_EXPORTS
+    assert len(exports) == len(set(exports)) == 6
+
+    top_level_definitions = [
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    public_definitions = tuple(
+        name for name in top_level_definitions if not name.startswith("_")
+    )
+    assert public_definitions == EXPECTED_EVIDENCE_EXPORTS
+    for name in top_level_definitions:
+        compact = name.replace("_", "").casefold()
+        assert not any(
+            fragment in compact
+            for fragment in FORBIDDEN_POST_S01_EVIDENCE_SURFACE_FRAGMENTS
+        )
+        if "acquisitionrun" in compact:
+            assert name == "AcquisitionRunId"
+
+
+def _validate_domain_root_unchanged(source: bytes) -> None:
+    tree = ast.parse(source)
+    assert not any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in tree.body)
+    assert not any(
+        isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in node.targets
+        )
+        for node in tree.body
+    )
+
+
 def _validate_revision_inventory(source: bytes) -> None:
     tree = ast.parse(source)
     export_values: object | None = None
@@ -1207,7 +1280,7 @@ def _validate_revision_inventory(source: bytes) -> None:
     assert public_symbols == EXPECTED_REVISION_EXPORTS
 
 
-def _assert_only_s01_through_s05_p02_surface() -> None:
+def _assert_current_p03_s01_surface() -> None:
     production_files = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
@@ -1217,6 +1290,12 @@ def _assert_only_s01_through_s05_p02_surface() -> None:
         REPOSITORY_ROOT / "src/faultatlas/domain/revision.py"
     ).read_bytes()
     _validate_revision_inventory(revision_source)
+    _validate_current_evidence_inventory(
+        (REPOSITORY_ROOT / EVIDENCE_MODULE).read_bytes()
+    )
+    _validate_domain_root_unchanged(
+        (REPOSITORY_ROOT / "src/faultatlas/domain/__init__.py").read_bytes()
+    )
     forbidden_symbols = {
         "GitCommitRole",
         "GitParentIdentity",
@@ -1547,10 +1626,10 @@ def test_group_g_production_inventory_exports_and_legacy_boundary_are_exact() ->
     assert set(revision_module.__all__) == EXPECTED_REVISION_EXPORTS
 
 
-def test_group_g_s06_corpus_has_no_reader_resolver_or_s07_surface() -> None:
+def test_group_g_s06_corpus_and_current_p03_s01_surface_are_bounded() -> None:
     paths = [REPOSITORY_ROOT / relative for relative in CURRENT_PRODUCTION_FILES]
     _assert_no_production_reader(paths)
-    _assert_only_s01_through_s05_p02_surface()
+    _assert_current_p03_s01_surface()
     _assert_exact_s06_locator_contract_corpus()
 
 
@@ -1588,6 +1667,56 @@ def test_current_revision_inventory_mutations_are_rejected(
     )
     with pytest.raises(AssertionError):
         _validate_revision_inventory(unexpected_export.encode())
+
+
+def test_current_p03_s01_inventory_and_export_mutations_are_rejected() -> None:
+    with pytest.raises(AssertionError):
+        _validate_current_production_inventory(
+            CURRENT_PRODUCTION_FILES - {EVIDENCE_MODULE}
+        )
+    with pytest.raises(AssertionError):
+        _validate_current_production_inventory(
+            CURRENT_PRODUCTION_FILES | {"src/faultatlas/domain/unexpected.py"}
+        )
+
+    source = (REPOSITORY_ROOT / EVIDENCE_MODULE).read_text(encoding="utf-8")
+    missing_export = source.replace('    "RetrievalRequestReference",\n', "", 1)
+    assert missing_export != source
+    with pytest.raises(AssertionError):
+        _validate_current_evidence_inventory(missing_export.encode())
+    unexpected_export = source.replace(
+        '    "RetrievalRequestReference",\n',
+        '    "RetrievalRequestReference",\n    "UnexpectedEvidence",\n',
+        1,
+    )
+    assert unexpected_export != source
+    with pytest.raises(AssertionError):
+        _validate_current_evidence_inventory(unexpected_export.encode())
+
+
+@pytest.mark.parametrize(
+    "early_surface",
+    (
+        "RequestControls",
+        "ResponseRepresentationObservation",
+        "RetainedArtifactRecord",
+        "AcquisitionRunRecord",
+        "TransformationRecord",
+        "CorrectionRecord",
+        "SupersessionRecord",
+        "OmissionRecord",
+        "CompletenessRecord",
+        "PublicationProvenance",
+        "LegacyEvidenceAdapter",
+        "EvidenceEnvelope",
+        "EvidenceContractCorpus",
+    ),
+)
+def test_current_p03_post_s01_surface_is_rejected(early_surface: str) -> None:
+    source = (REPOSITORY_ROOT / EVIDENCE_MODULE).read_bytes()
+    mutated = source + f"\nclass {early_surface}:\n    pass\n".encode()
+    with pytest.raises(AssertionError):
+        _validate_current_evidence_inventory(mutated)
 
 
 def test_group_h_effective_contract_overlay_is_exact() -> None:
@@ -1764,7 +1893,9 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P02.S05` is complete" in roadmap
     assert "`S1.P02.S06` is complete" in roadmap
     assert "`S1.P02.S07` is complete" in roadmap
-    assert "`S1.P03` is next, eligible, and not started" in roadmap
+    assert "`S1.P03` is active" in roadmap
+    assert "`S1.P03.S01` is complete" in roadmap
+    assert "`S1.P03.S02` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:
