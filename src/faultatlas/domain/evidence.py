@@ -263,6 +263,25 @@ class RetrievalRequestReference(_RetrievalRecordBase):
             raise ValueError("route_path must be a RetrievalRoutePath in Python input")
         return value
 
+    @field_validator("started_at", mode="before")
+    @classmethod
+    def _reject_unknown_started_at_offset(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json" and isinstance(value, str):
+            if value.endswith("-00:00"):
+                raise ValueError(
+                    "started_at must assert UTC rather than an unknown offset"
+                )
+            parse_value = f"{value[:-1]}+00:00" if value.endswith("Z") else value
+            try:
+                return datetime.fromisoformat(parse_value)
+            except ValueError:
+                return value
+        return value
+
     @field_validator("started_at")
     @classmethod
     def _normalize_started_at(cls, value: datetime) -> datetime:

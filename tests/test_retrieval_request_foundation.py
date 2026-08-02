@@ -733,6 +733,16 @@ def test_request_reference_rejects_nonzero_started_at_offset() -> None:
     assert error.value.errors()[0]["loc"] == ("started_at",)
 
 
+def test_request_reference_rejects_unknown_zero_offset_json() -> None:
+    serialized = _reference().model_dump_json()
+    unknown_offset = serialized.replace('Z"', '-00:00"', 1)
+    assert unknown_offset != serialized
+    with pytest.raises(ValidationError) as error:
+        RetrievalRequestReference.model_validate_json(unknown_offset)
+    assert error.value.errors()[0]["type"] == "value_error"
+    assert error.value.errors()[0]["loc"] == ("started_at",)
+
+
 def test_request_reference_rejects_date_only_string() -> None:
     with pytest.raises(ValidationError):
         _reference(started_at="2026-08-01")
@@ -746,6 +756,15 @@ def test_request_reference_normalizes_effective_zero_offset_to_utc() -> None:
     assert reference.model_dump(mode="json")["started_at"] == (
         "2026-08-01T12:00:00.123456Z"
     )
+
+
+def test_request_reference_json_accepts_asserted_zero_offset() -> None:
+    serialized = _reference().model_dump_json()
+    explicit_zero = serialized.replace('Z"', '+00:00"', 1)
+    assert explicit_zero != serialized
+    reference = RetrievalRequestReference.model_validate_json(explicit_zero)
+    assert reference.started_at.tzinfo is UTC
+    assert reference.model_dump(mode="json")["started_at"] == ("2026-08-01T12:00:00Z")
 
 
 @pytest.mark.parametrize(
