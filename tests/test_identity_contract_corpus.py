@@ -24,6 +24,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 import faultatlas
 import faultatlas.domain as domain_package
 import faultatlas.domain.compatibility as compatibility_module
+import faultatlas.domain.evidence as evidence_module
 import faultatlas.domain.identity as identity_module
 import faultatlas.domain.revision as revision_module
 from faultatlas.domain.compatibility import (
@@ -207,16 +208,26 @@ EXPECTED_COMPATIBILITY_EXPORTS = {
     "map_legacy_source_locator",
     "project_source_identity_to_legacy",
 }
+EXPECTED_EVIDENCE_EXPORTS = (
+    "AcquisitionRunId",
+    "RetrievalRequestOrdinal",
+    "RetrievalRequestId",
+    "RetrievalMethod",
+    "RetrievalRoutePath",
+    "RetrievalRequestReference",
+)
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
     "src/faultatlas/__main__.py",
     "src/faultatlas/cli.py",
     "src/faultatlas/domain/__init__.py",
     "src/faultatlas/domain/compatibility.py",
+    "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/source.py",
 }
+EVIDENCE_MODULE_PATH = "src/faultatlas/domain/evidence.py"
 EXPECTED_REVISION_EXPORTS = {
     "ArtifactByteLocator",
     "BoundedLocator",
@@ -1113,11 +1124,15 @@ def _validate_registry_and_coverage(
     assert EXPECTED_COMPATIBILITY_EXPORTS <= targets
     assert set(identity_module.__all__) == EXPECTED_IDENTITY_EXPORTS
     assert set(compatibility_module.__all__) == EXPECTED_COMPATIBILITY_EXPORTS
+    assert evidence_module.__all__ == list(EXPECTED_EVIDENCE_EXPORTS)
+    evidence_exports = set(EXPECTED_EVIDENCE_EXPORTS)
     assert faultatlas.__all__ == ["__version__"]
     assert EXPECTED_IDENTITY_EXPORTS.isdisjoint(vars(faultatlas))
     assert EXPECTED_COMPATIBILITY_EXPORTS.isdisjoint(vars(faultatlas))
+    assert evidence_exports.isdisjoint(vars(faultatlas))
     assert EXPECTED_IDENTITY_EXPORTS.isdisjoint(vars(domain_package))
     assert EXPECTED_COMPATIBILITY_EXPORTS.isdisjoint(vars(domain_package))
+    assert evidence_exports.isdisjoint(vars(domain_package))
 
 
 def _validate_sidecar(filename: str, raw: bytes) -> None:
@@ -1461,6 +1476,8 @@ def _assert_complete_package_sources(
 ) -> None:
     assert set(working) == EXPECTED_PRODUCTION_FILES
     assert set(packaged) == EXPECTED_PRODUCTION_FILES
+    assert len(working) == len(packaged) == 9
+    assert packaged[EVIDENCE_MODULE_PATH] == working[EVIDENCE_MODULE_PATH]
     assert packaged == working
 
 
@@ -2012,7 +2029,7 @@ def test_missing_or_extra_s06_closure_artifact_is_rejected() -> None:
 def test_current_correction_whole_source_inventory_is_exact() -> None:
     working = _working_source_bytes()
     assert set(working) == EXPECTED_PRODUCTION_FILES
-    assert len(working) == 8
+    assert len(working) == 9
 
 
 def test_p02_revision_surface_is_outside_the_immutable_p01_contract() -> None:
@@ -2023,7 +2040,10 @@ def test_p02_revision_surface_is_outside_the_immutable_p01_contract() -> None:
         for key in ("identity_module", "compatibility_module", "legacy")
         for symbol in target_symbols[key]
     }
+    evidence_exports = set(EXPECTED_EVIDENCE_EXPORTS)
+    assert evidence_module.__all__ == list(EXPECTED_EVIDENCE_EXPORTS)
     assert not EXPECTED_REVISION_EXPORTS & p01_targets
+    assert evidence_exports.isdisjoint(p01_targets)
     assert EXPECTED_S02_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
     assert EXPECTED_S03_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
     assert EXPECTED_S04_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
@@ -2036,8 +2056,12 @@ def test_p02_revision_surface_is_outside_the_immutable_p01_contract() -> None:
         "faultatlas.domain.identity",
         "faultatlas.domain.compatibility",
     ]
+    assert "faultatlas.domain.evidence" not in manifest["scope"]["production_modules"]
+    assert evidence_exports.isdisjoint(vars(faultatlas))
+    assert evidence_exports.isdisjoint(vars(domain_package))
     assert "Git_object_identity" in manifest["non_goals"]
     assert EXPECTED_EFFECTIVE_VECTOR_COUNT == 199
+    assert len(EFFECTIVE_CONTRACT_PLAN) == EXPECTED_EFFECTIVE_VECTOR_COUNT
 
 
 def test_revision_locator_corpus_is_an_independent_contract_sibling() -> None:
@@ -2065,18 +2089,22 @@ def test_revision_locator_corpus_is_an_independent_contract_sibling() -> None:
 
 @pytest.mark.parametrize(
     "mutation",
-    ("unexpected-source", "missing-source", "packaged-byte-mismatch"),
+    (
+        "unexpected-tenth-source",
+        "missing-evidence-source",
+        "evidence-byte-mismatch",
+    ),
 )
 def test_whole_source_inventory_mutation_is_rejected(mutation: str) -> None:
     working = _working_source_bytes()
     packaged = dict(working)
-    if mutation == "unexpected-source":
+    if mutation == "unexpected-tenth-source":
         packaged["src/faultatlas/domain/unexpected.py"] = b"pass\n"
-    elif mutation == "missing-source":
-        del packaged["src/faultatlas/domain/revision.py"]
+    elif mutation == "missing-evidence-source":
+        del packaged[EVIDENCE_MODULE_PATH]
     else:
-        assert mutation == "packaged-byte-mismatch"
-        packaged["src/faultatlas/domain/compatibility.py"] += b"\n"
+        assert mutation == "evidence-byte-mismatch"
+        packaged[EVIDENCE_MODULE_PATH] += b"\n"
     with pytest.raises(AssertionError):
         _assert_complete_package_sources(packaged, working)
 

@@ -738,4 +738,21 @@ contract corpus, and without adding production revision/locator behavior, a
 corpus reader, locator resolver, Evidence Envelope, persistence contract, or
 public API. Current status: the case-calibrated `S1.P01` Identity Primitives
 Phase is complete. `S1.P02` is complete and `S1.P02.S01` through
-`S1.P02.S07` are complete. `S1.P03` is next, eligible, and not started.
+`S1.P02.S07` are complete. `S1.P03` is active: `S1.P03.S01` is complete,
+`S1.P03.S02` is next and not started, and `S1.P03.S03` through
+`S1.P03.S09` are not started.
+
+## S1.P03.S01 Retrieval Request Identity and Authority Foundation
+
+The locked case supports 32 canonical request IDs, but zero canonical full
+request references. The S01 assurance coverage therefore uses two explicitly
+synthetic full request references, one for GET and one for POST. The observed
+request-method vocabulary is GET-only; POST remains synthetic and is not
+relabelled as an observation.
+
+For each canonical request, run ID, ordinal, and request-start time are
+directly retained. The lowercase `get` and the query-free route path are
+deterministic projections from the retained uppercase method and safe request
+target. The retrieval authority is locked at the case level, but the immutable
+original request records do not bind it per request. S01 consequently does not
+fabricate canonical authority-qualified request references.

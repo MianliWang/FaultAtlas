@@ -124,6 +124,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/cli.py",
     "src/faultatlas/domain/__init__.py",
     "src/faultatlas/domain/compatibility.py",
+    "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/source.py",
@@ -1581,7 +1582,7 @@ def test_unexpected_revision_export_mutation_is_rejected() -> None:
         _validate_revision_surface(mutated)
 
 
-def test_missing_revision_and_unexpected_ninth_production_file_are_rejected() -> None:
+def test_missing_revision_and_unexpected_tenth_production_file_are_rejected() -> None:
     with pytest.raises(AssertionError):
         _validate_production_inventory(
             EXPECTED_PRODUCTION_FILES - {"src/faultatlas/domain/revision.py"}

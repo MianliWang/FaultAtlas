@@ -410,6 +410,69 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/source.py",
 }
+EVIDENCE_MODULE = "src/faultatlas/domain/evidence.py"
+CURRENT_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, EVIDENCE_MODULE}
+EXPECTED_EVIDENCE_EXPORTS = (
+    "AcquisitionRunId",
+    "RetrievalRequestOrdinal",
+    "RetrievalRequestId",
+    "RetrievalMethod",
+    "RetrievalRoutePath",
+    "RetrievalRequestReference",
+)
+FORBIDDEN_POST_S01_EVIDENCE_SURFACE_FRAGMENTS = (
+    "adapter",
+    "artifact",
+    "completeness",
+    "corpus",
+    "correction",
+    "envelope",
+    "omission",
+    "publication",
+    "representation",
+    "response",
+    "supersession",
+    "transformation",
+)
+EXPECTED_P03_SLICE_SEQUENCE = (
+    (
+        "S1.P03.S01",
+        "Retrieval Request Identity and Authority Foundation",
+        "complete",
+    ),
+    (
+        "S1.P03.S02",
+        "Request Controls and Response Representation Observations",
+        "next; not started",
+    ),
+    (
+        "S1.P03.S03",
+        "Exact Retained Artifacts and Digest Scope",
+        "not started",
+    ),
+    (
+        "S1.P03.S04",
+        "Acquisition Runs and Evidence Membership",
+        "not started",
+    ),
+    (
+        "S1.P03.S05",
+        "Transformations, Corrections, and Supersession",
+        "not started",
+    ),
+    (
+        "S1.P03.S06",
+        "Completeness, Omissions, and Publication Provenance",
+        "not started",
+    ),
+    (
+        "S1.P03.S07",
+        "Evidence Envelope Composition and Legacy Adapter",
+        "not started",
+    ),
+    ("S1.P03.S08", "Evidence Contract Corpus", "not started"),
+    ("S1.P03.S09", "Integration and Phase Closure", "not started"),
+)
 
 EXPECTED_REVISION_SYMBOLS = {
     "ArtifactByteLocator",
@@ -569,6 +632,46 @@ def _sha256(data: bytes) -> str:
 
 def _validate_production_file_inventory(production_files: set[str]) -> None:
     assert production_files == EXPECTED_PRODUCTION_FILES
+
+
+def _validate_current_production_file_inventory(production_files: set[str]) -> None:
+    assert production_files == CURRENT_PRODUCTION_FILES
+
+
+def _validate_current_evidence_inventory(source: bytes) -> None:
+    tree = ast.parse(source)
+    export_values: object | None = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in node.targets
+        ):
+            export_values = ast.literal_eval(node.value)
+            break
+    assert isinstance(export_values, list)
+    raw_exports = cast(list[object], export_values)
+    assert all(isinstance(item, str) for item in raw_exports)
+    exports = tuple(cast(str, item) for item in raw_exports)
+    assert exports == EXPECTED_EVIDENCE_EXPORTS
+    assert len(exports) == len(set(exports)) == 6
+
+    top_level_definitions = [
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    public_definitions = tuple(
+        name for name in top_level_definitions if not name.startswith("_")
+    )
+    assert public_definitions == EXPECTED_EVIDENCE_EXPORTS
+    for name in top_level_definitions:
+        compact = name.replace("_", "").casefold()
+        assert not any(
+            fragment in compact
+            for fragment in FORBIDDEN_POST_S01_EVIDENCE_SURFACE_FRAGMENTS
+        )
+        if "acquisitionrun" in compact:
+            assert name == "AcquisitionRunId"
 
 
 def _identity_symbol_inventory(
@@ -1444,7 +1547,7 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
-    _validate_production_file_inventory(production_files)
+    _validate_current_production_file_inventory(production_files)
     identity_source = (
         REPOSITORY_ROOT / "src/faultatlas/domain/identity.py"
     ).read_bytes()
@@ -1457,6 +1560,9 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
         REPOSITORY_ROOT / "src/faultatlas/domain/revision.py"
     ).read_bytes()
     _validate_revision_symbol_inventory(revision_source)
+    _validate_current_evidence_inventory(
+        (REPOSITORY_ROOT / EVIDENCE_MODULE).read_bytes()
+    )
     source_path = REPOSITORY_ROOT / "src/faultatlas/domain/source.py"
     source = source_path.read_bytes()
     assert len(source) == 4336
@@ -1680,6 +1786,58 @@ def test_unexpected_production_module_is_rejected() -> None:
         _validate_production_file_inventory(mutated)
 
 
+def test_current_p03_s01_production_inventory_mutations_are_rejected() -> None:
+    with pytest.raises(AssertionError):
+        _validate_current_production_file_inventory(
+            CURRENT_PRODUCTION_FILES - {EVIDENCE_MODULE}
+        )
+    with pytest.raises(AssertionError):
+        _validate_current_production_file_inventory(
+            CURRENT_PRODUCTION_FILES | {"src/faultatlas/domain/unexpected.py"}
+        )
+
+
+def test_current_p03_s01_evidence_export_mutations_are_rejected() -> None:
+    source = (REPOSITORY_ROOT / EVIDENCE_MODULE).read_text(encoding="utf-8")
+    missing_export = source.replace('    "RetrievalRequestReference",\n', "", 1)
+    assert missing_export != source
+    with pytest.raises(AssertionError):
+        _validate_current_evidence_inventory(missing_export.encode())
+    unexpected_export = source.replace(
+        '    "RetrievalRequestReference",\n',
+        '    "RetrievalRequestReference",\n    "UnexpectedEvidence",\n',
+        1,
+    )
+    assert unexpected_export != source
+    with pytest.raises(AssertionError):
+        _validate_current_evidence_inventory(unexpected_export.encode())
+
+
+@pytest.mark.parametrize(
+    "early_surface",
+    (
+        "RequestControls",
+        "ResponseRepresentationObservation",
+        "RetainedArtifactRecord",
+        "AcquisitionRunRecord",
+        "TransformationRecord",
+        "CorrectionRecord",
+        "SupersessionRecord",
+        "OmissionRecord",
+        "CompletenessRecord",
+        "PublicationProvenance",
+        "LegacyEvidenceAdapter",
+        "EvidenceEnvelope",
+        "EvidenceContractCorpus",
+    ),
+)
+def test_current_p03_post_s01_surface_is_rejected(early_surface: str) -> None:
+    source = (REPOSITORY_ROOT / EVIDENCE_MODULE).read_bytes()
+    mutated = source + f"\nclass {early_surface}:\n    pass\n".encode()
+    with pytest.raises(AssertionError):
+        _validate_current_evidence_inventory(mutated)
+
+
 @pytest.mark.parametrize(
     "missing_symbol",
     tuple(
@@ -1730,6 +1888,7 @@ def test_compatibility_function_added_to_source_locator_is_rejected(
     ("module", "symbol"),
     (
         ("compatibility", "CompatibilityStatus"),
+        ("evidence", "RetrievalRequestReference"),
         ("revision", "BoundedLocator"),
         ("revision", "GitRefObservation"),
         ("revision", "RevisionQualifiedPath"),
@@ -1805,7 +1964,11 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P02.S05` is complete" in normalized_roadmap
     assert "`S1.P02.S06` is complete" in normalized_roadmap
     assert "`S1.P02.S07` is complete" in normalized_roadmap
-    assert "`S1.P03` is next, eligible, and not started" in normalized_roadmap
+    assert "`S1.P03` is active" in normalized_roadmap
+    assert "`S1.P03.S01` is complete" in normalized_roadmap
+    assert "`S1.P03.S02` is next and not started" in normalized_roadmap
+    for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:
+        assert f"`{slice_id}` — {title} ({state})" in normalized_roadmap
     for slice_id in range(6, 8):
         assert f"`S1.P02.S{slice_id:02d}`" in normalized_roadmap
     assert "s1-p00-phase-closure" in case_doc
@@ -1890,7 +2053,19 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         "`S1.P02` is complete and `S1.P02.S01` through `S1.P02.S07` are "
         "complete" in normalized_case_doc
     )
-    assert "`S1.P03` is next, eligible, and not started" in normalized_case_doc
+    assert "`S1.P03` is active" in normalized_case_doc
+    assert "32 canonical request IDs" in normalized_case_doc
+    assert "zero canonical full request references" in normalized_case_doc
+    assert "two explicitly synthetic full request references" in normalized_case_doc
+    assert "observed request-method vocabulary is GET-only" in normalized_case_doc
+    assert (
+        "run ID, ordinal, and request-start time are directly retained"
+        in normalized_case_doc
+    )
+    assert (
+        "lowercase `get` and the query-free route path are deterministic "
+        "projections" in normalized_case_doc
+    )
 
 
 def test_offline_build_excludes_closure_from_wheel_and_sdist(tmp_path: Path) -> None:

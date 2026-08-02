@@ -24,6 +24,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 import faultatlas
 import faultatlas.domain as domain_package
+import faultatlas.domain.evidence as evidence_module
 import faultatlas.domain.revision as revision_module
 from faultatlas.domain.identity import (
     AuthorityRole,
@@ -194,6 +195,14 @@ EXPECTED_EXPORTS = {
     "TextEncoding",
     "ZeroBasedHalfOpenByteSpan",
 }
+EXPECTED_EVIDENCE_EXPORTS = (
+    "AcquisitionRunId",
+    "RetrievalRequestOrdinal",
+    "RetrievalRequestId",
+    "RetrievalMethod",
+    "RetrievalRoutePath",
+    "RetrievalRequestReference",
+)
 EXPECTED_VALID_CATEGORIES = {
     "commit-topology": 7,
     "coordinate-span": 6,
@@ -230,10 +239,12 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/cli.py",
     "src/faultatlas/domain/__init__.py",
     "src/faultatlas/domain/compatibility.py",
+    "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/source.py",
 }
+EVIDENCE_MODULE_PATH = "src/faultatlas/domain/evidence.py"
 
 VECTOR_ID_PATTERN = re.compile(
     r"^revision\.(?:valid|invalid|replay)\.[a-z0-9-]+(?:\.[a-z0-9-]+)+$"
@@ -1342,6 +1353,48 @@ def _assert_export_coverage(documents: dict[str, dict[str, Any]]) -> None:
     assert covered == EXPECTED_EXPORTS
 
 
+def _assert_evidence_is_outside_revision_locator_contract(
+    documents: dict[str, dict[str, Any]],
+) -> None:
+    manifest = documents["manifest.json"]
+    evidence_exports = set(EXPECTED_EVIDENCE_EXPORTS)
+    manifest_targets = set(cast(list[str], manifest["target_symbols"]))
+    vector_targets = {
+        cast(str, vector["target_symbol"])
+        for filename in (
+            "valid-vectors.json",
+            "invalid-vectors.json",
+            "replay-vectors.json",
+        )
+        for vector in _vectors(documents[filename])
+    }
+
+    assert evidence_module.__all__ == list(EXPECTED_EVIDENCE_EXPORTS)
+    assert len(evidence_module.__all__) == 6
+    assert evidence_exports.isdisjoint(manifest_targets)
+    assert evidence_exports.isdisjoint(vector_targets)
+    assert manifest["scope"]["production_module"] == "faultatlas.domain.revision"
+    assert "faultatlas.domain.evidence" not in _json_text(manifest["scope"])
+    assert manifest["vector_summary"]["total_vectors"] == 228
+    assert (
+        sum(
+            len(_vectors(documents[filename]))
+            for filename in (
+                "valid-vectors.json",
+                "invalid-vectors.json",
+                "replay-vectors.json",
+            )
+        )
+        == 228
+    )
+    _assert_package_root_exports(faultatlas.__all__)
+    assert getattr(domain_package, "__all__", None) in (None, [])
+    assert evidence_exports.isdisjoint(vars(faultatlas))
+    assert evidence_exports.isdisjoint(vars(domain_package))
+    for filename in EXPECTED_LOCKS:
+        _assert_locked_file(filename, (CORPUS_ROOT / filename).read_bytes())
+
+
 def _assert_semantic_boundaries(documents: dict[str, dict[str, Any]]) -> None:
     manifest = documents["manifest.json"]
     non_goals = set(cast(list[str], manifest["non_goals"]))
@@ -1551,6 +1604,7 @@ def _working_source_bytes() -> dict[str, bytes]:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert set(sources) == EXPECTED_PRODUCTION_FILES
+    assert len(sources) == 9
     return sources
 
 
@@ -1592,7 +1646,11 @@ def _assert_safe_archive(
         if parts[-1] == "LICENSE":
             licenses.append(member.data)
     assert licenses == [project_license]
-    assert _archive_source_bytes(members) == _working_source_bytes()
+    packaged = _archive_source_bytes(members)
+    working = _working_source_bytes()
+    assert set(packaged) == EXPECTED_PRODUCTION_FILES
+    assert packaged[EVIDENCE_MODULE_PATH] == working[EVIDENCE_MODULE_PATH]
+    assert packaged == working
 
 
 def _git_status() -> bytes:
@@ -1842,6 +1900,7 @@ def test_registry_fixture_and_source_safety() -> None:
 def test_export_coverage_and_semantic_boundaries() -> None:
     documents = _documents()
     _assert_export_coverage(documents)
+    _assert_evidence_is_outside_revision_locator_contract(documents)
     _assert_semantic_boundaries(documents)
     _assert_no_production_reader_or_resolver()
     relative_paths = {
