@@ -52,6 +52,9 @@ _MAX_MEDIA_TYPE_LENGTH = 255
 _MAX_API_VERSION_LENGTH = 128
 _MAX_QUERY_NAME_LENGTH = 256
 _MAX_QUERY_VALUE_LENGTH = 4096
+_MAX_QUERY_PARAMETERS = 128
+_MAX_MEDIA_TYPE_PARAMETERS = 64
+_MAX_CONTENT_ENCODINGS = 32
 _MAX_CONTENT_ENCODING_LENGTH = 64
 _MAX_MEDIA_PARAMETER_NAME_LENGTH: int = 256
 _MAX_MEDIA_PARAMETER_VALUE_LENGTH = 1024
@@ -61,8 +64,10 @@ _ASSERTED_UTC_STARTED_AT_PATTERN = re.compile(
 )
 _RUN_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,158}[a-z0-9])?")
 _INVALID_PERCENT_ENCODING = re.compile(r"%(?![0-9A-Fa-f]{2})")
-_LOWERCASE_HTTP_TOKEN_PATTERN = re.compile(r"[!#$%&'*+\-.^_`|~0-9a-z]+")
-_MEDIA_TYPE_PATTERN = re.compile(r"[!#$%&'*+\-.^_`|~0-9a-z]+/[!#$%&'*+\-.^_`|~0-9a-z]+")
+_HTTP_TOKEN_PATTERN = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
+_MEDIA_TYPE_PATTERN = re.compile(
+    r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+/[!#$%&'*+\-.^_`|~0-9A-Za-z]+"
+)
 
 _AcquisitionRunIdValue = Annotated[
     str,
@@ -360,7 +365,7 @@ class RetrievalRequestReference(_RetrievalRecordBase):
 
 
 class MediaType(RootModel[_MediaTypeValue]):
-    """Exact lowercase ASCII media type without parameters or wildcards."""
+    """Exact ASCII media type without parameters or wildcards."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -376,13 +381,13 @@ class MediaType(RootModel[_MediaTypeValue]):
     def _validate_media_type(cls, value: str) -> str:
         if not value.isascii() or _MEDIA_TYPE_PATTERN.fullmatch(value) is None:
             raise ValueError(
-                "media type must use lowercase ASCII token/token grammar "
+                "media type must use ASCII token/token grammar "
                 "without parameters or wildcard components"
             )
         media_type, media_subtype = value.split("/", maxsplit=1)
         if media_type == "*" or media_subtype == "*":
             raise ValueError(
-                "media type must use lowercase ASCII token/token grammar "
+                "media type must use ASCII token/token grammar "
                 "without parameters or wildcard components"
             )
         return value
@@ -451,6 +456,7 @@ class RequestQueryParameter(BaseModel):
 class RetrievalRequestControls(_RetrievalRecordBase):
     """Explicit ordered controls for a request, separate from its identity."""
 
+    query_delimiter_present: bool
     query_parameters: tuple[RequestQueryParameter, ...]
     requested_media_type: MediaType
     api_version: ApiVersion | None
@@ -463,14 +469,24 @@ class RetrievalRequestControls(_RetrievalRecordBase):
         info: ValidationInfo,
     ) -> object:
         if info.mode == "json":
-            return (
-                tuple(cast(list[object], value)) if isinstance(value, list) else value
-            )
+            if isinstance(value, list):
+                raw_value = cast(list[object], value)
+                if len(raw_value) > _MAX_QUERY_PARAMETERS:
+                    raise ValueError(
+                        "query_parameters must contain at most "
+                        f"{_MAX_QUERY_PARAMETERS} entries"
+                    )
+                return tuple(raw_value)
+            return value
         if info.mode != "python":
             return value
         if type(value) is not tuple:
             raise ValueError("query_parameters must be a tuple in Python input")
         typed_value = cast(tuple[object, ...], value)
+        if len(typed_value) > _MAX_QUERY_PARAMETERS:
+            raise ValueError(
+                f"query_parameters must contain at most {_MAX_QUERY_PARAMETERS} entries"
+            )
         if not all(isinstance(item, RequestQueryParameter) for item in typed_value):
             raise ValueError(
                 "query_parameters entries must be RequestQueryParameter values "
@@ -506,6 +522,14 @@ class RetrievalRequestControls(_RetrievalRecordBase):
             )
         return value
 
+    @model_validator(mode="after")
+    def _validate_query_delimiter_presence(self) -> Self:
+        if not self.query_delimiter_present and self.query_parameters:
+            raise ValueError(
+                "query_parameters require query_delimiter_present to be true"
+            )
+        return self
+
 
 class ResponseRepresentationState(StrEnum):
     """Availability of one response representation observation."""
@@ -539,7 +563,7 @@ class HttpStatusCode(RootModel[int]):
 
 
 class ContentEncoding(RootModel[_ContentEncodingValue]):
-    """Exact lowercase ASCII content-encoding token."""
+    """Exact ASCII content-encoding token."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -553,11 +577,8 @@ class ContentEncoding(RootModel[_ContentEncodingValue]):
     @field_validator("root")
     @classmethod
     def _validate_content_encoding(cls, value: str) -> str:
-        if (
-            not value.isascii()
-            or _LOWERCASE_HTTP_TOKEN_PATTERN.fullmatch(value) is None
-        ):
-            raise ValueError("content encoding must use lowercase ASCII token grammar")
+        if not value.isascii() or _HTTP_TOKEN_PATTERN.fullmatch(value) is None:
+            raise ValueError("content encoding must use ASCII HTTP token grammar")
         return value
 
 
@@ -584,12 +605,9 @@ class MediaTypeParameter(BaseModel):
     @field_validator("name")
     @classmethod
     def _validate_name(cls, value: str) -> str:
-        if (
-            not value.isascii()
-            or _LOWERCASE_HTTP_TOKEN_PATTERN.fullmatch(value) is None
-        ):
+        if not value.isascii() or _HTTP_TOKEN_PATTERN.fullmatch(value) is None:
             raise ValueError(
-                "media type parameter name must use lowercase ASCII token grammar"
+                "media type parameter name must use ASCII HTTP token grammar"
             )
         return value
 
@@ -696,9 +714,15 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
         if value is None:
             return value
         if info.mode == "json":
-            return (
-                tuple(cast(list[object], value)) if isinstance(value, list) else value
-            )
+            if isinstance(value, list):
+                raw_value = cast(list[object], value)
+                if len(raw_value) > _MAX_MEDIA_TYPE_PARAMETERS:
+                    raise ValueError(
+                        "media_type_parameters must contain at most "
+                        f"{_MAX_MEDIA_TYPE_PARAMETERS} entries"
+                    )
+                return tuple(raw_value)
+            return value
         if info.mode != "python":
             return value
         if type(value) is not tuple:
@@ -706,6 +730,11 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
                 "media_type_parameters must be a tuple or None in Python input"
             )
         typed_value = cast(tuple[object, ...], value)
+        if len(typed_value) > _MAX_MEDIA_TYPE_PARAMETERS:
+            raise ValueError(
+                "media_type_parameters must contain at most "
+                f"{_MAX_MEDIA_TYPE_PARAMETERS} entries"
+            )
         if not all(isinstance(item, MediaTypeParameter) for item in typed_value):
             raise ValueError(
                 "media_type_parameters entries must be MediaTypeParameter values "
@@ -723,9 +752,15 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
         if value is None:
             return value
         if info.mode == "json":
-            return (
-                tuple(cast(list[object], value)) if isinstance(value, list) else value
-            )
+            if isinstance(value, list):
+                raw_value = cast(list[object], value)
+                if len(raw_value) > _MAX_CONTENT_ENCODINGS:
+                    raise ValueError(
+                        "content_encodings must contain at most "
+                        f"{_MAX_CONTENT_ENCODINGS} entries"
+                    )
+                return tuple(raw_value)
+            return value
         if info.mode != "python":
             return value
         if type(value) is not tuple:
@@ -733,6 +768,11 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
                 "content_encodings must be a tuple or None in Python input"
             )
         typed_value = cast(tuple[object, ...], value)
+        if len(typed_value) > _MAX_CONTENT_ENCODINGS:
+            raise ValueError(
+                "content_encodings must contain at most "
+                f"{_MAX_CONTENT_ENCODINGS} entries"
+            )
         if not all(isinstance(item, ContentEncoding) for item in typed_value):
             raise ValueError(
                 "content_encodings entries must be ContentEncoding values "

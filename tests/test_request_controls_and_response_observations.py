@@ -156,7 +156,8 @@ CANONICAL_FACT_CASES = (
     },
 )
 SYNTHETIC_SCENARIOS = (
-    "controls-empty-query-tuple",
+    "controls-no-query-delimiter",
+    "controls-bare-query-delimiter",
     "controls-bare-query-name",
     "controls-explicit-empty-query-value",
     "controls-duplicate-query-names",
@@ -216,6 +217,7 @@ def _encoding(value: str) -> ContentEncoding:
 
 def _controls_data(**overrides: object) -> dict[str, object]:
     data: dict[str, object] = {
+        "query_delimiter_present": False,
         "query_parameters": (),
         "requested_media_type": MediaType.model_validate("application/json"),
         "api_version": None,
@@ -315,6 +317,26 @@ def _parse_media_parameter_name_limit(source: str) -> int:
     return value
 
 
+def _parse_collection_limits(source: str) -> dict[str, int]:
+    expected_names = {
+        "_MAX_QUERY_PARAMETERS",
+        "_MAX_MEDIA_TYPE_PARAMETERS",
+        "_MAX_CONTENT_ENCODINGS",
+    }
+    values: dict[str, int] = {}
+    for node in ast.parse(source).body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name) or target.id not in expected_names:
+            continue
+        value = cast(object, ast.literal_eval(node.value))
+        assert type(value) is int
+        values[target.id] = value
+    assert set(values) == expected_names
+    return values
+
+
 def _validate_evidence_exports(source: str) -> None:
     exports = _parse_exports(source)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
@@ -364,6 +386,18 @@ def _assert_query_order_and_multiplicity(
     assert observed == expected
 
 
+def _assert_collection_limit_error(
+    error: pytest.ExceptionInfo[ValidationError],
+    *,
+    field: str,
+    maximum: int,
+) -> None:
+    errors = error.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["loc"] == (field,)
+    assert f"at most {maximum} entries" in errors[0]["msg"]
+
+
 def _assert_encoded_query_component(value: str, *, allow_empty: bool) -> None:
     if not allow_empty:
         assert value
@@ -388,6 +422,14 @@ def _replay_query(parameters: tuple[RequestQueryParameter, ...]) -> str:
         + (f"={parameter.value}" if parameter.value_delimiter_present else "")
         for parameter in parameters
     )
+
+
+def _replay_request_target(
+    route_path: str,
+    controls: RetrievalRequestControls,
+) -> str:
+    query = _replay_query(controls.query_parameters)
+    return route_path + (f"?{query}" if controls.query_delimiter_present else "")
 
 
 def _parse_replayed_query(query: str) -> tuple[tuple[str, str, bool], ...]:
@@ -418,7 +460,7 @@ def test_canonical_acquisition_lock_and_fact_registries_are_exact() -> None:
     assert sha256(raw).hexdigest() == CANONICAL_ACQUISITION_SHA256
     assert len(CANONICAL_FACT_CASES) == 4
     assert len({case["case_id"] for case in CANONICAL_FACT_CASES}) == 4
-    assert len(SYNTHETIC_SCENARIOS) == len(set(SYNTHETIC_SCENARIOS)) == 17
+    assert len(SYNTHETIC_SCENARIOS) == len(set(SYNTHETIC_SCENARIOS)) == 18
 
 
 def test_canonical_facts_are_directly_bound_to_exact_request_records() -> None:
@@ -506,6 +548,9 @@ def test_no_canonical_full_s02_model_is_claimed_without_required_fields() -> Non
     (
         "a/b",
         "application/json",
+        "Application/JSON",
+        "TEXT/PLAIN",
+        "application/Vnd.GitHub.Raw+Json",
         "text/plain",
         "application/vnd.github.diff",
         "application/vnd.github.raw+json",
@@ -521,8 +566,6 @@ def test_media_type_accepts_and_preserves_valid_bounded_tokens(value: str) -> No
 @pytest.mark.parametrize(
     "value",
     (
-        "Application/json",
-        "application/JSON",
         " application/json",
         "application/json ",
         "application /json",
@@ -548,13 +591,31 @@ def test_media_type_rejects_malformed_or_coercive_values(value: object) -> None:
         MediaType.model_validate(value)
 
 
-def test_media_type_does_not_silently_lowercase_or_merge_parameters() -> None:
+def test_media_type_preserves_case_without_merging_parameters() -> None:
     lower = MediaType.model_validate("application/vnd.github.raw+json")
+    mixed = MediaType.model_validate("Application/Vnd.GitHub.Raw+Json")
     assert lower.root == "application/vnd.github.raw+json"
-    with pytest.raises(ValidationError):
-        MediaType.model_validate("Application/Vnd.GitHub.Raw+Json")
+    assert mixed.root == "Application/Vnd.GitHub.Raw+Json"
+    assert mixed != lower
+    assert MediaType.model_validate_json(mixed.model_dump_json()) == mixed
     with pytest.raises(ValidationError):
         MediaType.model_validate("text/plain; charset=utf-8")
+
+
+def test_http_token_models_accept_every_ascii_letter_case_without_normalizing() -> None:
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    media_type = MediaType.model_validate(f"{letters}/{letters}")
+    encoding = ContentEncoding.model_validate(letters)
+    parameter = MediaTypeParameter(name=letters, value="value")
+
+    assert media_type.root == f"{letters}/{letters}"
+    assert encoding.root == letters
+    assert parameter.name == letters
+    assert MediaType.model_validate_json(media_type.model_dump_json()) == media_type
+    assert ContentEncoding.model_validate_json(encoding.model_dump_json()) == encoding
+    assert (
+        MediaTypeParameter.model_validate_json(parameter.model_dump_json()) == parameter
+    )
 
 
 @pytest.mark.parametrize(
@@ -606,12 +667,13 @@ def test_query_parameters_preserve_exact_order_duplicates_case_value_and_delimit
     None
 ):
     controls = _controls(
+        query_delimiter_present=True,
         query_parameters=(
             _query("cursor", "first"),
             _query("Cursor", "", value_delimiter_present=False),
             _query("Cursor", "", value_delimiter_present=True),
             _query("cursor", "second"),
-        )
+        ),
     )
     expected = (
         ("cursor", "first", True),
@@ -721,7 +783,7 @@ def test_query_replay_preserves_flags_order_duplicates_and_encoded_delimiters() 
     assert _replay_query(()) == ""
     assert _parse_replayed_query("") == ()
 
-    controls = _controls(query_parameters=parameters)
+    controls = _controls(query_delimiter_present=True, query_parameters=parameters)
     reconstructed = RetrievalRequestControls.model_validate_json(
         controls.model_dump_json()
     )
@@ -886,11 +948,12 @@ def test_query_parameter_json_rejects_invalid_delimiter_states(
 
 def test_query_order_and_duplicate_failure_sensitivity() -> None:
     controls = _controls(
+        query_delimiter_present=True,
         query_parameters=(
             _query("page", "1"),
             _query("page", "2"),
             _query("sort", "created"),
-        )
+        ),
     )
     expected = (
         ("page", "1", True),
@@ -986,14 +1049,16 @@ def test_query_parameter_rejects_extras_and_is_frozen() -> None:
 
 
 def test_request_controls_fields_are_exact_and_minimal_controls_are_explicit() -> None:
-    assert set(RetrievalRequestControls.model_fields) == {
+    assert tuple(RetrievalRequestControls.model_fields) == (
         "schema_version",
+        "query_delimiter_present",
         "query_parameters",
         "requested_media_type",
         "api_version",
-    }
+    )
     controls = _controls()
     assert controls.schema_version == 1
+    assert controls.query_delimiter_present is False
     assert controls.query_parameters == ()
     assert controls.requested_media_type.root == "application/json"
     assert controls.api_version is None
@@ -1001,7 +1066,12 @@ def test_request_controls_fields_are_exact_and_minimal_controls_are_explicit() -
 
 @pytest.mark.parametrize(
     "field",
-    ("query_parameters", "requested_media_type", "api_version"),
+    (
+        "query_delimiter_present",
+        "query_parameters",
+        "requested_media_type",
+        "api_version",
+    ),
 )
 def test_request_controls_require_each_explicit_component_field(field: str) -> None:
     data = _controls_data()
@@ -1009,6 +1079,84 @@ def test_request_controls_require_each_explicit_component_field(field: str) -> N
     with pytest.raises(ValidationError) as error:
         RetrievalRequestControls.model_validate(data)
     assert error.value.errors()[0]["type"] == "missing"
+
+
+@pytest.mark.parametrize("value", (0, 1, "true", "false", None))
+def test_request_controls_query_delimiter_presence_requires_exact_bool(
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        _controls(query_delimiter_present=value)
+
+    semantic = _controls().model_dump(mode="json")
+    semantic["query_delimiter_present"] = value
+    with pytest.raises(ValidationError):
+        RetrievalRequestControls.model_validate_json(json.dumps(semantic))
+
+
+def test_request_controls_reject_parameters_without_query_delimiter() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="require query_delimiter_present to be true",
+    ):
+        _controls(
+            query_delimiter_present=False,
+            query_parameters=(_query("flag", "", value_delimiter_present=False),),
+        )
+
+    semantic = _controls(
+        query_delimiter_present=True,
+        query_parameters=(_query("flag", "", value_delimiter_present=False),),
+    ).model_dump(mode="json")
+    semantic["query_delimiter_present"] = False
+    with pytest.raises(
+        ValidationError,
+        match="require query_delimiter_present to be true",
+    ):
+        RetrievalRequestControls.model_validate_json(json.dumps(semantic))
+
+
+def test_query_target_states_are_distinct_replayable_and_json_stable() -> None:
+    states = (
+        _controls(query_delimiter_present=False, query_parameters=()),
+        _controls(query_delimiter_present=True, query_parameters=()),
+        _controls(
+            query_delimiter_present=True,
+            query_parameters=(_query("flag", "", value_delimiter_present=False),),
+        ),
+        _controls(
+            query_delimiter_present=True,
+            query_parameters=(_query("flag", "", value_delimiter_present=True),),
+        ),
+        _controls(
+            query_delimiter_present=True,
+            query_parameters=(_query("flag", "value"),),
+        ),
+    )
+    expected_targets = (
+        "/path",
+        "/path?",
+        "/path?flag",
+        "/path?flag=",
+        "/path?flag=value",
+    )
+
+    assert all(
+        left != right
+        for index, left in enumerate(states)
+        for right in states[index + 1 :]
+    )
+    assert tuple(_replay_request_target("/path", state) for state in states) == (
+        expected_targets
+    )
+    for state in states:
+        reconstructed = RetrievalRequestControls.model_validate_json(
+            state.model_dump_json()
+        )
+        assert reconstructed == state
+        assert _replay_request_target("/path", reconstructed) == (
+            _replay_request_target("/path", state)
+        )
 
 
 def test_request_controls_support_requested_json_diff_and_optional_api_version() -> (
@@ -1066,6 +1214,7 @@ def test_request_controls_reject_mapping_query_coercion() -> None:
 
 def test_request_controls_semantic_json_reconstructs_typed_ordered_tuple() -> None:
     controls = _controls(
+        query_delimiter_present=True,
         query_parameters=(
             _query("page", "1"),
             _query("flag", "", value_delimiter_present=False),
@@ -1092,6 +1241,98 @@ def test_request_controls_semantic_json_reconstructs_typed_ordered_tuple() -> No
             ("flag", "", True),
             ("page", "2", True),
         ),
+    )
+
+
+@pytest.mark.parametrize("count", (0, 1, 128))
+def test_query_parameter_cardinality_accepts_exact_python_and_json_bounds(
+    count: int,
+) -> None:
+    parameters = tuple(
+        _query(f"q{index % 7}", f"v{index % 11}") for index in range(count)
+    )
+    controls = _controls(
+        query_delimiter_present=True,
+        query_parameters=parameters,
+    )
+    reconstructed = RetrievalRequestControls.model_validate_json(
+        controls.model_dump_json()
+    )
+    expected = tuple(
+        (parameter.name, parameter.value, parameter.value_delimiter_present)
+        for parameter in parameters
+    )
+
+    assert controls.query_parameters == parameters
+    assert reconstructed.query_parameters == parameters
+    assert len(reconstructed.query_parameters) == count
+    assert (
+        tuple(
+            (
+                parameter.name,
+                parameter.value,
+                parameter.value_delimiter_present,
+            )
+            for parameter in reconstructed.query_parameters
+        )
+        == expected
+    )
+    if count == 128:
+        assert len(set(expected)) < len(expected)
+        assert _replay_query(reconstructed.query_parameters) == _replay_query(
+            parameters
+        )
+
+
+def test_query_parameter_cardinality_rejects_max_plus_one_before_nested_items() -> None:
+    valid_parameters = tuple(_query("duplicate", "value") for _ in range(129))
+    with pytest.raises(ValidationError) as python_valid_error:
+        _controls(
+            query_delimiter_present=True,
+            query_parameters=valid_parameters,
+        )
+    _assert_collection_limit_error(
+        python_valid_error,
+        field="query_parameters",
+        maximum=128,
+    )
+
+    semantic: dict[str, object] = {
+        "schema_version": 1,
+        "query_delimiter_present": True,
+        "query_parameters": [
+            {"name": "duplicate", "value": "value", "value_delimiter_present": True}
+        ]
+        * 129,
+        "requested_media_type": "application/json",
+        "api_version": None,
+    }
+    with pytest.raises(ValidationError) as json_valid_error:
+        RetrievalRequestControls.model_validate_json(json.dumps(semantic))
+    _assert_collection_limit_error(
+        json_valid_error,
+        field="query_parameters",
+        maximum=128,
+    )
+
+    with pytest.raises(ValidationError) as python_nested_error:
+        _controls(
+            query_delimiter_present=True,
+            query_parameters=(object(),) * 129,
+        )
+    _assert_collection_limit_error(
+        python_nested_error,
+        field="query_parameters",
+        maximum=128,
+    )
+
+    semantic["query_parameters"] = [{"name": "raw space"}] * 129
+    with pytest.raises(ValidationError) as json_nested_error:
+        RetrievalRequestControls.model_validate_json(json.dumps(semantic))
+    _assert_collection_limit_error(
+        json_nested_error,
+        field="query_parameters",
+        maximum=128,
     )
 
 
@@ -1130,6 +1371,8 @@ def test_request_controls_reject_identity_transport_body_and_later_fields(
 def test_request_controls_are_frozen_and_require_exact_schema_version() -> None:
     controls = _controls()
     with pytest.raises(ValidationError):
+        controls.query_delimiter_present = True
+    with pytest.raises(ValidationError):
         controls.query_parameters = (_query("changed", "1"),)
     for value in (0, 2, True, 1.0, "1"):
         with pytest.raises(ValidationError):
@@ -1160,7 +1403,10 @@ def test_request_controls_revalidate_constructed_invalid_query_parameters(
     with pytest.raises(ValidationError):
         RequestQueryParameter.model_validate(invalid_parameter)
     with pytest.raises(ValidationError):
-        _controls(query_parameters=(invalid_parameter,))
+        _controls(
+            query_delimiter_present=True,
+            query_parameters=(invalid_parameter,),
+        )
 
 
 def test_response_state_vocabulary_is_exact_and_distinct_from_source_lifecycle() -> (
@@ -1212,9 +1458,9 @@ def test_http_status_code_rejects_out_of_range_or_coercive_values(
 
 @pytest.mark.parametrize(
     "value",
-    ("gzip", "br", "identity", "x-custom", "a" * 64),
+    ("gzip", "GZip", "br", "BR", "identity", "Identity", "x-custom", "a" * 64),
 )
-def test_content_encoding_accepts_exact_lowercase_tokens(value: str) -> None:
+def test_content_encoding_accepts_and_preserves_exact_http_tokens(value: str) -> None:
     assert ContentEncoding.model_validate(value).root == value
 
 
@@ -1222,11 +1468,11 @@ def test_content_encoding_accepts_exact_lowercase_tokens(value: str) -> None:
     "value",
     (
         "",
-        "GZIP",
         "g zip",
         " gzip",
         "gzip ",
         "gzip, br",
+        "gzip/br",
         "gzip\n",
         "bré",
         "a" * 65,
@@ -1286,6 +1532,71 @@ def test_content_encoding_chain_semantic_json_reconstructs_exact_typed_tuple() -
     )
 
 
+@pytest.mark.parametrize("count", (0, 1, 32))
+def test_content_encoding_cardinality_accepts_exact_python_and_json_bounds(
+    count: int,
+) -> None:
+    lexemes = ("GZip", "BR", "Identity", "GZip")
+    encodings = tuple(
+        _encoding(lexemes[index % len(lexemes)]) for index in range(count)
+    )
+    observation = _observation(content_encodings=encodings)
+    reconstructed = ResponseRepresentationObservation.model_validate_json(
+        observation.model_dump_json()
+    )
+    expected = tuple(encoding.root for encoding in encodings)
+
+    assert observation.content_encodings == encodings
+    assert reconstructed.content_encodings == encodings
+    assert reconstructed.content_encodings is not None
+    assert len(reconstructed.content_encodings) == count
+    assert tuple(encoding.root for encoding in reconstructed.content_encodings) == (
+        expected
+    )
+    if count == 32:
+        assert len(set(expected)) < len(expected)
+
+
+def test_content_encoding_cardinality_rejects_max_plus_one_before_nested_items() -> (
+    None
+):
+    encodings = tuple(_encoding("GZip") for _ in range(33))
+    with pytest.raises(ValidationError) as python_valid_error:
+        _observation(content_encodings=encodings)
+    _assert_collection_limit_error(
+        python_valid_error,
+        field="content_encodings",
+        maximum=32,
+    )
+
+    semantic = _observation(content_encodings=None).model_dump(mode="json")
+    semantic["content_encodings"] = ["GZip"] * 33
+    with pytest.raises(ValidationError) as json_valid_error:
+        ResponseRepresentationObservation.model_validate_json(json.dumps(semantic))
+    _assert_collection_limit_error(
+        json_valid_error,
+        field="content_encodings",
+        maximum=32,
+    )
+
+    with pytest.raises(ValidationError) as python_nested_error:
+        _observation(content_encodings=(object(),) * 33)
+    _assert_collection_limit_error(
+        python_nested_error,
+        field="content_encodings",
+        maximum=32,
+    )
+
+    semantic["content_encodings"] = ["gzip, br"] * 33
+    with pytest.raises(ValidationError) as json_nested_error:
+        ResponseRepresentationObservation.model_validate_json(json.dumps(semantic))
+    _assert_collection_limit_error(
+        json_nested_error,
+        field="content_encodings",
+        maximum=32,
+    )
+
+
 @pytest.mark.parametrize(
     "value",
     (
@@ -1336,11 +1647,22 @@ def test_media_type_parameters_preserve_order_multiplicity_and_exact_values() ->
 
 @pytest.mark.parametrize(
     "name",
-    ("", "Charset", "char set", "charset\n", "chársét", 1, None),
+    ("", "char set", "char/set", "charset\n", "chársét", 1, None),
 )
 def test_media_type_parameter_rejects_malformed_names(name: object) -> None:
     with pytest.raises(ValidationError):
         MediaTypeParameter.model_validate({"name": name, "value": "utf-8"})
+
+
+@pytest.mark.parametrize("name", ("charset", "Charset", "CHARSET", "filename*"))
+def test_media_type_parameter_name_preserves_valid_case_and_punctuation(
+    name: str,
+) -> None:
+    parameter = _parameter(name, "UTF-8")
+    assert parameter.name == name
+    assert MediaTypeParameter.model_validate_json(parameter.model_dump_json()) == (
+        parameter
+    )
 
 
 def test_media_type_parameter_name_bounds_and_json_lexeme_are_exact() -> None:
@@ -1376,6 +1698,74 @@ def test_media_type_parameter_is_frozen() -> None:
     parameter = _parameter("charset", "utf-8")
     with pytest.raises(ValidationError):
         parameter.value = "changed"
+
+
+@pytest.mark.parametrize("count", (0, 1, 64))
+def test_media_parameter_cardinality_accepts_exact_python_and_json_bounds(
+    count: int,
+) -> None:
+    names = ("Charset", "filename*", "X-Value", "Charset")
+    parameters = tuple(
+        _parameter(names[index % len(names)], f"value-{index % 9}")
+        for index in range(count)
+    )
+    observation = _observation(media_type_parameters=parameters)
+    reconstructed = ResponseRepresentationObservation.model_validate_json(
+        observation.model_dump_json()
+    )
+    expected = tuple((parameter.name, parameter.value) for parameter in parameters)
+
+    assert observation.media_type_parameters == parameters
+    assert reconstructed.media_type_parameters == parameters
+    assert reconstructed.media_type_parameters is not None
+    assert len(reconstructed.media_type_parameters) == count
+    assert (
+        tuple(
+            (parameter.name, parameter.value)
+            for parameter in reconstructed.media_type_parameters
+        )
+        == expected
+    )
+    if count == 64:
+        assert len(set(expected)) < len(expected)
+
+
+def test_media_parameter_cardinality_rejects_max_plus_one_before_nested_items() -> None:
+    parameters = tuple(_parameter("Charset", "UTF-8") for _ in range(65))
+    with pytest.raises(ValidationError) as python_valid_error:
+        _observation(media_type_parameters=parameters)
+    _assert_collection_limit_error(
+        python_valid_error,
+        field="media_type_parameters",
+        maximum=64,
+    )
+
+    semantic = _observation(media_type_parameters=None).model_dump(mode="json")
+    semantic["media_type_parameters"] = [{"name": "Charset", "value": "UTF-8"}] * 65
+    with pytest.raises(ValidationError) as json_valid_error:
+        ResponseRepresentationObservation.model_validate_json(json.dumps(semantic))
+    _assert_collection_limit_error(
+        json_valid_error,
+        field="media_type_parameters",
+        maximum=64,
+    )
+
+    with pytest.raises(ValidationError) as python_nested_error:
+        _observation(media_type_parameters=(object(),) * 65)
+    _assert_collection_limit_error(
+        python_nested_error,
+        field="media_type_parameters",
+        maximum=64,
+    )
+
+    semantic["media_type_parameters"] = [{"name": "raw space"}] * 65
+    with pytest.raises(ValidationError) as json_nested_error:
+        ResponseRepresentationObservation.model_validate_json(json.dumps(semantic))
+    _assert_collection_limit_error(
+        json_nested_error,
+        field="media_type_parameters",
+        maximum=64,
+    )
 
 
 def test_response_observation_fields_are_exact() -> None:
@@ -1826,16 +2216,16 @@ def test_response_observation_is_frozen_extra_forbidden_and_schema_strict() -> N
 
 def test_response_observation_revalidates_constructed_invalid_nested_values() -> None:
     invalid_status = HttpStatusCode.model_construct(root=99)
-    invalid_media = MediaType.model_construct(root="Application/JSON")
+    invalid_media = MediaType.model_construct(root="application/json;bad")
     invalid_parameter = MediaTypeParameter.model_construct(
-        name="Charset",
+        name="bad name",
         value="utf-8",
     )
     invalid_overlong_parameter = MediaTypeParameter.model_construct(
         name="a" * 257,
         value="utf-8",
     )
-    invalid_encoding = ContentEncoding.model_construct(root="GZIP")
+    invalid_encoding = ContentEncoding.model_construct(root="gzip, br")
     for field, value in (
         ("status_code", invalid_status),
         ("observed_media_type", invalid_media),
@@ -1872,6 +2262,7 @@ def test_cross_layer_composition_uses_one_request_id_without_duplication() -> No
     request_id = _request_id()
     reference = _reference(request_id)
     controls = _controls(
+        query_delimiter_present=True,
         query_parameters=(_query("page", "1"),),
         requested_media_type=MediaType.model_validate("application/json"),
         api_version=ApiVersion.model_validate("v1"),
@@ -1892,6 +2283,7 @@ def test_controls_do_not_change_request_identity() -> None:
     request_id = _request_id()
     first = _controls()
     second = _controls(
+        query_delimiter_present=True,
         query_parameters=(_query("page", "1"),),
         requested_media_type=MediaType.model_validate("application/json"),
     )
@@ -1951,6 +2343,22 @@ def test_media_parameter_name_limit_is_one_private_annotated_constant() -> None:
     )
     with pytest.raises(AssertionError):
         assert _parse_media_parameter_name_limit(mutated) == 256
+
+
+def test_collection_limits_are_exact_private_constants_and_mutation_sensitive() -> None:
+    source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
+    expected = {
+        "_MAX_QUERY_PARAMETERS": 128,
+        "_MAX_MEDIA_TYPE_PARAMETERS": 64,
+        "_MAX_CONTENT_ENCODINGS": 32,
+    }
+    assert _parse_collection_limits(source) == expected
+
+    for name, value in expected.items():
+        mutated = source.replace(f"{name} = {value}", f"{name} = {value + 1}", 1)
+        assert mutated != source
+        with pytest.raises(AssertionError):
+            assert _parse_collection_limits(mutated) == expected
 
 
 def test_no_artifact_run_adapter_envelope_or_s03_surface_exists() -> None:
