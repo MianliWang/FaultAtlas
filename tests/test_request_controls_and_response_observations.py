@@ -157,6 +157,8 @@ CANONICAL_FACT_CASES = (
 )
 SYNTHETIC_SCENARIOS = (
     "controls-empty-query-tuple",
+    "controls-bare-query-name",
+    "controls-explicit-empty-query-value",
     "controls-duplicate-query-names",
     "controls-requested-json",
     "controls-requested-diff",
@@ -191,8 +193,17 @@ def _request_id(
     )
 
 
-def _query(name: str, value: str) -> RequestQueryParameter:
-    return RequestQueryParameter(name=name, value=value)
+def _query(
+    name: str,
+    value: str,
+    *,
+    value_delimiter_present: bool = True,
+) -> RequestQueryParameter:
+    return RequestQueryParameter(
+        name=name,
+        value=value,
+        value_delimiter_present=value_delimiter_present,
+    )
 
 
 def _parameter(name: str, value: str) -> MediaTypeParameter:
@@ -321,10 +332,15 @@ def _validate_no_later_evidence_surface(source: str) -> None:
 
 def _assert_query_order_and_multiplicity(
     controls: RetrievalRequestControls,
-    expected: tuple[tuple[str, str], ...],
+    expected: tuple[tuple[str, str, bool], ...],
 ) -> None:
     observed = tuple(
-        (parameter.name, parameter.value) for parameter in controls.query_parameters
+        (
+            parameter.name,
+            parameter.value,
+            parameter.value_delimiter_present,
+        )
+        for parameter in controls.query_parameters
     )
     assert observed == expected
 
@@ -344,7 +360,7 @@ def test_canonical_acquisition_lock_and_fact_registries_are_exact() -> None:
     assert sha256(raw).hexdigest() == CANONICAL_ACQUISITION_SHA256
     assert len(CANONICAL_FACT_CASES) == 4
     assert len({case["case_id"] for case in CANONICAL_FACT_CASES}) == 4
-    assert len(SYNTHETIC_SCENARIOS) == len(set(SYNTHETIC_SCENARIOS)) == 15
+    assert len(SYNTHETIC_SCENARIOS) == len(set(SYNTHETIC_SCENARIOS)) == 17
 
 
 def test_canonical_facts_are_directly_bound_to_exact_request_records() -> None:
@@ -528,22 +544,103 @@ def test_api_version_is_not_date_parsed_or_normalized() -> None:
     assert upper != lower
 
 
-def test_query_parameters_preserve_exact_order_duplicates_case_and_empty_value() -> (
+def test_query_parameters_preserve_exact_order_duplicates_case_value_and_delimiter() -> (
     None
 ):
     controls = _controls(
         query_parameters=(
             _query("cursor", "first"),
-            _query("Cursor", ""),
+            _query("Cursor", "", value_delimiter_present=False),
+            _query("Cursor", "", value_delimiter_present=True),
             _query("cursor", "second"),
         )
     )
     expected = (
-        ("cursor", "first"),
-        ("Cursor", ""),
-        ("cursor", "second"),
+        ("cursor", "first", True),
+        ("Cursor", "", False),
+        ("Cursor", "", True),
+        ("cursor", "second", True),
     )
     _assert_query_order_and_multiplicity(controls, expected)
+
+
+def test_bare_and_explicitly_empty_query_values_are_distinct_and_json_stable() -> None:
+    bare = _query("flag", "", value_delimiter_present=False)
+    explicit_empty = _query("flag", "", value_delimiter_present=True)
+
+    assert bare.name == explicit_empty.name == "flag"
+    assert bare.value == explicit_empty.value == ""
+    assert bare.value_delimiter_present is False
+    assert explicit_empty.value_delimiter_present is True
+    assert bare != explicit_empty
+    assert bare.model_dump(mode="json") == {
+        "name": "flag",
+        "value": "",
+        "value_delimiter_present": False,
+    }
+    assert explicit_empty.model_dump(mode="json") == {
+        "name": "flag",
+        "value": "",
+        "value_delimiter_present": True,
+    }
+    assert RequestQueryParameter.model_validate_json(bare.model_dump_json()) == bare
+    assert (
+        RequestQueryParameter.model_validate_json(explicit_empty.model_dump_json())
+        == explicit_empty
+    )
+
+
+def test_query_parameter_fields_are_exact_and_each_is_required() -> None:
+    assert tuple(RequestQueryParameter.model_fields) == (
+        "name",
+        "value",
+        "value_delimiter_present",
+    )
+    data: dict[str, object] = {
+        "name": "flag",
+        "value": "",
+        "value_delimiter_present": False,
+    }
+    for field in tuple(data):
+        incomplete = dict(data)
+        del incomplete[field]
+        with pytest.raises(ValidationError) as error:
+            RequestQueryParameter.model_validate(incomplete)
+        assert error.value.errors()[0]["type"] == "missing"
+
+
+@pytest.mark.parametrize("value", (0, 1, "true", "false", None))
+def test_query_parameter_value_delimiter_presence_requires_exact_bool(
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        RequestQueryParameter.model_validate(
+            {
+                "name": "flag",
+                "value": "",
+                "value_delimiter_present": value,
+            }
+        )
+
+
+def test_nonempty_query_value_requires_value_delimiter() -> None:
+    with pytest.raises(ValidationError, match="requires value_delimiter_present"):
+        _query("flag", "value", value_delimiter_present=False)
+
+
+@pytest.mark.parametrize(
+    "data",
+    (
+        {"name": "flag", "value": "", "value_delimiter_present": 0},
+        {"name": "flag", "value": "", "value_delimiter_present": "false"},
+        {"name": "flag", "value": "value", "value_delimiter_present": False},
+    ),
+)
+def test_query_parameter_json_rejects_invalid_delimiter_states(
+    data: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        RequestQueryParameter.model_validate_json(json.dumps(data))
 
 
 def test_query_order_and_duplicate_failure_sensitivity() -> None:
@@ -554,17 +651,25 @@ def test_query_order_and_duplicate_failure_sensitivity() -> None:
             _query("sort", "created"),
         )
     )
-    expected = (("page", "1"), ("page", "2"), ("sort", "created"))
+    expected = (
+        ("page", "1", True),
+        ("page", "2", True),
+        ("sort", "created", True),
+    )
     _assert_query_order_and_multiplicity(controls, expected)
     with pytest.raises(AssertionError):
         _assert_query_order_and_multiplicity(
             controls,
-            (("page", "2"), ("page", "1"), ("sort", "created")),
+            (
+                ("page", "2", True),
+                ("page", "1", True),
+                ("sort", "created", True),
+            ),
         )
     with pytest.raises(AssertionError):
         _assert_query_order_and_multiplicity(
             controls,
-            (("page", "1"), ("sort", "created")),
+            (("page", "1", True), ("sort", "created", True)),
         )
 
 
@@ -574,7 +679,11 @@ def test_query_parameters_reject_all_ascii_controls(
     field: str,
     control: str,
 ) -> None:
-    data = {"name": "name", "value": "value"}
+    data = {
+        "name": "name",
+        "value": "value",
+        "value_delimiter_present": True,
+    }
     data[field] = f"before{control}after"
     with pytest.raises(ValidationError):
         RequestQueryParameter.model_validate(data)
@@ -599,7 +708,11 @@ def test_query_parameters_reject_non_ascii_and_non_string_values(
     field: str,
     value: object,
 ) -> None:
-    data: dict[str, object] = {"name": "name", "value": "value"}
+    data: dict[str, object] = {
+        "name": "name",
+        "value": "value",
+        "value_delimiter_present": True,
+    }
     data[field] = value
     with pytest.raises(ValidationError):
         RequestQueryParameter.model_validate(data)
@@ -608,11 +721,18 @@ def test_query_parameters_reject_non_ascii_and_non_string_values(
 def test_query_parameter_rejects_extras_and_is_frozen() -> None:
     with pytest.raises(ValidationError):
         RequestQueryParameter.model_validate(
-            {"name": "page", "value": "1", "decoded": "1"}
+            {
+                "name": "page",
+                "value": "1",
+                "value_delimiter_present": True,
+                "decoded": "1",
+            }
         )
     parameter = _query("page", "1")
     with pytest.raises(ValidationError):
         parameter.name = "changed"
+    with pytest.raises(ValidationError):
+        parameter.value_delimiter_present = False
 
 
 def test_request_controls_fields_are_exact_and_minimal_controls_are_explicit() -> None:
@@ -666,7 +786,16 @@ def test_request_controls_support_requested_json_diff_and_optional_api_version()
     (
         ("query_parameters", []),
         ("query_parameters", {"page": "1"}),
-        ("query_parameters", ({"name": "page", "value": "1"},)),
+        (
+            "query_parameters",
+            (
+                {
+                    "name": "page",
+                    "value": "1",
+                    "value_delimiter_present": True,
+                },
+            ),
+        ),
         ("requested_media_type", "application/json"),
         ("requested_media_type", None),
         ("api_version", "2026-03-10"),
@@ -689,6 +818,8 @@ def test_request_controls_semantic_json_reconstructs_typed_ordered_tuple() -> No
     controls = _controls(
         query_parameters=(
             _query("page", "1"),
+            _query("flag", "", value_delimiter_present=False),
+            _query("flag", "", value_delimiter_present=True),
             _query("page", "2"),
         ),
         requested_media_type=MediaType.model_validate("application/json"),
@@ -702,6 +833,15 @@ def test_request_controls_semantic_json_reconstructs_typed_ordered_tuple() -> No
     assert all(
         isinstance(parameter, RequestQueryParameter)
         for parameter in reconstructed.query_parameters
+    )
+    _assert_query_order_and_multiplicity(
+        reconstructed,
+        (
+            ("page", "1", True),
+            ("flag", "", False),
+            ("flag", "", True),
+            ("page", "2", True),
+        ),
     )
 
 
@@ -744,6 +884,16 @@ def test_request_controls_are_frozen_and_require_exact_schema_version() -> None:
     for value in (0, 2, True, 1.0, "1"):
         with pytest.raises(ValidationError):
             _controls(schema_version=value)
+
+
+def test_request_controls_revalidate_constructed_invalid_query_parameters() -> None:
+    invalid_parameter = RequestQueryParameter.model_construct(
+        name="flag",
+        value="value",
+        value_delimiter_present=False,
+    )
+    with pytest.raises(ValidationError, match="requires value_delimiter_present"):
+        _controls(query_parameters=(invalid_parameter,))
 
 
 def test_response_state_vocabulary_is_exact_and_distinct_from_source_lifecycle() -> (

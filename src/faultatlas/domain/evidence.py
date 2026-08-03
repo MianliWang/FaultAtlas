@@ -414,7 +414,7 @@ class ApiVersion(RootModel[_ApiVersionValue]):
 
 
 class RequestQueryParameter(BaseModel):
-    """One exact ordered request query name/value entry."""
+    """One exact ordered query entry with explicit value-delimiter presence."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -426,6 +426,7 @@ class RequestQueryParameter(BaseModel):
 
     name: _RequestQueryNameValue
     value: _RequestQueryValue
+    value_delimiter_present: bool
 
     @field_validator("name", "value")
     @classmethod
@@ -435,6 +436,14 @@ class RequestQueryParameter(BaseModel):
         if _has_ascii_control(value):
             raise ValueError("query parameter text must not contain ASCII controls")
         return value
+
+    @model_validator(mode="after")
+    def _validate_value_delimiter(self) -> Self:
+        if self.value and not self.value_delimiter_present:
+            raise ValueError(
+                "nonempty query parameter value requires value_delimiter_present"
+            )
+        return self
 
 
 class RetrievalRequestControls(_RetrievalRecordBase):
