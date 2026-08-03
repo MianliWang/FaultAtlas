@@ -28,9 +28,9 @@ aspirational Slice as scheduled work.
   `S1.P02.S01` is complete, `S1.P02.S02` is complete, `S1.P02.S03` is
   complete, `S1.P02.S04` is complete, `S1.P02.S05` is complete, and
   `S1.P02.S06` is complete. `S1.P02.S07` is complete. `S1.P03` is active;
-  `S1.P03.S01` is complete, `S1.P03.S02` is next and not started, and
-  `S1.P03.S03` through `S1.P03.S09` are not started. `S1.P04` through
-  `S1.P10` remain not started.
+  `S1.P03.S01` is complete, `S1.P03.S02` is complete, `S1.P03.S03` is next
+  and not started, and `S1.P03.S04` through `S1.P03.S09` are not started.
+  `S1.P04` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -65,9 +65,9 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P02.S02` is complete, `S1.P02.S03` is complete, `S1.P02.S04` is complete,
 `S1.P02.S05` is complete, and `S1.P02.S06` is complete.
 `S1.P02.S07` is complete. `S1.P03` is active; `S1.P03.S01` is complete,
-`S1.P03.S02` is next and not started, and `S1.P03.S03` through
-`S1.P03.S09` are not started. `S1.P04` through `S1.P10` are not started,
-and `S2-S9` remain unimplemented.
+`S1.P03.S02` is complete, `S1.P03.S03` is next and not started, and
+`S1.P03.S04` through `S1.P03.S09` are not started. `S1.P04` through
+`S1.P10` are not started, and `S2-S9` remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -147,7 +147,7 @@ diff-hunk locators, and an explicitly discriminated bounded-locator union. The
 seven-Slice sequence remains fixed: S06 is complete and publishes only the
 versioned, internal, source-only revision/locator contract corpus; S07
 publishes the internal, case-calibrated Phase closure. `S1.P03` is active;
-only its S01 retrieval-request identity and authority foundation is complete.
+its S01 retrieval-request foundation and S02 request/response metadata are complete.
 No production corpus reader, locator resolver, Evidence Envelope, or
 persistence contract exists.
 
@@ -157,8 +157,8 @@ The provisional current-Phase sequence is:
 
 1. `S1.P03.S01` — Retrieval Request Identity and Authority Foundation (complete)
 2. `S1.P03.S02` — Request Controls and Response Representation Observations
-   (next; not started)
-3. `S1.P03.S03` — Exact Retained Artifacts and Digest Scope (not started)
+   (complete)
+3. `S1.P03.S03` — Exact Retained Artifacts and Digest Scope (next; not started)
 4. `S1.P03.S04` — Acquisition Runs and Evidence Membership (not started)
 5. `S1.P03.S05` — Transformations, Corrections, and Supersession (not started)
 6. `S1.P03.S06` — Completeness, Omissions, and Publication Provenance
@@ -169,9 +169,11 @@ The provisional current-Phase sequence is:
 9. `S1.P03.S09` — Integration and Phase Closure (not started)
 
 This sequence remains provisional until each Slice begins. S01 establishes
-only internal acquisition-run and request-attempt identity plus explicit
-retrieval authority, method, origin-relative route path, and strict UTC start
-time. Request controls, responses, retained artifacts, complete acquisition
+internal acquisition-run and request-attempt identity plus explicit retrieval
+authority, method, origin-relative route path, and strict UTC start time. S02
+adds explicit ordered request controls and immutable response-representation
+metadata linked to request identity, while keeping requested and observed media
+separate. Response bodies and digests, retained artifacts, complete acquisition
 runs, transformations, omissions, the Evidence Envelope, adapters, and a P03
 contract corpus remain deferred to their listed Slices.
 
@@ -190,9 +192,11 @@ contract corpus remain deferred to their listed Slices.
 The existing internal `SourceLocator` and `ArtifactSnapshot` models remain
 pre-roadmap S1 seeds. They are not revision-qualified Git locator (`S1.P02`)
 or Evidence Envelope implementations, and they are not public contracts.
-The internal `faultatlas.domain.evidence` module implements only the
-`S1.P03.S01` request-provenance foundation; it is not a response, artifact,
-acquisition-run, adapter, corpus, or envelope implementation.
+The internal `faultatlas.domain.evidence` module implements the `S1.P03.S01`
+request-provenance foundation and the `S1.P03.S02` request-control and bounded
+response-representation metadata layer. It does not retain response bodies or
+digests and is not an exact-artifact, acquisition-run, adapter, corpus, or
+envelope implementation.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and

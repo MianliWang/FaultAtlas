@@ -215,6 +215,15 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "RetrievalMethod",
     "RetrievalRoutePath",
     "RetrievalRequestReference",
+    "MediaType",
+    "ApiVersion",
+    "RequestQueryParameter",
+    "RetrievalRequestControls",
+    "ResponseRepresentationState",
+    "HttpStatusCode",
+    "ContentEncoding",
+    "MediaTypeParameter",
+    "ResponseRepresentationObservation",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",

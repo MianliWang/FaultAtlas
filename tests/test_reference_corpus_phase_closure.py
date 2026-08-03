@@ -419,8 +419,17 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "RetrievalMethod",
     "RetrievalRoutePath",
     "RetrievalRequestReference",
+    "MediaType",
+    "ApiVersion",
+    "RequestQueryParameter",
+    "RetrievalRequestControls",
+    "ResponseRepresentationState",
+    "HttpStatusCode",
+    "ContentEncoding",
+    "MediaTypeParameter",
+    "ResponseRepresentationObservation",
 )
-FORBIDDEN_POST_S01_EVIDENCE_SURFACE_FRAGMENTS = (
+FORBIDDEN_POST_S02_EVIDENCE_SURFACE_FRAGMENTS = (
     "adapter",
     "artifact",
     "completeness",
@@ -429,8 +438,6 @@ FORBIDDEN_POST_S01_EVIDENCE_SURFACE_FRAGMENTS = (
     "envelope",
     "omission",
     "publication",
-    "representation",
-    "response",
     "supersession",
     "transformation",
 )
@@ -443,12 +450,12 @@ EXPECTED_P03_SLICE_SEQUENCE = (
     (
         "S1.P03.S02",
         "Request Controls and Response Representation Observations",
-        "next; not started",
+        "complete",
     ),
     (
         "S1.P03.S03",
         "Exact Retained Artifacts and Digest Scope",
-        "not started",
+        "next; not started",
     ),
     (
         "S1.P03.S04",
@@ -653,7 +660,7 @@ def _validate_current_evidence_inventory(source: bytes) -> None:
     assert all(isinstance(item, str) for item in raw_exports)
     exports = tuple(cast(str, item) for item in raw_exports)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 6
+    assert len(exports) == len(set(exports)) == 15
 
     top_level_definitions = [
         node.name
@@ -668,7 +675,7 @@ def _validate_current_evidence_inventory(source: bytes) -> None:
         compact = name.replace("_", "").casefold()
         assert not any(
             fragment in compact
-            for fragment in FORBIDDEN_POST_S01_EVIDENCE_SURFACE_FRAGMENTS
+            for fragment in FORBIDDEN_POST_S02_EVIDENCE_SURFACE_FRAGMENTS
         )
         if "acquisitionrun" in compact:
             assert name == "AcquisitionRunId"
@@ -1966,7 +1973,9 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P02.S07` is complete" in normalized_roadmap
     assert "`S1.P03` is active" in normalized_roadmap
     assert "`S1.P03.S01` is complete" in normalized_roadmap
-    assert "`S1.P03.S02` is next and not started" in normalized_roadmap
+    assert "`S1.P03.S02` is complete" in normalized_roadmap
+    assert "`S1.P03.S03` is next and not started" in normalized_roadmap
+    assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:
         assert f"`{slice_id}` — {title} ({state})" in normalized_roadmap
     for slice_id in range(6, 8):
