@@ -595,7 +595,7 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
     status_code: HttpStatusCode | None
     observed_media_type: MediaType | None
     media_type_parameters: tuple[MediaTypeParameter, ...]
-    content_encoding: ContentEncoding | None
+    content_encodings: tuple[ContentEncoding, ...] | None
 
     @field_validator("request_id", mode="before")
     @classmethod
@@ -692,52 +692,37 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
             )
         return typed_value
 
-    @field_validator("content_encoding", mode="before")
+    @field_validator("content_encodings", mode="before")
     @classmethod
-    def _require_typed_python_content_encoding(
+    def _require_typed_python_content_encodings(
         cls,
         value: object,
         info: ValidationInfo,
     ) -> object:
-        if (
-            info.mode == "python"
-            and value is not None
-            and not isinstance(value, ContentEncoding)
-        ):
-            raise ValueError(
-                "content_encoding must be a ContentEncoding or None in Python input"
+        if value is None:
+            return value
+        if info.mode == "json":
+            return (
+                tuple(cast(list[object], value)) if isinstance(value, list) else value
             )
-        return value
+        if info.mode != "python":
+            return value
+        if type(value) is not tuple:
+            raise ValueError(
+                "content_encodings must be a tuple or None in Python input"
+            )
+        typed_value = cast(tuple[object, ...], value)
+        if not all(isinstance(item, ContentEncoding) for item in typed_value):
+            raise ValueError(
+                "content_encodings entries must be ContentEncoding values "
+                "in Python input"
+            )
+        return typed_value
 
     @model_validator(mode="after")
-    def _validate_state_shape(self) -> Self:
-        if self.state is ResponseRepresentationState.OBSERVED:
-            if self.status_code is None:
-                raise ValueError(
-                    "observed response representation requires status_code"
-                )
-            if self.observed_media_type is None:
-                raise ValueError(
-                    "observed response representation requires observed_media_type"
-                )
-            return self
-
-        if self.status_code is not None:
+    def _validate_media_type_parameters(self) -> Self:
+        if self.observed_media_type is None and self.media_type_parameters:
             raise ValueError(
-                "non-observed response representation must not include status_code"
-            )
-        if self.observed_media_type is not None:
-            raise ValueError(
-                "non-observed response representation must not include "
-                "observed_media_type"
-            )
-        if self.media_type_parameters:
-            raise ValueError(
-                "non-observed response representation must not include media type "
-                "parameters"
-            )
-        if self.content_encoding is not None:
-            raise ValueError(
-                "non-observed response representation must not include content_encoding"
+                "media_type_parameters require observed_media_type to be present"
             )
         return self

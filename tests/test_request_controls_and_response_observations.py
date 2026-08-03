@@ -164,7 +164,7 @@ SYNTHETIC_SCENARIOS = (
     "controls-api-version-absent",
     "response-observed-json",
     "response-observed-text-charset",
-    "response-observed-gzip",
+    "response-observed-encoding-chain",
     "response-unavailable",
     "response-inaccessible",
     "response-unknown",
@@ -199,6 +199,10 @@ def _parameter(name: str, value: str) -> MediaTypeParameter:
     return MediaTypeParameter(name=name, value=value)
 
 
+def _encoding(value: str) -> ContentEncoding:
+    return ContentEncoding.model_validate(value)
+
+
 def _controls_data(**overrides: object) -> dict[str, object]:
     data: dict[str, object] = {
         "query_parameters": (),
@@ -221,7 +225,7 @@ def _observation_data(**overrides: object) -> dict[str, object]:
         "status_code": HttpStatusCode.model_validate(200),
         "observed_media_type": MediaType.model_validate("application/json"),
         "media_type_parameters": (),
-        "content_encoding": None,
+        "content_encodings": None,
     }
     data.update(overrides)
     return data
@@ -242,7 +246,7 @@ def _unobserved(
         status_code=None,
         observed_media_type=None,
         media_type_parameters=(),
-        content_encoding=None,
+        content_encodings=None,
     )
     data.update(overrides)
     return ResponseRepresentationObservation.model_validate(data)
@@ -805,6 +809,7 @@ def test_content_encoding_accepts_exact_lowercase_tokens(value: str) -> None:
         "g zip",
         " gzip",
         "gzip ",
+        "gzip, br",
         "gzip\n",
         "bré",
         "a" * 65,
@@ -818,6 +823,78 @@ def test_content_encoding_rejects_malformed_or_coercive_values(
 ) -> None:
     with pytest.raises(ValidationError):
         ContentEncoding.model_validate(value)
+
+
+def test_content_encoding_chain_preserves_none_empty_order_and_multiplicity() -> None:
+    gzip = _encoding("gzip")
+    br = _encoding("br")
+    unavailable = _observation(content_encodings=None)
+    empty = _observation(content_encodings=())
+    one = _observation(content_encodings=(gzip,))
+    forward = _observation(content_encodings=(gzip, br))
+    reverse = _observation(content_encodings=(br, gzip))
+    duplicate = _observation(content_encodings=(gzip, br, gzip))
+
+    assert unavailable.content_encodings is None
+    assert empty.content_encodings == ()
+    assert unavailable != empty
+    assert one.content_encodings == (gzip,)
+    assert forward.content_encodings == (gzip, br)
+    assert reverse.content_encodings == (br, gzip)
+    assert forward != reverse
+    assert duplicate.content_encodings == (gzip, br, gzip)
+
+
+def test_content_encoding_chain_semantic_json_reconstructs_exact_typed_tuple() -> None:
+    observation = _observation(
+        content_encodings=(_encoding("gzip"), _encoding("br"), _encoding("gzip"))
+    )
+    semantic = observation.model_dump(mode="json")
+    assert semantic["content_encodings"] == ["gzip", "br", "gzip"]
+
+    reconstructed = ResponseRepresentationObservation.model_validate_json(
+        observation.model_dump_json()
+    )
+    assert reconstructed == observation
+    assert type(reconstructed.content_encodings) is tuple
+    assert reconstructed.content_encodings is not None
+    assert all(
+        isinstance(encoding, ContentEncoding)
+        for encoding in reconstructed.content_encodings
+    )
+    assert tuple(encoding.root for encoding in reconstructed.content_encodings) == (
+        "gzip",
+        "br",
+        "gzip",
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        [_encoding("gzip"), _encoding("br")],
+        ("gzip", "br"),
+        "gzip, br",
+        _encoding("gzip"),
+    ),
+)
+def test_content_encoding_chain_requires_exact_typed_python_tuple(
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        _observation(content_encodings=value)
+
+
+def test_content_encoding_chain_and_tokens_are_frozen_and_reject_stale_field() -> None:
+    observation = _observation(content_encodings=(_encoding("gzip"),))
+    assert observation.content_encodings is not None
+    with pytest.raises(ValidationError):
+        observation.content_encodings[0].root = "br"
+    with pytest.raises(ValidationError):
+        observation.content_encodings = ()
+    with pytest.raises(ValidationError) as error:
+        _observation(content_encoding=_encoding("gzip"))
+    assert error.value.errors()[0]["type"] == "extra_forbidden"
 
 
 def test_media_type_parameters_preserve_order_multiplicity_and_exact_values() -> None:
@@ -882,7 +959,7 @@ def test_response_observation_fields_are_exact() -> None:
         "status_code",
         "observed_media_type",
         "media_type_parameters",
-        "content_encoding",
+        "content_encodings",
     }
 
 
@@ -895,7 +972,7 @@ def test_response_observation_fields_are_exact() -> None:
         "status_code",
         "observed_media_type",
         "media_type_parameters",
-        "content_encoding",
+        "content_encodings",
     ),
 )
 def test_response_observation_requires_each_explicit_component_field(
@@ -908,122 +985,134 @@ def test_response_observation_requires_each_explicit_component_field(
     assert error.value.errors()[0]["type"] == "missing"
 
 
-def test_observed_json_text_parameter_and_gzip_responses_are_valid() -> None:
+def test_observed_json_text_parameter_and_encoding_chain_responses_are_valid() -> None:
     json_response = _observation()
     text_response = _observation(
         observed_media_type=MediaType.model_validate("text/plain"),
         media_type_parameters=(_parameter("charset", "utf-8"),),
     )
-    gzip_response = _observation(
-        content_encoding=ContentEncoding.model_validate("gzip")
-    )
+    encoded_response = _observation(content_encodings=(_encoding("gzip"),))
     assert json_response.status_code is not None
     assert json_response.status_code.root == 200
     assert text_response.media_type_parameters[0].value == "utf-8"
-    assert gzip_response.content_encoding is not None
-    assert gzip_response.content_encoding.root == "gzip"
+    assert encoded_response.content_encodings is not None
+    assert encoded_response.content_encodings[0].root == "gzip"
+
+
+@pytest.mark.parametrize(
+    ("state", "status_code"),
+    (
+        (ResponseRepresentationState.UNAVAILABLE, 204),
+        (ResponseRepresentationState.INACCESSIBLE, 403),
+    ),
+)
+def test_non_observed_representation_preserves_known_status(
+    state: ResponseRepresentationState,
+    status_code: int,
+) -> None:
+    observation = _observation(
+        state=state,
+        status_code=HttpStatusCode.model_validate(status_code),
+        observed_media_type=None,
+        media_type_parameters=(),
+        content_encodings=None,
+    )
+    assert observation.state is state
+    assert observation.status_code == HttpStatusCode.model_validate(status_code)
+    assert observation.observed_media_type is None
+    assert observation.media_type_parameters == ()
+    assert observation.content_encodings is None
 
 
 @pytest.mark.parametrize(
     "state",
-    (
-        ResponseRepresentationState.UNAVAILABLE,
-        ResponseRepresentationState.INACCESSIBLE,
-        ResponseRepresentationState.UNKNOWN,
-    ),
+    tuple(ResponseRepresentationState),
 )
-def test_non_observed_states_require_explicit_absent_metadata(
+def test_status_and_other_bounded_metadata_may_be_absent_under_every_state(
     state: ResponseRepresentationState,
 ) -> None:
-    observation = _unobserved(state)
+    observation = _observation(
+        state=state,
+        status_code=None,
+        observed_media_type=None,
+        media_type_parameters=(),
+        content_encodings=None,
+    )
     assert observation.state is state
-    assert observation.completed_at == SYNTHETIC_COMPLETED_AT
     assert observation.status_code is None
     assert observation.observed_media_type is None
     assert observation.media_type_parameters == ()
-    assert observation.content_encoding is None
+    assert observation.content_encodings is None
 
 
-@pytest.mark.parametrize(
-    ("state", "field", "value"),
-    (
-        (
-            ResponseRepresentationState.OBSERVED,
-            "status_code",
-            None,
-        ),
-        (
-            ResponseRepresentationState.OBSERVED,
-            "observed_media_type",
-            None,
-        ),
-        (
-            ResponseRepresentationState.UNAVAILABLE,
-            "status_code",
-            HttpStatusCode.model_validate(503),
-        ),
-        (
-            ResponseRepresentationState.UNAVAILABLE,
-            "observed_media_type",
-            MediaType.model_validate("application/json"),
-        ),
-        (
-            ResponseRepresentationState.UNAVAILABLE,
-            "media_type_parameters",
-            (_parameter("charset", "utf-8"),),
-        ),
-        (
-            ResponseRepresentationState.INACCESSIBLE,
-            "content_encoding",
-            ContentEncoding.model_validate("gzip"),
-        ),
-        (
-            ResponseRepresentationState.UNKNOWN,
-            "observed_media_type",
-            MediaType.model_validate("text/plain"),
-        ),
-    ),
-)
-def test_response_state_shape_invariants_reject_contradictions(
+@pytest.mark.parametrize("state", tuple(ResponseRepresentationState))
+def test_metadata_presence_never_changes_or_infers_explicit_state(
     state: ResponseRepresentationState,
-    field: str,
-    value: object,
 ) -> None:
-    data = _observation_data(state=state)
-    if state is not ResponseRepresentationState.OBSERVED:
-        data.update(
-            status_code=None,
-            observed_media_type=None,
-            media_type_parameters=(),
-            content_encoding=None,
-        )
-    data[field] = value
-    with pytest.raises(ValidationError):
-        ResponseRepresentationObservation.model_validate(data)
+    encodings = (_encoding("gzip"), _encoding("br"))
+    observation = _observation(
+        state=state,
+        status_code=HttpStatusCode.model_validate(206),
+        observed_media_type=MediaType.model_validate("text/plain"),
+        media_type_parameters=(_parameter("charset", "utf-8"),),
+        content_encodings=encodings,
+    )
+    assert observation.state is state
+    assert observation.status_code == HttpStatusCode.model_validate(206)
+    assert observation.observed_media_type == MediaType.model_validate("text/plain")
+    assert observation.media_type_parameters == (_parameter("charset", "utf-8"),)
+    assert observation.content_encodings == encodings
 
 
-def test_response_state_is_never_inferred_from_metadata_presence() -> None:
-    with pytest.raises(ValidationError):
+@pytest.mark.parametrize("state", tuple(ResponseRepresentationState))
+def test_media_parameters_without_media_type_fail_for_every_state(
+    state: ResponseRepresentationState,
+) -> None:
+    with pytest.raises(ValidationError, match="require observed_media_type"):
         _observation(
-            state=ResponseRepresentationState.UNAVAILABLE,
-        )
-    with pytest.raises(ValidationError):
-        _observation(
-            state=ResponseRepresentationState.OBSERVED,
-            status_code=None,
+            state=state,
             observed_media_type=None,
+            media_type_parameters=(_parameter("charset", "utf-8"),),
         )
+
+
+@pytest.mark.parametrize("state", tuple(ResponseRepresentationState))
+def test_media_type_with_empty_parameters_succeeds_for_every_state(
+    state: ResponseRepresentationState,
+) -> None:
+    media_type = MediaType.model_validate("application/json")
+    observation = _observation(
+        state=state,
+        observed_media_type=media_type,
+        media_type_parameters=(),
+    )
+    assert observation.state is state
+    assert observation.observed_media_type == media_type
+    assert observation.media_type_parameters == ()
 
 
 def test_same_request_id_can_have_two_distinct_observation_values() -> None:
     request_id = _request_id()
-    first = _observation(request_id=request_id)
+    first = _observation(
+        request_id=request_id,
+        state=ResponseRepresentationState.UNAVAILABLE,
+        status_code=HttpStatusCode.model_validate(204),
+        observed_media_type=None,
+        media_type_parameters=(),
+        content_encodings=None,
+    )
     second = _observation(
         request_id=request_id,
+        state=ResponseRepresentationState.INACCESSIBLE,
         completed_at=SYNTHETIC_COMPLETED_AT + timedelta(seconds=1),
+        status_code=HttpStatusCode.model_validate(403),
         observed_media_type=MediaType.model_validate("text/plain"),
+        media_type_parameters=(_parameter("charset", "utf-8"),),
+        content_encodings=(_encoding("br"),),
     )
     assert first.request_id == second.request_id
+    assert first.state is ResponseRepresentationState.UNAVAILABLE
+    assert second.state is ResponseRepresentationState.INACCESSIBLE
     assert first != second
 
 
@@ -1060,7 +1149,7 @@ def test_requested_and_observed_media_may_disagree_without_reconciliation() -> N
             "media_type_parameters",
             ({"name": "charset", "value": "utf-8"},),
         ),
-        ("content_encoding", "gzip"),
+        ("content_encodings", ("gzip",)),
     ),
 )
 def test_response_observation_requires_typed_nested_python_values(
@@ -1078,7 +1167,7 @@ def test_response_observation_semantic_json_reconstructs_nested_types() -> None:
             _parameter("charset", "utf-8"),
             _parameter("charset", "UTF-8"),
         ),
-        content_encoding=ContentEncoding.model_validate("gzip"),
+        content_encodings=(_encoding("gzip"), _encoding("br")),
     )
     reconstructed = ResponseRepresentationObservation.model_validate_json(
         observation.model_dump_json()
@@ -1088,7 +1177,12 @@ def test_response_observation_semantic_json_reconstructs_nested_types() -> None:
     assert isinstance(reconstructed.status_code, HttpStatusCode)
     assert isinstance(reconstructed.observed_media_type, MediaType)
     assert type(reconstructed.media_type_parameters) is tuple
-    assert isinstance(reconstructed.content_encoding, ContentEncoding)
+    assert type(reconstructed.content_encodings) is tuple
+    assert reconstructed.content_encodings is not None
+    assert all(
+        isinstance(encoding, ContentEncoding)
+        for encoding in reconstructed.content_encodings
+    )
 
 
 def test_response_observation_json_accepts_semantic_unavailable_shape() -> None:
@@ -1097,15 +1191,16 @@ def test_response_observation_json_accepts_semantic_unavailable_shape() -> None:
         "request_id": _request_id().model_dump(mode="json"),
         "state": "unavailable",
         "completed_at": "2026-08-02T16:00:01Z",
-        "status_code": None,
+        "status_code": 204,
         "observed_media_type": None,
         "media_type_parameters": [],
-        "content_encoding": None,
+        "content_encodings": None,
     }
     observation = ResponseRepresentationObservation.model_validate_json(
         json.dumps(value)
     )
     assert observation.state is ResponseRepresentationState.UNAVAILABLE
+    assert observation.status_code == HttpStatusCode.model_validate(204)
     assert observation.completed_at.tzinfo is UTC
 
 
@@ -1212,6 +1307,7 @@ def test_response_observation_rejects_tree_blob_and_source_identity_as_request_i
         "headers",
         "etag",
         "provider_request_id",
+        "content_encoding",
         "body",
         "payload_text",
         "body_bytes",
@@ -1257,7 +1353,7 @@ def test_response_observation_revalidates_constructed_invalid_nested_values() ->
         ("status_code", invalid_status),
         ("observed_media_type", invalid_media),
         ("media_type_parameters", (invalid_parameter,)),
-        ("content_encoding", invalid_encoding),
+        ("content_encodings", (invalid_encoding,)),
     ):
         with pytest.raises(ValidationError):
             _observation(**{field: value})
