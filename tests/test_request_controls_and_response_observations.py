@@ -1,0 +1,1453 @@
+from __future__ import annotations
+
+import ast
+import json
+from datetime import UTC, datetime, timedelta, timezone
+from hashlib import sha256
+from pathlib import Path
+from typing import Any, cast
+
+import pytest
+from pydantic import TypeAdapter, ValidationError
+
+import faultatlas
+import faultatlas.domain as domain_package
+import faultatlas.domain.evidence as evidence_module
+from faultatlas.domain.evidence import (
+    AcquisitionRunId,
+    ApiVersion,
+    ContentEncoding,
+    HttpStatusCode,
+    MediaType,
+    MediaTypeParameter,
+    RequestQueryParameter,
+    ResponseRepresentationObservation,
+    ResponseRepresentationState,
+    RetrievalMethod,
+    RetrievalRequestControls,
+    RetrievalRequestId,
+    RetrievalRequestOrdinal,
+    RetrievalRequestReference,
+    RetrievalRoutePath,
+)
+from faultatlas.domain.identity import (
+    AuthorityRole,
+    ProviderAuthority,
+    ProviderKey,
+    ProviderRepositoryId,
+    RepositoryIdentity,
+    SourceIdentityLifecycleState,
+)
+from faultatlas.domain.revision import (
+    GitBlobIdentity,
+    GitHashAlgorithm,
+    GitObjectKind,
+    GitTreeIdentity,
+)
+from faultatlas.domain.source import ArtifactSnapshot
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+EVIDENCE_SOURCE = REPOSITORY_ROOT / "src/faultatlas/domain/evidence.py"
+ACQUISITION_PATH = (
+    REPOSITORY_ROOT
+    / "reference_corpus"
+    / "pytest-4412"
+    / "acquisitions"
+    / "run-0001-s04-v1-base-4c9cde74-head-690a63b9"
+    / "acquisition.json"
+)
+CANONICAL_RUN_ID = "run-0001-s04-v1-base-4c9cde74-head-690a63b9"
+CANONICAL_ACQUISITION_SHA256 = (
+    "1c29093bf1537e9b824a18df1848b71a8da014f544bc9f385707eb0e000a1318"
+)
+SYNTHETIC_COMPLETED_AT = datetime(2026, 8, 2, 16, 0, 1, tzinfo=UTC)
+
+EXPECTED_EVIDENCE_EXPORTS = (
+    "AcquisitionRunId",
+    "RetrievalRequestOrdinal",
+    "RetrievalRequestId",
+    "RetrievalMethod",
+    "RetrievalRoutePath",
+    "RetrievalRequestReference",
+    "MediaType",
+    "ApiVersion",
+    "RequestQueryParameter",
+    "RetrievalRequestControls",
+    "ResponseRepresentationState",
+    "HttpStatusCode",
+    "ContentEncoding",
+    "MediaTypeParameter",
+    "ResponseRepresentationObservation",
+)
+EXPECTED_PRODUCTION_FILES = {
+    "src/faultatlas/__init__.py",
+    "src/faultatlas/__main__.py",
+    "src/faultatlas/cli.py",
+    "src/faultatlas/domain/__init__.py",
+    "src/faultatlas/domain/compatibility.py",
+    "src/faultatlas/domain/evidence.py",
+    "src/faultatlas/domain/identity.py",
+    "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/source.py",
+}
+PREDECESSOR_LOCKS = {
+    "src/faultatlas/domain/source.py": (
+        4336,
+        "034e53fd58212f0e34376bbc790fc3e74057031aaed4d7d89fb67904bdd380bf",
+    ),
+    "src/faultatlas/domain/identity.py": (
+        22684,
+        "e2d604f4e86a3b94c2b1b1875fa6e8f408778cbadd829b3fe9e934dd53f2d169",
+    ),
+    "src/faultatlas/domain/compatibility.py": (
+        18898,
+        "f4ef93d432da4fd0ebf05237c164e10d8f18eceaf538ff4ddc3372565b5c46db",
+    ),
+    "src/faultatlas/domain/revision.py": (
+        27342,
+        "7bea28086b345f6c1b4eeebe9c483924e60521e2f3e78954b272ab3c42acacaa",
+    ),
+}
+
+CANONICAL_FACT_CASES = (
+    {
+        "case_id": "rest-json-ordinal-1",
+        "json_pointer": "/requests/records/0",
+        "ordinal": 1,
+        "requested_media_type": "application/vnd.github+json",
+        "api_version": "2026-03-10",
+        "completed_at": "2026-07-24T11:03:15.996744Z",
+        "status_code": 200,
+        "observed_media_type": "application/json",
+        "content_encoding": None,
+    },
+    {
+        "case_id": "query-bearing-rest-ordinal-9",
+        "json_pointer": "/requests/records/8",
+        "ordinal": 9,
+        "requested_media_type": "application/vnd.github+json",
+        "api_version": "2026-03-10",
+        "completed_at": "2026-07-24T11:03:20.302484Z",
+        "status_code": 200,
+        "observed_media_type": "application/json",
+        "content_encoding": None,
+    },
+    {
+        "case_id": "retained-diff-ordinal-30",
+        "json_pointer": "/requests/records/29",
+        "ordinal": 30,
+        "requested_media_type": "application/vnd.github.diff",
+        "api_version": "2026-03-10",
+        "completed_at": "2026-07-24T11:03:30.930138Z",
+        "status_code": 200,
+        "observed_media_type": "application/vnd.github.diff",
+        "content_encoding": None,
+    },
+    {
+        "case_id": "historical-license-ordinal-32",
+        "json_pointer": "/requests/records/31",
+        "ordinal": 32,
+        "requested_media_type": "application/vnd.github.raw+json",
+        "api_version": "2026-03-10",
+        "completed_at": "2026-07-24T11:03:31.777359Z",
+        "status_code": 200,
+        "observed_media_type": "text/plain",
+        "content_encoding": None,
+    },
+)
+SYNTHETIC_SCENARIOS = (
+    "controls-empty-query-tuple",
+    "controls-duplicate-query-names",
+    "controls-requested-json",
+    "controls-requested-diff",
+    "controls-api-version-present",
+    "controls-api-version-absent",
+    "response-observed-json",
+    "response-observed-text-charset",
+    "response-observed-gzip",
+    "response-unavailable",
+    "response-inaccessible",
+    "response-unknown",
+    "response-same-request-two-observations",
+    "response-requested-observed-mismatch",
+    "cross-layer-composition",
+)
+
+
+def _load_acquisition() -> dict[str, Any]:
+    value = cast(object, json.loads(ACQUISITION_PATH.read_text(encoding="utf-8")))
+    assert isinstance(value, dict)
+    return cast(dict[str, Any], value)
+
+
+def _request_id(
+    *,
+    run_id: str = "run-synthetic-response-001",
+    ordinal: int = 1,
+) -> RetrievalRequestId:
+    return RetrievalRequestId(
+        acquisition_run_id=AcquisitionRunId.model_validate(run_id),
+        request_ordinal=RetrievalRequestOrdinal.model_validate(ordinal),
+    )
+
+
+def _query(name: str, value: str) -> RequestQueryParameter:
+    return RequestQueryParameter(name=name, value=value)
+
+
+def _parameter(name: str, value: str) -> MediaTypeParameter:
+    return MediaTypeParameter(name=name, value=value)
+
+
+def _controls_data(**overrides: object) -> dict[str, object]:
+    data: dict[str, object] = {
+        "query_parameters": (),
+        "requested_media_type": MediaType.model_validate("application/json"),
+        "api_version": None,
+    }
+    data.update(overrides)
+    return data
+
+
+def _controls(**overrides: object) -> RetrievalRequestControls:
+    return RetrievalRequestControls.model_validate(_controls_data(**overrides))
+
+
+def _observation_data(**overrides: object) -> dict[str, object]:
+    data: dict[str, object] = {
+        "request_id": _request_id(),
+        "state": ResponseRepresentationState.OBSERVED,
+        "completed_at": SYNTHETIC_COMPLETED_AT,
+        "status_code": HttpStatusCode.model_validate(200),
+        "observed_media_type": MediaType.model_validate("application/json"),
+        "media_type_parameters": (),
+        "content_encoding": None,
+    }
+    data.update(overrides)
+    return data
+
+
+def _observation(**overrides: object) -> ResponseRepresentationObservation:
+    return ResponseRepresentationObservation.model_validate(
+        _observation_data(**overrides)
+    )
+
+
+def _unobserved(
+    state: ResponseRepresentationState,
+    **overrides: object,
+) -> ResponseRepresentationObservation:
+    data = _observation_data(
+        state=state,
+        status_code=None,
+        observed_media_type=None,
+        media_type_parameters=(),
+        content_encoding=None,
+    )
+    data.update(overrides)
+    return ResponseRepresentationObservation.model_validate(data)
+
+
+def _reference(request_id: RetrievalRequestId) -> RetrievalRequestReference:
+    return RetrievalRequestReference(
+        request_id=request_id,
+        authority=ProviderAuthority(
+            provider=ProviderKey.model_validate("github"),
+            role=AuthorityRole.RETRIEVAL,
+            host="api.github.com",
+        ),
+        method=RetrievalMethod.GET,
+        route_path=RetrievalRoutePath.model_validate("/repos/example/project"),
+        started_at=SYNTHETIC_COMPLETED_AT - timedelta(seconds=1),
+    )
+
+
+def _parse_exports(source: str) -> tuple[str, ...]:
+    tree = ast.parse(source)
+    assignments = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in node.targets
+        )
+    ]
+    assert len(assignments) == 1
+    value = cast(object, ast.literal_eval(assignments[0].value))
+    assert isinstance(value, list)
+    items = cast(list[object], value)
+    assert all(isinstance(item, str) for item in items)
+    return tuple(cast(str, item) for item in items)
+
+
+def _validate_evidence_exports(source: str) -> None:
+    exports = _parse_exports(source)
+    assert exports == EXPECTED_EVIDENCE_EXPORTS
+    assert len(exports) == len(set(exports)) == 15
+    tree = ast.parse(source)
+    public_definitions = tuple(
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("_")
+    )
+    assert public_definitions == EXPECTED_EVIDENCE_EXPORTS
+
+
+def _validate_no_later_evidence_surface(source: str) -> None:
+    tree = ast.parse(source)
+    definitions = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    forbidden = {
+        "AcquisitionRun",
+        "EvidenceEnvelope",
+        "LegacyEvidenceAdapter",
+        "OmissionRecord",
+        "ResponseIdentity",
+        "RetainedArtifact",
+        "RetainedArtifactRecord",
+        "TransformationRecord",
+    }
+    assert not definitions & forbidden
+
+
+def _assert_query_order_and_multiplicity(
+    controls: RetrievalRequestControls,
+    expected: tuple[tuple[str, str], ...],
+) -> None:
+    observed = tuple(
+        (parameter.name, parameter.value) for parameter in controls.query_parameters
+    )
+    assert observed == expected
+
+
+def _assert_media_mismatch(
+    controls: RetrievalRequestControls,
+    observation: ResponseRepresentationObservation,
+) -> None:
+    assert controls.requested_media_type is not None
+    assert observation.observed_media_type is not None
+    assert controls.requested_media_type != observation.observed_media_type
+
+
+def test_canonical_acquisition_lock_and_fact_registries_are_exact() -> None:
+    raw = ACQUISITION_PATH.read_bytes()
+    assert len(raw) == 61_283
+    assert sha256(raw).hexdigest() == CANONICAL_ACQUISITION_SHA256
+    assert len(CANONICAL_FACT_CASES) == 4
+    assert len({case["case_id"] for case in CANONICAL_FACT_CASES}) == 4
+    assert len(SYNTHETIC_SCENARIOS) == len(set(SYNTHETIC_SCENARIOS)) == 15
+
+
+def test_canonical_facts_are_directly_bound_to_exact_request_records() -> None:
+    acquisition = _load_acquisition()
+    run = cast(dict[str, Any], acquisition["run"])
+    requests = cast(dict[str, Any], acquisition["requests"])
+    records = cast(list[dict[str, Any]], requests["records"])
+
+    assert run["run_id"] == CANONICAL_RUN_ID
+    for case in CANONICAL_FACT_CASES:
+        ordinal = cast(int, case["ordinal"])
+        record = records[ordinal - 1]
+        assert record["ordinal"] == ordinal
+        assert record["accept"] == case["requested_media_type"]
+        assert record["api_version"] == case["api_version"]
+        assert record["completed_at"] == case["completed_at"]
+        assert record["status"] == case["status_code"]
+        assert record["content_type"] == case["observed_media_type"]
+        assert record["content_encoding"] == case["content_encoding"]
+        assert case["json_pointer"] == f"/requests/records/{ordinal - 1}"
+
+
+def test_canonical_facts_construct_only_supported_ids_and_primitives() -> None:
+    acquisition = _load_acquisition()
+    records = cast(
+        list[dict[str, Any]],
+        cast(dict[str, Any], acquisition["requests"])["records"],
+    )
+    run_id = AcquisitionRunId.model_validate(CANONICAL_RUN_ID)
+
+    for case in CANONICAL_FACT_CASES:
+        ordinal = cast(int, case["ordinal"])
+        record = records[ordinal - 1]
+        request_id = RetrievalRequestId(
+            acquisition_run_id=run_id,
+            request_ordinal=RetrievalRequestOrdinal.model_validate(ordinal),
+        )
+        assert request_id.request_ordinal.root == ordinal
+        assert MediaType.model_validate(record["accept"]).root == record["accept"]
+        assert (
+            ApiVersion.model_validate(record["api_version"]).root
+            == (record["api_version"])
+        )
+        assert HttpStatusCode.model_validate(record["status"]).root == 200
+        assert (
+            MediaType.model_validate(record["content_type"]).root
+            == (record["content_type"])
+        )
+
+
+def test_canonical_license_media_mismatch_and_parameter_are_direct() -> None:
+    acquisition = _load_acquisition()
+    records = cast(
+        list[dict[str, Any]],
+        cast(dict[str, Any], acquisition["requests"])["records"],
+    )
+    record = records[31]
+
+    assert record["requested_accept"] == "application/vnd.github.raw+json"
+    assert record["observed_content_type_media_type"] == "text/plain"
+    assert record["observed_content_type_parameters"] == [
+        {"name": "charset", "value": "utf-8"}
+    ]
+    assert record["media_metadata_warning"] == (
+        "content_type_differs_from_requested_accept"
+    )
+
+
+def test_no_canonical_full_s02_model_is_claimed_without_required_fields() -> None:
+    acquisition = _load_acquisition()
+    records = cast(
+        list[dict[str, Any]],
+        cast(dict[str, Any], acquisition["requests"])["records"],
+    )
+
+    assert all("query_parameters" not in record for record in records)
+    assert all("state" not in record for record in records)
+    assert all("request_id" not in record for record in records)
+    assert {record["method"] for record in records} == {"GET"}
+    assert not any(record["safe_target"].casefold() == "/graphql" for record in records)
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "a/b",
+        "application/json",
+        "text/plain",
+        "application/vnd.github.diff",
+        "application/vnd.github.raw+json",
+        "application/x*json",
+        "a/" + ("b" * 253),
+    ),
+)
+def test_media_type_accepts_and_preserves_valid_bounded_tokens(value: str) -> None:
+    media_type = MediaType.model_validate(value)
+    assert media_type.root == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "Application/json",
+        "application/JSON",
+        " application/json",
+        "application/json ",
+        "application /json",
+        "application/ json",
+        "applicationjson",
+        "application/json/extra",
+        "*/*",
+        "application/*",
+        "*/json",
+        "application/json;charset=utf-8",
+        "application/",
+        "/json",
+        "application/éjson",
+        "application/json\n",
+        "a/" + ("b" * 254),
+        1,
+        b"application/json",
+        None,
+    ),
+)
+def test_media_type_rejects_malformed_or_coercive_values(value: object) -> None:
+    with pytest.raises(ValidationError):
+        MediaType.model_validate(value)
+
+
+def test_media_type_does_not_silently_lowercase_or_merge_parameters() -> None:
+    lower = MediaType.model_validate("application/vnd.github.raw+json")
+    assert lower.root == "application/vnd.github.raw+json"
+    with pytest.raises(ValidationError):
+        MediaType.model_validate("Application/Vnd.GitHub.Raw+Json")
+    with pytest.raises(ValidationError):
+        MediaType.model_validate("text/plain; charset=utf-8")
+
+
+@pytest.mark.parametrize(
+    "value",
+    ("2026-03-10", "v1", "V1", "not-a-date", "a" * 128),
+)
+def test_api_version_accepts_exact_nonsemantic_lexemes(value: str) -> None:
+    version = ApiVersion.model_validate(value)
+    assert version.root == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "",
+        " 2026-03-10",
+        "2026-03-10 ",
+        "2026 03 10",
+        "2026\t03",
+        "2026\n03",
+        "versión",
+        "a" * 129,
+        20260310,
+        1.0,
+        b"v1",
+        None,
+    ),
+)
+def test_api_version_rejects_whitespace_controls_non_ascii_and_coercion(
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        ApiVersion.model_validate(value)
+
+
+def test_api_version_is_not_date_parsed_or_normalized() -> None:
+    first = ApiVersion.model_validate("2026-03-10")
+    second = ApiVersion.model_validate("not-a-date")
+    upper = ApiVersion.model_validate("V1")
+    lower = ApiVersion.model_validate("v1")
+    assert first.root == "2026-03-10"
+    assert second.root == "not-a-date"
+    assert upper.root == "V1"
+    assert lower.root == "v1"
+    assert upper != lower
+
+
+def test_query_parameters_preserve_exact_order_duplicates_case_and_empty_value() -> (
+    None
+):
+    controls = _controls(
+        query_parameters=(
+            _query("cursor", "first"),
+            _query("Cursor", ""),
+            _query("cursor", "second"),
+        )
+    )
+    expected = (
+        ("cursor", "first"),
+        ("Cursor", ""),
+        ("cursor", "second"),
+    )
+    _assert_query_order_and_multiplicity(controls, expected)
+
+
+def test_query_order_and_duplicate_failure_sensitivity() -> None:
+    controls = _controls(
+        query_parameters=(
+            _query("page", "1"),
+            _query("page", "2"),
+            _query("sort", "created"),
+        )
+    )
+    expected = (("page", "1"), ("page", "2"), ("sort", "created"))
+    _assert_query_order_and_multiplicity(controls, expected)
+    with pytest.raises(AssertionError):
+        _assert_query_order_and_multiplicity(
+            controls,
+            (("page", "2"), ("page", "1"), ("sort", "created")),
+        )
+    with pytest.raises(AssertionError):
+        _assert_query_order_and_multiplicity(
+            controls,
+            (("page", "1"), ("sort", "created")),
+        )
+
+
+@pytest.mark.parametrize("field", ("name", "value"))
+@pytest.mark.parametrize("control", (*map(chr, range(32)), chr(127)))
+def test_query_parameters_reject_all_ascii_controls(
+    field: str,
+    control: str,
+) -> None:
+    data = {"name": "name", "value": "value"}
+    data[field] = f"before{control}after"
+    with pytest.raises(ValidationError):
+        RequestQueryParameter.model_validate(data)
+
+
+def test_query_parameter_length_bounds_are_exact() -> None:
+    assert _query("n", "").value == ""
+    assert len(_query("n" * 256, "v" * 4096).name) == 256
+    with pytest.raises(ValidationError):
+        _query("", "value")
+    with pytest.raises(ValidationError):
+        _query("n" * 257, "value")
+    with pytest.raises(ValidationError):
+        _query("name", "v" * 4097)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("name", "naïve"), ("value", "välue"), ("name", 1), ("value", 1)),
+)
+def test_query_parameters_reject_non_ascii_and_non_string_values(
+    field: str,
+    value: object,
+) -> None:
+    data: dict[str, object] = {"name": "name", "value": "value"}
+    data[field] = value
+    with pytest.raises(ValidationError):
+        RequestQueryParameter.model_validate(data)
+
+
+def test_query_parameter_rejects_extras_and_is_frozen() -> None:
+    with pytest.raises(ValidationError):
+        RequestQueryParameter.model_validate(
+            {"name": "page", "value": "1", "decoded": "1"}
+        )
+    parameter = _query("page", "1")
+    with pytest.raises(ValidationError):
+        parameter.name = "changed"
+
+
+def test_request_controls_fields_are_exact_and_minimal_controls_are_explicit() -> None:
+    assert set(RetrievalRequestControls.model_fields) == {
+        "schema_version",
+        "query_parameters",
+        "requested_media_type",
+        "api_version",
+    }
+    controls = _controls()
+    assert controls.schema_version == 1
+    assert controls.query_parameters == ()
+    assert controls.requested_media_type.root == "application/json"
+    assert controls.api_version is None
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("query_parameters", "requested_media_type", "api_version"),
+)
+def test_request_controls_require_each_explicit_component_field(field: str) -> None:
+    data = _controls_data()
+    del data[field]
+    with pytest.raises(ValidationError) as error:
+        RetrievalRequestControls.model_validate(data)
+    assert error.value.errors()[0]["type"] == "missing"
+
+
+def test_request_controls_support_requested_json_diff_and_optional_api_version() -> (
+    None
+):
+    json_controls = _controls(
+        requested_media_type=MediaType.model_validate("application/json"),
+        api_version=ApiVersion.model_validate("2026-03-10"),
+    )
+    diff_controls = _controls(
+        requested_media_type=MediaType.model_validate("application/vnd.github.diff"),
+        api_version=None,
+    )
+    assert json_controls.requested_media_type is not None
+    assert json_controls.requested_media_type.root == "application/json"
+    assert json_controls.api_version is not None
+    assert json_controls.api_version.root == "2026-03-10"
+    assert diff_controls.requested_media_type is not None
+    assert diff_controls.requested_media_type.root == "application/vnd.github.diff"
+    assert diff_controls.api_version is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("query_parameters", []),
+        ("query_parameters", {"page": "1"}),
+        ("query_parameters", ({"name": "page", "value": "1"},)),
+        ("requested_media_type", "application/json"),
+        ("requested_media_type", None),
+        ("api_version", "2026-03-10"),
+    ),
+)
+def test_request_controls_require_typed_nested_python_values(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        _controls(**{field: value})
+
+
+def test_request_controls_reject_mapping_query_coercion() -> None:
+    with pytest.raises(ValidationError):
+        _controls(query_parameters={"page": "1", "page_size": "100"})
+
+
+def test_request_controls_semantic_json_reconstructs_typed_ordered_tuple() -> None:
+    controls = _controls(
+        query_parameters=(
+            _query("page", "1"),
+            _query("page", "2"),
+        ),
+        requested_media_type=MediaType.model_validate("application/json"),
+        api_version=ApiVersion.model_validate("v1"),
+    )
+    reconstructed = RetrievalRequestControls.model_validate_json(
+        controls.model_dump_json()
+    )
+    assert reconstructed == controls
+    assert type(reconstructed.query_parameters) is tuple
+    assert all(
+        isinstance(parameter, RequestQueryParameter)
+        for parameter in reconstructed.query_parameters
+    )
+
+
+@pytest.mark.parametrize(
+    "extra_field",
+    (
+        "request_id",
+        "authority",
+        "method",
+        "route_path",
+        "started_at",
+        "headers",
+        "authorization",
+        "cookies",
+        "user_agent",
+        "timeout",
+        "redirect_policy",
+        "retry_policy",
+        "graphql_operation_name",
+        "graphql_variables",
+        "request_body",
+        "content_type",
+        "response",
+    ),
+)
+def test_request_controls_reject_identity_transport_body_and_later_fields(
+    extra_field: str,
+) -> None:
+    data = _controls_data()
+    data[extra_field] = "forbidden"
+    with pytest.raises(ValidationError) as error:
+        RetrievalRequestControls.model_validate(data)
+    assert error.value.errors()[0]["type"] == "extra_forbidden"
+
+
+def test_request_controls_are_frozen_and_require_exact_schema_version() -> None:
+    controls = _controls()
+    with pytest.raises(ValidationError):
+        controls.query_parameters = (_query("changed", "1"),)
+    for value in (0, 2, True, 1.0, "1"):
+        with pytest.raises(ValidationError):
+            _controls(schema_version=value)
+
+
+def test_response_state_vocabulary_is_exact_and_distinct_from_source_lifecycle() -> (
+    None
+):
+    assert tuple(ResponseRepresentationState) == (
+        ResponseRepresentationState.OBSERVED,
+        ResponseRepresentationState.UNAVAILABLE,
+        ResponseRepresentationState.INACCESSIBLE,
+        ResponseRepresentationState.UNKNOWN,
+    )
+    assert [state.value for state in ResponseRepresentationState] == [
+        "observed",
+        "unavailable",
+        "inaccessible",
+        "unknown",
+    ]
+    assert ResponseRepresentationState is not SourceIdentityLifecycleState
+    assert "deleted" not in {state.value for state in ResponseRepresentationState}
+    with pytest.raises(ValidationError):
+        _unobserved(
+            cast(ResponseRepresentationState, SourceIdentityLifecycleState.UNKNOWN)
+        )
+
+
+def test_response_state_json_is_semantic_and_python_input_is_typed() -> None:
+    adapter = TypeAdapter(ResponseRepresentationState)
+    assert adapter.dump_json(ResponseRepresentationState.OBSERVED) == b'"observed"'
+    assert adapter.validate_json(b'"unknown"') is ResponseRepresentationState.UNKNOWN
+    with pytest.raises(ValidationError):
+        _observation(state="observed")
+
+
+@pytest.mark.parametrize("value", (100, 200, 599))
+def test_http_status_code_accepts_exact_bounds(value: int) -> None:
+    assert HttpStatusCode.model_validate(value).root == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    (99, 600, 0, -1, True, False, 200.0, "200", b"200", None),
+)
+def test_http_status_code_rejects_out_of_range_or_coercive_values(
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        HttpStatusCode.model_validate(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ("gzip", "br", "identity", "x-custom", "a" * 64),
+)
+def test_content_encoding_accepts_exact_lowercase_tokens(value: str) -> None:
+    assert ContentEncoding.model_validate(value).root == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "",
+        "GZIP",
+        "g zip",
+        " gzip",
+        "gzip ",
+        "gzip\n",
+        "bré",
+        "a" * 65,
+        1,
+        b"gzip",
+        None,
+    ),
+)
+def test_content_encoding_rejects_malformed_or_coercive_values(
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        ContentEncoding.model_validate(value)
+
+
+def test_media_type_parameters_preserve_order_multiplicity_and_exact_values() -> None:
+    parameters = (
+        _parameter("charset", "utf-8"),
+        _parameter("charset", "UTF-8"),
+        _parameter("title", "café"),
+        _parameter("filename*", ""),
+    )
+    observation = _observation(
+        observed_media_type=MediaType.model_validate("text/plain"),
+        media_type_parameters=parameters,
+    )
+    assert observation.media_type_parameters == parameters
+    assert tuple((item.name, item.value) for item in parameters) == (
+        ("charset", "utf-8"),
+        ("charset", "UTF-8"),
+        ("title", "café"),
+        ("filename*", ""),
+    )
+
+
+@pytest.mark.parametrize(
+    "name",
+    ("", "Charset", "char set", "charset\n", "chársét", 1, None),
+)
+def test_media_type_parameter_rejects_malformed_names(name: object) -> None:
+    with pytest.raises(ValidationError):
+        MediaTypeParameter.model_validate({"name": name, "value": "utf-8"})
+
+
+@pytest.mark.parametrize("control", (*map(chr, range(32)), chr(127)))
+def test_media_type_parameter_values_reject_ascii_controls(control: str) -> None:
+    with pytest.raises(ValidationError):
+        _parameter("charset", f"utf{control}8")
+
+
+def test_media_type_parameter_value_bound_and_extra_rejection_are_exact() -> None:
+    assert len(_parameter("name", "v" * 1024).value) == 1024
+    with pytest.raises(ValidationError):
+        _parameter("name", "v" * 1025)
+    with pytest.raises(ValidationError):
+        MediaTypeParameter.model_validate(
+            {"name": "charset", "value": "utf-8", "normalized": "utf-8"}
+        )
+    with pytest.raises(ValidationError):
+        MediaTypeParameter.model_validate({"name": "charset", "value": 8})
+
+
+def test_media_type_parameter_is_frozen() -> None:
+    parameter = _parameter("charset", "utf-8")
+    with pytest.raises(ValidationError):
+        parameter.value = "changed"
+
+
+def test_response_observation_fields_are_exact() -> None:
+    assert set(ResponseRepresentationObservation.model_fields) == {
+        "schema_version",
+        "request_id",
+        "state",
+        "completed_at",
+        "status_code",
+        "observed_media_type",
+        "media_type_parameters",
+        "content_encoding",
+    }
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "request_id",
+        "state",
+        "completed_at",
+        "status_code",
+        "observed_media_type",
+        "media_type_parameters",
+        "content_encoding",
+    ),
+)
+def test_response_observation_requires_each_explicit_component_field(
+    field: str,
+) -> None:
+    data = _observation_data()
+    del data[field]
+    with pytest.raises(ValidationError) as error:
+        ResponseRepresentationObservation.model_validate(data)
+    assert error.value.errors()[0]["type"] == "missing"
+
+
+def test_observed_json_text_parameter_and_gzip_responses_are_valid() -> None:
+    json_response = _observation()
+    text_response = _observation(
+        observed_media_type=MediaType.model_validate("text/plain"),
+        media_type_parameters=(_parameter("charset", "utf-8"),),
+    )
+    gzip_response = _observation(
+        content_encoding=ContentEncoding.model_validate("gzip")
+    )
+    assert json_response.status_code is not None
+    assert json_response.status_code.root == 200
+    assert text_response.media_type_parameters[0].value == "utf-8"
+    assert gzip_response.content_encoding is not None
+    assert gzip_response.content_encoding.root == "gzip"
+
+
+@pytest.mark.parametrize(
+    "state",
+    (
+        ResponseRepresentationState.UNAVAILABLE,
+        ResponseRepresentationState.INACCESSIBLE,
+        ResponseRepresentationState.UNKNOWN,
+    ),
+)
+def test_non_observed_states_require_explicit_absent_metadata(
+    state: ResponseRepresentationState,
+) -> None:
+    observation = _unobserved(state)
+    assert observation.state is state
+    assert observation.completed_at == SYNTHETIC_COMPLETED_AT
+    assert observation.status_code is None
+    assert observation.observed_media_type is None
+    assert observation.media_type_parameters == ()
+    assert observation.content_encoding is None
+
+
+@pytest.mark.parametrize(
+    ("state", "field", "value"),
+    (
+        (
+            ResponseRepresentationState.OBSERVED,
+            "status_code",
+            None,
+        ),
+        (
+            ResponseRepresentationState.OBSERVED,
+            "observed_media_type",
+            None,
+        ),
+        (
+            ResponseRepresentationState.UNAVAILABLE,
+            "status_code",
+            HttpStatusCode.model_validate(503),
+        ),
+        (
+            ResponseRepresentationState.UNAVAILABLE,
+            "observed_media_type",
+            MediaType.model_validate("application/json"),
+        ),
+        (
+            ResponseRepresentationState.UNAVAILABLE,
+            "media_type_parameters",
+            (_parameter("charset", "utf-8"),),
+        ),
+        (
+            ResponseRepresentationState.INACCESSIBLE,
+            "content_encoding",
+            ContentEncoding.model_validate("gzip"),
+        ),
+        (
+            ResponseRepresentationState.UNKNOWN,
+            "observed_media_type",
+            MediaType.model_validate("text/plain"),
+        ),
+    ),
+)
+def test_response_state_shape_invariants_reject_contradictions(
+    state: ResponseRepresentationState,
+    field: str,
+    value: object,
+) -> None:
+    data = _observation_data(state=state)
+    if state is not ResponseRepresentationState.OBSERVED:
+        data.update(
+            status_code=None,
+            observed_media_type=None,
+            media_type_parameters=(),
+            content_encoding=None,
+        )
+    data[field] = value
+    with pytest.raises(ValidationError):
+        ResponseRepresentationObservation.model_validate(data)
+
+
+def test_response_state_is_never_inferred_from_metadata_presence() -> None:
+    with pytest.raises(ValidationError):
+        _observation(
+            state=ResponseRepresentationState.UNAVAILABLE,
+        )
+    with pytest.raises(ValidationError):
+        _observation(
+            state=ResponseRepresentationState.OBSERVED,
+            status_code=None,
+            observed_media_type=None,
+        )
+
+
+def test_same_request_id_can_have_two_distinct_observation_values() -> None:
+    request_id = _request_id()
+    first = _observation(request_id=request_id)
+    second = _observation(
+        request_id=request_id,
+        completed_at=SYNTHETIC_COMPLETED_AT + timedelta(seconds=1),
+        observed_media_type=MediaType.model_validate("text/plain"),
+    )
+    assert first.request_id == second.request_id
+    assert first != second
+
+
+def test_requested_and_observed_media_may_disagree_without_reconciliation() -> None:
+    controls = _controls(
+        requested_media_type=MediaType.model_validate("application/vnd.github.raw+json")
+    )
+    observation = _observation(
+        observed_media_type=MediaType.model_validate("text/plain"),
+        media_type_parameters=(_parameter("charset", "utf-8"),),
+    )
+    _assert_media_mismatch(controls, observation)
+    with pytest.raises(AssertionError):
+        _assert_media_mismatch(
+            controls,
+            _observation(
+                observed_media_type=MediaType.model_validate(
+                    "application/vnd.github.raw+json"
+                )
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("request_id", {"schema_version": 1}),
+        ("state", "observed"),
+        ("completed_at", "2026-08-02T16:00:01Z"),
+        ("status_code", 200),
+        ("observed_media_type", "application/json"),
+        ("media_type_parameters", []),
+        (
+            "media_type_parameters",
+            ({"name": "charset", "value": "utf-8"},),
+        ),
+        ("content_encoding", "gzip"),
+    ),
+)
+def test_response_observation_requires_typed_nested_python_values(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        _observation(**{field: value})
+
+
+def test_response_observation_semantic_json_reconstructs_nested_types() -> None:
+    observation = _observation(
+        observed_media_type=MediaType.model_validate("text/plain"),
+        media_type_parameters=(
+            _parameter("charset", "utf-8"),
+            _parameter("charset", "UTF-8"),
+        ),
+        content_encoding=ContentEncoding.model_validate("gzip"),
+    )
+    reconstructed = ResponseRepresentationObservation.model_validate_json(
+        observation.model_dump_json()
+    )
+    assert reconstructed == observation
+    assert isinstance(reconstructed.request_id, RetrievalRequestId)
+    assert isinstance(reconstructed.status_code, HttpStatusCode)
+    assert isinstance(reconstructed.observed_media_type, MediaType)
+    assert type(reconstructed.media_type_parameters) is tuple
+    assert isinstance(reconstructed.content_encoding, ContentEncoding)
+
+
+def test_response_observation_json_accepts_semantic_unavailable_shape() -> None:
+    value: dict[str, object] = {
+        "schema_version": 1,
+        "request_id": _request_id().model_dump(mode="json"),
+        "state": "unavailable",
+        "completed_at": "2026-08-02T16:00:01Z",
+        "status_code": None,
+        "observed_media_type": None,
+        "media_type_parameters": [],
+        "content_encoding": None,
+    }
+    observation = ResponseRepresentationObservation.model_validate_json(
+        json.dumps(value)
+    )
+    assert observation.state is ResponseRepresentationState.UNAVAILABLE
+    assert observation.completed_at.tzinfo is UTC
+
+
+def test_response_completion_rejects_naive_and_nonzero_python_times() -> None:
+    with pytest.raises(ValidationError):
+        _observation(completed_at=SYNTHETIC_COMPLETED_AT.replace(tzinfo=None))
+    with pytest.raises(ValidationError):
+        _observation(
+            completed_at=SYNTHETIC_COMPLETED_AT.astimezone(timezone(timedelta(hours=1)))
+        )
+
+
+def test_response_completion_normalizes_effective_zero_offset_to_utc() -> None:
+    zero = timezone(timedelta(0), name="zero-offset")
+    completed_at = datetime(2026, 8, 2, 16, 0, 1, 123456, tzinfo=zero)
+    observation = _observation(completed_at=completed_at)
+    assert observation.completed_at.tzinfo is UTC
+    assert observation.model_dump(mode="json")["completed_at"] == (
+        "2026-08-02T16:00:01.123456Z"
+    )
+
+
+@pytest.mark.parametrize(
+    "completed_at",
+    (
+        "2026-08-02T16:00:01-0000",
+        "2026-08-02T16:00:01-00",
+        "2026-08-02T16:00:01-00:00",
+        "2026-08-02T16:00:01-00:00:00",
+        "2026-08-02T16:00:01+0000",
+        "2026-08-02T16:00:01+00",
+        "2026-08-02T16:00:01+01:00",
+        "2026-08-02T16:00:01-01:00",
+        "2026-08-02T16:00:01.1234567Z",
+        "2026-08-02 16:00:01Z",
+        "2026-08-02T16:00:01",
+    ),
+)
+def test_response_completion_json_rejects_negative_zero_and_other_grammar(
+    completed_at: str,
+) -> None:
+    data = _observation().model_dump(mode="json")
+    data["completed_at"] = completed_at
+    with pytest.raises(ValidationError):
+        ResponseRepresentationObservation.model_validate_json(json.dumps(data))
+
+
+@pytest.mark.parametrize("suffix", ("Z", "+00:00"))
+@pytest.mark.parametrize(
+    ("fraction", "microsecond"),
+    (("", 0), (".1", 100_000), (".123456", 123_456)),
+)
+def test_response_completion_json_accepts_asserted_utc_grammar(
+    suffix: str,
+    fraction: str,
+    microsecond: int,
+) -> None:
+    data = _observation().model_dump(mode="json")
+    data["completed_at"] = f"2026-08-02T16:00:01{fraction}{suffix}"
+    observation = ResponseRepresentationObservation.model_validate_json(
+        json.dumps(data)
+    )
+    assert observation.completed_at == datetime(
+        2026, 8, 2, 16, 0, 1, microsecond, tzinfo=UTC
+    )
+
+
+@pytest.mark.parametrize(
+    "wrong_identity",
+    (
+        GitTreeIdentity(
+            kind=GitObjectKind.TREE,
+            algorithm=GitHashAlgorithm.SHA1,
+            full_digest="a" * 40,
+        ),
+        GitBlobIdentity(
+            kind=GitObjectKind.BLOB,
+            algorithm=GitHashAlgorithm.SHA1,
+            full_digest="b" * 40,
+        ),
+        RepositoryIdentity(
+            provider=ProviderKey.model_validate("github"),
+            provider_repository_id=ProviderRepositoryId.model_validate("37489525"),
+        ),
+    ),
+)
+def test_response_observation_rejects_tree_blob_and_source_identity_as_request_id(
+    wrong_identity: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        _observation(request_id=wrong_identity)
+
+
+@pytest.mark.parametrize(
+    "extra_field",
+    (
+        "response_id",
+        "acquisition_run_id",
+        "request_ordinal",
+        "method",
+        "route_path",
+        "authority",
+        "started_at",
+        "headers",
+        "etag",
+        "provider_request_id",
+        "body",
+        "payload_text",
+        "body_bytes",
+        "body_length",
+        "digest",
+        "sha256",
+        "retained_path",
+        "retained_artifact",
+        "truncated",
+        "redacted",
+    ),
+)
+def test_response_observation_rejects_duplicated_provenance_headers_and_bytes(
+    extra_field: str,
+) -> None:
+    data = _observation_data()
+    data[extra_field] = "forbidden"
+    with pytest.raises(ValidationError) as error:
+        ResponseRepresentationObservation.model_validate(data)
+    assert error.value.errors()[0]["type"] == "extra_forbidden"
+
+
+def test_response_observation_is_frozen_extra_forbidden_and_schema_strict() -> None:
+    observation = _observation()
+    with pytest.raises(ValidationError):
+        observation.state = ResponseRepresentationState.UNKNOWN
+    with pytest.raises(ValidationError):
+        _observation(unexpected="value")
+    for value in (0, 2, True, 1.0, "1"):
+        with pytest.raises(ValidationError):
+            _observation(schema_version=value)
+
+
+def test_response_observation_revalidates_constructed_invalid_nested_values() -> None:
+    invalid_status = HttpStatusCode.model_construct(root=99)
+    invalid_media = MediaType.model_construct(root="Application/JSON")
+    invalid_parameter = MediaTypeParameter.model_construct(
+        name="Charset",
+        value="utf-8",
+    )
+    invalid_encoding = ContentEncoding.model_construct(root="GZIP")
+    for field, value in (
+        ("status_code", invalid_status),
+        ("observed_media_type", invalid_media),
+        ("media_type_parameters", (invalid_parameter,)),
+        ("content_encoding", invalid_encoding),
+    ):
+        with pytest.raises(ValidationError):
+            _observation(**{field: value})
+
+
+def test_cross_layer_composition_uses_one_request_id_without_duplication() -> None:
+    request_id = _request_id()
+    reference = _reference(request_id)
+    controls = _controls(
+        query_parameters=(_query("page", "1"),),
+        requested_media_type=MediaType.model_validate("application/json"),
+        api_version=ApiVersion.model_validate("v1"),
+    )
+    observation = _observation(request_id=request_id)
+    composed = (request_id, reference, controls, observation)
+
+    assert composed[1].request_id == composed[0]
+    assert composed[3].request_id == composed[0]
+    assert "request_id" not in RetrievalRequestControls.model_fields
+    assert "authority" not in ResponseRepresentationObservation.model_fields
+    assert "method" not in ResponseRepresentationObservation.model_fields
+    assert "route_path" not in ResponseRepresentationObservation.model_fields
+    assert "acquisition_run_id" not in (ResponseRepresentationObservation.model_fields)
+
+
+def test_controls_do_not_change_request_identity() -> None:
+    request_id = _request_id()
+    first = _controls()
+    second = _controls(
+        query_parameters=(_query("page", "1"),),
+        requested_media_type=MediaType.model_validate("application/json"),
+    )
+    assert first != second
+    assert request_id == _request_id()
+    assert "request_id" not in RetrievalRequestControls.model_fields
+
+
+def test_representation_observation_is_not_a_retained_artifact() -> None:
+    fields = set(ResponseRepresentationObservation.model_fields)
+    assert (
+        not {
+            "body",
+            "body_bytes",
+            "body_length",
+            "digest",
+            "digest_scope",
+            "path",
+            "retained_path",
+            "retention",
+            "sha256",
+            "truncated",
+            "redacted",
+        }
+        & fields
+    )
+
+
+def test_evidence_module_exports_are_exact_and_mutation_sensitive() -> None:
+    source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
+    _validate_evidence_exports(source)
+    assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
+
+    missing = source.replace(
+        '    "ResponseRepresentationObservation",\n',
+        "",
+        1,
+    )
+    unexpected = source.replace(
+        '    "ResponseRepresentationObservation",\n',
+        '    "ResponseRepresentationObservation",\n    "EvidenceEnvelope",\n',
+        1,
+    )
+    with pytest.raises(AssertionError):
+        _validate_evidence_exports(missing)
+    with pytest.raises(AssertionError):
+        _validate_evidence_exports(unexpected)
+
+
+def test_no_artifact_run_adapter_envelope_or_s03_surface_exists() -> None:
+    source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
+    _validate_no_later_evidence_surface(source)
+    for class_name in (
+        "RetainedArtifactRecord",
+        "AcquisitionRun",
+        "LegacyEvidenceAdapter",
+        "EvidenceEnvelope",
+    ):
+        with pytest.raises(AssertionError):
+            _validate_no_later_evidence_surface(
+                source + f"\n\nclass {class_name}:\n    pass\n"
+            )
+    assert not (REPOSITORY_ROOT / "src/faultatlas/domain/response.py").exists()
+    assert not (REPOSITORY_ROOT / "src/faultatlas/domain/artifact.py").exists()
+    assert not (REPOSITORY_ROOT / "reference_corpus/contracts/evidence").exists()
+
+
+def test_evidence_module_imports_and_calls_remain_no_io() -> None:
+    source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    observed_imports: dict[str, set[str | None]] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert alias.asname is None
+                observed_imports.setdefault(alias.name, set()).add(None)
+        elif isinstance(node, ast.ImportFrom):
+            assert node.level == 0
+            assert node.module is not None
+            names = observed_imports.setdefault(node.module, set())
+            for alias in node.names:
+                assert alias.asname is None
+                names.add(alias.name)
+    assert observed_imports == {
+        "re": {None},
+        "datetime": {"UTC", "datetime", "timedelta"},
+        "enum": {"StrEnum"},
+        "typing": {"Annotated", "Literal", "Self", "cast"},
+        "pydantic": {
+            "AwareDatetime",
+            "BaseModel",
+            "ConfigDict",
+            "RootModel",
+            "StringConstraints",
+            "ValidationInfo",
+            "field_validator",
+            "model_validator",
+        },
+        "faultatlas.domain.identity": {"AuthorityRole", "ProviderAuthority"},
+    }
+    forbidden_calls = {
+        "__import__",
+        "compile",
+        "eval",
+        "exec",
+        "getattr",
+        "globals",
+        "locals",
+        "open",
+        "setattr",
+        "vars",
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            assert node.func.id not in forbidden_calls
+    lowered = source.casefold()
+    for forbidden in (
+        "requests",
+        "urllib",
+        "pathlib",
+        "subprocess",
+        "os.environ",
+        "decompress",
+        "headerparser",
+    ):
+        assert forbidden not in lowered
+
+
+def test_package_domain_roots_and_production_inventory_remain_exact() -> None:
+    production_files = {
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in (REPOSITORY_ROOT / "src").rglob("*.py")
+    }
+    assert production_files == EXPECTED_PRODUCTION_FILES
+    assert len(production_files) == 9
+    assert faultatlas.__all__ == ["__version__"]
+    assert getattr(domain_package, "__all__", None) in (None, [])
+    assert not any(hasattr(faultatlas, name) for name in EXPECTED_EVIDENCE_EXPORTS)
+    assert not any(hasattr(domain_package, name) for name in EXPECTED_EVIDENCE_EXPORTS)
+
+
+def test_unexpected_tenth_production_file_failure_sensitivity() -> None:
+    mutated = EXPECTED_PRODUCTION_FILES | {"src/faultatlas/domain/response.py"}
+    with pytest.raises(AssertionError):
+        assert mutated == EXPECTED_PRODUCTION_FILES
+
+
+def test_predecessor_models_and_legacy_artifact_snapshot_are_unchanged() -> None:
+    for relative, (byte_length, digest) in PREDECESSOR_LOCKS.items():
+        raw = (REPOSITORY_ROOT / relative).read_bytes()
+        assert len(raw) == byte_length
+        assert sha256(raw).hexdigest() == digest
+    assert tuple(ArtifactSnapshot.model_fields) == (
+        "schema_version",
+        "source",
+        "retrieved_at",
+        "media_type",
+        "payload_text",
+        "digest_algorithm",
+        "digest",
+        "truncated",
+        "redacted",
+        "missing_context",
+    )

@@ -223,8 +223,17 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "RetrievalMethod",
     "RetrievalRoutePath",
     "RetrievalRequestReference",
+    "MediaType",
+    "ApiVersion",
+    "RequestQueryParameter",
+    "RetrievalRequestControls",
+    "ResponseRepresentationState",
+    "HttpStatusCode",
+    "ContentEncoding",
+    "MediaTypeParameter",
+    "ResponseRepresentationObservation",
 )
-FORBIDDEN_POST_S01_EVIDENCE_SURFACE_FRAGMENTS = (
+FORBIDDEN_POST_S02_EVIDENCE_SURFACE_FRAGMENTS = (
     "adapter",
     "artifact",
     "completeness",
@@ -233,8 +242,6 @@ FORBIDDEN_POST_S01_EVIDENCE_SURFACE_FRAGMENTS = (
     "envelope",
     "omission",
     "publication",
-    "representation",
-    "response",
     "supersession",
     "transformation",
 )
@@ -1222,7 +1229,7 @@ def _validate_current_evidence_inventory(source: bytes) -> None:
     assert all(isinstance(item, str) for item in raw_exports)
     exports = tuple(cast(str, item) for item in raw_exports)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 6
+    assert len(exports) == len(set(exports)) == 15
 
     top_level_definitions = [
         node.name
@@ -1237,7 +1244,7 @@ def _validate_current_evidence_inventory(source: bytes) -> None:
         compact = name.replace("_", "").casefold()
         assert not any(
             fragment in compact
-            for fragment in FORBIDDEN_POST_S01_EVIDENCE_SURFACE_FRAGMENTS
+            for fragment in FORBIDDEN_POST_S02_EVIDENCE_SURFACE_FRAGMENTS
         )
         if "acquisitionrun" in compact:
             assert name == "AcquisitionRunId"
@@ -1895,7 +1902,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P02.S07` is complete" in roadmap
     assert "`S1.P03` is active" in roadmap
     assert "`S1.P03.S01` is complete" in roadmap
-    assert "`S1.P03.S02` is next and not started" in roadmap
+    assert "`S1.P03.S02` is complete" in roadmap
+    assert "`S1.P03.S03` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:

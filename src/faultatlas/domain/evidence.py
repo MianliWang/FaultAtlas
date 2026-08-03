@@ -1,17 +1,18 @@
-"""Strict retrieval-request identity and core provenance primitives.
+"""Strict retrieval-request and response-representation provenance models.
 
 The models in this module identify one request attempt by acquisition-run ID
 and run-local ordinal. Retrieval authority, method, origin-relative route, and
 request-start time remain explicit provenance metadata rather than identity.
-This module performs no I/O and does not define request controls, response or
-artifact observations, acquisition-run records, durable canonical bytes, or
-an Evidence Envelope.
+Ordered request controls and response representation metadata are separate,
+immutable values linked through request identity. This module performs no I/O
+and does not define response bodies or digests, retained artifacts,
+acquisition-run records, durable canonical bytes, or an Evidence Envelope.
 """
 
 import re
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self, cast
 
 from pydantic import (
     AwareDatetime,
@@ -21,6 +22,7 @@ from pydantic import (
     StringConstraints,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 from faultatlas.domain.identity import AuthorityRole, ProviderAuthority
@@ -32,17 +34,34 @@ __all__ = [
     "RetrievalMethod",
     "RetrievalRoutePath",
     "RetrievalRequestReference",
+    "MediaType",
+    "ApiVersion",
+    "RequestQueryParameter",
+    "RetrievalRequestControls",
+    "ResponseRepresentationState",
+    "HttpStatusCode",
+    "ContentEncoding",
+    "MediaTypeParameter",
+    "ResponseRepresentationObservation",
 ]
 
 _MAX_RUN_ID_LENGTH = 160
 _MAX_REQUEST_ORDINAL = 2_147_483_647
 _MAX_ROUTE_PATH_LENGTH = 4096
+_MAX_MEDIA_TYPE_LENGTH = 255
+_MAX_API_VERSION_LENGTH = 128
+_MAX_QUERY_NAME_LENGTH = 256
+_MAX_QUERY_VALUE_LENGTH = 4096
+_MAX_CONTENT_ENCODING_LENGTH = 64
+_MAX_MEDIA_PARAMETER_VALUE_LENGTH = 1024
 _ASSERTED_UTC_STARTED_AT_PATTERN = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
     r"(?:\.[0-9]{1,6})?(?:Z|\+00:00)"
 )
 _RUN_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,158}[a-z0-9])?")
 _INVALID_PERCENT_ENCODING = re.compile(r"%(?![0-9A-Fa-f]{2})")
+_LOWERCASE_HTTP_TOKEN_PATTERN = re.compile(r"[!#$%&'*+\-.^_`|~0-9a-z]+")
+_MEDIA_TYPE_PATTERN = re.compile(r"[!#$%&'*+\-.^_`|~0-9a-z]+/[!#$%&'*+\-.^_`|~0-9a-z]+")
 
 _AcquisitionRunIdValue = Annotated[
     str,
@@ -52,6 +71,63 @@ _RetrievalRoutePathValue = Annotated[
     str,
     StringConstraints(min_length=1, max_length=_MAX_ROUTE_PATH_LENGTH),
 ]
+_MediaTypeValue = Annotated[
+    str,
+    StringConstraints(min_length=3, max_length=_MAX_MEDIA_TYPE_LENGTH),
+]
+_ApiVersionValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=_MAX_API_VERSION_LENGTH),
+]
+_RequestQueryNameValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=_MAX_QUERY_NAME_LENGTH),
+]
+_RequestQueryValue = Annotated[
+    str,
+    StringConstraints(max_length=_MAX_QUERY_VALUE_LENGTH),
+]
+_ContentEncodingValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=_MAX_CONTENT_ENCODING_LENGTH),
+]
+_MediaTypeParameterValue = Annotated[
+    str,
+    StringConstraints(max_length=_MAX_MEDIA_PARAMETER_VALUE_LENGTH),
+]
+
+
+def _has_ascii_control(value: str) -> bool:
+    return any(ord(character) < 32 or ord(character) == 127 for character in value)
+
+
+def _require_asserted_utc_json(
+    value: object,
+    info: ValidationInfo,
+    *,
+    field_name: str,
+) -> object:
+    if info.mode != "json":
+        return value
+    if (
+        not isinstance(value, str)
+        or _ASSERTED_UTC_STARTED_AT_PATTERN.fullmatch(value) is None
+    ):
+        raise ValueError(
+            f"{field_name} JSON value must use asserted-UTC RFC 3339 form "
+            "ending in Z or +00:00"
+        )
+    parse_value = f"{value[:-1]}+00:00" if value.endswith("Z") else value
+    try:
+        return datetime.fromisoformat(parse_value)
+    except ValueError:
+        return value
+
+
+def _normalize_asserted_utc(value: datetime, *, field_name: str) -> datetime:
+    if value.utcoffset() != timedelta(0):
+        raise ValueError(f"{field_name} must use a zero UTC offset")
+    return value.astimezone(UTC)
 
 
 class AcquisitionRunId(RootModel[_AcquisitionRunIdValue]):
@@ -274,25 +350,394 @@ class RetrievalRequestReference(_RetrievalRecordBase):
         value: object,
         info: ValidationInfo,
     ) -> object:
-        if info.mode != "json":
-            return value
-        if (
-            not isinstance(value, str)
-            or _ASSERTED_UTC_STARTED_AT_PATTERN.fullmatch(value) is None
-        ):
-            raise ValueError(
-                "started_at JSON value must use asserted-UTC RFC 3339 form "
-                "ending in Z or +00:00"
-            )
-        parse_value = f"{value[:-1]}+00:00" if value.endswith("Z") else value
-        try:
-            return datetime.fromisoformat(parse_value)
-        except ValueError:
-            return value
+        return _require_asserted_utc_json(value, info, field_name="started_at")
 
     @field_validator("started_at")
     @classmethod
     def _normalize_started_at(cls, value: datetime) -> datetime:
-        if value.utcoffset() != timedelta(0):
-            raise ValueError("started_at must use a zero UTC offset")
-        return value.astimezone(UTC)
+        return _normalize_asserted_utc(value, field_name="started_at")
+
+
+class MediaType(RootModel[_MediaTypeValue]):
+    """Exact lowercase ASCII media type without parameters or wildcards."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _MediaTypeValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_media_type(cls, value: str) -> str:
+        if not value.isascii() or _MEDIA_TYPE_PATTERN.fullmatch(value) is None:
+            raise ValueError(
+                "media type must use lowercase ASCII token/token grammar "
+                "without parameters or wildcard components"
+            )
+        media_type, media_subtype = value.split("/", maxsplit=1)
+        if media_type == "*" or media_subtype == "*":
+            raise ValueError(
+                "media type must use lowercase ASCII token/token grammar "
+                "without parameters or wildcard components"
+            )
+        return value
+
+
+class ApiVersion(RootModel[_ApiVersionValue]):
+    """Exact bounded API-version lexeme without parsing or normalization."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _ApiVersionValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_api_version(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _has_ascii_control(value)
+            or any(character.isspace() for character in value)
+        ):
+            raise ValueError(
+                "API version must contain only non-whitespace, non-control ASCII"
+            )
+        return value
+
+
+class RequestQueryParameter(BaseModel):
+    """One exact ordered request query name/value entry."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    name: _RequestQueryNameValue
+    value: _RequestQueryValue
+
+    @field_validator("name", "value")
+    @classmethod
+    def _validate_query_text(cls, value: str) -> str:
+        if not value.isascii():
+            raise ValueError("query parameter text must contain only ASCII")
+        if _has_ascii_control(value):
+            raise ValueError("query parameter text must not contain ASCII controls")
+        return value
+
+
+class RetrievalRequestControls(_RetrievalRecordBase):
+    """Explicit ordered controls for a request, separate from its identity."""
+
+    query_parameters: tuple[RequestQueryParameter, ...]
+    requested_media_type: MediaType
+    api_version: ApiVersion | None
+
+    @field_validator("query_parameters", mode="before")
+    @classmethod
+    def _require_typed_python_query_parameters(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json":
+            return (
+                tuple(cast(list[object], value)) if isinstance(value, list) else value
+            )
+        if info.mode != "python":
+            return value
+        if type(value) is not tuple:
+            raise ValueError("query_parameters must be a tuple in Python input")
+        typed_value = cast(tuple[object, ...], value)
+        if not all(isinstance(item, RequestQueryParameter) for item in typed_value):
+            raise ValueError(
+                "query_parameters entries must be RequestQueryParameter values "
+                "in Python input"
+            )
+        return typed_value
+
+    @field_validator("requested_media_type", mode="before")
+    @classmethod
+    def _require_typed_python_requested_media_type(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, MediaType):
+            raise ValueError("requested_media_type must be a MediaType in Python input")
+        return value
+
+    @field_validator("api_version", mode="before")
+    @classmethod
+    def _require_typed_python_api_version(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, ApiVersion)
+        ):
+            raise ValueError(
+                "api_version must be an ApiVersion or None in Python input"
+            )
+        return value
+
+
+class ResponseRepresentationState(StrEnum):
+    """Availability of one response representation observation."""
+
+    OBSERVED = "observed"
+    UNAVAILABLE = "unavailable"
+    INACCESSIBLE = "inaccessible"
+    UNKNOWN = "unknown"
+
+
+class HttpStatusCode(RootModel[int]):
+    """Exact HTTP status code in the protocol-defined three-digit range."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: int
+
+    @field_validator("root", mode="before")
+    @classmethod
+    def _validate_status_code(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("HTTP status code must be an exact integer")
+        if not 100 <= value <= 599:
+            raise ValueError("HTTP status code must be between 100 and 599 inclusive")
+        return value
+
+
+class ContentEncoding(RootModel[_ContentEncodingValue]):
+    """Exact lowercase ASCII content-encoding token."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _ContentEncodingValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_content_encoding(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _LOWERCASE_HTTP_TOKEN_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError("content encoding must use lowercase ASCII token grammar")
+        return value
+
+
+class MediaTypeParameter(BaseModel):
+    """One exact ordered observed media-type parameter."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    name: str
+    value: _MediaTypeParameterValue
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _LOWERCASE_HTTP_TOKEN_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "media type parameter name must use lowercase ASCII token grammar"
+            )
+        return value
+
+    @field_validator("value")
+    @classmethod
+    def _validate_value(cls, value: str) -> str:
+        if _has_ascii_control(value):
+            raise ValueError(
+                "media type parameter value must not contain ASCII controls"
+            )
+        return value
+
+
+class ResponseRepresentationObservation(_RetrievalRecordBase):
+    """Immutable metadata observation for one request's response representation."""
+
+    request_id: RetrievalRequestId
+    state: ResponseRepresentationState
+    completed_at: AwareDatetime
+    status_code: HttpStatusCode | None
+    observed_media_type: MediaType | None
+    media_type_parameters: tuple[MediaTypeParameter, ...]
+    content_encoding: ContentEncoding | None
+
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _require_typed_python_request_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, RetrievalRequestId):
+            raise ValueError("request_id must be a RetrievalRequestId in Python input")
+        return value
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def _require_typed_python_state(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ResponseRepresentationState):
+            raise ValueError(
+                "state must be a ResponseRepresentationState in Python input"
+            )
+        return value
+
+    @field_validator("completed_at", mode="before")
+    @classmethod
+    def _require_asserted_utc_completed_at_json(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        return _require_asserted_utc_json(value, info, field_name="completed_at")
+
+    @field_validator("completed_at")
+    @classmethod
+    def _normalize_completed_at(cls, value: datetime) -> datetime:
+        return _normalize_asserted_utc(value, field_name="completed_at")
+
+    @field_validator("status_code", mode="before")
+    @classmethod
+    def _require_typed_python_status_code(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, HttpStatusCode)
+        ):
+            raise ValueError(
+                "status_code must be an HttpStatusCode or None in Python input"
+            )
+        return value
+
+    @field_validator("observed_media_type", mode="before")
+    @classmethod
+    def _require_typed_python_observed_media_type(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, MediaType)
+        ):
+            raise ValueError(
+                "observed_media_type must be a MediaType or None in Python input"
+            )
+        return value
+
+    @field_validator("media_type_parameters", mode="before")
+    @classmethod
+    def _require_typed_python_media_type_parameters(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json":
+            return (
+                tuple(cast(list[object], value)) if isinstance(value, list) else value
+            )
+        if info.mode != "python":
+            return value
+        if type(value) is not tuple:
+            raise ValueError("media_type_parameters must be a tuple in Python input")
+        typed_value = cast(tuple[object, ...], value)
+        if not all(isinstance(item, MediaTypeParameter) for item in typed_value):
+            raise ValueError(
+                "media_type_parameters entries must be MediaTypeParameter values "
+                "in Python input"
+            )
+        return typed_value
+
+    @field_validator("content_encoding", mode="before")
+    @classmethod
+    def _require_typed_python_content_encoding(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, ContentEncoding)
+        ):
+            raise ValueError(
+                "content_encoding must be a ContentEncoding or None in Python input"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_state_shape(self) -> Self:
+        if self.state is ResponseRepresentationState.OBSERVED:
+            if self.status_code is None:
+                raise ValueError(
+                    "observed response representation requires status_code"
+                )
+            if self.observed_media_type is None:
+                raise ValueError(
+                    "observed response representation requires observed_media_type"
+                )
+            return self
+
+        if self.status_code is not None:
+            raise ValueError(
+                "non-observed response representation must not include status_code"
+            )
+        if self.observed_media_type is not None:
+            raise ValueError(
+                "non-observed response representation must not include "
+                "observed_media_type"
+            )
+        if self.media_type_parameters:
+            raise ValueError(
+                "non-observed response representation must not include media type "
+                "parameters"
+            )
+        if self.content_encoding is not None:
+            raise ValueError(
+                "non-observed response representation must not include content_encoding"
+            )
+        return self

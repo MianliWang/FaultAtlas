@@ -53,6 +53,15 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "RetrievalMethod",
     "RetrievalRoutePath",
     "RetrievalRequestReference",
+    "MediaType",
+    "ApiVersion",
+    "RequestQueryParameter",
+    "RetrievalRequestControls",
+    "ResponseRepresentationState",
+    "HttpStatusCode",
+    "ContentEncoding",
+    "MediaTypeParameter",
+    "ResponseRepresentationObservation",
 )
 EXPECTED_EVIDENCE_CLASSES = {
     *EXPECTED_EVIDENCE_EXPORTS,
@@ -66,14 +75,28 @@ EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "_MAX_REQUEST_ORDINAL",
     "_MAX_ROUTE_PATH_LENGTH",
     "_MAX_RUN_ID_LENGTH",
+    "_MAX_MEDIA_TYPE_LENGTH",
+    "_MAX_API_VERSION_LENGTH",
+    "_MAX_QUERY_NAME_LENGTH",
+    "_MAX_QUERY_VALUE_LENGTH",
+    "_MAX_CONTENT_ENCODING_LENGTH",
+    "_MAX_MEDIA_PARAMETER_VALUE_LENGTH",
     "_RUN_ID_PATTERN",
+    "_LOWERCASE_HTTP_TOKEN_PATTERN",
+    "_MEDIA_TYPE_PATTERN",
     "_RetrievalRoutePathValue",
+    "_MediaTypeValue",
+    "_ApiVersionValue",
+    "_RequestQueryNameValue",
+    "_RequestQueryValue",
+    "_ContentEncodingValue",
+    "_MediaTypeParameterValue",
 }
 EXPECTED_EVIDENCE_IMPORTS = {
     "re": {None},
     "datetime": {"UTC", "datetime", "timedelta"},
     "enum": {"StrEnum"},
-    "typing": {"Annotated", "Literal"},
+    "typing": {"Annotated", "Literal", "Self", "cast"},
     "pydantic": {
         "AwareDatetime",
         "BaseModel",
@@ -82,6 +105,7 @@ EXPECTED_EVIDENCE_IMPORTS = {
         "StringConstraints",
         "ValidationInfo",
         "field_validator",
+        "model_validator",
     },
     "faultatlas.domain.identity": {"AuthorityRole", "ProviderAuthority"},
 }
@@ -194,7 +218,7 @@ def _validate_evidence_surface(source: str) -> None:
     tree = ast.parse(source)
     exports = _parse_exports(source)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 6
+    assert len(exports) == len(set(exports)) == 15
     classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
     functions = {
         node.name
@@ -209,7 +233,11 @@ def _validate_evidence_surface(source: str) -> None:
         if isinstance(target, ast.Name)
     }
     assert classes == EXPECTED_EVIDENCE_CLASSES
-    assert functions == set()
+    assert functions == {
+        "_has_ascii_control",
+        "_normalize_asserted_utc",
+        "_require_asserted_utc_json",
+    }
     assert assignments == EXPECTED_EVIDENCE_ASSIGNMENTS
 
 
@@ -272,7 +300,6 @@ def _assert_no_later_p03_surface(source: str) -> None:
         "ResponseObservation",
         "RetainedArtifact",
         "RetainedArtifactRecord",
-        "RetrievalRequestControls",
         "TransformationRecord",
     }
     assert not definitions & forbidden

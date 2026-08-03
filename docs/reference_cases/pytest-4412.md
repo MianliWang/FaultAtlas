@@ -739,8 +739,8 @@ corpus reader, locator resolver, Evidence Envelope, persistence contract, or
 public API. Current status: the case-calibrated `S1.P01` Identity Primitives
 Phase is complete. `S1.P02` is complete and `S1.P02.S01` through
 `S1.P02.S07` are complete. `S1.P03` is active: `S1.P03.S01` is complete,
-`S1.P03.S02` is next and not started, and `S1.P03.S03` through
-`S1.P03.S09` are not started.
+`S1.P03.S02` is complete, `S1.P03.S03` is next and not started, and
+`S1.P03.S04` through `S1.P03.S09` are not started.
 
 ## S1.P03.S01 Retrieval Request Identity and Authority Foundation
 
@@ -756,3 +756,26 @@ deterministic projections from the retained uppercase method and safe request
 target. The retrieval authority is locked at the case level, but the immutable
 original request records do not bind it per request. S01 consequently does not
 fabricate canonical authority-qualified request references.
+
+## S1.P03.S02 Request Controls and Response Representation Observations
+
+The locked acquisition directly supports request media, API version, response
+completion, status, observed media, and null content encoding as separate
+primitive or partial facts. Ordinal 32 records requested
+`application/vnd.github.raw+json`, observed `text/plain`, and the ordered
+`charset=utf-8` parameter. This mismatch is preserved without reconciliation.
+
+No immutable request record contains structured `query_parameters` or an
+explicit response-representation state. S02 therefore claims no canonical full
+request-controls or response-observation model: complete examples are clearly
+synthetic, while canonical tests remain bound to exact source pointers and only
+construct directly supported request IDs and primitives. GraphQL-compatible
+POST remains synthetic because all retained original and supplemental requests
+are GET.
+
+The internal S02 models preserve ordered duplicate query names, keep requested
+and observed media distinct, require strict asserted-UTC response completion,
+and link an observation to exactly one request ID. They retain no response body
+bytes, length, digest, arbitrary headers, exact artifact, acquisition run,
+adapter, or Evidence Envelope. Legacy `ArtifactSnapshot` remains unchanged;
+`S1.P03.S03` owns exact retained artifacts and digest scope.

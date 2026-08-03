@@ -202,6 +202,15 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "RetrievalMethod",
     "RetrievalRoutePath",
     "RetrievalRequestReference",
+    "MediaType",
+    "ApiVersion",
+    "RequestQueryParameter",
+    "RetrievalRequestControls",
+    "ResponseRepresentationState",
+    "HttpStatusCode",
+    "ContentEncoding",
+    "MediaTypeParameter",
+    "ResponseRepresentationObservation",
 )
 EXPECTED_VALID_CATEGORIES = {
     "commit-topology": 7,
@@ -1370,7 +1379,7 @@ def _assert_evidence_is_outside_revision_locator_contract(
     }
 
     assert evidence_module.__all__ == list(EXPECTED_EVIDENCE_EXPORTS)
-    assert len(evidence_module.__all__) == 6
+    assert len(evidence_module.__all__) == 15
     assert evidence_exports.isdisjoint(manifest_targets)
     assert evidence_exports.isdisjoint(vector_targets)
     assert manifest["scope"]["production_module"] == "faultatlas.domain.revision"
