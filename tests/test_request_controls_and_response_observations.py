@@ -256,7 +256,7 @@ def _unobserved(
         state=state,
         status_code=None,
         observed_media_type=None,
-        media_type_parameters=(),
+        media_type_parameters=None,
         content_encodings=None,
     )
     data.update(overrides)
@@ -294,6 +294,25 @@ def _parse_exports(source: str) -> tuple[str, ...]:
     items = cast(list[object], value)
     assert all(isinstance(item, str) for item in items)
     return tuple(cast(str, item) for item in items)
+
+
+def _parse_media_parameter_name_limit(source: str) -> int:
+    tree = ast.parse(source)
+    assignments = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "_MAX_MEDIA_PARAMETER_NAME_LENGTH"
+    ]
+    assert len(assignments) == 1
+    assignment = assignments[0]
+    assert isinstance(assignment.annotation, ast.Name)
+    assert assignment.annotation.id == "int"
+    assert assignment.value is not None
+    value = cast(object, ast.literal_eval(assignment.value))
+    assert type(value) is int
+    return value
 
 
 def _validate_evidence_exports(source: str) -> None:
@@ -343,6 +362,45 @@ def _assert_query_order_and_multiplicity(
         for parameter in controls.query_parameters
     )
     assert observed == expected
+
+
+def _assert_encoded_query_component(value: str, *, allow_empty: bool) -> None:
+    if not allow_empty:
+        assert value
+    unreserved = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    hexadecimal = "0123456789ABCDEFabcdef"
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if character in unreserved:
+            index += 1
+            continue
+        assert character == "%"
+        assert index + 2 < len(value)
+        assert value[index + 1] in hexadecimal
+        assert value[index + 2] in hexadecimal
+        index += 3
+
+
+def _replay_query(parameters: tuple[RequestQueryParameter, ...]) -> str:
+    return "&".join(
+        parameter.name
+        + (f"={parameter.value}" if parameter.value_delimiter_present else "")
+        for parameter in parameters
+    )
+
+
+def _parse_replayed_query(query: str) -> tuple[tuple[str, str, bool], ...]:
+    if not query:
+        return ()
+    parsed: list[tuple[str, str, bool]] = []
+    for entry in query.split("&"):
+        name, separator, value = entry.partition("=")
+        assert "=" not in value
+        _assert_encoded_query_component(name, allow_empty=False)
+        _assert_encoded_query_component(value, allow_empty=True)
+        parsed.append((name, value, bool(separator)))
+    return tuple(parsed)
 
 
 def _assert_media_mismatch(
@@ -590,6 +648,189 @@ def test_bare_and_explicitly_empty_query_values_are_distinct_and_json_stable() -
     )
 
 
+@pytest.mark.parametrize("field", ("name", "value"))
+@pytest.mark.parametrize(
+    "lexeme",
+    (
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~",
+        "%2B",
+        "%20",
+        "%2F",
+        "%26",
+        "%3D",
+        "%23",
+        "%3F",
+        "%3A",
+        "%3B",
+        "%25",
+        "%00%7F%80%FF",
+        "%C3%A9",
+        "%2f%2F%aB%Ab",
+        "%2526",
+    ),
+)
+def test_query_component_encoded_lexemes_are_accepted_and_preserved_exactly(
+    field: str,
+    lexeme: str,
+) -> None:
+    data = {
+        "name": "name",
+        "value": "value",
+        "value_delimiter_present": True,
+    }
+    data[field] = lexeme
+    parameter = RequestQueryParameter.model_validate(data)
+    assert getattr(parameter, field) == lexeme
+    reconstructed = RequestQueryParameter.model_validate_json(
+        parameter.model_dump_json()
+    )
+    assert getattr(reconstructed, field) == lexeme
+
+
+def test_query_replay_preserves_flags_order_duplicates_and_encoded_delimiters() -> None:
+    parameters = (
+        _query("flag", "", value_delimiter_present=False),
+        _query("flag", "", value_delimiter_present=True),
+        _query("flag", "value"),
+        _query("duplicate", "first"),
+        _query("duplicate", "second"),
+        _query("encoded%26name", "left%3Dright"),
+        _query("encoded%3Dname", "left%26right"),
+        _query("slash", "%2f"),
+        _query("slash", "%2F"),
+    )
+    expected_entries = (
+        ("flag", "", False),
+        ("flag", "", True),
+        ("flag", "value", True),
+        ("duplicate", "first", True),
+        ("duplicate", "second", True),
+        ("encoded%26name", "left%3Dright", True),
+        ("encoded%3Dname", "left%26right", True),
+        ("slash", "%2f", True),
+        ("slash", "%2F", True),
+    )
+    expected_query = (
+        "flag&flag=&flag=value&duplicate=first&duplicate=second&"
+        "encoded%26name=left%3Dright&encoded%3Dname=left%26right&"
+        "slash=%2f&slash=%2F"
+    )
+
+    assert _replay_query(parameters) == expected_query
+    assert _parse_replayed_query(expected_query) == expected_entries
+    assert _replay_query(()) == ""
+    assert _parse_replayed_query("") == ()
+
+    controls = _controls(query_parameters=parameters)
+    reconstructed = RetrievalRequestControls.model_validate_json(
+        controls.model_dump_json()
+    )
+    assert _replay_query(reconstructed.query_parameters) == expected_query
+    assert _parse_replayed_query(_replay_query(reconstructed.query_parameters)) == (
+        expected_entries
+    )
+
+
+def test_query_encoded_and_literal_lexemes_remain_distinct() -> None:
+    assert _query("A", "~") != _query("%41", "%7E")
+    assert _query("slash", "%2f") != _query("slash", "%2F")
+
+
+@pytest.mark.parametrize("field", ("name", "value"))
+@pytest.mark.parametrize(
+    "character",
+    tuple(
+        chr(code)
+        for code in range(128)
+        if chr(code)
+        not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~%"
+    ),
+)
+def test_query_components_reject_every_raw_ascii_non_unreserved_character(
+    field: str,
+    character: str,
+) -> None:
+    data = {
+        "name": "name",
+        "value": "value",
+        "value_delimiter_present": True,
+    }
+    data[field] = f"before{character}after"
+    with pytest.raises(ValidationError):
+        RequestQueryParameter.model_validate(data)
+
+
+@pytest.mark.parametrize("field", ("name", "value"))
+@pytest.mark.parametrize(
+    "lexeme",
+    (
+        "%_",
+        "a%_b",
+        "a%",
+        "%0_",
+        "a%0_b",
+        "a%0",
+        "%G_",
+        "a%G_b",
+        "a%G",
+        "%0G_",
+        "a%0G_b",
+        "a%0G",
+        "%G0_",
+        "a%G0_b",
+        "a%G0",
+        "%GG_",
+        "a%GG_b",
+        "a%GG",
+    ),
+)
+def test_query_components_reject_malformed_percent_escapes_at_every_position(
+    field: str,
+    lexeme: str,
+) -> None:
+    data = {
+        "name": "name",
+        "value": "value",
+        "value_delimiter_present": True,
+    }
+    data[field] = lexeme
+    with pytest.raises(ValidationError):
+        RequestQueryParameter.model_validate(data)
+
+
+@pytest.mark.parametrize("field", ("name", "value"))
+@pytest.mark.parametrize(
+    "lexeme",
+    (
+        "raw&delimiter",
+        "raw=delimiter",
+        "raw#fragment",
+        "raw?query",
+        "raw+plus",
+        "raw/slash",
+        "raw:colon",
+        "raw:semicolon",
+        "raw space",
+        "naïve",
+        "%",
+        "%0",
+        "%GG",
+    ),
+)
+def test_query_component_json_rejects_raw_delimiters_and_malformed_escapes(
+    field: str,
+    lexeme: str,
+) -> None:
+    data = {
+        "name": "name",
+        "value": "value",
+        "value_delimiter_present": True,
+    }
+    data[field] = lexeme
+    with pytest.raises(ValidationError):
+        RequestQueryParameter.model_validate_json(json.dumps(data))
+
+
 def test_query_parameter_fields_are_exact_and_each_is_required() -> None:
     assert tuple(RequestQueryParameter.model_fields) == (
         "name",
@@ -692,12 +933,21 @@ def test_query_parameters_reject_all_ascii_controls(
 def test_query_parameter_length_bounds_are_exact() -> None:
     assert _query("n", "").value == ""
     assert len(_query("n" * 256, "v" * 4096).name) == 256
+    percent_heavy_name = "%41" * 85 + "A"
+    percent_heavy_value = "%41" * 1365 + "A"
+    assert len(percent_heavy_name) == 256
+    assert len(percent_heavy_value) == 4096
+    assert _query(percent_heavy_name, percent_heavy_value).name == percent_heavy_name
     with pytest.raises(ValidationError):
         _query("", "value")
     with pytest.raises(ValidationError):
         _query("n" * 257, "value")
     with pytest.raises(ValidationError):
         _query("name", "v" * 4097)
+    with pytest.raises(ValidationError):
+        _query(percent_heavy_name + "A", "value")
+    with pytest.raises(ValidationError):
+        _query("name", percent_heavy_value + "A")
 
 
 @pytest.mark.parametrize(
@@ -886,13 +1136,30 @@ def test_request_controls_are_frozen_and_require_exact_schema_version() -> None:
             _controls(schema_version=value)
 
 
-def test_request_controls_revalidate_constructed_invalid_query_parameters() -> None:
+@pytest.mark.parametrize(
+    ("name", "value", "value_delimiter_present"),
+    (
+        ("raw&name", "value", True),
+        ("name", "raw=value", True),
+        ("name", "%GG", True),
+        ("n" * 257, "value", True),
+        ("name", "v" * 4097, True),
+        ("flag", "value", False),
+    ),
+)
+def test_request_controls_revalidate_constructed_invalid_query_parameters(
+    name: str,
+    value: str,
+    value_delimiter_present: bool,
+) -> None:
     invalid_parameter = RequestQueryParameter.model_construct(
-        name="flag",
-        value="value",
-        value_delimiter_present=False,
+        name=name,
+        value=value,
+        value_delimiter_present=value_delimiter_present,
     )
-    with pytest.raises(ValidationError, match="requires value_delimiter_present"):
+    with pytest.raises(ValidationError):
+        RequestQueryParameter.model_validate(invalid_parameter)
+    with pytest.raises(ValidationError):
         _controls(query_parameters=(invalid_parameter,))
 
 
@@ -1076,6 +1343,17 @@ def test_media_type_parameter_rejects_malformed_names(name: object) -> None:
         MediaTypeParameter.model_validate({"name": name, "value": "utf-8"})
 
 
+def test_media_type_parameter_name_bounds_and_json_lexeme_are_exact() -> None:
+    minimum = _parameter("a", "value")
+    maximum = _parameter("a" * 256, "value")
+    assert minimum.name == "a"
+    assert len(maximum.name) == 256
+    assert MediaTypeParameter.model_validate_json(maximum.model_dump_json()) == maximum
+    assert json.loads(maximum.model_dump_json())["name"] == "a" * 256
+    with pytest.raises(ValidationError):
+        _parameter("a" * 257, "value")
+
+
 @pytest.mark.parametrize("control", (*map(chr, range(32)), chr(127)))
 def test_media_type_parameter_values_reject_ascii_controls(control: str) -> None:
     with pytest.raises(ValidationError):
@@ -1144,6 +1422,7 @@ def test_observed_json_text_parameter_and_encoding_chain_responses_are_valid() -
     encoded_response = _observation(content_encodings=(_encoding("gzip"),))
     assert json_response.status_code is not None
     assert json_response.status_code.root == 200
+    assert text_response.media_type_parameters is not None
     assert text_response.media_type_parameters[0].value == "utf-8"
     assert encoded_response.content_encodings is not None
     assert encoded_response.content_encodings[0].root == "gzip"
@@ -1164,13 +1443,13 @@ def test_non_observed_representation_preserves_known_status(
         state=state,
         status_code=HttpStatusCode.model_validate(status_code),
         observed_media_type=None,
-        media_type_parameters=(),
+        media_type_parameters=None,
         content_encodings=None,
     )
     assert observation.state is state
     assert observation.status_code == HttpStatusCode.model_validate(status_code)
     assert observation.observed_media_type is None
-    assert observation.media_type_parameters == ()
+    assert observation.media_type_parameters is None
     assert observation.content_encodings is None
 
 
@@ -1185,13 +1464,13 @@ def test_status_and_other_bounded_metadata_may_be_absent_under_every_state(
         state=state,
         status_code=None,
         observed_media_type=None,
-        media_type_parameters=(),
+        media_type_parameters=None,
         content_encodings=None,
     )
     assert observation.state is state
     assert observation.status_code is None
     assert observation.observed_media_type is None
-    assert observation.media_type_parameters == ()
+    assert observation.media_type_parameters is None
     assert observation.content_encodings is None
 
 
@@ -1214,15 +1493,20 @@ def test_metadata_presence_never_changes_or_infers_explicit_state(
     assert observation.content_encodings == encodings
 
 
+@pytest.mark.parametrize(
+    "parameters",
+    ((), (_parameter("charset", "utf-8"),)),
+)
 @pytest.mark.parametrize("state", tuple(ResponseRepresentationState))
 def test_media_parameters_without_media_type_fail_for_every_state(
     state: ResponseRepresentationState,
+    parameters: tuple[MediaTypeParameter, ...],
 ) -> None:
     with pytest.raises(ValidationError, match="require observed_media_type"):
         _observation(
             state=state,
             observed_media_type=None,
-            media_type_parameters=(_parameter("charset", "utf-8"),),
+            media_type_parameters=parameters,
         )
 
 
@@ -1241,6 +1525,50 @@ def test_media_type_with_empty_parameters_succeeds_for_every_state(
     assert observation.media_type_parameters == ()
 
 
+@pytest.mark.parametrize("state", tuple(ResponseRepresentationState))
+def test_media_type_with_unknown_parameters_succeeds_for_every_state(
+    state: ResponseRepresentationState,
+) -> None:
+    media_type = MediaType.model_validate("application/json")
+    observation = _observation(
+        state=state,
+        status_code=None,
+        observed_media_type=media_type,
+        media_type_parameters=None,
+        content_encodings=(_encoding("gzip"),),
+    )
+    assert observation.state is state
+    assert observation.status_code is None
+    assert observation.observed_media_type == media_type
+    assert observation.media_type_parameters is None
+    assert observation.content_encodings == (_encoding("gzip"),)
+
+
+def test_unknown_and_known_empty_media_parameters_are_distinct() -> None:
+    media_type = MediaType.model_validate("application/json")
+    unknown = _observation(
+        observed_media_type=media_type,
+        media_type_parameters=None,
+    )
+    known_empty = _observation(
+        observed_media_type=media_type,
+        media_type_parameters=(),
+    )
+    assert unknown.media_type_parameters is None
+    assert known_empty.media_type_parameters == ()
+    assert unknown != known_empty
+    assert unknown.model_dump(mode="json")["media_type_parameters"] is None
+    assert known_empty.model_dump(mode="json")["media_type_parameters"] == []
+    reconstructed_unknown = ResponseRepresentationObservation.model_validate_json(
+        unknown.model_dump_json()
+    )
+    reconstructed_empty = ResponseRepresentationObservation.model_validate_json(
+        known_empty.model_dump_json()
+    )
+    assert reconstructed_unknown.media_type_parameters is None
+    assert reconstructed_empty.media_type_parameters == ()
+
+
 def test_same_request_id_can_have_two_distinct_observation_values() -> None:
     request_id = _request_id()
     first = _observation(
@@ -1248,7 +1576,7 @@ def test_same_request_id_can_have_two_distinct_observation_values() -> None:
         state=ResponseRepresentationState.UNAVAILABLE,
         status_code=HttpStatusCode.model_validate(204),
         observed_media_type=None,
-        media_type_parameters=(),
+        media_type_parameters=None,
         content_encodings=None,
     )
     second = _observation(
@@ -1327,6 +1655,10 @@ def test_response_observation_semantic_json_reconstructs_nested_types() -> None:
     assert isinstance(reconstructed.status_code, HttpStatusCode)
     assert isinstance(reconstructed.observed_media_type, MediaType)
     assert type(reconstructed.media_type_parameters) is tuple
+    assert tuple(
+        (parameter.name, parameter.value)
+        for parameter in reconstructed.media_type_parameters
+    ) == (("charset", "utf-8"), ("charset", "UTF-8"))
     assert type(reconstructed.content_encodings) is tuple
     assert reconstructed.content_encodings is not None
     assert all(
@@ -1343,7 +1675,7 @@ def test_response_observation_json_accepts_semantic_unavailable_shape() -> None:
         "completed_at": "2026-08-02T16:00:01Z",
         "status_code": 204,
         "observed_media_type": None,
-        "media_type_parameters": [],
+        "media_type_parameters": None,
         "content_encodings": None,
     }
     observation = ResponseRepresentationObservation.model_validate_json(
@@ -1351,6 +1683,7 @@ def test_response_observation_json_accepts_semantic_unavailable_shape() -> None:
     )
     assert observation.state is ResponseRepresentationState.UNAVAILABLE
     assert observation.status_code == HttpStatusCode.model_validate(204)
+    assert observation.media_type_parameters is None
     assert observation.completed_at.tzinfo is UTC
 
 
@@ -1498,15 +1831,41 @@ def test_response_observation_revalidates_constructed_invalid_nested_values() ->
         name="Charset",
         value="utf-8",
     )
+    invalid_overlong_parameter = MediaTypeParameter.model_construct(
+        name="a" * 257,
+        value="utf-8",
+    )
     invalid_encoding = ContentEncoding.model_construct(root="GZIP")
     for field, value in (
         ("status_code", invalid_status),
         ("observed_media_type", invalid_media),
         ("media_type_parameters", (invalid_parameter,)),
+        ("media_type_parameters", (invalid_overlong_parameter,)),
         ("content_encodings", (invalid_encoding,)),
     ):
         with pytest.raises(ValidationError):
             _observation(**{field: value})
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    ((), (_parameter("charset", "utf-8"),)),
+)
+def test_response_observation_revalidates_constructed_invalid_media_knowledge(
+    parameters: tuple[MediaTypeParameter, ...],
+) -> None:
+    invalid = ResponseRepresentationObservation.model_construct(
+        schema_version=1,
+        request_id=_request_id(),
+        state=ResponseRepresentationState.OBSERVED,
+        completed_at=SYNTHETIC_COMPLETED_AT,
+        status_code=HttpStatusCode.model_validate(200),
+        observed_media_type=None,
+        media_type_parameters=parameters,
+        content_encodings=None,
+    )
+    with pytest.raises(ValidationError, match="require observed_media_type"):
+        ResponseRepresentationObservation.model_validate(invalid)
 
 
 def test_cross_layer_composition_uses_one_request_id_without_duplication() -> None:
@@ -1580,6 +1939,18 @@ def test_evidence_module_exports_are_exact_and_mutation_sensitive() -> None:
         _validate_evidence_exports(missing)
     with pytest.raises(AssertionError):
         _validate_evidence_exports(unexpected)
+
+
+def test_media_parameter_name_limit_is_one_private_annotated_constant() -> None:
+    source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
+    assert _parse_media_parameter_name_limit(source) == 256
+    mutated = source.replace(
+        "_MAX_MEDIA_PARAMETER_NAME_LENGTH: int = 256",
+        "_MAX_MEDIA_PARAMETER_NAME_LENGTH: int = 257",
+        1,
+    )
+    with pytest.raises(AssertionError):
+        assert _parse_media_parameter_name_limit(mutated) == 256
 
 
 def test_no_artifact_run_adapter_envelope_or_s03_surface_exists() -> None:

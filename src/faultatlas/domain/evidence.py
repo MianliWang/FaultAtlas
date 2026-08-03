@@ -53,6 +53,7 @@ _MAX_API_VERSION_LENGTH = 128
 _MAX_QUERY_NAME_LENGTH = 256
 _MAX_QUERY_VALUE_LENGTH = 4096
 _MAX_CONTENT_ENCODING_LENGTH = 64
+_MAX_MEDIA_PARAMETER_NAME_LENGTH: int = 256
 _MAX_MEDIA_PARAMETER_VALUE_LENGTH = 1024
 _ASSERTED_UTC_STARTED_AT_PATTERN = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
@@ -414,7 +415,7 @@ class ApiVersion(RootModel[_ApiVersionValue]):
 
 
 class RequestQueryParameter(BaseModel):
-    """One exact ordered query entry with explicit value-delimiter presence."""
+    """One exact ordered encoded query entry with explicit delimiter presence."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -431,10 +432,11 @@ class RequestQueryParameter(BaseModel):
     @field_validator("name", "value")
     @classmethod
     def _validate_query_text(cls, value: str) -> str:
-        if not value.isascii():
-            raise ValueError("query parameter text must contain only ASCII")
-        if _has_ascii_control(value):
-            raise ValueError("query parameter text must not contain ASCII controls")
+        if re.fullmatch(r"(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})*", value) is None:
+            raise ValueError(
+                "query parameter components must contain only RFC 3986 "
+                "unreserved ASCII characters or percent escapes"
+            )
         return value
 
     @model_validator(mode="after")
@@ -570,7 +572,13 @@ class MediaTypeParameter(BaseModel):
         validate_default=True,
     )
 
-    name: str
+    name: Annotated[
+        str,
+        StringConstraints(
+            min_length=1,
+            max_length=_MAX_MEDIA_PARAMETER_NAME_LENGTH,
+        ),
+    ]
     value: _MediaTypeParameterValue
 
     @field_validator("name")
@@ -603,7 +611,7 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
     completed_at: AwareDatetime
     status_code: HttpStatusCode | None
     observed_media_type: MediaType | None
-    media_type_parameters: tuple[MediaTypeParameter, ...]
+    media_type_parameters: tuple[MediaTypeParameter, ...] | None
     content_encodings: tuple[ContentEncoding, ...] | None
 
     @field_validator("request_id", mode="before")
@@ -685,6 +693,8 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
         value: object,
         info: ValidationInfo,
     ) -> object:
+        if value is None:
+            return value
         if info.mode == "json":
             return (
                 tuple(cast(list[object], value)) if isinstance(value, list) else value
@@ -692,7 +702,9 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
         if info.mode != "python":
             return value
         if type(value) is not tuple:
-            raise ValueError("media_type_parameters must be a tuple in Python input")
+            raise ValueError(
+                "media_type_parameters must be a tuple or None in Python input"
+            )
         typed_value = cast(tuple[object, ...], value)
         if not all(isinstance(item, MediaTypeParameter) for item in typed_value):
             raise ValueError(
@@ -730,7 +742,7 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
 
     @model_validator(mode="after")
     def _validate_media_type_parameters(self) -> Self:
-        if self.observed_media_type is None and self.media_type_parameters:
+        if self.observed_media_type is None and self.media_type_parameters is not None:
             raise ValueError(
                 "media_type_parameters require observed_media_type to be present"
             )
