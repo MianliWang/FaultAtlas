@@ -1,4 +1,4 @@
-"""Strict request, response, exact-artifact, and acquisition-run models.
+"""Strict request, response, artifact, acquisition, and evidence-relation models.
 
 The models in this module identify one request attempt by acquisition-run ID
 and run-local ordinal. Retrieval authority, method, origin-relative route, and
@@ -8,8 +8,11 @@ artifact identity are separate immutable values linked through request
 identity. Exact artifacts contain digest metadata and byte length but no
 payload or storage locator. Terminal acquisition runs preserve ordered request
 membership without inferring optional evidence or historical completeness.
-This module performs no I/O and does not define transformations, corrections,
-durable canonical bytes, or an Evidence Envelope.
+Content-addressed durable-record references support explicit transformations,
+additive corrections, and separate supersession edges without embedding record
+bytes or storage locations. This module performs no I/O and does not execute
+transformations or define canonical writers, migration, completeness,
+publication, persistence, or an Evidence Envelope.
 """
 
 import re
@@ -21,6 +24,7 @@ from pydantic import (
     AwareDatetime,
     BaseModel,
     ConfigDict,
+    Field,
     RootModel,
     StringConstraints,
     ValidationInfo,
@@ -57,6 +61,19 @@ __all__ = [
     "AcquisitionRunStatus",
     "AcquisitionRequestMembership",
     "AcquisitionRun",
+    "EvidenceRecordFormat",
+    "EvidenceVersion",
+    "EvidenceCanonicalization",
+    "DurableEvidenceRecordReference",
+    "EvidenceRelationId",
+    "TransformationOperation",
+    "TransformationLossiness",
+    "TransformationReversibility",
+    "TransformationSubject",
+    "EvidenceTransformation",
+    "EvidenceCorrection",
+    "EvidenceSupersession",
+    "EvidenceRecordRelationship",
 ]
 
 _MAX_RUN_ID_LENGTH = 160
@@ -76,6 +93,8 @@ _MAX_ARTIFACT_DIGEST_SCOPE_LENGTH = 128
 _MAX_ARTIFACT_BYTE_LENGTH = 9_223_372_036_854_775_807
 _MAX_RETAINED_ARTIFACTS_PER_REQUEST = 64
 _MAX_REQUESTS_PER_ACQUISITION_RUN = 4096
+_MAX_TRANSFORMATION_INPUTS = 64
+_MAX_TRANSFORMATION_OUTPUTS = 64
 _ASSERTED_UTC_STARTED_AT_PATTERN = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
     r"(?:\.[0-9]{1,6})?(?:Z|\+00:00)"
@@ -129,6 +148,30 @@ _ArtifactSha256DigestValue = Annotated[
     str,
     StringConstraints(min_length=64, max_length=64),
 ]
+_EvidenceRecordFormatValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=160),
+]
+_EvidenceVersionValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=64),
+]
+_EvidenceCanonicalizationValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=160),
+]
+_EvidenceRelationIdValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=160),
+]
+_TransformationOperationValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=128),
+]
+_EVIDENCE_RECORD_FORMAT_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")
+_EVIDENCE_VERSION_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?")
+_EVIDENCE_RELATION_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
+_TRANSFORMATION_OPERATION_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")
 
 
 def _has_ascii_control(value: str) -> bool:
@@ -1353,3 +1396,620 @@ class AcquisitionRun(_RetrievalRecordBase):
                         "request_reference started_at"
                     )
         return self
+
+
+class EvidenceRecordFormat(RootModel[_EvidenceRecordFormatValue]):
+    """Exact internal format identifier for durable evidence-record bytes."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _EvidenceRecordFormatValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_record_format(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _EVIDENCE_RECORD_FORMAT_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "evidence record format must begin and end with a lowercase "
+                "ASCII letter or digit and contain only lowercase ASCII "
+                "letters, digits, or interior hyphens"
+            )
+        return value
+
+
+class EvidenceVersion(RootModel[_EvidenceVersionValue]):
+    """Exact bounded version lexeme without numeric or date interpretation."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _EvidenceVersionValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_evidence_version(cls, value: str) -> str:
+        if not value.isascii() or _EVIDENCE_VERSION_PATTERN.fullmatch(value) is None:
+            raise ValueError(
+                "evidence version must begin and end with an ASCII letter or "
+                "digit and contain only ASCII letters, digits, dots, hyphens, "
+                "or underscores"
+            )
+        return value
+
+
+class EvidenceCanonicalization(RootModel[_EvidenceCanonicalizationValue]):
+    """Exact identifier for a durable record's declared byte convention."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _EvidenceCanonicalizationValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_canonicalization(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _EVIDENCE_RECORD_FORMAT_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "evidence canonicalization must begin and end with a lowercase "
+                "ASCII letter or digit and contain only lowercase ASCII "
+                "letters, digits, or interior hyphens"
+            )
+        return value
+
+
+class _EvidenceRecordBase(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    schema_version: Literal[1] = 1
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def _require_exact_schema_version(cls, value: object) -> object:
+        if type(value) is not int or value != 1:
+            raise ValueError("schema_version must be the integer 1")
+        return value
+
+
+class DurableEvidenceRecordReference(_EvidenceRecordBase):
+    """Content-addressed reference to declared exact durable-record bytes."""
+
+    format_name: EvidenceRecordFormat
+    format_version: EvidenceVersion
+    canonicalization: EvidenceCanonicalization
+    sha256: ArtifactSha256Digest
+    byte_length: ArtifactByteLength
+
+    @field_validator("format_name", mode="before")
+    @classmethod
+    def _require_typed_python_format_name(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRecordFormat):
+            raise ValueError(
+                "format_name must be an EvidenceRecordFormat in Python input"
+            )
+        return value
+
+    @field_validator("format_version", mode="before")
+    @classmethod
+    def _require_typed_python_format_version(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceVersion):
+            raise ValueError(
+                "format_version must be an EvidenceVersion in Python input"
+            )
+        return value
+
+    @field_validator("canonicalization", mode="before")
+    @classmethod
+    def _require_typed_python_canonicalization(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceCanonicalization):
+            raise ValueError(
+                "canonicalization must be an EvidenceCanonicalization in Python input"
+            )
+        return value
+
+    @field_validator("sha256", mode="before")
+    @classmethod
+    def _require_typed_python_sha256(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ArtifactSha256Digest):
+            raise ValueError("sha256 must be an ArtifactSha256Digest in Python input")
+        return value
+
+    @field_validator("byte_length", mode="before")
+    @classmethod
+    def _require_typed_python_byte_length(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ArtifactByteLength):
+            raise ValueError(
+                "byte_length must be an ArtifactByteLength in Python input"
+            )
+        return value
+
+
+class EvidenceRelationId(RootModel[_EvidenceRelationIdValue]):
+    """Exact internal identifier for one evidence relationship edge."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _EvidenceRelationIdValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_relation_id(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _EVIDENCE_RELATION_ID_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "evidence relation ID must begin and end with a lowercase ASCII "
+                "letter or digit and contain only lowercase ASCII letters, "
+                "digits, hyphens, underscores, or dots"
+            )
+        return value
+
+
+class TransformationOperation(RootModel[_TransformationOperationValue]):
+    """Descriptive transformation-operation identity that is never executed."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _TransformationOperationValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_operation(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _TRANSFORMATION_OPERATION_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "transformation operation must begin and end with a lowercase "
+                "ASCII letter or digit and contain only lowercase ASCII "
+                "letters, digits, or interior hyphens"
+            )
+        return value
+
+
+class TransformationLossiness(StrEnum):
+    """Explicit information-loss classification for a transformation."""
+
+    LOSSLESS = "lossless"
+    LOSSY = "lossy"
+    UNKNOWN = "unknown"
+
+
+class TransformationReversibility(StrEnum):
+    """Explicit reversibility classification for a transformation."""
+
+    REVERSIBLE = "reversible"
+    IRREVERSIBLE = "irreversible"
+    UNKNOWN = "unknown"
+
+
+class TransformationSubject(_EvidenceRecordBase):
+    """Exactly one artifact or durable-record subject of a transformation."""
+
+    subject_kind: Literal["exact_artifact", "durable_record"]
+    artifact_identity: ExactArtifactIdentity | None
+    record_reference: DurableEvidenceRecordReference | None
+
+    @field_validator("artifact_identity", mode="before")
+    @classmethod
+    def _require_typed_python_artifact_identity(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, ExactArtifactIdentity)
+        ):
+            raise ValueError(
+                "artifact_identity must be an ExactArtifactIdentity or None in "
+                "Python input"
+            )
+        return value
+
+    @field_validator("record_reference", mode="before")
+    @classmethod
+    def _require_typed_python_record_reference(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, DurableEvidenceRecordReference)
+        ):
+            raise ValueError(
+                "record_reference must be a DurableEvidenceRecordReference or "
+                "None in Python input"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_subject_representation(self) -> Self:
+        if self.subject_kind == "exact_artifact":
+            if self.artifact_identity is None or self.record_reference is not None:
+                raise ValueError(
+                    "exact_artifact subject requires artifact_identity and no "
+                    "record_reference"
+                )
+        elif self.record_reference is None or self.artifact_identity is not None:
+            raise ValueError(
+                "durable_record subject requires record_reference and no "
+                "artifact_identity"
+            )
+        return self
+
+
+class EvidenceTransformation(_EvidenceRecordBase):
+    """Explicit, non-executing derivation edge between ordered subjects."""
+
+    transformation_id: EvidenceRelationId
+    operation: TransformationOperation
+    operation_version: EvidenceVersion
+    performed_at: AwareDatetime
+    inputs: tuple[TransformationSubject, ...]
+    outputs: tuple[TransformationSubject, ...]
+    lossiness: TransformationLossiness
+    reversibility: TransformationReversibility
+    parameter_record: DurableEvidenceRecordReference | None
+
+    @field_validator("transformation_id", mode="before")
+    @classmethod
+    def _require_typed_python_transformation_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRelationId):
+            raise ValueError(
+                "transformation_id must be an EvidenceRelationId in Python input"
+            )
+        return value
+
+    @field_validator("operation", mode="before")
+    @classmethod
+    def _require_typed_python_operation(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, TransformationOperation):
+            raise ValueError(
+                "operation must be a TransformationOperation in Python input"
+            )
+        return value
+
+    @field_validator("operation_version", mode="before")
+    @classmethod
+    def _require_typed_python_operation_version(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceVersion):
+            raise ValueError(
+                "operation_version must be an EvidenceVersion in Python input"
+            )
+        return value
+
+    @field_validator("performed_at", mode="before")
+    @classmethod
+    def _require_asserted_utc_performed_at_json(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        return _require_asserted_utc_json(value, info, field_name="performed_at")
+
+    @field_validator("performed_at")
+    @classmethod
+    def _normalize_performed_at(cls, value: datetime) -> datetime:
+        return _normalize_asserted_utc(value, field_name="performed_at")
+
+    @field_validator("inputs", "outputs", mode="before")
+    @classmethod
+    def _require_bounded_typed_subjects(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        field_name = info.field_name or "subjects"
+        maximum = (
+            _MAX_TRANSFORMATION_INPUTS
+            if field_name == "inputs"
+            else _MAX_TRANSFORMATION_OUTPUTS
+        )
+        if info.mode == "json":
+            if isinstance(value, list):
+                raw_value = cast(list[object], value)
+                if not 1 <= len(raw_value) <= maximum:
+                    raise ValueError(
+                        f"{field_name} must contain between 1 and {maximum} entries"
+                    )
+                return tuple(raw_value)
+            return value
+        if info.mode != "python":
+            return value
+        if type(value) is not tuple:
+            raise ValueError(f"{field_name} must be a tuple in Python input")
+        typed_value = cast(tuple[object, ...], value)
+        if not 1 <= len(typed_value) <= maximum:
+            raise ValueError(
+                f"{field_name} must contain between 1 and {maximum} entries"
+            )
+        if not all(isinstance(item, TransformationSubject) for item in typed_value):
+            raise ValueError(
+                f"{field_name} entries must be TransformationSubject values in "
+                "Python input"
+            )
+        return typed_value
+
+    @field_validator("lossiness", mode="before")
+    @classmethod
+    def _require_typed_python_lossiness(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, TransformationLossiness):
+            raise ValueError(
+                "lossiness must be a TransformationLossiness in Python input"
+            )
+        return value
+
+    @field_validator("reversibility", mode="before")
+    @classmethod
+    def _require_typed_python_reversibility(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, TransformationReversibility):
+            raise ValueError(
+                "reversibility must be a TransformationReversibility in Python input"
+            )
+        return value
+
+    @field_validator("parameter_record", mode="before")
+    @classmethod
+    def _require_typed_python_parameter_record(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, DurableEvidenceRecordReference)
+        ):
+            raise ValueError(
+                "parameter_record must be a DurableEvidenceRecordReference or "
+                "None in Python input"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_subject_sets(self) -> Self:
+        input_subjects = set(self.inputs)
+        if len(input_subjects) != len(self.inputs):
+            raise ValueError("inputs must not contain duplicate subjects")
+        output_subjects = set(self.outputs)
+        if len(output_subjects) != len(self.outputs):
+            raise ValueError("outputs must not contain duplicate subjects")
+        if input_subjects == output_subjects:
+            raise ValueError("input and output subject sets must not be identical")
+        return self
+
+
+class EvidenceCorrection(_EvidenceRecordBase):
+    """Additive correction edge preserving both exact durable records."""
+
+    relationship_kind: Literal["correction"]
+    relationship_id: EvidenceRelationId
+    target_record: DurableEvidenceRecordReference
+    correction_record: DurableEvidenceRecordReference
+    recorded_at: AwareDatetime
+
+    @field_validator("relationship_id", mode="before")
+    @classmethod
+    def _require_typed_python_relationship_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRelationId):
+            raise ValueError(
+                "relationship_id must be an EvidenceRelationId in Python input"
+            )
+        return value
+
+    @field_validator("target_record", mode="before")
+    @classmethod
+    def _require_typed_python_target_record(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value, DurableEvidenceRecordReference
+        ):
+            raise ValueError(
+                "target_record must be a DurableEvidenceRecordReference in Python input"
+            )
+        return value
+
+    @field_validator("correction_record", mode="before")
+    @classmethod
+    def _require_typed_python_correction_record(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value, DurableEvidenceRecordReference
+        ):
+            raise ValueError(
+                "correction_record must be a DurableEvidenceRecordReference in "
+                "Python input"
+            )
+        return value
+
+    @field_validator("recorded_at", mode="before")
+    @classmethod
+    def _require_asserted_utc_recorded_at_json(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        return _require_asserted_utc_json(value, info, field_name="recorded_at")
+
+    @field_validator("recorded_at")
+    @classmethod
+    def _normalize_recorded_at(cls, value: datetime) -> datetime:
+        return _normalize_asserted_utc(value, field_name="recorded_at")
+
+    @model_validator(mode="after")
+    def _validate_distinct_records(self) -> Self:
+        if self.target_record == self.correction_record:
+            raise ValueError("target_record and correction_record must be different")
+        return self
+
+
+class EvidenceSupersession(_EvidenceRecordBase):
+    """One explicit precedence edge preserving prior and succeeding records."""
+
+    relationship_kind: Literal["supersession"]
+    relationship_id: EvidenceRelationId
+    superseded_record: DurableEvidenceRecordReference
+    superseding_record: DurableEvidenceRecordReference
+    recorded_at: AwareDatetime
+
+    @field_validator("relationship_id", mode="before")
+    @classmethod
+    def _require_typed_python_relationship_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRelationId):
+            raise ValueError(
+                "relationship_id must be an EvidenceRelationId in Python input"
+            )
+        return value
+
+    @field_validator("superseded_record", mode="before")
+    @classmethod
+    def _require_typed_python_superseded_record(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value, DurableEvidenceRecordReference
+        ):
+            raise ValueError(
+                "superseded_record must be a DurableEvidenceRecordReference in "
+                "Python input"
+            )
+        return value
+
+    @field_validator("superseding_record", mode="before")
+    @classmethod
+    def _require_typed_python_superseding_record(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value, DurableEvidenceRecordReference
+        ):
+            raise ValueError(
+                "superseding_record must be a DurableEvidenceRecordReference in "
+                "Python input"
+            )
+        return value
+
+    @field_validator("recorded_at", mode="before")
+    @classmethod
+    def _require_asserted_utc_recorded_at_json(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        return _require_asserted_utc_json(value, info, field_name="recorded_at")
+
+    @field_validator("recorded_at")
+    @classmethod
+    def _normalize_recorded_at(cls, value: datetime) -> datetime:
+        return _normalize_asserted_utc(value, field_name="recorded_at")
+
+    @model_validator(mode="after")
+    def _validate_distinct_records(self) -> Self:
+        if self.superseded_record == self.superseding_record:
+            raise ValueError(
+                "superseded_record and superseding_record must be different"
+            )
+        return self
+
+
+type EvidenceRecordRelationship = Annotated[
+    EvidenceCorrection | EvidenceSupersession,
+    Field(discriminator="relationship_kind"),
+]

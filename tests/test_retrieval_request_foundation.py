@@ -73,12 +73,27 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunStatus",
     "AcquisitionRequestMembership",
     "AcquisitionRun",
+    "EvidenceRecordFormat",
+    "EvidenceVersion",
+    "EvidenceCanonicalization",
+    "DurableEvidenceRecordReference",
+    "EvidenceRelationId",
+    "TransformationOperation",
+    "TransformationLossiness",
+    "TransformationReversibility",
+    "TransformationSubject",
+    "EvidenceTransformation",
+    "EvidenceCorrection",
+    "EvidenceSupersession",
+    "EvidenceRecordRelationship",
 )
 EXPECTED_EVIDENCE_CLASSES = {
-    *EXPECTED_EVIDENCE_EXPORTS,
+    *EXPECTED_EVIDENCE_EXPORTS[:-1],
     "_ArtifactRecordBase",
+    "_EvidenceRecordBase",
     "_RetrievalRecordBase",
 }
+EXPECTED_EVIDENCE_TYPE_ALIASES = {"EvidenceRecordRelationship"}
 EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "__all__",
     "_AcquisitionRunIdValue",
@@ -100,11 +115,17 @@ EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "_MAX_ARTIFACT_BYTE_LENGTH",
     "_MAX_RETAINED_ARTIFACTS_PER_REQUEST",
     "_MAX_REQUESTS_PER_ACQUISITION_RUN",
+    "_MAX_TRANSFORMATION_INPUTS",
+    "_MAX_TRANSFORMATION_OUTPUTS",
     "_RUN_ID_PATTERN",
     "_HTTP_TOKEN_PATTERN",
     "_MEDIA_TYPE_PATTERN",
     "_ARTIFACT_DIGEST_SCOPE_PATTERN",
     "_ARTIFACT_SHA256_PATTERN",
+    "_EVIDENCE_RECORD_FORMAT_PATTERN",
+    "_EVIDENCE_VERSION_PATTERN",
+    "_EVIDENCE_RELATION_ID_PATTERN",
+    "_TRANSFORMATION_OPERATION_PATTERN",
     "_RetrievalRoutePathValue",
     "_MediaTypeValue",
     "_ApiVersionValue",
@@ -114,6 +135,11 @@ EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "_MediaTypeParameterValue",
     "_ArtifactDigestScopeValue",
     "_ArtifactSha256DigestValue",
+    "_EvidenceRecordFormatValue",
+    "_EvidenceVersionValue",
+    "_EvidenceCanonicalizationValue",
+    "_EvidenceRelationIdValue",
+    "_TransformationOperationValue",
 }
 EXPECTED_EVIDENCE_IMPORTS = {
     "re": {None},
@@ -124,6 +150,7 @@ EXPECTED_EVIDENCE_IMPORTS = {
         "AwareDatetime",
         "BaseModel",
         "ConfigDict",
+        "Field",
         "RootModel",
         "StringConstraints",
         "ValidationInfo",
@@ -241,8 +268,22 @@ def _validate_evidence_surface(source: str) -> None:
     tree = ast.parse(source)
     exports = _parse_exports(source)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 26
+    assert len(exports) == len(set(exports)) == 39
     classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
+    type_aliases = {
+        node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)
+    }
+    public_symbols = tuple(
+        node.name
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        else node.name.id
+        for node in tree.body
+        if (
+            isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and not node.name.startswith("_")
+        )
+        or (isinstance(node, ast.TypeAlias) and not node.name.id.startswith("_"))
+    )
     functions = {
         node.name
         for node in tree.body
@@ -256,6 +297,9 @@ def _validate_evidence_surface(source: str) -> None:
         if isinstance(target, ast.Name)
     }
     assert classes == EXPECTED_EVIDENCE_CLASSES
+    assert len(classes) == 41
+    assert type_aliases == EXPECTED_EVIDENCE_TYPE_ALIASES
+    assert public_symbols == EXPECTED_EVIDENCE_EXPORTS
     assert functions == {
         "_has_ascii_control",
         "_normalize_asserted_utc",
@@ -306,13 +350,16 @@ def _validate_package_root_exports(source: str) -> None:
     assert _parse_exports(source) == ("__version__",)
 
 
-def _assert_no_post_s04_surface(source: str) -> None:
+def _assert_no_post_s05_surface(source: str) -> None:
     tree = ast.parse(source)
     definitions = {
         node.name
         for node in ast.walk(tree)
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
     }
+    definitions.update(
+        node.name.id for node in ast.walk(tree) if isinstance(node, ast.TypeAlias)
+    )
     forbidden = {
         "AcquisitionRunRecord",
         "EvidenceEnvelope",
@@ -1161,7 +1208,10 @@ def test_serialization_is_semantic_and_declares_no_canonical_byte_contract() -> 
         }
         & definition_names
     )
-    assert all("canonical" not in name.casefold() for name in definition_names)
+    assert {name for name in definition_names if "canonical" in name.casefold()} == {
+        "_require_typed_python_canonicalization",
+        "_validate_canonicalization",
+    }
     assert _reference().model_dump(mode="json")["schema_version"] == 1
 
 
@@ -1243,7 +1293,7 @@ def test_production_inventory_mutations_are_rejected(mutation: str) -> None:
         "EvidenceEnvelope",
     ),
 )
-def test_post_s04_surface_mutations_are_rejected(class_name: str) -> None:
+def test_post_s05_surface_mutations_are_rejected(class_name: str) -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     mutated = source + f"\n\nclass {class_name}:\n    pass\n"
     with pytest.raises(AssertionError):
@@ -1331,7 +1381,7 @@ def test_predecessor_production_models_and_artifact_snapshot_are_unchanged() -> 
 
 
 def test_no_p03_contract_corpus_reader_or_envelope_exists() -> None:
-    _assert_no_post_s04_surface(EVIDENCE_SOURCE.read_text(encoding="utf-8"))
+    _assert_no_post_s05_surface(EVIDENCE_SOURCE.read_text(encoding="utf-8"))
     assert not (REPOSITORY_ROOT / "reference_corpus/contracts/evidence").exists()
     assert not (
         REPOSITORY_ROOT / "reference_corpus/contracts/retrieval-request"

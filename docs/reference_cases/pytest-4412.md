@@ -740,8 +740,8 @@ public API. Current status: the case-calibrated `S1.P01` Identity Primitives
 Phase is complete. `S1.P02` is complete and `S1.P02.S01` through
 `S1.P02.S07` are complete. `S1.P03` is active: `S1.P03.S01` is complete,
 `S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
-`S1.P03.S05` is next and not started, and `S1.P03.S06` through `S1.P03.S09`
-are not started.
+`S1.P03.S05` is complete, `S1.P03.S06` is next and not started, and
+`S1.P03.S07` through `S1.P03.S09` are not started.
 
 ## S1.P03.S01 Retrieval Request Identity and Authority Foundation
 
@@ -833,5 +833,42 @@ existed. `None` remains a distinct unknown membership state.
 Terminal status is explicit and does not infer historical or provider
 completeness, optional-component population, transformations, corrections,
 supersession, omissions, publication provenance, storage, or envelope
-semantics. Those S05 and later concerns remain outside S04; `S1.P03.S05` is
-next and not started.
+semantics. Those relationships remain outside S04 membership; S05 models them
+separately without changing the canonical run or any S04 membership fact.
+
+## S1.P03.S05 Transformations, Corrections, and Supersession
+
+S05 adds strict, path-free durable-record references that identify exact bytes
+by declared format, version, canonicalization, SHA-256 digest, and byte length.
+Transformations relate exact-artifact or durable-record subjects through
+ordered inputs and outputs while keeping operation, operation version,
+lossiness, and reversibility explicit. A transformation record describes a
+derivation only: it executes no operation and neither mutates nor replaces an
+input.
+
+Correction and supersession are separate explicit durable-record
+relationships. A correction is additive and preserves both its target and its
+distinct correction record; it does not imply supersession. A supersession
+identifies distinct prior and succeeding records without deleting the prior
+record, selecting a global current value, or implying migration.
+
+The canonical pytest #4412 replay constructs exactly one correction. Relation
+`s04-c01-acquisition-closure` links the authoritative 61,283-byte acquisition,
+SHA-256 `1c29093bf1537e9b824a18df1848b71a8da014f544bc9f385707eb0e000a1318`,
+to the distinct 60,832-byte correction addendum, SHA-256
+`44491ee512d2c2022110b83967fb6fa86d13045bc8404ea490d7a08b7aef24a2`,
+at the correction's directly observed creation time
+`2026-07-30T19:17:09.655780Z`. The acquisition remains authoritative and
+accessible; C01 neither replaces nor supersedes it.
+
+Both retained artifacts have empty source transformation arrays, so canonical
+transformation count remains zero. No durable-record supersession is observed,
+so canonical supersession count also remains zero. The unpublished
+pre-publication candidate rewrite remains a recorded procedural immutability
+nonconformance, not a fabricated transformation or supersession precedent.
+Positive transformation and supersession examples are explicitly synthetic.
+
+S05 introduces no migration, completeness, omission, publication provenance,
+storage, persistence, reader, writer, adapter, or Evidence Envelope semantics.
+Production records perform no I/O, legacy `ArtifactSnapshot` remains unchanged,
+and `S1.P03.S06` is next and not started.
