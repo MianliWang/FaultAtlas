@@ -62,9 +62,18 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "ContentEncoding",
     "MediaTypeParameter",
     "ResponseRepresentationObservation",
+    "ArtifactDigestAlgorithm",
+    "ArtifactDigestScope",
+    "ArtifactSha256Digest",
+    "ArtifactByteLength",
+    "ArtifactDigest",
+    "ExactArtifactIdentity",
+    "ArtifactRetentionMode",
+    "ExactRetainedArtifact",
 )
 EXPECTED_EVIDENCE_CLASSES = {
     *EXPECTED_EVIDENCE_EXPORTS,
+    "_ArtifactRecordBase",
     "_RetrievalRecordBase",
 }
 EXPECTED_EVIDENCE_ASSIGNMENTS = {
@@ -84,9 +93,13 @@ EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "_MAX_CONTENT_ENCODINGS",
     "_MAX_CONTENT_ENCODING_LENGTH",
     "_MAX_MEDIA_PARAMETER_VALUE_LENGTH",
+    "_MAX_ARTIFACT_DIGEST_SCOPE_LENGTH",
+    "_MAX_ARTIFACT_BYTE_LENGTH",
     "_RUN_ID_PATTERN",
     "_HTTP_TOKEN_PATTERN",
     "_MEDIA_TYPE_PATTERN",
+    "_ARTIFACT_DIGEST_SCOPE_PATTERN",
+    "_ARTIFACT_SHA256_PATTERN",
     "_RetrievalRoutePathValue",
     "_MediaTypeValue",
     "_ApiVersionValue",
@@ -94,6 +107,8 @@ EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "_RequestQueryValue",
     "_ContentEncodingValue",
     "_MediaTypeParameterValue",
+    "_ArtifactDigestScopeValue",
+    "_ArtifactSha256DigestValue",
 }
 EXPECTED_EVIDENCE_IMPORTS = {
     "re": {None},
@@ -221,7 +236,7 @@ def _validate_evidence_surface(source: str) -> None:
     tree = ast.parse(source)
     exports = _parse_exports(source)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 15
+    assert len(exports) == len(set(exports)) == 23
     classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
     functions = {
         node.name

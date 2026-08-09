@@ -1,11 +1,12 @@
-"""Strict retrieval-request and response-representation provenance models.
+"""Strict request, response-representation, and exact-artifact models.
 
 The models in this module identify one request attempt by acquisition-run ID
 and run-local ordinal. Retrieval authority, method, origin-relative route, and
 request-start time remain explicit provenance metadata rather than identity.
-Ordered request controls and response representation metadata are separate,
-immutable values linked through request identity. This module performs no I/O
-and does not define response bodies or digests, retained artifacts,
+Ordered request controls, response representation metadata, and exact retained
+artifact identity are separate immutable values linked through request
+identity. Exact artifacts contain digest metadata and byte length but no
+payload or storage locator. This module performs no I/O and does not define
 acquisition-run records, durable canonical bytes, or an Evidence Envelope.
 """
 
@@ -43,6 +44,14 @@ __all__ = [
     "ContentEncoding",
     "MediaTypeParameter",
     "ResponseRepresentationObservation",
+    "ArtifactDigestAlgorithm",
+    "ArtifactDigestScope",
+    "ArtifactSha256Digest",
+    "ArtifactByteLength",
+    "ArtifactDigest",
+    "ExactArtifactIdentity",
+    "ArtifactRetentionMode",
+    "ExactRetainedArtifact",
 ]
 
 _MAX_RUN_ID_LENGTH = 160
@@ -58,6 +67,8 @@ _MAX_CONTENT_ENCODINGS = 32
 _MAX_CONTENT_ENCODING_LENGTH = 64
 _MAX_MEDIA_PARAMETER_NAME_LENGTH: int = 256
 _MAX_MEDIA_PARAMETER_VALUE_LENGTH = 1024
+_MAX_ARTIFACT_DIGEST_SCOPE_LENGTH = 128
+_MAX_ARTIFACT_BYTE_LENGTH = 9_223_372_036_854_775_807
 _ASSERTED_UTC_STARTED_AT_PATTERN = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
     r"(?:\.[0-9]{1,6})?(?:Z|\+00:00)"
@@ -68,6 +79,8 @@ _HTTP_TOKEN_PATTERN = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 _MEDIA_TYPE_PATTERN = re.compile(
     r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+/[!#$%&'*+\-.^_`|~0-9A-Za-z]+"
 )
+_ARTIFACT_DIGEST_SCOPE_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,126}[a-z0-9])?")
+_ARTIFACT_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 _AcquisitionRunIdValue = Annotated[
     str,
@@ -100,6 +113,14 @@ _ContentEncodingValue = Annotated[
 _MediaTypeParameterValue = Annotated[
     str,
     StringConstraints(max_length=_MAX_MEDIA_PARAMETER_VALUE_LENGTH),
+]
+_ArtifactDigestScopeValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=_MAX_ARTIFACT_DIGEST_SCOPE_LENGTH),
+]
+_ArtifactSha256DigestValue = Annotated[
+    str,
+    StringConstraints(min_length=64, max_length=64),
 ]
 
 
@@ -787,3 +808,230 @@ class ResponseRepresentationObservation(_RetrievalRecordBase):
                 "media_type_parameters require observed_media_type to be present"
             )
         return self
+
+
+class ArtifactDigestAlgorithm(StrEnum):
+    """Supported algorithm for an exact retained-artifact digest claim."""
+
+    SHA256 = "sha256"
+
+
+class ArtifactDigestScope(RootModel[_ArtifactDigestScopeValue]):
+    """Exact bounded identifier for the bytes covered by an artifact digest."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _ArtifactDigestScopeValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_digest_scope(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _ARTIFACT_DIGEST_SCOPE_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "artifact digest scope must begin and end with a lowercase ASCII "
+                "letter or digit and contain only lowercase ASCII letters, "
+                "digits, or interior hyphens"
+            )
+        return value
+
+
+class ArtifactSha256Digest(RootModel[_ArtifactSha256DigestValue]):
+    """Exact lowercase nonzero SHA-256 digest lexeme for retained bytes."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _ArtifactSha256DigestValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_sha256_digest(cls, value: str) -> str:
+        if _ARTIFACT_SHA256_PATTERN.fullmatch(value) is None:
+            raise ValueError(
+                "artifact SHA-256 digest must contain exactly 64 lowercase "
+                "ASCII hexadecimal characters"
+            )
+        if value == "0" * 64:
+            raise ValueError("artifact SHA-256 digest must not be all zero")
+        return value
+
+
+class ArtifactByteLength(RootModel[int]):
+    """Exact retained-artifact octet count."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: int
+
+    @field_validator("root", mode="before")
+    @classmethod
+    def _validate_byte_length(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("artifact byte length must be an exact integer")
+        if not 0 <= value <= _MAX_ARTIFACT_BYTE_LENGTH:
+            raise ValueError(
+                "artifact byte length must be between 0 and "
+                f"{_MAX_ARTIFACT_BYTE_LENGTH} inclusive"
+            )
+        return value
+
+
+class _ArtifactRecordBase(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    schema_version: Literal[1] = 1
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def _require_exact_schema_version(cls, value: object) -> object:
+        if type(value) is not int or value != 1:
+            raise ValueError("schema_version must be the integer 1")
+        return value
+
+
+class ArtifactDigest(_ArtifactRecordBase):
+    """Algorithm-, scope-, and value-qualified artifact digest claim."""
+
+    algorithm: ArtifactDigestAlgorithm
+    scope: ArtifactDigestScope
+    value: ArtifactSha256Digest
+
+    @field_validator("algorithm", mode="before")
+    @classmethod
+    def _require_typed_python_algorithm(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ArtifactDigestAlgorithm):
+            raise ValueError(
+                "algorithm must be an ArtifactDigestAlgorithm in Python input"
+            )
+        return value
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def _require_typed_python_scope(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ArtifactDigestScope):
+            raise ValueError("scope must be an ArtifactDigestScope in Python input")
+        return value
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def _require_typed_python_value(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ArtifactSha256Digest):
+            raise ValueError("value must be an ArtifactSha256Digest in Python input")
+        return value
+
+
+class ExactArtifactIdentity(_ArtifactRecordBase):
+    """Content identity from explicit digest semantics and exact byte length."""
+
+    digest: ArtifactDigest
+    byte_length: ArtifactByteLength
+
+    @field_validator("digest", mode="before")
+    @classmethod
+    def _require_typed_python_digest(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ArtifactDigest):
+            raise ValueError("digest must be an ArtifactDigest in Python input")
+        return value
+
+    @field_validator("byte_length", mode="before")
+    @classmethod
+    def _require_typed_python_byte_length(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ArtifactByteLength):
+            raise ValueError(
+                "byte_length must be an ArtifactByteLength in Python input"
+            )
+        return value
+
+
+class ArtifactRetentionMode(StrEnum):
+    """Supported retention semantics for exact artifact bytes."""
+
+    EXACT_UNMODIFIED_BYTES = "exact_unmodified_bytes"
+
+
+class ExactRetainedArtifact(_ArtifactRecordBase):
+    """Request linkage to one retained exact-artifact identity."""
+
+    request_id: RetrievalRequestId
+    artifact_identity: ExactArtifactIdentity
+    retention_mode: ArtifactRetentionMode
+
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _require_typed_python_request_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, RetrievalRequestId):
+            raise ValueError("request_id must be a RetrievalRequestId in Python input")
+        return value
+
+    @field_validator("artifact_identity", mode="before")
+    @classmethod
+    def _require_typed_python_artifact_identity(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ExactArtifactIdentity):
+            raise ValueError(
+                "artifact_identity must be an ExactArtifactIdentity in Python input"
+            )
+        return value
+
+    @field_validator("retention_mode", mode="before")
+    @classmethod
+    def _require_typed_python_retention_mode(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ArtifactRetentionMode):
+            raise ValueError(
+                "retention_mode must be an ArtifactRetentionMode in Python input"
+            )
+        return value

@@ -739,8 +739,8 @@ corpus reader, locator resolver, Evidence Envelope, persistence contract, or
 public API. Current status: the case-calibrated `S1.P01` Identity Primitives
 Phase is complete. `S1.P02` is complete and `S1.P02.S01` through
 `S1.P02.S07` are complete. `S1.P03` is active: `S1.P03.S01` is complete,
-`S1.P03.S02` is complete, `S1.P03.S03` is next and not started, and
-`S1.P03.S04` through `S1.P03.S09` are not started.
+`S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is next and
+not started, and `S1.P03.S05` through `S1.P03.S09` are not started.
 
 ## S1.P03.S01 Retrieval Request Identity and Authority Foundation
 
@@ -777,5 +777,28 @@ The internal S02 models preserve ordered duplicate query names, keep requested
 and observed media distinct, require strict asserted-UTC response completion,
 and link an observation to exactly one request ID. They retain no response body
 bytes, length, digest, arbitrary headers, exact artifact, acquisition run,
-adapter, or Evidence Envelope. Legacy `ArtifactSnapshot` remains unchanged;
-`S1.P03.S03` owns exact retained artifacts and digest scope.
+adapter, or Evidence Envelope. Legacy `ArtifactSnapshot` remains unchanged.
+
+## S1.P03.S03 Exact Retained Artifacts and Digest Scope
+
+The locked acquisition directly supports two exact retained-artifact records.
+Request ordinal 30 retained the 1,640-byte `artifacts/base-to-head.diff` HTTP
+entity body with scope `github-compare-diff-http-entity-body` and SHA-256
+`dca87a4df1edb2d1acb3fc821724483ee874c2feba6525b2c21e79cb3e8f7312`.
+Request ordinal 32 retained the 1,096-byte `artifacts/LICENSE` Git blob content
+with scope `git-blob-content` and SHA-256
+`a1ebce15afc7b5cf98c7c6de512d1959d4bf61db8c6bf2f111286d483b40a997`.
+Both acquisition entries classify retention as `exact_unmodified_bytes`.
+
+The S03 records preserve explicit SHA-256 algorithm, digest scope, exact byte
+length, and request linkage. Request identity, response media, source and Git
+identity, and storage location remain outside exact artifact identity. The
+LICENSE Git blob SHA-1 remains independently verified as
+`629df45ac405532c107eb233217bc2ac1ad70c88`; it is not a field of the S03
+artifact model.
+
+The production records are metadata-only and perform no artifact I/O. They
+embed no payload bytes or text, add no storage reader or writer, do not adapt
+legacy `ArtifactSnapshot`, and do not introduce an acquisition-run record,
+transformation, completeness record, or Evidence Envelope. `S1.P03.S04`
+retains ownership of acquisition runs and evidence membership.

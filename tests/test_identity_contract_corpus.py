@@ -224,6 +224,14 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "ContentEncoding",
     "MediaTypeParameter",
     "ResponseRepresentationObservation",
+    "ArtifactDigestAlgorithm",
+    "ArtifactDigestScope",
+    "ArtifactSha256Digest",
+    "ArtifactByteLength",
+    "ArtifactDigest",
+    "ExactArtifactIdentity",
+    "ArtifactRetentionMode",
+    "ExactRetainedArtifact",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
