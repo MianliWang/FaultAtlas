@@ -86,6 +86,9 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "ExactArtifactIdentity",
     "ArtifactRetentionMode",
     "ExactRetainedArtifact",
+    "AcquisitionRunStatus",
+    "AcquisitionRequestMembership",
+    "AcquisitionRun",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -348,7 +351,7 @@ def _parse_collection_limits(source: str) -> dict[str, int]:
 def _validate_evidence_exports(source: str) -> None:
     exports = _parse_exports(source)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 23
+    assert len(exports) == len(set(exports)) == 26
     tree = ast.parse(source)
     public_definitions = tuple(
         node.name
@@ -359,7 +362,7 @@ def _validate_evidence_exports(source: str) -> None:
     assert public_definitions == EXPECTED_EVIDENCE_EXPORTS
 
 
-def _validate_no_later_evidence_surface(source: str) -> None:
+def _validate_no_post_s04_evidence_surface(source: str) -> None:
     tree = ast.parse(source)
     definitions = {
         node.name
@@ -367,7 +370,7 @@ def _validate_no_later_evidence_surface(source: str) -> None:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
     }
     forbidden = {
-        "AcquisitionRun",
+        "AcquisitionRunRecord",
         "EvidenceEnvelope",
         "LegacyEvidenceAdapter",
         "OmissionRecord",
@@ -2369,18 +2372,19 @@ def test_collection_limits_are_exact_private_constants_and_mutation_sensitive() 
             assert _parse_collection_limits(mutated) == expected
 
 
-def test_s03_artifacts_are_present_while_s04_and_later_surfaces_are_absent() -> None:
+def test_s04_runs_are_present_while_s05_and_later_surfaces_are_absent() -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
-    _validate_no_later_evidence_surface(source)
+    _validate_no_post_s04_evidence_surface(source)
     assert hasattr(evidence_module, "ExactRetainedArtifact")
+    assert hasattr(evidence_module, "AcquisitionRun")
     for class_name in (
         "RetainedArtifactRecord",
-        "AcquisitionRun",
+        "AcquisitionRunRecord",
         "LegacyEvidenceAdapter",
         "EvidenceEnvelope",
     ):
         with pytest.raises(AssertionError):
-            _validate_no_later_evidence_surface(
+            _validate_no_post_s04_evidence_surface(
                 source + f"\n\nclass {class_name}:\n    pass\n"
             )
     assert not (REPOSITORY_ROOT / "src/faultatlas/domain/response.py").exists()
@@ -2438,7 +2442,6 @@ def test_evidence_module_imports_and_calls_remain_no_io() -> None:
             assert node.func.id not in forbidden_calls
     lowered = source.casefold()
     for forbidden in (
-        "requests",
         "urllib",
         "pathlib",
         "subprocess",

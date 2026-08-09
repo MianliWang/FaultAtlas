@@ -209,8 +209,11 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "ExactArtifactIdentity",
     "ArtifactRetentionMode",
     "ExactRetainedArtifact",
+    "AcquisitionRunStatus",
+    "AcquisitionRequestMembership",
+    "AcquisitionRun",
 )
-FORBIDDEN_POST_S03_EVIDENCE_SURFACE_FRAGMENTS = (
+FORBIDDEN_POST_S04_EVIDENCE_SURFACE_FRAGMENTS = (
     "adapter",
     "completeness",
     "corpus",
@@ -885,7 +888,7 @@ def _validate_package_root_exports(exports: tuple[str, ...]) -> None:
 def _validate_current_evidence_inventory(raw: bytes) -> None:
     exports = _parse_module_exports(raw)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 23
+    assert len(exports) == len(set(exports)) == 26
 
     tree = ast.parse(raw)
     top_level_definitions = [
@@ -901,10 +904,14 @@ def _validate_current_evidence_inventory(raw: bytes) -> None:
         compact = name.replace("_", "").casefold()
         assert not any(
             fragment in compact
-            for fragment in FORBIDDEN_POST_S03_EVIDENCE_SURFACE_FRAGMENTS
+            for fragment in FORBIDDEN_POST_S04_EVIDENCE_SURFACE_FRAGMENTS
         )
         if "acquisitionrun" in compact:
-            assert name == "AcquisitionRunId"
+            assert name in {
+                "AcquisitionRunId",
+                "AcquisitionRunStatus",
+                "AcquisitionRun",
+            }
 
 
 def _validate_domain_root_unchanged(raw: bytes) -> None:
@@ -1805,7 +1812,8 @@ def test_group_m_historical_p03_readiness_and_current_s02_are_scope_guarded() ->
     assert "`S1.P03.S01` is complete" in roadmap
     assert "`S1.P03.S02` is complete" in roadmap
     assert "`S1.P03.S03` is complete" in roadmap
-    assert "`S1.P03.S04` is next and not started" in roadmap
+    assert "`S1.P03.S04` is complete" in roadmap
+    assert "`S1.P03.S05` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:

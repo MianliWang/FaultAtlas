@@ -29,8 +29,8 @@ aspirational Slice as scheduled work.
   complete, `S1.P02.S04` is complete, `S1.P02.S05` is complete, and
   `S1.P02.S06` is complete. `S1.P02.S07` is complete. `S1.P03` is active;
   `S1.P03.S01` is complete, `S1.P03.S02` is complete, `S1.P03.S03` is
-  complete, `S1.P03.S04` is next and not started, and `S1.P03.S05` through
-  `S1.P03.S09` are not started.
+  complete, `S1.P03.S04` is complete, `S1.P03.S05` is next and not started,
+  and `S1.P03.S06` through `S1.P03.S09` are not started.
   `S1.P04` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -66,9 +66,10 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P02.S02` is complete, `S1.P02.S03` is complete, `S1.P02.S04` is complete,
 `S1.P02.S05` is complete, and `S1.P02.S06` is complete.
 `S1.P02.S07` is complete. `S1.P03` is active; `S1.P03.S01` is complete,
-`S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is next and
-not started, and `S1.P03.S05` through `S1.P03.S09` are not started. `S1.P04`
-through `S1.P10` are not started, and `S2-S9` remain unimplemented.
+`S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
+`S1.P03.S05` is next and not started, and `S1.P03.S06` through `S1.P03.S09`
+are not started. `S1.P04` through `S1.P10` are not started, and `S2-S9`
+remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -160,8 +161,9 @@ The provisional current-Phase sequence is:
 2. `S1.P03.S02` — Request Controls and Response Representation Observations
    (complete)
 3. `S1.P03.S03` — Exact Retained Artifacts and Digest Scope (complete)
-4. `S1.P03.S04` — Acquisition Runs and Evidence Membership (next; not started)
-5. `S1.P03.S05` — Transformations, Corrections, and Supersession (not started)
+4. `S1.P03.S04` — Acquisition Runs and Evidence Membership (complete)
+5. `S1.P03.S05` — Transformations, Corrections, and Supersession
+   (next; not started)
 6. `S1.P03.S06` — Completeness, Omissions, and Publication Provenance
    (not started)
 7. `S1.P03.S07` — Evidence Envelope Composition and Legacy Adapter
@@ -176,10 +178,14 @@ adds explicit ordered request controls and immutable response-representation
 metadata linked to request identity, while keeping requested and observed media
 separate. S03 adds exact artifact content identity with explicit digest
 algorithm, digest scope, and byte length, plus request-linked
-exact-unmodified-byte retention records. It embeds no bytes and adds no storage
-or persistence, acquisition-run record, or Evidence Envelope. Complete
-acquisition runs, transformations, omissions, the Evidence Envelope, adapters,
-and a P03 contract corpus remain deferred to their listed Slices.
+exact-unmodified-byte retention records. S04 adds explicit terminal run status
+and an ordered, bounded membership sequence linking each request identity to
+optional request, response, and exact-artifact evidence. It preserves unknown
+optional components separately from known-empty artifact membership and does
+not infer historical completeness from terminal status. These models embed no
+bytes and add no storage or persistence. Transformations, corrections,
+supersession, completeness, omissions, publication provenance, the Evidence
+Envelope, adapters, and a P03 contract corpus remain deferred to S05-S09.
 
 ## Preserved later Stage 1 phases
 
@@ -199,9 +205,11 @@ or Evidence Envelope implementations, and they are not public contracts.
 The internal `faultatlas.domain.evidence` module implements the `S1.P03.S01`
 request-provenance foundation and the `S1.P03.S02` request-control and bounded
 response-representation metadata layer. It also implements the `S1.P03.S03`
-metadata-only exact-artifact identity and request-linked retention layer. It
-does not embed artifact bytes or storage locations and is not an
-acquisition-run, adapter, corpus, or envelope implementation.
+metadata-only exact-artifact identity and request-linked retention layer, plus
+the `S1.P03.S04` terminal acquisition-run and ordered evidence-membership
+layer. It does not embed artifact bytes or storage locations and is not a
+transformation, correction, completeness, adapter, corpus, or envelope
+implementation.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and
