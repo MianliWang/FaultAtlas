@@ -436,8 +436,11 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "ExactArtifactIdentity",
     "ArtifactRetentionMode",
     "ExactRetainedArtifact",
+    "AcquisitionRunStatus",
+    "AcquisitionRequestMembership",
+    "AcquisitionRun",
 )
-FORBIDDEN_POST_S03_EVIDENCE_SURFACE_FRAGMENTS = (
+FORBIDDEN_POST_S04_EVIDENCE_SURFACE_FRAGMENTS = (
     "adapter",
     "completeness",
     "corpus",
@@ -467,12 +470,12 @@ EXPECTED_P03_SLICE_SEQUENCE = (
     (
         "S1.P03.S04",
         "Acquisition Runs and Evidence Membership",
-        "next; not started",
+        "complete",
     ),
     (
         "S1.P03.S05",
         "Transformations, Corrections, and Supersession",
-        "not started",
+        "next; not started",
     ),
     (
         "S1.P03.S06",
@@ -667,7 +670,7 @@ def _validate_current_evidence_inventory(source: bytes) -> None:
     assert all(isinstance(item, str) for item in raw_exports)
     exports = tuple(cast(str, item) for item in raw_exports)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 23
+    assert len(exports) == len(set(exports)) == 26
 
     top_level_definitions = [
         node.name
@@ -682,10 +685,14 @@ def _validate_current_evidence_inventory(source: bytes) -> None:
         compact = name.replace("_", "").casefold()
         assert not any(
             fragment in compact
-            for fragment in FORBIDDEN_POST_S03_EVIDENCE_SURFACE_FRAGMENTS
+            for fragment in FORBIDDEN_POST_S04_EVIDENCE_SURFACE_FRAGMENTS
         )
         if "acquisitionrun" in compact:
-            assert name == "AcquisitionRunId"
+            assert name in {
+                "AcquisitionRunId",
+                "AcquisitionRunStatus",
+                "AcquisitionRun",
+            }
 
 
 def _identity_symbol_inventory(
@@ -1982,7 +1989,8 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P03.S01` is complete" in normalized_roadmap
     assert "`S1.P03.S02` is complete" in normalized_roadmap
     assert "`S1.P03.S03` is complete" in normalized_roadmap
-    assert "`S1.P03.S04` is next and not started" in normalized_roadmap
+    assert "`S1.P03.S04` is complete" in normalized_roadmap
+    assert "`S1.P03.S05` is next and not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:
         assert f"`{slice_id}` — {title} ({state})" in normalized_roadmap
@@ -2097,7 +2105,9 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         "The production records are metadata-only and perform no artifact I/O"
         in normalized_case_doc
     )
-    assert "`S1.P03.S04` retains ownership" in normalized_case_doc
+    assert "S1.P03.S04 Acquisition Runs and Evidence Membership" in case_doc
+    assert "32 contiguous request memberships" in normalized_case_doc
+    assert "known-empty tuples" in normalized_case_doc
 
 
 def test_offline_build_excludes_closure_from_wheel_and_sdist(tmp_path: Path) -> None:

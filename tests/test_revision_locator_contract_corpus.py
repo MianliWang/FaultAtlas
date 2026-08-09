@@ -219,6 +219,9 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "ExactArtifactIdentity",
     "ArtifactRetentionMode",
     "ExactRetainedArtifact",
+    "AcquisitionRunStatus",
+    "AcquisitionRequestMembership",
+    "AcquisitionRun",
 )
 EXPECTED_VALID_CATEGORIES = {
     "commit-topology": 7,
@@ -1387,7 +1390,7 @@ def _assert_evidence_is_outside_revision_locator_contract(
     }
 
     assert evidence_module.__all__ == list(EXPECTED_EVIDENCE_EXPORTS)
-    assert len(evidence_module.__all__) == 23
+    assert len(evidence_module.__all__) == 26
     assert evidence_exports.isdisjoint(manifest_targets)
     assert evidence_exports.isdisjoint(vector_targets)
     assert manifest["scope"]["production_module"] == "faultatlas.domain.revision"

@@ -232,6 +232,9 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "ExactArtifactIdentity",
     "ArtifactRetentionMode",
     "ExactRetainedArtifact",
+    "AcquisitionRunStatus",
+    "AcquisitionRequestMembership",
+    "AcquisitionRun",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",

@@ -78,6 +78,9 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "ExactArtifactIdentity",
     "ArtifactRetentionMode",
     "ExactRetainedArtifact",
+    "AcquisitionRunStatus",
+    "AcquisitionRequestMembership",
+    "AcquisitionRun",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -871,9 +874,9 @@ def test_artifact_models_exclude_response_source_storage_payload_and_later_field
     }
 
 
-def test_evidence_exports_roots_inventory_and_s04_boundary_are_exact() -> None:
+def test_evidence_exports_roots_inventory_and_s05_boundary_are_exact() -> None:
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 23
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 26
     assert faultatlas.__all__ == ["__version__"]
     assert getattr(domain_package, "__all__", None) in (None, [])
     assert not set(EXPECTED_EVIDENCE_EXPORTS) & set(vars(faultatlas))
@@ -892,7 +895,6 @@ def test_evidence_exports_roots_inventory_and_s04_boundary_are_exact() -> None:
     }
     assert (
         not {
-            "AcquisitionRun",
             "AcquisitionRunRecord",
             "CompletenessRecord",
             "CorrectionRecord",
@@ -981,7 +983,7 @@ def test_evidence_export_inventory_is_mutation_sensitive(mutation: str) -> None:
     if mutation == "missing":
         exports.remove("ExactRetainedArtifact")
     else:
-        exports.append("AcquisitionRun")
+        exports.append("TransformationRecord")
     with pytest.raises(AssertionError):
         assert tuple(exports) == EXPECTED_EVIDENCE_EXPORTS
 

@@ -1,4 +1,4 @@
-"""Strict request, response-representation, and exact-artifact models.
+"""Strict request, response, exact-artifact, and acquisition-run models.
 
 The models in this module identify one request attempt by acquisition-run ID
 and run-local ordinal. Retrieval authority, method, origin-relative route, and
@@ -6,8 +6,10 @@ request-start time remain explicit provenance metadata rather than identity.
 Ordered request controls, response representation metadata, and exact retained
 artifact identity are separate immutable values linked through request
 identity. Exact artifacts contain digest metadata and byte length but no
-payload or storage locator. This module performs no I/O and does not define
-acquisition-run records, durable canonical bytes, or an Evidence Envelope.
+payload or storage locator. Terminal acquisition runs preserve ordered request
+membership without inferring optional evidence or historical completeness.
+This module performs no I/O and does not define transformations, corrections,
+durable canonical bytes, or an Evidence Envelope.
 """
 
 import re
@@ -52,6 +54,9 @@ __all__ = [
     "ExactArtifactIdentity",
     "ArtifactRetentionMode",
     "ExactRetainedArtifact",
+    "AcquisitionRunStatus",
+    "AcquisitionRequestMembership",
+    "AcquisitionRun",
 ]
 
 _MAX_RUN_ID_LENGTH = 160
@@ -69,6 +74,8 @@ _MAX_MEDIA_PARAMETER_NAME_LENGTH: int = 256
 _MAX_MEDIA_PARAMETER_VALUE_LENGTH = 1024
 _MAX_ARTIFACT_DIGEST_SCOPE_LENGTH = 128
 _MAX_ARTIFACT_BYTE_LENGTH = 9_223_372_036_854_775_807
+_MAX_RETAINED_ARTIFACTS_PER_REQUEST = 64
+_MAX_REQUESTS_PER_ACQUISITION_RUN = 4096
 _ASSERTED_UTC_STARTED_AT_PATTERN = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
     r"(?:\.[0-9]{1,6})?(?:Z|\+00:00)"
@@ -1035,3 +1042,314 @@ class ExactRetainedArtifact(_ArtifactRecordBase):
                 "retention_mode must be an ArtifactRetentionMode in Python input"
             )
         return value
+
+
+class AcquisitionRunStatus(StrEnum):
+    """Explicit terminal state declared for one acquisition run."""
+
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+
+
+class AcquisitionRequestMembership(_RetrievalRecordBase):
+    """Optional evidence components linked to one request in an acquisition run."""
+
+    request_id: RetrievalRequestId
+    request_reference: RetrievalRequestReference | None
+    request_controls: RetrievalRequestControls | None
+    response_observation: ResponseRepresentationObservation | None
+    retained_artifacts: tuple[ExactRetainedArtifact, ...] | None
+
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _require_typed_python_request_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, RetrievalRequestId):
+            raise ValueError("request_id must be a RetrievalRequestId in Python input")
+        return value
+
+    @field_validator("request_reference", mode="before")
+    @classmethod
+    def _require_typed_python_request_reference(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, RetrievalRequestReference)
+        ):
+            raise ValueError(
+                "request_reference must be a RetrievalRequestReference or None "
+                "in Python input"
+            )
+        return value
+
+    @field_validator("request_controls", mode="before")
+    @classmethod
+    def _require_typed_python_request_controls(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, RetrievalRequestControls)
+        ):
+            raise ValueError(
+                "request_controls must be RetrievalRequestControls or None in "
+                "Python input"
+            )
+        return value
+
+    @field_validator("response_observation", mode="before")
+    @classmethod
+    def _require_typed_python_response_observation(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, ResponseRepresentationObservation)
+        ):
+            raise ValueError(
+                "response_observation must be a ResponseRepresentationObservation "
+                "or None in Python input"
+            )
+        return value
+
+    @field_validator("retained_artifacts", mode="before")
+    @classmethod
+    def _require_typed_python_retained_artifacts(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if value is None:
+            return value
+        if info.mode == "json":
+            if isinstance(value, list):
+                raw_value = cast(list[object], value)
+                if len(raw_value) > _MAX_RETAINED_ARTIFACTS_PER_REQUEST:
+                    raise ValueError(
+                        "retained_artifacts must contain at most "
+                        f"{_MAX_RETAINED_ARTIFACTS_PER_REQUEST} entries"
+                    )
+                return tuple(raw_value)
+            return value
+        if info.mode != "python":
+            return value
+        if type(value) is not tuple:
+            raise ValueError(
+                "retained_artifacts must be a tuple or None in Python input"
+            )
+        typed_value = cast(tuple[object, ...], value)
+        if len(typed_value) > _MAX_RETAINED_ARTIFACTS_PER_REQUEST:
+            raise ValueError(
+                "retained_artifacts must contain at most "
+                f"{_MAX_RETAINED_ARTIFACTS_PER_REQUEST} entries"
+            )
+        if not all(isinstance(item, ExactRetainedArtifact) for item in typed_value):
+            raise ValueError(
+                "retained_artifacts entries must be ExactRetainedArtifact values "
+                "in Python input"
+            )
+        return typed_value
+
+    @model_validator(mode="after")
+    def _validate_request_linkage_and_artifact_uniqueness(self) -> Self:
+        if (
+            self.request_reference is not None
+            and self.request_reference.request_id != self.request_id
+        ):
+            raise ValueError("request_reference must match membership request_id")
+        if (
+            self.response_observation is not None
+            and self.response_observation.request_id != self.request_id
+        ):
+            raise ValueError("response_observation must match membership request_id")
+
+        identities: set[ExactArtifactIdentity] = set()
+        for artifact in self.retained_artifacts or ():
+            if artifact.request_id != self.request_id:
+                raise ValueError("retained artifact must match membership request_id")
+            if artifact.artifact_identity in identities:
+                raise ValueError(
+                    "retained artifact identities must be unique within a membership"
+                )
+            identities.add(artifact.artifact_identity)
+        return self
+
+
+class AcquisitionRun(_RetrievalRecordBase):
+    """Terminal acquisition state with exact ordered request membership."""
+
+    run_id: AcquisitionRunId
+    status: AcquisitionRunStatus
+    started_at: AwareDatetime
+    sealed_at: AwareDatetime
+    request_count: int
+    requests: tuple[AcquisitionRequestMembership, ...]
+
+    @field_validator("run_id", mode="before")
+    @classmethod
+    def _require_typed_python_run_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, AcquisitionRunId):
+            raise ValueError("run_id must be an AcquisitionRunId in Python input")
+        return value
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _require_typed_python_status(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, AcquisitionRunStatus):
+            raise ValueError("status must be an AcquisitionRunStatus in Python input")
+        return value
+
+    @field_validator("started_at", mode="before")
+    @classmethod
+    def _require_asserted_utc_started_at_json(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        return _require_asserted_utc_json(value, info, field_name="started_at")
+
+    @field_validator("started_at")
+    @classmethod
+    def _normalize_started_at(cls, value: datetime) -> datetime:
+        return _normalize_asserted_utc(value, field_name="started_at")
+
+    @field_validator("sealed_at", mode="before")
+    @classmethod
+    def _require_asserted_utc_sealed_at_json(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        return _require_asserted_utc_json(value, info, field_name="sealed_at")
+
+    @field_validator("sealed_at")
+    @classmethod
+    def _normalize_sealed_at(cls, value: datetime) -> datetime:
+        return _normalize_asserted_utc(value, field_name="sealed_at")
+
+    @field_validator("request_count", mode="before")
+    @classmethod
+    def _validate_request_count(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("request_count must be an exact integer")
+        if not 0 <= value <= _MAX_REQUESTS_PER_ACQUISITION_RUN:
+            raise ValueError(
+                "request_count must be between 0 and "
+                f"{_MAX_REQUESTS_PER_ACQUISITION_RUN} inclusive"
+            )
+        return value
+
+    @field_validator("requests", mode="before")
+    @classmethod
+    def _require_typed_python_requests(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json":
+            if isinstance(value, list):
+                raw_value = cast(list[object], value)
+                if len(raw_value) > _MAX_REQUESTS_PER_ACQUISITION_RUN:
+                    raise ValueError(
+                        "requests must contain at most "
+                        f"{_MAX_REQUESTS_PER_ACQUISITION_RUN} entries"
+                    )
+                return tuple(raw_value)
+            return value
+        if info.mode != "python":
+            return value
+        if type(value) is not tuple:
+            raise ValueError("requests must be a tuple in Python input")
+        typed_value = cast(tuple[object, ...], value)
+        if len(typed_value) > _MAX_REQUESTS_PER_ACQUISITION_RUN:
+            raise ValueError(
+                "requests must contain at most "
+                f"{_MAX_REQUESTS_PER_ACQUISITION_RUN} entries"
+            )
+        if not all(
+            isinstance(item, AcquisitionRequestMembership) for item in typed_value
+        ):
+            raise ValueError(
+                "requests entries must be AcquisitionRequestMembership values "
+                "in Python input"
+            )
+        return typed_value
+
+    @model_validator(mode="after")
+    def _validate_run_membership_and_chronology(self) -> Self:
+        if self.sealed_at < self.started_at:
+            raise ValueError("sealed_at must not precede started_at")
+        if self.request_count != len(self.requests):
+            raise ValueError("request_count must equal the number of requests")
+
+        previous_request_started_at: datetime | None = None
+        for expected_ordinal, membership in enumerate(self.requests, start=1):
+            request_id = membership.request_id
+            if request_id.acquisition_run_id != self.run_id:
+                raise ValueError("membership request_id must belong to run_id")
+            if request_id.request_ordinal.root != expected_ordinal:
+                raise ValueError(
+                    "membership request ordinals must equal tuple positions "
+                    "starting at 1"
+                )
+
+            request_reference = membership.request_reference
+            if request_reference is not None:
+                if (
+                    not self.started_at
+                    <= request_reference.started_at
+                    <= self.sealed_at
+                ):
+                    raise ValueError(
+                        "request_reference started_at must lie within the run window"
+                    )
+                if (
+                    previous_request_started_at is not None
+                    and request_reference.started_at < previous_request_started_at
+                ):
+                    raise ValueError(
+                        "present request_reference start times must be nondecreasing"
+                    )
+                previous_request_started_at = request_reference.started_at
+
+            response_observation = membership.response_observation
+            if response_observation is not None:
+                if not (
+                    self.started_at
+                    <= response_observation.completed_at
+                    <= self.sealed_at
+                ):
+                    raise ValueError(
+                        "response_observation completed_at must lie within the run "
+                        "window"
+                    )
+                if (
+                    request_reference is not None
+                    and response_observation.completed_at < request_reference.started_at
+                ):
+                    raise ValueError(
+                        "response_observation completed_at must not precede its "
+                        "request_reference started_at"
+                    )
+        return self

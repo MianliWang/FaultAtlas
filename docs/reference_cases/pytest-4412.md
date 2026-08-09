@@ -739,8 +739,9 @@ corpus reader, locator resolver, Evidence Envelope, persistence contract, or
 public API. Current status: the case-calibrated `S1.P01` Identity Primitives
 Phase is complete. `S1.P02` is complete and `S1.P02.S01` through
 `S1.P02.S07` are complete. `S1.P03` is active: `S1.P03.S01` is complete,
-`S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is next and
-not started, and `S1.P03.S05` through `S1.P03.S09` are not started.
+`S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
+`S1.P03.S05` is next and not started, and `S1.P03.S06` through `S1.P03.S09`
+are not started.
 
 ## S1.P03.S01 Retrieval Request Identity and Authority Foundation
 
@@ -799,6 +800,38 @@ artifact model.
 
 The production records are metadata-only and perform no artifact I/O. They
 embed no payload bytes or text, add no storage reader or writer, do not adapt
-legacy `ArtifactSnapshot`, and do not introduce an acquisition-run record,
-transformation, completeness record, or Evidence Envelope. `S1.P03.S04`
-retains ownership of acquisition runs and evidence membership.
+legacy `ArtifactSnapshot`, and do not introduce transformation, completeness,
+or Evidence Envelope semantics.
+
+## S1.P03.S04 Acquisition Runs and Evidence Membership
+
+The canonical acquisition directly supports one terminal run with ID
+`run-0001-s04-v1-base-4c9cde74-head-690a63b9`, explicit status `complete`,
+start `2026-07-24T11:03:15.269222Z`, and final acquisition seal
+`2026-07-30T08:28:22.796982Z`. The final seal is the published assurance seal;
+the older `2026-07-24T11:03:31.873934Z` value remains prior reconciliation
+state and is not substituted for it.
+
+The run contains 32 contiguous request memberships whose existing composite
+request identities use the common run ID and ordinals `1` through `32` in
+tuple order. The immutable source does not support complete canonical request
+references, controls, or response observations, so those optional membership
+components remain `None` rather than being reconstructed from partial facts.
+
+The declared exact-retention policy and inventory jointly support known-empty
+tuples for ordinals `1` through `29` and `31`. Ordinal `30` contains only the
+1,640-byte compare diff identity with scope
+`github-compare-diff-http-entity-body` and SHA-256
+`dca87a4df1edb2d1acb3fc821724483ee874c2feba6525b2c21e79cb3e8f7312`;
+ordinal `32` contains only the 1,096-byte LICENSE identity with scope
+`git-blob-content` and SHA-256
+`a1ebce15afc7b5cf98c7c6de512d1959d4bf61db8c6bf2f111286d483b40a997`.
+Here `()` means no retained exact artifact under this run's declared policy;
+it does not claim that no real-world evidence or response representation
+existed. `None` remains a distinct unknown membership state.
+
+Terminal status is explicit and does not infer historical or provider
+completeness, optional-component population, transformations, corrections,
+supersession, omissions, publication provenance, storage, or envelope
+semantics. Those S05 and later concerns remain outside S04; `S1.P03.S05` is
+next and not started.
