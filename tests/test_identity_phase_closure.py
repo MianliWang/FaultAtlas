@@ -243,17 +243,27 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunStatus",
     "AcquisitionRequestMembership",
     "AcquisitionRun",
+    "EvidenceRecordFormat",
+    "EvidenceVersion",
+    "EvidenceCanonicalization",
+    "DurableEvidenceRecordReference",
+    "EvidenceRelationId",
+    "TransformationOperation",
+    "TransformationLossiness",
+    "TransformationReversibility",
+    "TransformationSubject",
+    "EvidenceTransformation",
+    "EvidenceCorrection",
+    "EvidenceSupersession",
+    "EvidenceRecordRelationship",
 )
-FORBIDDEN_POST_S04_EVIDENCE_SURFACE_FRAGMENTS = (
+FORBIDDEN_POST_S05_EVIDENCE_SURFACE_FRAGMENTS = (
     "adapter",
     "completeness",
     "corpus",
-    "correction",
     "envelope",
     "omission",
     "publication",
-    "supersession",
-    "transformation",
 )
 
 EXPECTED_IDENTITY_EXPORTS = {
@@ -1239,22 +1249,30 @@ def _validate_current_evidence_inventory(source: bytes) -> None:
     assert all(isinstance(item, str) for item in raw_exports)
     exports = tuple(cast(str, item) for item in raw_exports)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 26
+    assert len(exports) == len(set(exports)) == 39
 
     top_level_definitions = [
         node.name
-        for node in tree.body
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        else node.name.id
+        for node in tree.body
+        if isinstance(
+            node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.TypeAlias)
+        )
     ]
     public_definitions = tuple(
         name for name in top_level_definitions if not name.startswith("_")
     )
     assert public_definitions == EXPECTED_EVIDENCE_EXPORTS
+    assert sum(isinstance(node, ast.ClassDef) for node in tree.body) == 41
+    assert tuple(
+        node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)
+    ) == ("EvidenceRecordRelationship",)
     for name in top_level_definitions:
         compact = name.replace("_", "").casefold()
         assert not any(
             fragment in compact
-            for fragment in FORBIDDEN_POST_S04_EVIDENCE_SURFACE_FRAGMENTS
+            for fragment in FORBIDDEN_POST_S05_EVIDENCE_SURFACE_FRAGMENTS
         )
         if "acquisitionrun" in compact:
             assert name in {
@@ -1733,7 +1751,7 @@ def test_current_p03_s01_inventory_and_export_mutations_are_rejected() -> None:
         "EvidenceContractCorpus",
     ),
 )
-def test_current_p03_post_s01_surface_is_rejected(early_surface: str) -> None:
+def test_current_p03_post_s05_surface_is_rejected(early_surface: str) -> None:
     source = (REPOSITORY_ROOT / EVIDENCE_MODULE).read_bytes()
     mutated = source + f"\nclass {early_surface}:\n    pass\n".encode()
     with pytest.raises(AssertionError):
@@ -1919,7 +1937,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P03.S02` is complete" in roadmap
     assert "`S1.P03.S03` is complete" in roadmap
     assert "`S1.P03.S04` is complete" in roadmap
-    assert "`S1.P03.S05` is next and not started" in roadmap
+    assert "`S1.P03.S05` is complete" in roadmap
+    assert "`S1.P03.S06` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:

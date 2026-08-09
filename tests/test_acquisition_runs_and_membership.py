@@ -100,6 +100,19 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunStatus",
     "AcquisitionRequestMembership",
     "AcquisitionRun",
+    "EvidenceRecordFormat",
+    "EvidenceVersion",
+    "EvidenceCanonicalization",
+    "DurableEvidenceRecordReference",
+    "EvidenceRelationId",
+    "TransformationOperation",
+    "TransformationLossiness",
+    "TransformationReversibility",
+    "TransformationSubject",
+    "EvidenceTransformation",
+    "EvidenceCorrection",
+    "EvidenceSupersession",
+    "EvidenceRecordRelationship",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -130,7 +143,7 @@ PREDECESSOR_LOCKS = {
         "7bea28086b345f6c1b4eeebe9c483924e60521e2f3e78954b272ab3c42acacaa",
     ),
 }
-FORBIDDEN_S05_PLUS_FIELDS = {
+FORBIDDEN_S05_RELATIONSHIP_FIELDS = {
     "adapter",
     "baseline_revision",
     "completeness",
@@ -157,7 +170,7 @@ FORBIDDEN_S05_PLUS_FIELDS = {
     "tool_identity",
     "transformation",
 }
-FORBIDDEN_S05_PLUS_DEFINITIONS = {
+FORBIDDEN_POST_S05_DEFINITIONS = {
     "AcquisitionRunRecord",
     "CompletenessRecord",
     "CorrectionRecord",
@@ -366,9 +379,14 @@ def _validate_evidence_surface(source: str) -> None:
     tree = ast.parse(source)
     public_definitions = tuple(
         node.name
-        for node in tree.body
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
-        and not node.name.startswith("_")
+        else node.name.id
+        for node in tree.body
+        if (
+            isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and not node.name.startswith("_")
+        )
+        or (isinstance(node, ast.TypeAlias) and not node.name.id.startswith("_"))
     )
     assert public_definitions == EXPECTED_EVIDENCE_EXPORTS
     definitions = {
@@ -376,7 +394,19 @@ def _validate_evidence_surface(source: str) -> None:
         for node in ast.walk(tree)
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
     }
-    assert not definitions & FORBIDDEN_S05_PLUS_DEFINITIONS
+    definitions.update(
+        node.name.id for node in ast.walk(tree) if isinstance(node, ast.TypeAlias)
+    )
+    public_classes = {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
+    }
+    assert len(public_classes) == 38
+    assert {node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)} == {
+        "EvidenceRecordRelationship"
+    }
+    assert not definitions & FORBIDDEN_POST_S05_DEFINITIONS
     assert _parse_private_caps(source) == {
         "_MAX_RETAINED_ARTIFACTS_PER_REQUEST": MAX_RETAINED_ARTIFACTS,
         "_MAX_REQUESTS_PER_ACQUISITION_RUN": MAX_ACQUISITION_REQUESTS,
@@ -665,8 +695,8 @@ def test_membership_rejects_invalid_schema_versions(schema_version: object) -> N
         AcquisitionRequestMembership.model_validate(payload)
 
 
-@pytest.mark.parametrize("field", sorted(FORBIDDEN_S05_PLUS_FIELDS))
-def test_membership_rejects_every_s05_plus_field(field: str) -> None:
+@pytest.mark.parametrize("field", sorted(FORBIDDEN_S05_RELATIONSHIP_FIELDS))
+def test_membership_rejects_every_s05_relationship_field(field: str) -> None:
     payload = _model_payload(_membership())
     payload[field] = "forbidden"
     with pytest.raises(ValidationError):
@@ -1005,8 +1035,8 @@ def test_run_rejects_invalid_schema_versions(schema_version: object) -> None:
         AcquisitionRun.model_validate(payload)
 
 
-@pytest.mark.parametrize("field", sorted(FORBIDDEN_S05_PLUS_FIELDS))
-def test_run_rejects_every_s05_plus_field(field: str) -> None:
+@pytest.mark.parametrize("field", sorted(FORBIDDEN_S05_RELATIONSHIP_FIELDS))
+def test_run_rejects_every_s05_relationship_field(field: str) -> None:
     payload = _model_payload(_run())
     payload[field] = "forbidden"
     with pytest.raises(ValidationError):
@@ -1546,7 +1576,7 @@ def test_new_models_have_no_procedure_completeness_or_later_fields() -> None:
         "request_count",
         "requests",
     }
-    assert not FORBIDDEN_S05_PLUS_FIELDS & fields
+    assert not FORBIDDEN_S05_RELATIONSHIP_FIELDS & fields
     assert (
         not {
             "provider_run_id",
@@ -1563,7 +1593,7 @@ def test_evidence_exports_public_definitions_and_private_caps_are_exact() -> Non
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     _validate_evidence_surface(source)
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 26
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 39
     assert _parse_private_caps(source) == {
         "_MAX_RETAINED_ARTIFACTS_PER_REQUEST": 64,
         "_MAX_REQUESTS_PER_ACQUISITION_RUN": 4096,
@@ -1601,8 +1631,8 @@ def test_private_cap_constants_are_mutation_sensitive(name: str, value: int) -> 
         _validate_evidence_surface(mutated)
 
 
-@pytest.mark.parametrize("definition", sorted(FORBIDDEN_S05_PLUS_DEFINITIONS))
-def test_s05_plus_definition_mutations_are_rejected(definition: str) -> None:
+@pytest.mark.parametrize("definition", sorted(FORBIDDEN_POST_S05_DEFINITIONS))
+def test_post_s05_definition_mutations_are_rejected(definition: str) -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     mutated = f"{source}\n\nclass {definition}:\n    pass\n"
     with pytest.raises(AssertionError):

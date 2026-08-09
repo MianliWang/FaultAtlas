@@ -81,6 +81,19 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunStatus",
     "AcquisitionRequestMembership",
     "AcquisitionRun",
+    "EvidenceRecordFormat",
+    "EvidenceVersion",
+    "EvidenceCanonicalization",
+    "DurableEvidenceRecordReference",
+    "EvidenceRelationId",
+    "TransformationOperation",
+    "TransformationLossiness",
+    "TransformationReversibility",
+    "TransformationSubject",
+    "EvidenceTransformation",
+    "EvidenceCorrection",
+    "EvidenceSupersession",
+    "EvidenceRecordRelationship",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -874,9 +887,9 @@ def test_artifact_models_exclude_response_source_storage_payload_and_later_field
     }
 
 
-def test_evidence_exports_roots_inventory_and_s05_boundary_are_exact() -> None:
+def test_evidence_exports_roots_inventory_and_s06_boundary_are_exact() -> None:
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 26
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 39
     assert faultatlas.__all__ == ["__version__"]
     assert getattr(domain_package, "__all__", None) in (None, [])
     assert not set(EXPECTED_EVIDENCE_EXPORTS) & set(vars(faultatlas))
@@ -888,10 +901,35 @@ def test_evidence_exports_roots_inventory_and_s05_boundary_are_exact() -> None:
     }
     assert production_files == EXPECTED_PRODUCTION_FILES
     assert len(production_files) == 9
+    tree = ast.parse(EVIDENCE_SOURCE.read_bytes())
     definitions = {
         node.name
-        for node in ast.walk(ast.parse(EVIDENCE_SOURCE.read_bytes()))
+        for node in ast.walk(tree)
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    definitions.update(
+        node.name.id for node in ast.walk(tree) if isinstance(node, ast.TypeAlias)
+    )
+    public_symbols = tuple(
+        node.name
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        else node.name.id
+        for node in tree.body
+        if (
+            isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and not node.name.startswith("_")
+        )
+        or (isinstance(node, ast.TypeAlias) and not node.name.id.startswith("_"))
+    )
+    public_classes = {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
+    }
+    assert public_symbols == EXPECTED_EVIDENCE_EXPORTS
+    assert len(public_classes) == 38
+    assert {node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)} == {
+        "EvidenceRecordRelationship"
     }
     assert (
         not {
