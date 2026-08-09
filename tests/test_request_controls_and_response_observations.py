@@ -78,6 +78,14 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "ContentEncoding",
     "MediaTypeParameter",
     "ResponseRepresentationObservation",
+    "ArtifactDigestAlgorithm",
+    "ArtifactDigestScope",
+    "ArtifactSha256Digest",
+    "ArtifactByteLength",
+    "ArtifactDigest",
+    "ExactArtifactIdentity",
+    "ArtifactRetentionMode",
+    "ExactRetainedArtifact",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -340,7 +348,7 @@ def _parse_collection_limits(source: str) -> dict[str, int]:
 def _validate_evidence_exports(source: str) -> None:
     exports = _parse_exports(source)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 15
+    assert len(exports) == len(set(exports)) == 23
     tree = ast.parse(source)
     public_definitions = tuple(
         node.name
@@ -2361,9 +2369,10 @@ def test_collection_limits_are_exact_private_constants_and_mutation_sensitive() 
             assert _parse_collection_limits(mutated) == expected
 
 
-def test_no_artifact_run_adapter_envelope_or_s03_surface_exists() -> None:
+def test_s03_artifacts_are_present_while_s04_and_later_surfaces_are_absent() -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     _validate_no_later_evidence_surface(source)
+    assert hasattr(evidence_module, "ExactRetainedArtifact")
     for class_name in (
         "RetainedArtifactRecord",
         "AcquisitionRun",
