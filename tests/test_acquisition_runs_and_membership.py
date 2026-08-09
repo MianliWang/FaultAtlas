@@ -113,6 +113,19 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "EvidenceCorrection",
     "EvidenceSupersession",
     "EvidenceRecordRelationship",
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -170,12 +183,17 @@ FORBIDDEN_S05_RELATIONSHIP_FIELDS = {
     "tool_identity",
     "transformation",
 }
-FORBIDDEN_POST_S05_DEFINITIONS = {
+FORBIDDEN_POST_S06_DEFINITIONS = {
     "AcquisitionRunRecord",
     "CompletenessRecord",
     "CorrectionRecord",
     "EvidenceContractCorpus",
     "EvidenceEnvelope",
+    "EvidenceMigration",
+    "EvidencePersistence",
+    "EvidenceReader",
+    "EvidenceStorage",
+    "EvidenceWriter",
     "LegacyEvidenceAdapter",
     "OmissionRecord",
     "PublicationProvenance",
@@ -402,11 +420,11 @@ def _validate_evidence_surface(source: str) -> None:
         for node in tree.body
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
     }
-    assert len(public_classes) == 38
+    assert len(public_classes) == 51
     assert {node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)} == {
         "EvidenceRecordRelationship"
     }
-    assert not definitions & FORBIDDEN_POST_S05_DEFINITIONS
+    assert not definitions & FORBIDDEN_POST_S06_DEFINITIONS
     assert _parse_private_caps(source) == {
         "_MAX_RETAINED_ARTIFACTS_PER_REQUEST": MAX_RETAINED_ARTIFACTS,
         "_MAX_REQUESTS_PER_ACQUISITION_RUN": MAX_ACQUISITION_REQUESTS,
@@ -1593,7 +1611,7 @@ def test_evidence_exports_public_definitions_and_private_caps_are_exact() -> Non
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     _validate_evidence_surface(source)
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 39
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 52
     assert _parse_private_caps(source) == {
         "_MAX_RETAINED_ARTIFACTS_PER_REQUEST": 64,
         "_MAX_REQUESTS_PER_ACQUISITION_RUN": 4096,
@@ -1631,8 +1649,8 @@ def test_private_cap_constants_are_mutation_sensitive(name: str, value: int) -> 
         _validate_evidence_surface(mutated)
 
 
-@pytest.mark.parametrize("definition", sorted(FORBIDDEN_POST_S05_DEFINITIONS))
-def test_post_s05_definition_mutations_are_rejected(definition: str) -> None:
+@pytest.mark.parametrize("definition", sorted(FORBIDDEN_POST_S06_DEFINITIONS))
+def test_post_s06_definition_mutations_are_rejected(definition: str) -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     mutated = f"{source}\n\nclass {definition}:\n    pass\n"
     with pytest.raises(AssertionError):

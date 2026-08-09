@@ -29,9 +29,9 @@ aspirational Slice as scheduled work.
   complete, `S1.P02.S04` is complete, `S1.P02.S05` is complete, and
   `S1.P02.S06` is complete. `S1.P02.S07` is complete. `S1.P03` is active;
   `S1.P03.S01` is complete, `S1.P03.S02` is complete, `S1.P03.S03` is
-  complete, `S1.P03.S04` is complete, `S1.P03.S05` is complete, `S1.P03.S06`
-  is next and not started, and `S1.P03.S07` through `S1.P03.S09` are not
-  started.
+  complete, `S1.P03.S04` is complete, `S1.P03.S05` is complete, and
+  `S1.P03.S06` is complete. `S1.P03.S07` is next and not started, and
+  `S1.P03.S08` through `S1.P03.S09` are not started.
   `S1.P04` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -68,9 +68,9 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P02.S05` is complete, and `S1.P02.S06` is complete.
 `S1.P02.S07` is complete. `S1.P03` is active; `S1.P03.S01` is complete,
 `S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
-`S1.P03.S05` is complete, `S1.P03.S06` is next and not started, and
-`S1.P03.S07` through `S1.P03.S09` are not started. `S1.P04` through `S1.P10`
-are not started, and `S2-S9` remain unimplemented.
+`S1.P03.S05` is complete, and `S1.P03.S06` is complete. `S1.P03.S07` is next
+and not started, and `S1.P03.S08` through `S1.P03.S09` are not started.
+`S1.P04` through `S1.P10` are not started, and `S2-S9` remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -166,9 +166,9 @@ The provisional current-Phase sequence is:
 5. `S1.P03.S05` — Transformations, Corrections, and Supersession
    (complete)
 6. `S1.P03.S06` — Completeness, Omissions, and Publication Provenance
-   (next; not started)
+   (complete)
 7. `S1.P03.S07` — Evidence Envelope Composition and Legacy Adapter
-   (not started)
+   (next; not started)
 8. `S1.P03.S08` — Evidence Contract Corpus (not started)
 9. `S1.P03.S09` — Integration and Phase Closure (not started)
 
@@ -191,10 +191,19 @@ and distinct from supersession, and both preserve every referenced prior
 record. The canonical pytest #4412 replay contains exactly one S04.C01
 correction, zero canonical transformations, and zero canonical supersessions;
 positive transformation and supersession behavior is covered only by clearly
-synthetic examples. These models embed no bytes and perform no I/O. Migration,
-completeness, omissions, publication provenance, storage, persistence, readers,
-writers, the Evidence Envelope, adapters, and a P03 contract corpus remain
-deferred to S06-S09 or their preserved later owners.
+synthetic examples. S06 adds strict, explicitly scoped completeness
+requirements and outcomes, including two satisfied retained-artifact
+requirements followed by fifteen source-ordered intentional omissions.
+Complete with declared omissions is not universal completeness, and
+acquisition-run terminal status remains separate from evidence completeness.
+S06 also records protected-PR publication provenance for the exact acquisition
+and correction durable records, preserving stable repository identity,
+reviewed head versus squash revision, explicit reviewed-tree/squash-tree
+equality, PR CI versus natural main CI, and subject immutability. It claims no
+complete hidden or private history. These models embed no bytes and perform no
+I/O. Readers, writers, storage, persistence, migration, adapters, the Evidence
+Envelope, and a P03 contract corpus remain deferred to S07-S09 or their
+preserved later owners.
 
 ## Preserved later Stage 1 phases
 
@@ -219,9 +228,13 @@ the `S1.P03.S04` terminal acquisition-run and ordered evidence-membership
 layer. The `S1.P03.S05` layer adds content-addressed durable-record references,
 explicit artifact/record transformations, additive corrections, and separate
 supersession relationships without executing transformations or performing
-I/O. It does not embed artifact bytes or storage locations and does not
-implement migration, completeness, omissions, publication provenance, storage,
-persistence, readers, writers, adapters, a corpus, or the Evidence Envelope.
+I/O. The `S1.P03.S06` layer adds scoped completeness requirements and outcomes,
+structured omission records, complete-with-declared-omissions semantics, and
+protected-PR publication provenance with separate PR and natural-main checks.
+It does not embed artifact bytes or storage locations, claim complete hidden or
+private history, or implement readers, writers, storage, persistence,
+migration, adapters, a corpus, or the Evidence Envelope. `S1.P03.S07` remains
+next and not started.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and

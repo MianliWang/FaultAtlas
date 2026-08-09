@@ -740,8 +740,8 @@ public API. Current status: the case-calibrated `S1.P01` Identity Primitives
 Phase is complete. `S1.P02` is complete and `S1.P02.S01` through
 `S1.P02.S07` are complete. `S1.P03` is active: `S1.P03.S01` is complete,
 `S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
-`S1.P03.S05` is complete, `S1.P03.S06` is next and not started, and
-`S1.P03.S07` through `S1.P03.S09` are not started.
+`S1.P03.S05` is complete, and `S1.P03.S06` is complete. `S1.P03.S07` is next
+and not started, and `S1.P03.S08` through `S1.P03.S09` are not started.
 
 ## S1.P03.S01 Retrieval Request Identity and Authority Foundation
 
@@ -871,4 +871,97 @@ Positive transformation and supersession examples are explicitly synthetic.
 S05 introduces no migration, completeness, omission, publication provenance,
 storage, persistence, reader, writer, adapter, or Evidence Envelope semantics.
 Production records perform no I/O, legacy `ArtifactSnapshot` remains unchanged,
-and `S1.P03.S06` is next and not started.
+and S05 does not begin S06. `S1.P03.S06` is complete, and `S1.P03.S07` is next
+and not started.
+
+## S1.P03.S06 Completeness, Omissions, and Publication Provenance
+
+S06 adds strict internal completeness records whose meaning is bounded by an
+explicit evidence scope. Acquisition-run terminal status remains a separate
+fact and does not imply evidence completeness. The canonical assessment has ID
+`s04-c01-declared-evidence-scope`, scope ID
+`pytest-4412-s04-declared-retention-scope`, assessed time
+`2026-07-30T19:17:09.655780Z`, and status
+`scope_satisfied_with_declared_omissions`. Its subject is the published
+acquisition durable-record reference.
+
+The canonical requirement order is:
+
+1. `retained_compare_diff`
+2. `retained_historical_license`
+3. `issue_body`
+4. `issue_comment_bodies`
+5. `issue_timeline_nested_prose`
+6. `pr_body`
+7. `pr_comment_bodies`
+8. `pr_timeline_nested_prose`
+9. `review_prose_except_exact_empty_state`
+10. `inline_review_comment_bodies`
+11. `commit_messages_names_and_emails`
+12. `changed_file_patch_fields`
+13. `complete_changed_file_bytes`
+14. `raw_provider_json`
+15. `transient_pr_diff_bytes`
+16. `incidental_personal_profile_fields`
+17. `credentials_tokens_and_local_paths`
+
+The first two requirements are `satisfied` and cite the acquisition durable
+record. The final fifteen are `intentionally_omitted`, retain omission IDs of
+the form `s04-c01.omission.<requirement_id>`, and use reason
+`declared-retention-policy`. Each structured omission cites the correction
+durable record as its structured source and the acquisition durable record as
+the supporting original declaration. No omitted content is copied into an
+omission or completeness record.
+
+The acquisition durable record has format `faultatlas-acquisition`, version
+`1`, canonicalization `json-sort-keys-compact-utf8-lf-v1`, byte length `61283`,
+and SHA-256
+`1c29093bf1537e9b824a18df1848b71a8da014f544bc9f385707eb0e000a1318`.
+The correction durable record has format
+`faultatlas-pytest-4412-acquisition-closure-addendum`, version `1`, the same
+canonicalization, byte length `60832`, and SHA-256
+`44491ee512d2c2022110b83967fb6fa86d13045bc8404ea490d7a08b7aef24a2`.
+
+Publication provenance uses stable FaultAtlas repository identity provider
+`github` plus provider repository ID `1303365003`; a mutable repository alias
+is not publication identity. Acquisition publication
+`s1-p00-s04-acquisition-publication` has the acquisition durable record above
+as its immutable subject and records PR `#9`, reviewed head
+`32f51f569ec554573f29bfa4d49b4f9d40d555c7`, reviewed tree
+`fffb04451520453cd00b4c2fc4acf1edd2147d5e`, squash revision
+`fb9b7061c2cf70bb6d4bdceb8fd023c2bfbce32b`, published tree
+`fffb04451520453cd00b4c2fc4acf1edd2147d5e`, and publication time
+`2026-07-30T08:38:04Z`. Its successful PR check is workflow `CI`, context
+`validate`, event `pull_request`, run `30527236496`, job `90820902687`, attempt
+`1`, at the reviewed head. Its distinct successful natural-main check is
+workflow `CI`, context `validate`, event `push`, run `30527462427`, job
+`90821631028`, attempt `1`, at the squash revision.
+
+Correction publication `s1-p00-s04-c01-correction-publication` has the
+correction durable record above as its immutable subject and records PR `#10`,
+reviewed head `60400fcb301e108dbd14477ec6bb30b42157f12d`, reviewed tree
+`c50f510c38bb2f56c0b38f14b9f8cb7a09075703`, squash revision
+`8ece1cfa49c718345028bc6d03aca5e4fcdf434c`, published tree
+`c50f510c38bb2f56c0b38f14b9f8cb7a09075703`, and publication time
+`2026-07-30T19:42:46Z`. Its successful PR check is workflow `CI`, context
+`validate`, event `pull_request`, run `30575877780`, job `90983907152`, attempt
+`1`, at the reviewed head. Its distinct successful natural-main check is
+workflow `CI`, context `validate`, event `push`, run `30576009699`, job
+`90984355320`, attempt `1`, at the squash revision.
+
+Both publications use method `protected_pull_request_squash_merge`. For each,
+reviewed head and squash revision remain distinct while reviewed and published
+trees are explicitly equal. PR CI and natural main CI remain separate checks.
+Publication does not mutate, correct, transform, or supersede its
+durable-record subject and creates no latest or current pointer.
+The publication records contain no branch name, machine-local path, raw URL,
+actor profile, credential, review prose, payload, or storage location.
+
+Complete with declared omissions means only that every requirement in this
+declared 17-requirement scope has a controlled outcome. It does not establish
+complete provider history or the absence of deleted, edited, hidden, private,
+or permission-filtered records. S06 adds no reader, writer, storage,
+persistence, migration, adapter, or Evidence Envelope, and production code
+performs no I/O. No publication provenance is asserted for S06 itself.
+`S1.P03.S07` Evidence Envelope composition remains next and not started;
+`S1.P03.S08` and `S1.P03.S09` remain not started.

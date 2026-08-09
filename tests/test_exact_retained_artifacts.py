@@ -94,6 +94,19 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "EvidenceCorrection",
     "EvidenceSupersession",
     "EvidenceRecordRelationship",
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -110,6 +123,7 @@ FORBIDDEN_ARTIFACT_FIELDS = (
     "acquisition_run",
     "base64",
     "bucket",
+    "completeness",
     "content_encoding",
     "correction",
     "database_id",
@@ -119,6 +133,7 @@ FORBIDDEN_ARTIFACT_FIELDS = (
     "path",
     "payload_bytes",
     "payload_text",
+    "publication",
     "publication_provenance",
     "reader",
     "repository_path",
@@ -887,9 +902,9 @@ def test_artifact_models_exclude_response_source_storage_payload_and_later_field
     }
 
 
-def test_evidence_exports_roots_inventory_and_s06_boundary_are_exact() -> None:
+def test_evidence_exports_roots_inventory_and_s07_boundary_are_exact() -> None:
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 39
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 52
     assert faultatlas.__all__ == ["__version__"]
     assert getattr(domain_package, "__all__", None) in (None, [])
     assert not set(EXPECTED_EVIDENCE_EXPORTS) & set(vars(faultatlas))
@@ -927,7 +942,7 @@ def test_evidence_exports_roots_inventory_and_s06_boundary_are_exact() -> None:
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
     }
     assert public_symbols == EXPECTED_EVIDENCE_EXPORTS
-    assert len(public_classes) == 38
+    assert len(public_classes) == 51
     assert {node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)} == {
         "EvidenceRecordRelationship"
     }
@@ -936,7 +951,13 @@ def test_evidence_exports_roots_inventory_and_s06_boundary_are_exact() -> None:
             "AcquisitionRunRecord",
             "CompletenessRecord",
             "CorrectionRecord",
+            "EvidenceContractCorpus",
             "EvidenceEnvelope",
+            "EvidenceMigration",
+            "EvidencePersistence",
+            "EvidenceReader",
+            "EvidenceStorage",
+            "EvidenceWriter",
             "LegacyEvidenceAdapter",
             "OmissionRecord",
             "PublicationProvenance",

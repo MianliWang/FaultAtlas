@@ -248,7 +248,35 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "EvidenceCorrection",
     "EvidenceSupersession",
     "EvidenceRecordRelationship",
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
 )
+EXPECTED_S06_EVIDENCE_EXPORTS = {
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
+}
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
     "src/faultatlas/__main__.py",
@@ -2065,7 +2093,7 @@ def test_current_correction_whole_source_inventory_is_exact() -> None:
     assert len(working) == 9
 
 
-def test_p02_revision_surface_is_outside_the_immutable_p01_contract() -> None:
+def test_p02_revision_and_s06_evidence_are_outside_the_immutable_p01_contract() -> None:
     manifest = _load_document("manifest.json")
     target_symbols = manifest["target_symbols"]
     p01_targets = {
@@ -2075,8 +2103,10 @@ def test_p02_revision_surface_is_outside_the_immutable_p01_contract() -> None:
     }
     evidence_exports = set(EXPECTED_EVIDENCE_EXPORTS)
     assert evidence_module.__all__ == list(EXPECTED_EVIDENCE_EXPORTS)
+    assert EXPECTED_S06_EVIDENCE_EXPORTS <= evidence_exports
     assert not EXPECTED_REVISION_EXPORTS & p01_targets
     assert evidence_exports.isdisjoint(p01_targets)
+    assert EXPECTED_S06_EVIDENCE_EXPORTS.isdisjoint(p01_targets)
     assert EXPECTED_S02_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
     assert EXPECTED_S03_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
     assert EXPECTED_S04_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS

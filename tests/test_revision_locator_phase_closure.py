@@ -225,14 +225,29 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "EvidenceCorrection",
     "EvidenceSupersession",
     "EvidenceRecordRelationship",
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
 )
-FORBIDDEN_POST_S05_EVIDENCE_SURFACE_FRAGMENTS = (
+FORBIDDEN_POST_S06_EVIDENCE_SURFACE_FRAGMENTS = (
     "adapter",
-    "completeness",
     "corpus",
     "envelope",
-    "omission",
-    "publication",
+    "migration",
+    "persistence",
+    "reader",
+    "storage",
+    "writer",
 )
 
 EXPECTED_EXPORTS = (
@@ -898,7 +913,7 @@ def _validate_package_root_exports(exports: tuple[str, ...]) -> None:
 def _validate_current_evidence_inventory(raw: bytes) -> None:
     exports = _parse_module_exports(raw)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 39
+    assert len(exports) == len(set(exports)) == 52
 
     tree = ast.parse(raw)
     top_level_definitions = [
@@ -914,7 +929,7 @@ def _validate_current_evidence_inventory(raw: bytes) -> None:
         name for name in top_level_definitions if not name.startswith("_")
     )
     assert public_definitions == EXPECTED_EVIDENCE_EXPORTS
-    assert sum(isinstance(node, ast.ClassDef) for node in tree.body) == 41
+    assert sum(isinstance(node, ast.ClassDef) for node in tree.body) == 54
     assert tuple(
         node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)
     ) == ("EvidenceRecordRelationship",)
@@ -922,7 +937,7 @@ def _validate_current_evidence_inventory(raw: bytes) -> None:
         compact = name.replace("_", "").casefold()
         assert not any(
             fragment in compact
-            for fragment in FORBIDDEN_POST_S05_EVIDENCE_SURFACE_FRAGMENTS
+            for fragment in FORBIDDEN_POST_S06_EVIDENCE_SURFACE_FRAGMENTS
         )
         if "acquisitionrun" in compact:
             assert name in {
@@ -1832,7 +1847,8 @@ def test_group_m_historical_p03_readiness_and_current_s05_are_scope_guarded() ->
     assert "`S1.P03.S03` is complete" in roadmap
     assert "`S1.P03.S04` is complete" in roadmap
     assert "`S1.P03.S05` is complete" in roadmap
-    assert "`S1.P03.S06` is next and not started" in roadmap
+    assert "`S1.P03.S06` is complete" in roadmap
+    assert "`S1.P03.S07` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:
@@ -1971,7 +1987,7 @@ def test_current_p03_s01_inventory_and_export_mutations_are_rejected() -> None:
         "EvidenceContractCorpus",
     ),
 )
-def test_current_p03_post_s05_surface_is_rejected(early_surface: str) -> None:
+def test_current_p03_post_s06_surface_is_rejected(early_surface: str) -> None:
     source = (REPOSITORY_ROOT / EVIDENCE_MODULE).read_bytes()
     mutated = source + f"\nclass {early_surface}:\n    pass\n".encode()
     with pytest.raises(AssertionError):
