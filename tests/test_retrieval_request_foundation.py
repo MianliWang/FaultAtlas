@@ -86,13 +86,23 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "EvidenceCorrection",
     "EvidenceSupersession",
     "EvidenceRecordRelationship",
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
 )
-EXPECTED_EVIDENCE_CLASSES = {
-    *EXPECTED_EVIDENCE_EXPORTS[:-1],
-    "_ArtifactRecordBase",
-    "_EvidenceRecordBase",
-    "_RetrievalRecordBase",
-}
+EXPECTED_EVIDENCE_CLASSES = set(EXPECTED_EVIDENCE_EXPORTS) - {
+    "EvidenceRecordRelationship"
+} | {"_ArtifactRecordBase", "_EvidenceRecordBase", "_RetrievalRecordBase"}
 EXPECTED_EVIDENCE_TYPE_ALIASES = {"EvidenceRecordRelationship"}
 EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "__all__",
@@ -117,6 +127,14 @@ EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "_MAX_REQUESTS_PER_ACQUISITION_RUN",
     "_MAX_TRANSFORMATION_INPUTS",
     "_MAX_TRANSFORMATION_OUTPUTS",
+    "_MAX_EVIDENCE_SCOPE_ID_LENGTH",
+    "_MAX_EVIDENCE_REQUIREMENT_ID_LENGTH",
+    "_MAX_EVIDENCE_DISPOSITION_REASON_LENGTH",
+    "_MAX_OMISSION_SOURCE_RECORDS",
+    "_MAX_EVIDENCE_RECORDS_PER_REQUIREMENT",
+    "_MAX_REQUIREMENTS_PER_ASSESSMENT",
+    "_MAX_PUBLICATION_CHECK_NAME_LENGTH",
+    "_MAX_PUBLICATION_CHECK_ATTEMPT",
     "_RUN_ID_PATTERN",
     "_HTTP_TOKEN_PATTERN",
     "_MEDIA_TYPE_PATTERN",
@@ -126,6 +144,9 @@ EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "_EVIDENCE_VERSION_PATTERN",
     "_EVIDENCE_RELATION_ID_PATTERN",
     "_TRANSFORMATION_OPERATION_PATTERN",
+    "_EVIDENCE_SCOPE_ID_PATTERN",
+    "_EVIDENCE_REQUIREMENT_ID_PATTERN",
+    "_EVIDENCE_DISPOSITION_REASON_PATTERN",
     "_RetrievalRoutePathValue",
     "_MediaTypeValue",
     "_ApiVersionValue",
@@ -140,6 +161,10 @@ EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "_EvidenceCanonicalizationValue",
     "_EvidenceRelationIdValue",
     "_TransformationOperationValue",
+    "_EvidenceScopeIdValue",
+    "_EvidenceRequirementIdValue",
+    "_EvidenceDispositionReasonValue",
+    "_PublicationCheckNameValue",
 }
 EXPECTED_EVIDENCE_IMPORTS = {
     "re": {None},
@@ -157,7 +182,15 @@ EXPECTED_EVIDENCE_IMPORTS = {
         "field_validator",
         "model_validator",
     },
-    "faultatlas.domain.identity": {"AuthorityRole", "ProviderAuthority"},
+    "faultatlas.domain.identity": {
+        "AuthorityRole",
+        "NumberedSourceObjectIdentity",
+        "ProviderAuthority",
+        "ProviderGlobalId",
+        "RepositoryIdentity",
+        "SourceObjectKind",
+    },
+    "faultatlas.domain.revision": {"GitCommitIdentity", "GitTreeIdentity"},
 }
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -268,7 +301,7 @@ def _validate_evidence_surface(source: str) -> None:
     tree = ast.parse(source)
     exports = _parse_exports(source)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 39
+    assert len(exports) == len(set(exports)) == 52
     classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
     type_aliases = {
         node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)
@@ -297,7 +330,7 @@ def _validate_evidence_surface(source: str) -> None:
         if isinstance(target, ast.Name)
     }
     assert classes == EXPECTED_EVIDENCE_CLASSES
-    assert len(classes) == 41
+    assert len(classes) == 54
     assert type_aliases == EXPECTED_EVIDENCE_TYPE_ALIASES
     assert public_symbols == EXPECTED_EVIDENCE_EXPORTS
     assert functions == {
@@ -350,7 +383,7 @@ def _validate_package_root_exports(source: str) -> None:
     assert _parse_exports(source) == ("__version__",)
 
 
-def _assert_no_post_s05_surface(source: str) -> None:
+def _assert_no_post_s06_surface(source: str) -> None:
     tree = ast.parse(source)
     definitions = {
         node.name
@@ -362,7 +395,13 @@ def _assert_no_post_s05_surface(source: str) -> None:
     )
     forbidden = {
         "AcquisitionRunRecord",
+        "EvidenceContractCorpus",
         "EvidenceEnvelope",
+        "EvidenceMigration",
+        "EvidencePersistence",
+        "EvidenceReader",
+        "EvidenceStorage",
+        "EvidenceWriter",
         "LegacyEvidenceAdapter",
         "OmissionRecord",
         "RepresentationObservation",
@@ -1289,11 +1328,17 @@ def test_production_inventory_mutations_are_rejected(mutation: str) -> None:
         "AcquisitionRunRecord",
         "TransformationRecord",
         "OmissionRecord",
+        "EvidenceContractCorpus",
+        "EvidenceMigration",
+        "EvidencePersistence",
+        "EvidenceReader",
+        "EvidenceStorage",
+        "EvidenceWriter",
         "LegacyEvidenceAdapter",
         "EvidenceEnvelope",
     ),
 )
-def test_post_s05_surface_mutations_are_rejected(class_name: str) -> None:
+def test_post_s06_surface_mutations_are_rejected(class_name: str) -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     mutated = source + f"\n\nclass {class_name}:\n    pass\n"
     with pytest.raises(AssertionError):
@@ -1381,7 +1426,7 @@ def test_predecessor_production_models_and_artifact_snapshot_are_unchanged() -> 
 
 
 def test_no_p03_contract_corpus_reader_or_envelope_exists() -> None:
-    _assert_no_post_s05_surface(EVIDENCE_SOURCE.read_text(encoding="utf-8"))
+    _assert_no_post_s06_surface(EVIDENCE_SOURCE.read_text(encoding="utf-8"))
     assert not (REPOSITORY_ROOT / "reference_corpus/contracts/evidence").exists()
     assert not (
         REPOSITORY_ROOT / "reference_corpus/contracts/retrieval-request"

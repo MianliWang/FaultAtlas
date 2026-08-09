@@ -102,6 +102,19 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "EvidenceCorrection",
     "EvidenceSupersession",
     "EvidenceRecordRelationship",
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -364,7 +377,7 @@ def _parse_collection_limits(source: str) -> dict[str, int]:
 def _validate_evidence_exports(source: str) -> None:
     exports = _parse_exports(source)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 39
+    assert len(exports) == len(set(exports)) == 52
     tree = ast.parse(source)
     public_definitions = tuple(
         node.name
@@ -378,13 +391,13 @@ def _validate_evidence_exports(source: str) -> None:
         or (isinstance(node, ast.TypeAlias) and not node.name.id.startswith("_"))
     )
     assert public_definitions == EXPECTED_EVIDENCE_EXPORTS
-    assert sum(isinstance(node, ast.ClassDef) for node in tree.body) == 41
+    assert sum(isinstance(node, ast.ClassDef) for node in tree.body) == 54
     assert tuple(
         node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)
     ) == ("EvidenceRecordRelationship",)
 
 
-def _validate_no_post_s05_evidence_surface(source: str) -> None:
+def _validate_no_post_s06_evidence_surface(source: str) -> None:
     tree = ast.parse(source)
     definitions = {
         node.name
@@ -396,7 +409,13 @@ def _validate_no_post_s05_evidence_surface(source: str) -> None:
     )
     forbidden = {
         "AcquisitionRunRecord",
+        "EvidenceContractCorpus",
         "EvidenceEnvelope",
+        "EvidenceMigration",
+        "EvidencePersistence",
+        "EvidenceReader",
+        "EvidenceStorage",
+        "EvidenceWriter",
         "LegacyEvidenceAdapter",
         "OmissionRecord",
         "ResponseIdentity",
@@ -2337,7 +2356,11 @@ def test_representation_observation_is_not_a_retained_artifact() -> None:
             "body_length",
             "digest",
             "digest_scope",
+            "completeness",
+            "omission",
             "path",
+            "publication",
+            "publication_provenance",
             "retained_path",
             "retention",
             "sha256",
@@ -2397,25 +2420,31 @@ def test_collection_limits_are_exact_private_constants_and_mutation_sensitive() 
             assert _parse_collection_limits(mutated) == expected
 
 
-def test_s05_relationships_are_present_while_s06_and_later_surfaces_are_absent() -> (
-    None
-):
+def test_s06_records_are_present_while_s07_and_later_surfaces_are_absent() -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
-    _validate_no_post_s05_evidence_surface(source)
+    _validate_no_post_s06_evidence_surface(source)
     assert hasattr(evidence_module, "ExactRetainedArtifact")
     assert hasattr(evidence_module, "AcquisitionRun")
     assert hasattr(evidence_module, "EvidenceTransformation")
     assert hasattr(evidence_module, "EvidenceCorrection")
     assert hasattr(evidence_module, "EvidenceSupersession")
     assert hasattr(evidence_module, "EvidenceRecordRelationship")
+    for class_name in EXPECTED_EVIDENCE_EXPORTS[39:]:
+        assert hasattr(evidence_module, class_name)
     for class_name in (
         "RetainedArtifactRecord",
         "AcquisitionRunRecord",
+        "EvidenceContractCorpus",
+        "EvidenceMigration",
+        "EvidencePersistence",
+        "EvidenceReader",
+        "EvidenceStorage",
+        "EvidenceWriter",
         "LegacyEvidenceAdapter",
         "EvidenceEnvelope",
     ):
         with pytest.raises(AssertionError):
-            _validate_no_post_s05_evidence_surface(
+            _validate_no_post_s06_evidence_surface(
                 source + f"\n\nclass {class_name}:\n    pass\n"
             )
     assert not (REPOSITORY_ROOT / "src/faultatlas/domain/response.py").exists()
@@ -2455,7 +2484,15 @@ def test_evidence_module_imports_and_calls_remain_no_io() -> None:
             "field_validator",
             "model_validator",
         },
-        "faultatlas.domain.identity": {"AuthorityRole", "ProviderAuthority"},
+        "faultatlas.domain.identity": {
+            "AuthorityRole",
+            "NumberedSourceObjectIdentity",
+            "ProviderAuthority",
+            "ProviderGlobalId",
+            "RepositoryIdentity",
+            "SourceObjectKind",
+        },
+        "faultatlas.domain.revision": {"GitCommitIdentity", "GitTreeIdentity"},
     }
     forbidden_calls = {
         "__import__",

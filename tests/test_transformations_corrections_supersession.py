@@ -30,10 +30,20 @@ from faultatlas.domain.evidence import (
     ContentEncoding,
     DurableEvidenceRecordReference,
     EvidenceCanonicalization,
+    EvidenceCompletenessAssessment,
+    EvidenceCompletenessStatus,
     EvidenceCorrection,
+    EvidenceDispositionReason,
+    EvidenceOmission,
+    EvidencePublication,
+    EvidencePublicationMethod,
     EvidenceRecordFormat,
     EvidenceRecordRelationship,
     EvidenceRelationId,
+    EvidenceRequirementId,
+    EvidenceRequirementOutcome,
+    EvidenceRequirementResult,
+    EvidenceScopeId,
     EvidenceSupersession,
     EvidenceTransformation,
     EvidenceVersion,
@@ -42,6 +52,8 @@ from faultatlas.domain.evidence import (
     HttpStatusCode,
     MediaType,
     MediaTypeParameter,
+    PublicationCheckEvent,
+    PublicationCheckName,
     RequestQueryParameter,
     ResponseRepresentationObservation,
     ResponseRepresentationState,
@@ -51,6 +63,7 @@ from faultatlas.domain.evidence import (
     RetrievalRequestOrdinal,
     RetrievalRequestReference,
     RetrievalRoutePath,
+    SuccessfulPublicationCheck,
     TransformationLossiness,
     TransformationOperation,
     TransformationReversibility,
@@ -148,6 +161,19 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "EvidenceCorrection",
     "EvidenceSupersession",
     "EvidenceRecordRelationship",
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
 )
 EXPECTED_RUNTIME_EXPORTS = (
     AcquisitionRunId,
@@ -189,8 +215,23 @@ EXPECTED_RUNTIME_EXPORTS = (
     EvidenceCorrection,
     EvidenceSupersession,
     EvidenceRecordRelationship,
+    EvidenceScopeId,
+    EvidenceRequirementId,
+    EvidenceDispositionReason,
+    EvidenceRequirementOutcome,
+    EvidenceOmission,
+    EvidenceRequirementResult,
+    EvidenceCompletenessStatus,
+    EvidenceCompletenessAssessment,
+    EvidencePublicationMethod,
+    PublicationCheckEvent,
+    PublicationCheckName,
+    SuccessfulPublicationCheck,
+    EvidencePublication,
 )
-EXPECTED_PUBLIC_CLASSES = EXPECTED_EVIDENCE_EXPORTS[:-1]
+EXPECTED_PUBLIC_CLASSES = tuple(
+    name for name in EXPECTED_EVIDENCE_EXPORTS if name != "EvidenceRecordRelationship"
+)
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
     "src/faultatlas/__main__.py",
@@ -252,7 +293,10 @@ FORBIDDEN_LATER_DEFINITIONS = {
     "EvidenceContractCorpus",
     "EvidenceEnvelope",
     "EvidenceMigration",
-    "EvidenceOmission",
+    "EvidencePersistence",
+    "EvidenceReader",
+    "EvidenceStorage",
+    "EvidenceWriter",
     "LegacyEvidenceAdapter",
     "MigrationRecord",
     "MissingEvidence",
@@ -597,7 +641,7 @@ def test_preferred_runtime_imports_and_export_order_are_exact() -> None:
         getattr(symbol, "__name__") for symbol in EXPECTED_RUNTIME_EXPORTS
     ) == (EXPECTED_EVIDENCE_EXPORTS)
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 39
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 52
 
 
 def test_package_roots_nine_sources_and_artifact_snapshot_boundary_are_unchanged() -> (
@@ -2499,7 +2543,7 @@ def test_evidence_surface_exports_public_ast_alias_base_and_caps_are_exact() -> 
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     _validate_evidence_surface(source)
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 39
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 52
     assert _parse_transformation_caps(source) == {
         "_MAX_TRANSFORMATION_INPUTS": MAX_TRANSFORMATION_INPUTS,
         "_MAX_TRANSFORMATION_OUTPUTS": MAX_TRANSFORMATION_OUTPUTS,
@@ -2587,7 +2631,7 @@ def test_relationship_alias_discriminator_is_mutation_sensitive() -> None:
 
 
 @pytest.mark.parametrize("definition", sorted(FORBIDDEN_LATER_DEFINITIONS))
-def test_s06_plus_definition_mutations_are_rejected(definition: str) -> None:
+def test_s07_plus_definition_mutations_are_rejected(definition: str) -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     mutated = f"{source}\n\nclass {definition}:\n    pass\n"
     with pytest.raises(AssertionError):

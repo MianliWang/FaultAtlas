@@ -235,7 +235,35 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "EvidenceCorrection",
     "EvidenceSupersession",
     "EvidenceRecordRelationship",
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
 )
+EXPECTED_S06_EVIDENCE_EXPORTS = {
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
+}
 EXPECTED_VALID_CATEGORIES = {
     "commit-topology": 7,
     "coordinate-span": 6,
@@ -1403,9 +1431,12 @@ def _assert_evidence_is_outside_revision_locator_contract(
     }
 
     assert evidence_module.__all__ == list(EXPECTED_EVIDENCE_EXPORTS)
-    assert len(evidence_module.__all__) == 39
+    assert len(evidence_module.__all__) == 52
+    assert EXPECTED_S06_EVIDENCE_EXPORTS <= evidence_exports
     assert evidence_exports.isdisjoint(manifest_targets)
     assert evidence_exports.isdisjoint(vector_targets)
+    assert EXPECTED_S06_EVIDENCE_EXPORTS.isdisjoint(manifest_targets)
+    assert EXPECTED_S06_EVIDENCE_EXPORTS.isdisjoint(vector_targets)
     assert manifest["scope"]["production_module"] == "faultatlas.domain.revision"
     assert "faultatlas.domain.evidence" not in _json_text(manifest["scope"])
     assert manifest["vector_summary"]["total_vectors"] == 228

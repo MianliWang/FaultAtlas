@@ -10,9 +10,12 @@ payload or storage locator. Terminal acquisition runs preserve ordered request
 membership without inferring optional evidence or historical completeness.
 Content-addressed durable-record references support explicit transformations,
 additive corrections, and separate supersession edges without embedding record
-bytes or storage locations. This module performs no I/O and does not execute
-transformations or define canonical writers, migration, completeness,
-publication, persistence, or an Evidence Envelope.
+bytes or storage locations. Declared evidence scopes preserve explicit
+requirement outcomes and structured omissions, while publication records bind
+exact reviewed and published revisions to successful observed checks. This
+module performs no I/O and does not execute transformations or publication
+checks, define canonical writers, migration, persistence, or an Evidence
+Envelope.
 """
 
 import re
@@ -32,7 +35,15 @@ from pydantic import (
     model_validator,
 )
 
-from faultatlas.domain.identity import AuthorityRole, ProviderAuthority
+from faultatlas.domain.identity import (
+    AuthorityRole,
+    NumberedSourceObjectIdentity,
+    ProviderAuthority,
+    ProviderGlobalId,
+    RepositoryIdentity,
+    SourceObjectKind,
+)
+from faultatlas.domain.revision import GitCommitIdentity, GitTreeIdentity
 
 __all__ = [
     "AcquisitionRunId",
@@ -74,6 +85,19 @@ __all__ = [
     "EvidenceCorrection",
     "EvidenceSupersession",
     "EvidenceRecordRelationship",
+    "EvidenceScopeId",
+    "EvidenceRequirementId",
+    "EvidenceDispositionReason",
+    "EvidenceRequirementOutcome",
+    "EvidenceOmission",
+    "EvidenceRequirementResult",
+    "EvidenceCompletenessStatus",
+    "EvidenceCompletenessAssessment",
+    "EvidencePublicationMethod",
+    "PublicationCheckEvent",
+    "PublicationCheckName",
+    "SuccessfulPublicationCheck",
+    "EvidencePublication",
 ]
 
 _MAX_RUN_ID_LENGTH = 160
@@ -95,6 +119,14 @@ _MAX_RETAINED_ARTIFACTS_PER_REQUEST = 64
 _MAX_REQUESTS_PER_ACQUISITION_RUN = 4096
 _MAX_TRANSFORMATION_INPUTS = 64
 _MAX_TRANSFORMATION_OUTPUTS = 64
+_MAX_EVIDENCE_SCOPE_ID_LENGTH = 160
+_MAX_EVIDENCE_REQUIREMENT_ID_LENGTH = 160
+_MAX_EVIDENCE_DISPOSITION_REASON_LENGTH = 160
+_MAX_OMISSION_SOURCE_RECORDS = 16
+_MAX_EVIDENCE_RECORDS_PER_REQUIREMENT = 16
+_MAX_REQUIREMENTS_PER_ASSESSMENT = 512
+_MAX_PUBLICATION_CHECK_NAME_LENGTH = 128
+_MAX_PUBLICATION_CHECK_ATTEMPT = 2_147_483_647
 _ASSERTED_UTC_STARTED_AT_PATTERN = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
     r"(?:\.[0-9]{1,6})?(?:Z|\+00:00)"
@@ -172,6 +204,33 @@ _EVIDENCE_RECORD_FORMAT_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")
 _EVIDENCE_VERSION_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?")
 _EVIDENCE_RELATION_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
 _TRANSFORMATION_OPERATION_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")
+_EVIDENCE_SCOPE_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,158}[a-z0-9])?")
+_EVIDENCE_REQUIREMENT_ID_PATTERN = re.compile(
+    r"[a-z0-9](?:[a-z0-9._-]{0,158}[a-z0-9])?"
+)
+_EVIDENCE_DISPOSITION_REASON_PATTERN = re.compile(
+    r"[a-z0-9](?:[a-z0-9-]{0,158}[a-z0-9])?"
+)
+
+_EvidenceScopeIdValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=_MAX_EVIDENCE_SCOPE_ID_LENGTH),
+]
+_EvidenceRequirementIdValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=_MAX_EVIDENCE_REQUIREMENT_ID_LENGTH),
+]
+_EvidenceDispositionReasonValue = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        max_length=_MAX_EVIDENCE_DISPOSITION_REASON_LENGTH,
+    ),
+]
+_PublicationCheckNameValue = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=_MAX_PUBLICATION_CHECK_NAME_LENGTH),
+]
 
 
 def _has_ascii_control(value: str) -> bool:
@@ -2013,3 +2072,850 @@ type EvidenceRecordRelationship = Annotated[
     EvidenceCorrection | EvidenceSupersession,
     Field(discriminator="relationship_kind"),
 ]
+
+
+class EvidenceScopeId(RootModel[_EvidenceScopeIdValue]):
+    """Bounded identifier for one explicitly declared completeness scope."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _EvidenceScopeIdValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_scope_id(cls, value: str) -> str:
+        if not value.isascii() or _EVIDENCE_SCOPE_ID_PATTERN.fullmatch(value) is None:
+            raise ValueError(
+                "evidence scope ID must begin and end with a lowercase ASCII "
+                "letter or digit and contain only lowercase ASCII letters, "
+                "digits, hyphens, underscores, or dots"
+            )
+        return value
+
+
+class EvidenceRequirementId(RootModel[_EvidenceRequirementIdValue]):
+    """Bounded identifier for one requirement inside a declared scope."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _EvidenceRequirementIdValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_requirement_id(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _EVIDENCE_REQUIREMENT_ID_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "evidence requirement ID must begin and end with a lowercase "
+                "ASCII letter or digit and contain only lowercase ASCII letters, "
+                "digits, hyphens, underscores, or dots"
+            )
+        return value
+
+
+class EvidenceDispositionReason(RootModel[_EvidenceDispositionReasonValue]):
+    """Bounded reason code for an explicit evidence disposition."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _EvidenceDispositionReasonValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_disposition_reason(cls, value: str) -> str:
+        if (
+            not value.isascii()
+            or _EVIDENCE_DISPOSITION_REASON_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "evidence disposition reason must begin and end with a lowercase "
+                "ASCII letter or digit and contain only lowercase ASCII letters, "
+                "digits, or interior hyphens"
+            )
+        return value
+
+
+class EvidenceRequirementOutcome(StrEnum):
+    """Explicit outcome for one declared evidence requirement."""
+
+    SATISFIED = "satisfied"
+    INTENTIONALLY_OMITTED = "intentionally_omitted"
+    UNAVAILABLE = "unavailable"
+    INACCESSIBLE = "inaccessible"
+    UNKNOWN = "unknown"
+    UNSUPPORTED = "unsupported"
+    NOT_APPLICABLE = "not_applicable"
+
+
+_OMISSION_OUTCOMES: frozenset[EvidenceRequirementOutcome] = frozenset(
+    {
+        EvidenceRequirementOutcome.INTENTIONALLY_OMITTED,
+        EvidenceRequirementOutcome.UNAVAILABLE,
+        EvidenceRequirementOutcome.INACCESSIBLE,
+        EvidenceRequirementOutcome.UNKNOWN,
+        EvidenceRequirementOutcome.UNSUPPORTED,
+    }
+)
+
+
+class EvidenceOmission(_EvidenceRecordBase):
+    """Structured disposition for one omitted or unobtainable requirement."""
+
+    omission_id: EvidenceRelationId
+    requirement_id: EvidenceRequirementId
+    outcome: EvidenceRequirementOutcome
+    reason: EvidenceDispositionReason
+    source_records: tuple[DurableEvidenceRecordReference, ...]
+
+    @field_validator("omission_id", mode="before")
+    @classmethod
+    def _require_typed_python_omission_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRelationId):
+            raise ValueError(
+                "omission_id must be an EvidenceRelationId in Python input"
+            )
+        return value
+
+    @field_validator("requirement_id", mode="before")
+    @classmethod
+    def _require_typed_python_requirement_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRequirementId):
+            raise ValueError(
+                "requirement_id must be an EvidenceRequirementId in Python input"
+            )
+        return value
+
+    @field_validator("outcome", mode="before")
+    @classmethod
+    def _require_typed_python_outcome(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRequirementOutcome):
+            raise ValueError(
+                "outcome must be an EvidenceRequirementOutcome in Python input"
+            )
+        return value
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def _require_typed_python_reason(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceDispositionReason):
+            raise ValueError(
+                "reason must be an EvidenceDispositionReason in Python input"
+            )
+        return value
+
+    @field_validator("source_records", mode="before")
+    @classmethod
+    def _require_bounded_typed_source_records(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json":
+            if isinstance(value, list):
+                raw_value = cast(list[object], value)
+                if len(raw_value) > _MAX_OMISSION_SOURCE_RECORDS:
+                    raise ValueError(
+                        "source_records must contain at most "
+                        f"{_MAX_OMISSION_SOURCE_RECORDS} entries"
+                    )
+                if not raw_value:
+                    raise ValueError("source_records must contain at least one entry")
+                return tuple(raw_value)
+            return value
+        if info.mode != "python":
+            return value
+        if isinstance(value, list):
+            raw_list = cast(list[object], value)
+            if len(raw_list) > _MAX_OMISSION_SOURCE_RECORDS:
+                raise ValueError(
+                    "source_records must contain at most "
+                    f"{_MAX_OMISSION_SOURCE_RECORDS} entries"
+                )
+            raise ValueError("source_records must be a tuple in Python input")
+        if type(value) is not tuple:
+            raise ValueError("source_records must be a tuple in Python input")
+        typed_value = cast(tuple[object, ...], value)
+        if len(typed_value) > _MAX_OMISSION_SOURCE_RECORDS:
+            raise ValueError(
+                "source_records must contain at most "
+                f"{_MAX_OMISSION_SOURCE_RECORDS} entries"
+            )
+        if not typed_value:
+            raise ValueError("source_records must contain at least one entry")
+        if not all(
+            isinstance(item, DurableEvidenceRecordReference) for item in typed_value
+        ):
+            raise ValueError(
+                "source_records entries must be DurableEvidenceRecordReference "
+                "values in Python input"
+            )
+        return typed_value
+
+    @model_validator(mode="after")
+    def _validate_omission(self) -> Self:
+        if self.outcome not in _OMISSION_OUTCOMES:
+            raise ValueError(
+                "omission outcome must be intentionally_omitted, unavailable, "
+                "inaccessible, unknown, or unsupported"
+            )
+        if len(set(self.source_records)) != len(self.source_records):
+            raise ValueError("source_records must not contain duplicate records")
+        return self
+
+
+class EvidenceRequirementResult(_EvidenceRecordBase):
+    """One explicit requirement outcome with its permitted supporting shape."""
+
+    requirement_id: EvidenceRequirementId
+    outcome: EvidenceRequirementOutcome
+    evidence_records: tuple[DurableEvidenceRecordReference, ...] | None
+    omission: EvidenceOmission | None
+
+    @field_validator("requirement_id", mode="before")
+    @classmethod
+    def _require_typed_python_requirement_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRequirementId):
+            raise ValueError(
+                "requirement_id must be an EvidenceRequirementId in Python input"
+            )
+        return value
+
+    @field_validator("outcome", mode="before")
+    @classmethod
+    def _require_typed_python_outcome(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRequirementOutcome):
+            raise ValueError(
+                "outcome must be an EvidenceRequirementOutcome in Python input"
+            )
+        return value
+
+    @field_validator("evidence_records", mode="before")
+    @classmethod
+    def _require_bounded_typed_evidence_records(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if value is None:
+            return value
+        if info.mode == "json":
+            if isinstance(value, list):
+                raw_value = cast(list[object], value)
+                if len(raw_value) > _MAX_EVIDENCE_RECORDS_PER_REQUIREMENT:
+                    raise ValueError(
+                        "evidence_records must contain at most "
+                        f"{_MAX_EVIDENCE_RECORDS_PER_REQUIREMENT} entries"
+                    )
+                if not raw_value:
+                    raise ValueError(
+                        "evidence_records must contain at least one entry when present"
+                    )
+                return tuple(raw_value)
+            return value
+        if info.mode != "python":
+            return value
+        if isinstance(value, list):
+            raw_list = cast(list[object], value)
+            if len(raw_list) > _MAX_EVIDENCE_RECORDS_PER_REQUIREMENT:
+                raise ValueError(
+                    "evidence_records must contain at most "
+                    f"{_MAX_EVIDENCE_RECORDS_PER_REQUIREMENT} entries"
+                )
+            raise ValueError("evidence_records must be a tuple or None in Python input")
+        if type(value) is not tuple:
+            raise ValueError("evidence_records must be a tuple or None in Python input")
+        typed_value = cast(tuple[object, ...], value)
+        if len(typed_value) > _MAX_EVIDENCE_RECORDS_PER_REQUIREMENT:
+            raise ValueError(
+                "evidence_records must contain at most "
+                f"{_MAX_EVIDENCE_RECORDS_PER_REQUIREMENT} entries"
+            )
+        if not typed_value:
+            raise ValueError(
+                "evidence_records must contain at least one entry when present"
+            )
+        if not all(
+            isinstance(item, DurableEvidenceRecordReference) for item in typed_value
+        ):
+            raise ValueError(
+                "evidence_records entries must be DurableEvidenceRecordReference "
+                "values in Python input"
+            )
+        return typed_value
+
+    @field_validator("omission", mode="before")
+    @classmethod
+    def _require_typed_python_omission(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, EvidenceOmission)
+        ):
+            raise ValueError(
+                "omission must be an EvidenceOmission or None in Python input"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_outcome_shape(self) -> Self:
+        if self.evidence_records is not None and len(set(self.evidence_records)) != len(
+            self.evidence_records
+        ):
+            raise ValueError("evidence_records must not contain duplicate records")
+        if self.outcome is EvidenceRequirementOutcome.SATISFIED:
+            if self.evidence_records is None or self.omission is not None:
+                raise ValueError(
+                    "satisfied outcome requires evidence_records and no omission"
+                )
+            return self
+        if self.outcome in _OMISSION_OUTCOMES:
+            if self.evidence_records is not None or self.omission is None:
+                raise ValueError(
+                    "omission outcome requires omission and no evidence_records"
+                )
+            if self.omission.requirement_id != self.requirement_id:
+                raise ValueError(
+                    "omission requirement_id must match result requirement_id"
+                )
+            if self.omission.outcome is not self.outcome:
+                raise ValueError("omission outcome must match result outcome")
+            return self
+        if self.evidence_records is not None or self.omission is not None:
+            raise ValueError(
+                "not_applicable outcome requires no evidence_records and no omission"
+            )
+        return self
+
+
+class EvidenceCompletenessStatus(StrEnum):
+    """Status derived only from outcomes in one explicit evidence scope."""
+
+    SCOPE_SATISFIED = "scope_satisfied"
+    SCOPE_SATISFIED_WITH_DECLARED_OMISSIONS = "scope_satisfied_with_declared_omissions"
+    SCOPE_PARTIAL = "scope_partial"
+    SCOPE_UNKNOWN = "scope_unknown"
+
+
+_PARTIAL_OUTCOMES: frozenset[EvidenceRequirementOutcome] = frozenset(
+    {
+        EvidenceRequirementOutcome.UNAVAILABLE,
+        EvidenceRequirementOutcome.INACCESSIBLE,
+        EvidenceRequirementOutcome.UNSUPPORTED,
+    }
+)
+
+
+class EvidenceCompletenessAssessment(_EvidenceRecordBase):
+    """Immutable completeness assessment over every requirement in one scope."""
+
+    assessment_id: EvidenceRelationId
+    subject_record: DurableEvidenceRecordReference
+    scope_id: EvidenceScopeId
+    assessed_at: AwareDatetime
+    status: EvidenceCompletenessStatus
+    requirements: tuple[EvidenceRequirementResult, ...]
+
+    @field_validator("assessment_id", mode="before")
+    @classmethod
+    def _require_typed_python_assessment_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRelationId):
+            raise ValueError(
+                "assessment_id must be an EvidenceRelationId in Python input"
+            )
+        return value
+
+    @field_validator("subject_record", mode="before")
+    @classmethod
+    def _require_typed_python_subject_record(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value, DurableEvidenceRecordReference
+        ):
+            raise ValueError(
+                "subject_record must be a DurableEvidenceRecordReference in "
+                "Python input"
+            )
+        return value
+
+    @field_validator("scope_id", mode="before")
+    @classmethod
+    def _require_typed_python_scope_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceScopeId):
+            raise ValueError("scope_id must be an EvidenceScopeId in Python input")
+        return value
+
+    @field_validator("assessed_at", mode="before")
+    @classmethod
+    def _require_asserted_utc_assessed_at_json(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        return _require_asserted_utc_json(value, info, field_name="assessed_at")
+
+    @field_validator("assessed_at")
+    @classmethod
+    def _normalize_assessed_at(cls, value: datetime) -> datetime:
+        return _normalize_asserted_utc(value, field_name="assessed_at")
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _require_typed_python_status(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceCompletenessStatus):
+            raise ValueError(
+                "status must be an EvidenceCompletenessStatus in Python input"
+            )
+        return value
+
+    @field_validator("requirements", mode="before")
+    @classmethod
+    def _require_bounded_typed_requirements(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json":
+            if isinstance(value, list):
+                raw_value = cast(list[object], value)
+                if len(raw_value) > _MAX_REQUIREMENTS_PER_ASSESSMENT:
+                    raise ValueError(
+                        "requirements must contain at most "
+                        f"{_MAX_REQUIREMENTS_PER_ASSESSMENT} entries"
+                    )
+                if not raw_value:
+                    raise ValueError("requirements must contain at least one entry")
+                return tuple(raw_value)
+            return value
+        if info.mode != "python":
+            return value
+        if isinstance(value, list):
+            raw_list = cast(list[object], value)
+            if len(raw_list) > _MAX_REQUIREMENTS_PER_ASSESSMENT:
+                raise ValueError(
+                    "requirements must contain at most "
+                    f"{_MAX_REQUIREMENTS_PER_ASSESSMENT} entries"
+                )
+            raise ValueError("requirements must be a tuple in Python input")
+        if type(value) is not tuple:
+            raise ValueError("requirements must be a tuple in Python input")
+        typed_value = cast(tuple[object, ...], value)
+        if len(typed_value) > _MAX_REQUIREMENTS_PER_ASSESSMENT:
+            raise ValueError(
+                "requirements must contain at most "
+                f"{_MAX_REQUIREMENTS_PER_ASSESSMENT} entries"
+            )
+        if not typed_value:
+            raise ValueError("requirements must contain at least one entry")
+        if not all(isinstance(item, EvidenceRequirementResult) for item in typed_value):
+            raise ValueError(
+                "requirements entries must be EvidenceRequirementResult values "
+                "in Python input"
+            )
+        return typed_value
+
+    @model_validator(mode="after")
+    def _validate_requirements_and_status(self) -> Self:
+        requirement_ids = tuple(
+            requirement.requirement_id for requirement in self.requirements
+        )
+        if len(set(requirement_ids)) != len(requirement_ids):
+            raise ValueError("requirements must use unique requirement IDs")
+
+        outcomes = frozenset(requirement.outcome for requirement in self.requirements)
+        if EvidenceRequirementOutcome.UNKNOWN in outcomes:
+            expected_status = EvidenceCompletenessStatus.SCOPE_UNKNOWN
+        elif outcomes & _PARTIAL_OUTCOMES:
+            expected_status = EvidenceCompletenessStatus.SCOPE_PARTIAL
+        elif EvidenceRequirementOutcome.INTENTIONALLY_OMITTED in outcomes:
+            expected_status = (
+                EvidenceCompletenessStatus.SCOPE_SATISFIED_WITH_DECLARED_OMISSIONS
+            )
+        else:
+            expected_status = EvidenceCompletenessStatus.SCOPE_SATISFIED
+        if self.status is not expected_status:
+            raise ValueError(
+                "status is inconsistent with the explicit requirement outcomes"
+            )
+        return self
+
+
+class EvidencePublicationMethod(StrEnum):
+    """Observed method by which an evidence record was published."""
+
+    PROTECTED_PULL_REQUEST_SQUASH_MERGE = "protected_pull_request_squash_merge"
+
+
+class PublicationCheckEvent(StrEnum):
+    """GitHub event that produced one successful publication check."""
+
+    PULL_REQUEST = "pull_request"
+    PUSH = "push"
+
+
+class PublicationCheckName(RootModel[_PublicationCheckNameValue]):
+    """Exact printable ASCII workflow or check-context name."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    root: _PublicationCheckNameValue
+
+    @field_validator("root")
+    @classmethod
+    def _validate_check_name(cls, value: str) -> str:
+        if not value.isascii() or value != value.strip() or _has_ascii_control(value):
+            raise ValueError("publication check name must be unpadded printable ASCII")
+        return value
+
+
+class SuccessfulPublicationCheck(_EvidenceRecordBase):
+    """One successful, observed CI check without execution behavior."""
+
+    authority: ProviderAuthority
+    workflow_name: PublicationCheckName
+    context: PublicationCheckName
+    event: PublicationCheckEvent
+    run_id: ProviderGlobalId
+    job_id: ProviderGlobalId
+    attempt: int
+    head_revision: GitCommitIdentity
+    conclusion: Literal["success"]
+
+    @field_validator("authority", mode="before")
+    @classmethod
+    def _require_typed_python_authority(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ProviderAuthority):
+            raise ValueError("authority must be a ProviderAuthority in Python input")
+        return value
+
+    @field_validator("authority")
+    @classmethod
+    def _require_retrieval_authority(
+        cls,
+        value: ProviderAuthority,
+    ) -> ProviderAuthority:
+        if value.role is not AuthorityRole.RETRIEVAL:
+            raise ValueError("authority role must be retrieval")
+        return value
+
+    @field_validator("workflow_name", "context", mode="before")
+    @classmethod
+    def _require_typed_python_check_names(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, PublicationCheckName):
+            field_name = info.field_name or "check name"
+            raise ValueError(
+                f"{field_name} must be a PublicationCheckName in Python input"
+            )
+        return value
+
+    @field_validator("event", mode="before")
+    @classmethod
+    def _require_typed_python_event(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, PublicationCheckEvent):
+            raise ValueError("event must be a PublicationCheckEvent in Python input")
+        return value
+
+    @field_validator("run_id", "job_id", mode="before")
+    @classmethod
+    def _require_typed_python_provider_ids(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, ProviderGlobalId):
+            field_name = info.field_name or "provider ID"
+            raise ValueError(f"{field_name} must be a ProviderGlobalId in Python input")
+        return value
+
+    @field_validator("attempt", mode="before")
+    @classmethod
+    def _validate_attempt(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("attempt must be an exact integer")
+        if not 1 <= value <= _MAX_PUBLICATION_CHECK_ATTEMPT:
+            raise ValueError(
+                "attempt must be between 1 and "
+                f"{_MAX_PUBLICATION_CHECK_ATTEMPT} inclusive"
+            )
+        return value
+
+    @field_validator("head_revision", mode="before")
+    @classmethod
+    def _require_typed_python_head_revision(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitCommitIdentity):
+            raise ValueError(
+                "head_revision must be a GitCommitIdentity in Python input"
+            )
+        return value
+
+
+class EvidencePublication(_EvidenceRecordBase):
+    """Protected-PR publication provenance for one exact durable record."""
+
+    publication_id: EvidenceRelationId
+    subject_record: DurableEvidenceRecordReference
+    repository_identity: RepositoryIdentity
+    pull_request_identity: NumberedSourceObjectIdentity
+    reviewed_revision: GitCommitIdentity
+    reviewed_tree: GitTreeIdentity
+    published_revision: GitCommitIdentity
+    published_tree: GitTreeIdentity
+    method: EvidencePublicationMethod
+    published_at: AwareDatetime
+    pull_request_check: SuccessfulPublicationCheck
+    main_check: SuccessfulPublicationCheck
+
+    @field_validator("publication_id", mode="before")
+    @classmethod
+    def _require_typed_python_publication_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRelationId):
+            raise ValueError(
+                "publication_id must be an EvidenceRelationId in Python input"
+            )
+        return value
+
+    @field_validator("subject_record", mode="before")
+    @classmethod
+    def _require_typed_python_subject_record(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value, DurableEvidenceRecordReference
+        ):
+            raise ValueError(
+                "subject_record must be a DurableEvidenceRecordReference in "
+                "Python input"
+            )
+        return value
+
+    @field_validator("repository_identity", mode="before")
+    @classmethod
+    def _require_typed_python_repository_identity(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, RepositoryIdentity):
+            raise ValueError(
+                "repository_identity must be a RepositoryIdentity in Python input"
+            )
+        return value
+
+    @field_validator("pull_request_identity", mode="before")
+    @classmethod
+    def _require_typed_python_pull_request_identity(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value, NumberedSourceObjectIdentity
+        ):
+            raise ValueError(
+                "pull_request_identity must be a NumberedSourceObjectIdentity "
+                "in Python input"
+            )
+        return value
+
+    @field_validator("reviewed_revision", "published_revision", mode="before")
+    @classmethod
+    def _require_typed_python_revisions(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitCommitIdentity):
+            field_name = info.field_name or "revision"
+            raise ValueError(
+                f"{field_name} must be a GitCommitIdentity in Python input"
+            )
+        return value
+
+    @field_validator("reviewed_tree", "published_tree", mode="before")
+    @classmethod
+    def _require_typed_python_trees(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitTreeIdentity):
+            field_name = info.field_name or "tree"
+            raise ValueError(f"{field_name} must be a GitTreeIdentity in Python input")
+        return value
+
+    @field_validator("method", mode="before")
+    @classmethod
+    def _require_typed_python_method(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidencePublicationMethod):
+            raise ValueError(
+                "method must be an EvidencePublicationMethod in Python input"
+            )
+        return value
+
+    @field_validator("published_at", mode="before")
+    @classmethod
+    def _require_asserted_utc_published_at_json(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        return _require_asserted_utc_json(value, info, field_name="published_at")
+
+    @field_validator("published_at")
+    @classmethod
+    def _normalize_published_at(cls, value: datetime) -> datetime:
+        return _normalize_asserted_utc(value, field_name="published_at")
+
+    @field_validator("pull_request_check", "main_check", mode="before")
+    @classmethod
+    def _require_typed_python_checks(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, SuccessfulPublicationCheck):
+            field_name = info.field_name or "check"
+            raise ValueError(
+                f"{field_name} must be a SuccessfulPublicationCheck in Python input"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_publication_bindings(self) -> Self:
+        if self.pull_request_identity.kind is not SourceObjectKind.PULL_REQUEST:
+            raise ValueError("pull_request_identity kind must be pull_request")
+        if self.pull_request_identity.repository_identity != self.repository_identity:
+            raise ValueError(
+                "pull_request_identity repository must match repository_identity"
+            )
+        if (
+            self.pull_request_check.authority.provider
+            != self.repository_identity.provider
+            or self.main_check.authority.provider != self.repository_identity.provider
+        ):
+            raise ValueError(
+                "publication check authority providers must match repository provider"
+            )
+        if self.pull_request_check.event is not PublicationCheckEvent.PULL_REQUEST:
+            raise ValueError("pull_request_check event must be pull_request")
+        if self.main_check.event is not PublicationCheckEvent.PUSH:
+            raise ValueError("main_check event must be push")
+        if self.pull_request_check.run_id == self.main_check.run_id:
+            raise ValueError(
+                "pull_request_check and main_check run_id values must differ"
+            )
+        if self.pull_request_check.job_id == self.main_check.job_id:
+            raise ValueError(
+                "pull_request_check and main_check job_id values must differ"
+            )
+        if self.pull_request_check.head_revision != self.reviewed_revision:
+            raise ValueError(
+                "pull_request_check head_revision must equal reviewed_revision"
+            )
+        if self.main_check.head_revision != self.published_revision:
+            raise ValueError("main_check head_revision must equal published_revision")
+        if self.reviewed_revision == self.published_revision:
+            raise ValueError("reviewed_revision and published_revision must differ")
+        algorithms = {
+            self.reviewed_revision.algorithm,
+            self.reviewed_tree.algorithm,
+            self.published_revision.algorithm,
+            self.published_tree.algorithm,
+        }
+        if len(algorithms) != 1:
+            raise ValueError(
+                "reviewed and published commit and tree hash algorithms must match"
+            )
+        if self.reviewed_tree != self.published_tree:
+            raise ValueError("reviewed_tree must equal published_tree")
+        return self
