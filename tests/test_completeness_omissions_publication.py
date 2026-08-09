@@ -1377,6 +1377,9 @@ def test_publication_identity_and_subject_boundaries_are_explicit() -> None:
         "wrong_main_event",
         "wrong_pr_head",
         "wrong_main_head",
+        "reused_run_id",
+        "reused_job_id",
+        "same_revision",
         "tree_mismatch",
         "algorithm_mismatch",
     ),
@@ -1422,6 +1425,28 @@ def test_publication_rejects_inconsistent_identity_tree_and_check_bindings(
         data["main_check"] = _check(
             event=PublicationCheckEvent.PUSH,
             head=_commit("5" * 40),
+            run_id="30527462427",
+            job_id="90821631028",
+        )
+    elif mutation == "reused_run_id":
+        data["main_check"] = _check(
+            event=PublicationCheckEvent.PUSH,
+            head=canonical.published_revision,
+            run_id=canonical.pull_request_check.run_id.root,
+            job_id="90821631028",
+        )
+    elif mutation == "reused_job_id":
+        data["main_check"] = _check(
+            event=PublicationCheckEvent.PUSH,
+            head=canonical.published_revision,
+            run_id="30527462427",
+            job_id=canonical.pull_request_check.job_id.root,
+        )
+    elif mutation == "same_revision":
+        data["published_revision"] = canonical.reviewed_revision
+        data["main_check"] = _check(
+            event=PublicationCheckEvent.PUSH,
+            head=canonical.reviewed_revision,
             run_id="30527462427",
             job_id="90821631028",
         )

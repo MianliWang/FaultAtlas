@@ -2890,12 +2890,22 @@ class EvidencePublication(_EvidenceRecordBase):
             raise ValueError("pull_request_check event must be pull_request")
         if self.main_check.event is not PublicationCheckEvent.PUSH:
             raise ValueError("main_check event must be push")
+        if self.pull_request_check.run_id == self.main_check.run_id:
+            raise ValueError(
+                "pull_request_check and main_check run_id values must differ"
+            )
+        if self.pull_request_check.job_id == self.main_check.job_id:
+            raise ValueError(
+                "pull_request_check and main_check job_id values must differ"
+            )
         if self.pull_request_check.head_revision != self.reviewed_revision:
             raise ValueError(
                 "pull_request_check head_revision must equal reviewed_revision"
             )
         if self.main_check.head_revision != self.published_revision:
             raise ValueError("main_check head_revision must equal published_revision")
+        if self.reviewed_revision == self.published_revision:
+            raise ValueError("reviewed_revision and published_revision must differ")
         algorithms = {
             self.reviewed_revision.algorithm,
             self.reviewed_tree.algorithm,
