@@ -1699,6 +1699,25 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
             }
         return set()
 
+    module_bound_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            module_bound_names.add(node.id)
+        elif isinstance(node, ast.arg):
+            module_bound_names.add(node.arg)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            module_bound_names.add(node.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            module_bound_names.update(
+                (alias.asname or alias.name).split(".")[0] for alias in node.names
+            )
+        elif isinstance(node, ast.ExceptHandler) and node.name is not None:
+            module_bound_names.add(node.name)
+
+    unshadowed_isinstance_targets = {"builtins.isinstance"}
+    if "isinstance" not in module_bound_names:
+        unshadowed_isinstance_targets.add("isinstance")
+
     allowed_repository_identity_reference_ids = {
         reference_id
         for annotation in annotation_roots
@@ -1707,7 +1726,7 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or len(node.args) < 2:
             continue
-        if ast.unparse(node.func) not in {"isinstance", "builtins.isinstance"}:
+        if ast.unparse(node.func) not in unshadowed_isinstance_targets:
             continue
         allowed_repository_identity_reference_ids.update(
             direct_repository_identity_reference_ids(node.args[1])
@@ -1804,9 +1823,9 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         if isinstance(node, (ast.Name, ast.Attribute)):
             if resolves_to_forbidden_capability(ast.unparse(node)):
                 return True
-            return is_capability_namespace(node) and not is_bounded_namespace_traversal(
-                node
-            )
+            if is_capability_namespace(node) or is_namespace_expression(node):
+                return not is_bounded_namespace_traversal(node)
+            return False
         return namespace_lookup_key(node) in forbidden_dynamic_call_symbols
 
     prohibited_capability_uses = [
