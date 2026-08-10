@@ -1615,21 +1615,156 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         and node.name in adapter_function_names
     ]
     assert {node.name for node in adapter_functions} == adapter_function_names
-    module_call_target_paths = {
-        tuple(ast.unparse(node.func).split("."))
+    source_locator_mapper_symbol = "map_legacy_source_locator"
+    repository_identity_symbol = "RepositoryIdentity"
+    forbidden_semantic_import_aliases = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+        if alias.name == source_locator_mapper_symbol
+        or (alias.name == repository_identity_symbol and alias.asname is not None)
+    }
+    assert not forbidden_semantic_import_aliases
+
+    def symbol_references(root: ast.AST, symbol: str) -> list[ast.Name | ast.Attribute]:
+        return [
+            reference
+            for reference in ast.walk(root)
+            if (isinstance(reference, ast.Name) and reference.id == symbol)
+            or (isinstance(reference, ast.Attribute) and reference.attr == symbol)
+        ]
+
+    assert not [
+        (reference.lineno, ast.unparse(reference))
+        for reference in symbol_references(tree, source_locator_mapper_symbol)
+    ]
+
+    annotation_roots: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg) and node.annotation is not None:
+            annotation_roots.append(node.annotation)
+        elif isinstance(node, ast.AnnAssign):
+            annotation_roots.append(node.annotation)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.returns is not None:
+                annotation_roots.append(node.returns)
+
+    allowed_repository_identity_reference_ids = {
+        id(reference)
+        for annotation in annotation_roots
+        for reference in symbol_references(annotation, repository_identity_symbol)
+    }
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or len(node.args) < 2:
+            continue
+        if ast.unparse(node.func) not in {"isinstance", "builtins.isinstance"}:
+            continue
+        allowed_repository_identity_reference_ids.update(
+            id(reference)
+            for reference in symbol_references(node.args[1], repository_identity_symbol)
+        )
+
+    assert not [
+        (reference.lineno, ast.unparse(reference))
+        for reference in symbol_references(tree, repository_identity_symbol)
+        if id(reference) not in allowed_repository_identity_reference_ids
+    ]
+
+    forbidden_dynamic_call_symbols = {
+        "__import__",
+        "attrgetter",
+        "compile",
+        "delattr",
+        "eval",
+        "exec",
+        "getattr",
+        "globals",
+        "import_module",
+        "locals",
+        "methodcaller",
+        "setattr",
+        "vars",
+    }
+    qualified_dynamic_call_members = {
+        "builtins": forbidden_dynamic_call_symbols,
+        "importlib": {"import_module"},
+        "operator": {"attrgetter", "methodcaller"},
+    }
+    forbidden_call_aliases = set(forbidden_dynamic_call_symbols)
+    forbidden_call_aliases.update(
+        f"{module}.{member}"
+        for module, members in qualified_dynamic_call_members.items()
+        for member in members
+    )
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name not in qualified_dynamic_call_members:
+                    continue
+                module_alias = alias.asname or alias.name
+                forbidden_call_aliases.update(
+                    f"{module_alias}.{member}"
+                    for member in qualified_dynamic_call_members[alias.name]
+                )
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name in forbidden_dynamic_call_symbols:
+                    forbidden_call_aliases.add(alias.asname or alias.name)
+
+    def path_resolves_to_forbidden_call(path: str) -> bool:
+        return any(
+            path == alias or path.startswith(f"{alias}.")
+            for alias in forbidden_call_aliases
+        )
+
+    alias_assignments: list[tuple[set[str], set[str]]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
+            targets = [node.target]
+        else:
+            continue
+        if node.value is None:
+            continue
+        target_paths = {
+            ast.unparse(target)
+            for target in targets
+            if isinstance(target, (ast.Name, ast.Attribute))
+        }
+        value_paths = {
+            ast.unparse(value)
+            for value in ast.walk(node.value)
+            if isinstance(value, (ast.Name, ast.Attribute))
+        }
+        alias_assignments.append((target_paths, value_paths))
+
+    aliases_changed = True
+    while aliases_changed:
+        aliases_changed = False
+        for target_paths, value_paths in alias_assignments:
+            if not any(
+                path_resolves_to_forbidden_call(value_path)
+                for value_path in value_paths
+            ):
+                continue
+            new_aliases = target_paths - forbidden_call_aliases
+            if new_aliases:
+                forbidden_call_aliases.update(new_aliases)
+                aliases_changed = True
+
+    forbidden_module_call_targets = {
+        ast.unparse(node.func)
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
+        and any(
+            path_resolves_to_forbidden_call(ast.unparse(target))
+            for target in ast.walk(node.func)
+            if isinstance(target, (ast.Name, ast.Attribute))
+        )
     }
-    forbidden_adapter_call_symbols = {
-        "map_legacy_source_locator",
-        "RepositoryIdentity",
-    }
-    assert not {
-        forbidden
-        for target_path in module_call_target_paths
-        for forbidden in forbidden_adapter_call_symbols
-        if forbidden in target_path
-    }
+    assert not forbidden_module_call_targets
 
     adapter_call_targets = {
         ast.unparse(node.func)
