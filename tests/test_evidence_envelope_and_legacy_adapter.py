@@ -1637,18 +1637,24 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
             return ast.unparse(node.func).split(".")[-1] in namespace_lookup_functions
         return False
 
+    def namespace_lookup_key(node: ast.AST) -> str | None:
+        if (
+            isinstance(node, ast.Subscript)
+            and is_namespace_expression(node.value)
+            and isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, str)
+        ):
+            return node.slice.value
+        return None
+
     def symbol_references(root: ast.AST, symbol: str) -> list[ast.expr]:
         return [
             reference
             for reference in ast.walk(root)
+            if isinstance(reference, ast.expr)
             if (isinstance(reference, ast.Name) and reference.id == symbol)
             or (isinstance(reference, ast.Attribute) and reference.attr == symbol)
-            or (
-                isinstance(reference, ast.Subscript)
-                and is_namespace_expression(reference.value)
-                and isinstance(reference.slice, ast.Constant)
-                and reference.slice.value == symbol
-            )
+            or namespace_lookup_key(reference) == symbol
         ]
 
     assert not [
@@ -1724,110 +1730,76 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         "importlib": {"import_module"},
         "operator": {"attrgetter", "methodcaller"},
     }
-    forbidden_call_aliases = set(forbidden_dynamic_call_symbols)
-    forbidden_call_aliases.update(
+    forbidden_capability_paths = set(forbidden_dynamic_call_symbols)
+    forbidden_capability_paths.update(
         f"{module}.{member}"
         for module, members in qualified_dynamic_call_members.items()
         for member in members
     )
+    forbidden_capability_namespaces = set(qualified_dynamic_call_members)
+    forbidden_capability_imports: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name not in qualified_dynamic_call_members:
                     continue
                 module_alias = alias.asname or alias.name
-                forbidden_call_aliases.update(
+                forbidden_capability_namespaces.add(module_alias)
+                forbidden_capability_paths.update(
                     f"{module_alias}.{member}"
                     for member in qualified_dynamic_call_members[alias.name]
                 )
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
-                if alias.name in forbidden_dynamic_call_symbols:
-                    forbidden_call_aliases.add(alias.asname or alias.name)
+                if alias.name not in forbidden_dynamic_call_symbols:
+                    continue
+                forbidden_capability_paths.add(alias.asname or alias.name)
+                forbidden_capability_imports.append((node.lineno, alias.name))
 
-    def path_resolves_to_forbidden_call(path: str) -> bool:
+    assert not forbidden_capability_imports
+
+    def resolves_to_forbidden_capability(path: str) -> bool:
         return any(
-            path == alias or path.startswith(f"{alias}.")
-            for alias in forbidden_call_aliases
+            path == capability or path.startswith(f"{capability}.")
+            for capability in forbidden_capability_paths
         )
 
-    def assignment_target_paths(target: ast.AST) -> set[str]:
-        if isinstance(target, (ast.Name, ast.Attribute)):
-            return {ast.unparse(target)}
-        if isinstance(target, (ast.Tuple, ast.List)):
-            return {
-                path
-                for element in target.elts
-                for path in assignment_target_paths(element)
-            }
-        if isinstance(target, ast.Starred):
-            return assignment_target_paths(target.value)
-        return set()
+    parent_nodes: dict[int, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parent_nodes[id(child)] = parent
 
-    alias_assignments: list[tuple[set[str], set[str]]] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
-            targets = node.targets
-        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
-            targets = [node.target]
-        else:
-            continue
-        if node.value is None:
-            continue
-        target_paths = {
-            path for target in targets for path in assignment_target_paths(target)
-        }
-        value_paths = {
-            ast.unparse(value)
-            for value in ast.walk(node.value)
-            if isinstance(value, (ast.Name, ast.Attribute))
-        }
-        alias_assignments.append((target_paths, value_paths))
-
-    aliases_changed = True
-    while aliases_changed:
-        aliases_changed = False
-        for target_paths, value_paths in alias_assignments:
-            if not any(
-                path_resolves_to_forbidden_call(value_path)
-                for value_path in value_paths
-            ):
-                continue
-            new_aliases = target_paths - forbidden_call_aliases
-            if new_aliases:
-                forbidden_call_aliases.update(new_aliases)
-                aliases_changed = True
-
-    forbidden_module_call_targets = {
-        ast.unparse(node.func)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and any(
-            path_resolves_to_forbidden_call(ast.unparse(target))
-            for target in ast.walk(node.func)
-            if isinstance(target, (ast.Name, ast.Attribute))
+    def is_capability_namespace(node: ast.expr) -> bool:
+        if isinstance(node, ast.Attribute) and node.attr in namespace_lookup_attributes:
+            return is_capability_namespace(node.value)
+        return (
+            isinstance(node, (ast.Name, ast.Attribute))
+            and ast.unparse(node) in forbidden_capability_namespaces
         )
-    }
-    assert not forbidden_module_call_targets
 
-    def call_value_arguments(call: ast.Call) -> list[ast.expr]:
-        arguments = [
-            argument.value if isinstance(argument, ast.Starred) else argument
-            for argument in call.args
-        ]
-        arguments.extend(keyword.value for keyword in call.keywords)
-        return arguments
+    def is_bounded_namespace_traversal(node: ast.expr) -> bool:
+        parent = parent_nodes.get(id(node))
+        if isinstance(parent, ast.Attribute):
+            return parent.value is node
+        if isinstance(parent, ast.Subscript):
+            return parent.value is node and namespace_lookup_key(parent) is not None
+        return False
 
-    forbidden_callable_arguments = {
-        ast.unparse(reference)
+    def introduces_forbidden_capability(node: ast.expr) -> bool:
+        if isinstance(node, (ast.Name, ast.Attribute)):
+            if resolves_to_forbidden_capability(ast.unparse(node)):
+                return True
+            return is_capability_namespace(node) and not is_bounded_namespace_traversal(
+                node
+            )
+        return namespace_lookup_key(node) in forbidden_dynamic_call_symbols
+
+    prohibited_capability_uses = [
+        (node.lineno, ast.unparse(node))
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        for argument in call_value_arguments(node)
-        for reference in ast.walk(argument)
-        if isinstance(reference, (ast.Name, ast.Attribute))
-        and path_resolves_to_forbidden_call(ast.unparse(reference))
-    }
-    assert not forbidden_callable_arguments
+        if isinstance(node, ast.expr) and introduces_forbidden_capability(node)
+    ]
+    assert not prohibited_capability_uses
 
     adapter_call_targets = {
         ast.unparse(node.func)
