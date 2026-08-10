@@ -1627,12 +1627,28 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
     }
     assert not forbidden_semantic_import_aliases
 
-    def symbol_references(root: ast.AST, symbol: str) -> list[ast.Name | ast.Attribute]:
+    namespace_lookup_attributes = {"__dict__", "__globals__"}
+    namespace_lookup_functions = {"globals", "locals", "vars"}
+
+    def is_namespace_expression(node: ast.AST) -> bool:
+        if isinstance(node, ast.Attribute):
+            return node.attr in namespace_lookup_attributes
+        if isinstance(node, ast.Call):
+            return ast.unparse(node.func).split(".")[-1] in namespace_lookup_functions
+        return False
+
+    def symbol_references(root: ast.AST, symbol: str) -> list[ast.expr]:
         return [
             reference
             for reference in ast.walk(root)
             if (isinstance(reference, ast.Name) and reference.id == symbol)
             or (isinstance(reference, ast.Attribute) and reference.attr == symbol)
+            or (
+                isinstance(reference, ast.Subscript)
+                and is_namespace_expression(reference.value)
+                and isinstance(reference.slice, ast.Constant)
+                and reference.slice.value == symbol
+            )
         ]
 
     assert not [
@@ -1793,6 +1809,25 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         )
     }
     assert not forbidden_module_call_targets
+
+    def call_value_arguments(call: ast.Call) -> list[ast.expr]:
+        arguments = [
+            argument.value if isinstance(argument, ast.Starred) else argument
+            for argument in call.args
+        ]
+        arguments.extend(keyword.value for keyword in call.keywords)
+        return arguments
+
+    forbidden_callable_arguments = {
+        ast.unparse(reference)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        for argument in call_value_arguments(node)
+        for reference in ast.walk(argument)
+        if isinstance(reference, (ast.Name, ast.Attribute))
+        and path_resolves_to_forbidden_call(ast.unparse(reference))
+    }
+    assert not forbidden_callable_arguments
 
     adapter_call_targets = {
         ast.unparse(node.func)
