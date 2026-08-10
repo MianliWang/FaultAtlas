@@ -1286,6 +1286,18 @@ def test_mapping_result_rejects_snapshot_or_envelope_loss_and_modern_known_empty
         LegacyArtifactSnapshotEnvelopeMappingResult.model_validate(modern_known_empty)
 
 
+def test_mapping_result_rejects_fabricated_nonempty_modern_component() -> None:
+    snapshot = _synthetic_snapshot(507)
+    payload = _model_payload(wrap_legacy_artifact_snapshot(snapshot))
+    payload["envelope"] = _envelope(
+        legacy_snapshots=(snapshot,),
+        request_memberships=(_synthetic_membership(507),),
+    )
+
+    with pytest.raises(ValidationError, match="modern component"):
+        LegacyArtifactSnapshotEnvelopeMappingResult.model_validate(payload)
+
+
 @pytest.mark.parametrize(
     "invalid_reasons",
     [
@@ -1603,19 +1615,39 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         and node.name in adapter_function_names
     ]
     assert {node.name for node in adapter_functions} == adapter_function_names
-    call_names = {
-        node.func.id
+    module_call_target_paths = {
+        tuple(ast.unparse(node.func).split("."))
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+    }
+    forbidden_adapter_call_symbols = {
+        "map_legacy_source_locator",
+        "RepositoryIdentity",
+    }
+    assert not {
+        forbidden
+        for target_path in module_call_target_paths
+        for forbidden in forbidden_adapter_call_symbols
+        if forbidden in target_path
+    }
+
+    adapter_call_targets = {
+        ast.unparse(node.func)
         for function in adapter_functions
         for node in ast.walk(function)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        if isinstance(node, ast.Call)
     }
-    assert not call_names & {
-        "compile",
-        "eval",
-        "exec",
-        "getenv",
-        "open",
-        "sha256",
+    assert adapter_call_targets == {
+        "EvidenceEnvelope",
+        "EvidenceRelationId.model_validate",
+        "EvidenceVersion.model_validate",
+        "LegacyArtifactSnapshotEnvelopeMappingResult",
+        "LegacyArtifactSnapshotProjectionResult",
+        "TypeError",
+        "any",
+        "cast",
+        "isinstance",
+        "len",
     }
 
     class_names = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
