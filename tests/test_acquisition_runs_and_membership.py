@@ -126,6 +126,12 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "PublicationCheckName",
     "SuccessfulPublicationCheck",
     "EvidencePublication",
+    "EvidenceEnvelope",
+    "LegacyEvidenceCompatibilityReason",
+    "LegacyArtifactSnapshotEnvelopeMappingResult",
+    "LegacyArtifactSnapshotProjectionResult",
+    "wrap_legacy_artifact_snapshot",
+    "project_evidence_envelope_to_legacy_artifact_snapshot",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -183,20 +189,22 @@ FORBIDDEN_S05_RELATIONSHIP_FIELDS = {
     "tool_identity",
     "transformation",
 }
-FORBIDDEN_POST_S06_DEFINITIONS = {
+FORBIDDEN_POST_S07_DEFINITIONS = {
     "AcquisitionRunRecord",
     "CompletenessRecord",
     "CorrectionRecord",
+    "EvidenceAdapterRegistry",
+    "EvidenceConfidence",
     "EvidenceContractCorpus",
-    "EvidenceEnvelope",
     "EvidenceMigration",
     "EvidencePersistence",
     "EvidenceReader",
+    "EvidenceReview",
     "EvidenceStorage",
     "EvidenceWriter",
-    "LegacyEvidenceAdapter",
     "OmissionRecord",
     "PublicationProvenance",
+    "RepositorySnapshot",
     "SupersessionRecord",
     "TransformationRecord",
 }
@@ -420,11 +428,21 @@ def _validate_evidence_surface(source: str) -> None:
         for node in tree.body
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
     }
-    assert len(public_classes) == 51
+    public_functions = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("_")
+    }
+    assert len(public_classes) == 55
+    assert public_functions == {
+        "project_evidence_envelope_to_legacy_artifact_snapshot",
+        "wrap_legacy_artifact_snapshot",
+    }
     assert {node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)} == {
         "EvidenceRecordRelationship"
     }
-    assert not definitions & FORBIDDEN_POST_S06_DEFINITIONS
+    assert not definitions & FORBIDDEN_POST_S07_DEFINITIONS
     assert _parse_private_caps(source) == {
         "_MAX_RETAINED_ARTIFACTS_PER_REQUEST": MAX_RETAINED_ARTIFACTS,
         "_MAX_REQUESTS_PER_ACQUISITION_RUN": MAX_ACQUISITION_REQUESTS,
@@ -1611,7 +1629,7 @@ def test_evidence_exports_public_definitions_and_private_caps_are_exact() -> Non
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     _validate_evidence_surface(source)
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 52
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 58
     assert _parse_private_caps(source) == {
         "_MAX_RETAINED_ARTIFACTS_PER_REQUEST": 64,
         "_MAX_REQUESTS_PER_ACQUISITION_RUN": 4096,
@@ -1649,8 +1667,8 @@ def test_private_cap_constants_are_mutation_sensitive(name: str, value: int) -> 
         _validate_evidence_surface(mutated)
 
 
-@pytest.mark.parametrize("definition", sorted(FORBIDDEN_POST_S06_DEFINITIONS))
-def test_post_s06_definition_mutations_are_rejected(definition: str) -> None:
+@pytest.mark.parametrize("definition", sorted(FORBIDDEN_POST_S07_DEFINITIONS))
+def test_post_s07_definition_mutations_are_rejected(definition: str) -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     mutated = f"{source}\n\nclass {definition}:\n    pass\n"
     with pytest.raises(AssertionError):
@@ -1785,4 +1803,8 @@ def test_predecessor_sources_and_legacy_artifact_snapshot_remain_unchanged() -> 
     )
     assert not issubclass(AcquisitionRequestMembership, ArtifactSnapshot)
     assert not issubclass(AcquisitionRun, ArtifactSnapshot)
-    assert "ArtifactSnapshot" not in EVIDENCE_SOURCE.read_text(encoding="utf-8")
+    assert not issubclass(evidence_module.EvidenceEnvelope, ArtifactSnapshot)
+    assert not issubclass(ArtifactSnapshot, evidence_module.EvidenceEnvelope)
+    assert (set(ArtifactSnapshot.model_fields) - {"schema_version"}).isdisjoint(
+        evidence_module.EvidenceEnvelope.model_fields
+    )

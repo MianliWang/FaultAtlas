@@ -107,6 +107,12 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "PublicationCheckName",
     "SuccessfulPublicationCheck",
     "EvidencePublication",
+    "EvidenceEnvelope",
+    "LegacyEvidenceCompatibilityReason",
+    "LegacyArtifactSnapshotEnvelopeMappingResult",
+    "LegacyArtifactSnapshotProjectionResult",
+    "wrap_legacy_artifact_snapshot",
+    "project_evidence_envelope_to_legacy_artifact_snapshot",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -902,9 +908,9 @@ def test_artifact_models_exclude_response_source_storage_payload_and_later_field
     }
 
 
-def test_evidence_exports_roots_inventory_and_s07_boundary_are_exact() -> None:
+def test_evidence_exports_roots_inventory_and_s08_boundary_are_exact() -> None:
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 52
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 58
     assert faultatlas.__all__ == ["__version__"]
     assert getattr(domain_package, "__all__", None) in (None, [])
     assert not set(EXPECTED_EVIDENCE_EXPORTS) & set(vars(faultatlas))
@@ -941,8 +947,18 @@ def test_evidence_exports_roots_inventory_and_s07_boundary_are_exact() -> None:
         for node in tree.body
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
     }
+    public_functions = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("_")
+    }
     assert public_symbols == EXPECTED_EVIDENCE_EXPORTS
-    assert len(public_classes) == 51
+    assert len(public_classes) == 55
+    assert public_functions == {
+        "project_evidence_envelope_to_legacy_artifact_snapshot",
+        "wrap_legacy_artifact_snapshot",
+    }
     assert {node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)} == {
         "EvidenceRecordRelationship"
     }
@@ -951,16 +967,18 @@ def test_evidence_exports_roots_inventory_and_s07_boundary_are_exact() -> None:
             "AcquisitionRunRecord",
             "CompletenessRecord",
             "CorrectionRecord",
+            "EvidenceAdapterRegistry",
+            "EvidenceConfidence",
             "EvidenceContractCorpus",
-            "EvidenceEnvelope",
             "EvidenceMigration",
             "EvidencePersistence",
             "EvidenceReader",
+            "EvidenceReview",
             "EvidenceStorage",
             "EvidenceWriter",
-            "LegacyEvidenceAdapter",
             "OmissionRecord",
             "PublicationProvenance",
+            "RepositorySnapshot",
             "TransformationRecord",
         }
         & definitions
@@ -1033,7 +1051,11 @@ def test_legacy_artifact_snapshot_is_byte_locked_separate_and_unchanged() -> Non
     )
     assert not issubclass(ExactArtifactIdentity, ArtifactSnapshot)
     assert not issubclass(ExactRetainedArtifact, ArtifactSnapshot)
-    assert "ArtifactSnapshot" not in EVIDENCE_SOURCE.read_text(encoding="utf-8")
+    assert not issubclass(evidence_module.EvidenceEnvelope, ArtifactSnapshot)
+    assert not issubclass(ArtifactSnapshot, evidence_module.EvidenceEnvelope)
+    assert (set(ArtifactSnapshot.model_fields) - {"schema_version"}).isdisjoint(
+        evidence_module.EvidenceEnvelope.model_fields
+    )
 
 
 @pytest.mark.parametrize("mutation", ("missing", "unexpected"))

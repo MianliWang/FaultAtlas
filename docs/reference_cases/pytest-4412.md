@@ -740,8 +740,8 @@ public API. Current status: the case-calibrated `S1.P01` Identity Primitives
 Phase is complete. `S1.P02` is complete and `S1.P02.S01` through
 `S1.P02.S07` are complete. `S1.P03` is active: `S1.P03.S01` is complete,
 `S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
-`S1.P03.S05` is complete, and `S1.P03.S06` is complete. `S1.P03.S07` is next
-and not started, and `S1.P03.S08` through `S1.P03.S09` are not started.
+`S1.P03.S05`, `S1.P03.S06`, and `S1.P03.S07` are complete. `S1.P03.S08` is
+next and not started, and `S1.P03.S09` is not started.
 
 ## S1.P03.S01 Retrieval Request Identity and Authority Foundation
 
@@ -871,8 +871,8 @@ Positive transformation and supersession examples are explicitly synthetic.
 S05 introduces no migration, completeness, omission, publication provenance,
 storage, persistence, reader, writer, adapter, or Evidence Envelope semantics.
 Production records perform no I/O, legacy `ArtifactSnapshot` remains unchanged,
-and S05 does not begin S06. `S1.P03.S06` is complete, and `S1.P03.S07` is next
-and not started.
+and S05 does not begin S06. `S1.P03.S06` and `S1.P03.S07` are complete;
+`S1.P03.S08` is next and not started, and `S1.P03.S09` is not started.
 
 ## S1.P03.S06 Completeness, Omissions, and Publication Provenance
 
@@ -963,5 +963,65 @@ complete provider history or the absence of deleted, edited, hidden, private,
 or permission-filtered records. S06 adds no reader, writer, storage,
 persistence, migration, adapter, or Evidence Envelope, and production code
 performs no I/O. No publication provenance is asserted for S06 itself.
-`S1.P03.S07` Evidence Envelope composition remains next and not started;
-`S1.P03.S08` and `S1.P03.S09` remain not started.
+`S1.P03.S06` is complete.
+
+## S1.P03.S07 Evidence Envelope Composition and Legacy Adapter
+
+S07 adds the strict, frozen, in-memory `EvidenceEnvelope` composition model over
+existing typed S01-S06 records without inheritance, flattening, persistence
+closure, or cross-layer inference. Its seven component inventories are
+`legacy_snapshots`, `request_memberships`, `acquisition_runs`,
+`transformations`, `record_relationships`, `completeness_assessments`, and
+`publications`. For each inventory, `None` means that the envelope does not
+represent that component inventory, while `()` means known empty only inside
+this envelope composition. The two states remain distinct in semantic JSON,
+and neither claims global or historical absence.
+
+The canonical current P03 envelope has `legacy_snapshots=None`,
+`request_memberships=None`, one-element `acquisition_runs`,
+`transformations=()`, one-element `record_relationships`, one-element
+`completeness_assessments`, and two ordered `publications`. It contains exactly:
+
+1. acquisition run `run-0001-s04-v1-base-4c9cde74-head-690a63b9`;
+2. zero canonical transformations;
+3. correction `s04-c01-acquisition-closure`;
+4. completeness assessment `s04-c01-declared-evidence-scope`; and
+5. publication `s1-p00-s04-acquisition-publication` followed by publication
+   `s1-p00-s04-c01-correction-publication`.
+
+The nested values remain the exact standalone records. The envelope has no
+envelope ID, does not require referenced durable bytes to be embedded, and is
+not declared canonical durable bytes. No transformation, supersession,
+precedence, latest or current state, source identity, or other relationship is
+inferred from composition. No publication provenance is asserted for S07
+itself.
+
+Legacy `ArtifactSnapshot` v1 remains unchanged behind the outer envelope
+wrapper. The explicit adapter ID is
+`legacy-artifact-snapshot-v1-envelope-adapter`, and its version is `1`.
+Wrapping one validated legacy snapshot preserves that exact source snapshot,
+sets `legacy_snapshots` to the one-element tuple, leaves every modern inventory
+as `None` rather than `()`, and returns `losslessly_mappable` with no reasons.
+The adapter does not resolve the legacy `SourceLocator` or fabricate stable
+repository identity, retrieval authority, request or response facts, exact
+artifact identity, completeness, transformations, or publication provenance.
+
+Projection back to legacy v1 is explicit and fail closed:
+
+- exactly one legacy snapshot with every modern inventory `None` is
+  `losslessly_mappable` and returns that exact snapshot;
+- exactly one legacy snapshot with any modern inventory present, including an
+  explicitly known-empty `()`, is `partially_mappable`, returns no snapshot,
+  and reports `modern_components_not_representable`;
+- no represented legacy snapshot (`None` or `()`) is `not_mappable`, returns no
+  snapshot, and reports `legacy_snapshot_absent`; and
+- multiple legacy snapshots are `not_mappable`, return no snapshot, and report
+  `multiple_legacy_snapshots_not_representable`.
+
+The canonical current P03 envelope therefore projects as `not_mappable` with
+`legacy_snapshot_absent`; no diff, LICENSE, acquisition, correction,
+completeness, or publication fact is coerced into a legacy snapshot. S07 adds
+no migration, persistence, storage, reader, writer, canonical envelope bytes,
+format registry, repository snapshot, confidence or review, contract corpus,
+or service API. `S1.P03.S07` is complete, `S1.P03` remains active,
+`S1.P03.S08` is next and not started, and `S1.P03.S09` is not started.

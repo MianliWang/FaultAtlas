@@ -261,6 +261,12 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "PublicationCheckName",
     "SuccessfulPublicationCheck",
     "EvidencePublication",
+    "EvidenceEnvelope",
+    "LegacyEvidenceCompatibilityReason",
+    "LegacyArtifactSnapshotEnvelopeMappingResult",
+    "LegacyArtifactSnapshotProjectionResult",
+    "wrap_legacy_artifact_snapshot",
+    "project_evidence_envelope_to_legacy_artifact_snapshot",
 )
 EXPECTED_S06_EVIDENCE_EXPORTS = {
     "EvidenceScopeId",
@@ -276,6 +282,14 @@ EXPECTED_S06_EVIDENCE_EXPORTS = {
     "PublicationCheckName",
     "SuccessfulPublicationCheck",
     "EvidencePublication",
+}
+EXPECTED_S07_EVIDENCE_EXPORTS = {
+    "EvidenceEnvelope",
+    "LegacyEvidenceCompatibilityReason",
+    "LegacyArtifactSnapshotEnvelopeMappingResult",
+    "LegacyArtifactSnapshotProjectionResult",
+    "wrap_legacy_artifact_snapshot",
+    "project_evidence_envelope_to_legacy_artifact_snapshot",
 }
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -2093,7 +2107,9 @@ def test_current_correction_whole_source_inventory_is_exact() -> None:
     assert len(working) == 9
 
 
-def test_p02_revision_and_s06_evidence_are_outside_the_immutable_p01_contract() -> None:
+def test_p02_revision_and_s06_s07_evidence_are_outside_the_immutable_p01_contract() -> (
+    None
+):
     manifest = _load_document("manifest.json")
     target_symbols = manifest["target_symbols"]
     p01_targets = {
@@ -2104,9 +2120,11 @@ def test_p02_revision_and_s06_evidence_are_outside_the_immutable_p01_contract() 
     evidence_exports = set(EXPECTED_EVIDENCE_EXPORTS)
     assert evidence_module.__all__ == list(EXPECTED_EVIDENCE_EXPORTS)
     assert EXPECTED_S06_EVIDENCE_EXPORTS <= evidence_exports
+    assert EXPECTED_S07_EVIDENCE_EXPORTS <= evidence_exports
     assert not EXPECTED_REVISION_EXPORTS & p01_targets
     assert evidence_exports.isdisjoint(p01_targets)
     assert EXPECTED_S06_EVIDENCE_EXPORTS.isdisjoint(p01_targets)
+    assert EXPECTED_S07_EVIDENCE_EXPORTS.isdisjoint(p01_targets)
     assert EXPECTED_S02_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
     assert EXPECTED_S03_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS
     assert EXPECTED_S04_REVISION_EXPORTS <= EXPECTED_REVISION_EXPORTS

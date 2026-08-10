@@ -34,6 +34,7 @@ from faultatlas.domain.evidence import (
     EvidenceCompletenessStatus,
     EvidenceCorrection,
     EvidenceDispositionReason,
+    EvidenceEnvelope,
     EvidenceOmission,
     EvidencePublication,
     EvidencePublicationMethod,
@@ -50,6 +51,9 @@ from faultatlas.domain.evidence import (
     ExactArtifactIdentity,
     ExactRetainedArtifact,
     HttpStatusCode,
+    LegacyArtifactSnapshotEnvelopeMappingResult,
+    LegacyArtifactSnapshotProjectionResult,
+    LegacyEvidenceCompatibilityReason,
     MediaType,
     MediaTypeParameter,
     PublicationCheckEvent,
@@ -68,6 +72,8 @@ from faultatlas.domain.evidence import (
     TransformationOperation,
     TransformationReversibility,
     TransformationSubject,
+    project_evidence_envelope_to_legacy_artifact_snapshot,
+    wrap_legacy_artifact_snapshot,
 )
 from faultatlas.domain.source import ArtifactSnapshot
 
@@ -174,6 +180,12 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "PublicationCheckName",
     "SuccessfulPublicationCheck",
     "EvidencePublication",
+    "EvidenceEnvelope",
+    "LegacyEvidenceCompatibilityReason",
+    "LegacyArtifactSnapshotEnvelopeMappingResult",
+    "LegacyArtifactSnapshotProjectionResult",
+    "wrap_legacy_artifact_snapshot",
+    "project_evidence_envelope_to_legacy_artifact_snapshot",
 )
 EXPECTED_RUNTIME_EXPORTS = (
     AcquisitionRunId,
@@ -228,9 +240,22 @@ EXPECTED_RUNTIME_EXPORTS = (
     PublicationCheckName,
     SuccessfulPublicationCheck,
     EvidencePublication,
+    EvidenceEnvelope,
+    LegacyEvidenceCompatibilityReason,
+    LegacyArtifactSnapshotEnvelopeMappingResult,
+    LegacyArtifactSnapshotProjectionResult,
+    wrap_legacy_artifact_snapshot,
+    project_evidence_envelope_to_legacy_artifact_snapshot,
 )
 EXPECTED_PUBLIC_CLASSES = tuple(
-    name for name in EXPECTED_EVIDENCE_EXPORTS if name != "EvidenceRecordRelationship"
+    name
+    for name in EXPECTED_EVIDENCE_EXPORTS
+    if name
+    not in {
+        "EvidenceRecordRelationship",
+        "project_evidence_envelope_to_legacy_artifact_snapshot",
+        "wrap_legacy_artifact_snapshot",
+    }
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -287,21 +312,23 @@ EXPECTED_MODEL_FIELDS = {
         "recorded_at",
     ),
 }
-FORBIDDEN_LATER_DEFINITIONS = {
+FORBIDDEN_POST_S07_DEFINITIONS = {
     "CompletenessRecord",
+    "EvidenceAdapterRegistry",
     "EvidenceCompleteness",
+    "EvidenceConfidence",
     "EvidenceContractCorpus",
-    "EvidenceEnvelope",
     "EvidenceMigration",
     "EvidencePersistence",
     "EvidenceReader",
+    "EvidenceReview",
     "EvidenceStorage",
     "EvidenceWriter",
-    "LegacyEvidenceAdapter",
     "MigrationRecord",
     "MissingEvidence",
     "OmissionRecord",
     "PublicationProvenance",
+    "RepositorySnapshot",
 }
 FORBIDDEN_S05_FIELDS = {
     "adapter",
@@ -543,7 +570,10 @@ def _validate_evidence_surface(source: str) -> None:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and not node.name.startswith("_")
     )
-    assert public_functions == ()
+    assert public_functions == (
+        "wrap_legacy_artifact_snapshot",
+        "project_evidence_envelope_to_legacy_artifact_snapshot",
+    )
     public_aliases = tuple(
         _type_alias_name(node)
         for node in tree.body
@@ -573,7 +603,7 @@ def _validate_evidence_surface(source: str) -> None:
         for node in ast.walk(tree)
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
     }
-    assert not definitions & FORBIDDEN_LATER_DEFINITIONS
+    assert not definitions & FORBIDDEN_POST_S07_DEFINITIONS
     assert _parse_transformation_caps(source) == {
         "_MAX_TRANSFORMATION_INPUTS": MAX_TRANSFORMATION_INPUTS,
         "_MAX_TRANSFORMATION_OUTPUTS": MAX_TRANSFORMATION_OUTPUTS,
@@ -641,7 +671,7 @@ def test_preferred_runtime_imports_and_export_order_are_exact() -> None:
         getattr(symbol, "__name__") for symbol in EXPECTED_RUNTIME_EXPORTS
     ) == (EXPECTED_EVIDENCE_EXPORTS)
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 52
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 58
 
 
 def test_package_roots_nine_sources_and_artifact_snapshot_boundary_are_unchanged() -> (
@@ -2543,7 +2573,7 @@ def test_evidence_surface_exports_public_ast_alias_base_and_caps_are_exact() -> 
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     _validate_evidence_surface(source)
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 52
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 58
     assert _parse_transformation_caps(source) == {
         "_MAX_TRANSFORMATION_INPUTS": MAX_TRANSFORMATION_INPUTS,
         "_MAX_TRANSFORMATION_OUTPUTS": MAX_TRANSFORMATION_OUTPUTS,
@@ -2630,8 +2660,8 @@ def test_relationship_alias_discriminator_is_mutation_sensitive() -> None:
         _validate_evidence_surface(mutated)
 
 
-@pytest.mark.parametrize("definition", sorted(FORBIDDEN_LATER_DEFINITIONS))
-def test_s07_plus_definition_mutations_are_rejected(definition: str) -> None:
+@pytest.mark.parametrize("definition", sorted(FORBIDDEN_POST_S07_DEFINITIONS))
+def test_s08_plus_definition_mutations_are_rejected(definition: str) -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     mutated = f"{source}\n\nclass {definition}:\n    pass\n"
     with pytest.raises(AssertionError):
@@ -2697,7 +2727,11 @@ def test_artifact_snapshot_remains_unchanged_and_unrelated_to_s05_models() -> No
         EvidenceSupersession,
     ):
         assert not issubclass(model, ArtifactSnapshot)
-    assert "ArtifactSnapshot" not in EVIDENCE_SOURCE.read_text(encoding="utf-8")
+    assert not issubclass(EvidenceEnvelope, ArtifactSnapshot)
+    assert not issubclass(ArtifactSnapshot, EvidenceEnvelope)
+    assert (set(ArtifactSnapshot.model_fields) - {"schema_version"}).isdisjoint(
+        EvidenceEnvelope.model_fields
+    )
     with pytest.raises(AssertionError):
         assert (*expected_fields, "relationship") == expected_fields
 
