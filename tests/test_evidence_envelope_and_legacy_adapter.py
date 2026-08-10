@@ -1637,14 +1637,23 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
             return ast.unparse(node.func).split(".")[-1] in namespace_lookup_functions
         return False
 
-    def namespace_lookup_key(node: ast.AST) -> str | None:
+    namespace_lookup_methods = {"__getitem__", "get", "pop", "setdefault"}
+
+    def constant_string(node: ast.expr | None) -> str | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        return None
+
+    def namespace_lookup_key(node: ast.AST | None) -> str | None:
+        if isinstance(node, ast.Subscript) and is_namespace_expression(node.value):
+            return constant_string(node.slice)
         if (
-            isinstance(node, ast.Subscript)
-            and is_namespace_expression(node.value)
-            and isinstance(node.slice, ast.Constant)
-            and isinstance(node.slice.value, str)
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in namespace_lookup_methods
+            and is_namespace_expression(node.func.value)
         ):
-            return node.slice.value
+            return constant_string(node.args[0] if node.args else None)
         return None
 
     def symbol_references(root: ast.AST, symbol: str) -> list[ast.expr]:
@@ -1779,10 +1788,16 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
 
     def is_bounded_namespace_traversal(node: ast.expr) -> bool:
         parent = parent_nodes.get(id(node))
-        if isinstance(parent, ast.Attribute):
-            return parent.value is node
+        if not is_namespace_expression(node):
+            return isinstance(parent, ast.Attribute) and parent.value is node
         if isinstance(parent, ast.Subscript):
             return parent.value is node and namespace_lookup_key(parent) is not None
+        if (
+            isinstance(parent, ast.Attribute)
+            and parent.value is node
+            and parent.attr in namespace_lookup_methods
+        ):
+            return namespace_lookup_key(parent_nodes.get(id(parent))) is not None
         return False
 
     def introduces_forbidden_capability(node: ast.expr) -> bool:
