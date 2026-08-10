@@ -269,14 +269,22 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "PublicationCheckName",
     "SuccessfulPublicationCheck",
     "EvidencePublication",
+    "EvidenceEnvelope",
+    "LegacyEvidenceCompatibilityReason",
+    "LegacyArtifactSnapshotEnvelopeMappingResult",
+    "LegacyArtifactSnapshotProjectionResult",
+    "wrap_legacy_artifact_snapshot",
+    "project_evidence_envelope_to_legacy_artifact_snapshot",
 )
-FORBIDDEN_POST_S06_EVIDENCE_SURFACE_FRAGMENTS = (
-    "adapter",
+FORBIDDEN_POST_S07_EVIDENCE_SURFACE_FRAGMENTS = (
+    "confidence",
     "corpus",
-    "envelope",
     "migration",
     "persistence",
     "reader",
+    "registry",
+    "repositorysnapshot",
+    "review",
     "storage",
     "writer",
 )
@@ -1264,7 +1272,7 @@ def _validate_current_evidence_inventory(source: bytes) -> None:
     assert all(isinstance(item, str) for item in raw_exports)
     exports = tuple(cast(str, item) for item in raw_exports)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 52
+    assert len(exports) == len(set(exports)) == 58
 
     top_level_definitions = [
         node.name
@@ -1279,7 +1287,16 @@ def _validate_current_evidence_inventory(source: bytes) -> None:
         name for name in top_level_definitions if not name.startswith("_")
     )
     assert public_definitions == EXPECTED_EVIDENCE_EXPORTS
-    assert sum(isinstance(node, ast.ClassDef) for node in tree.body) == 54
+    assert sum(isinstance(node, ast.ClassDef) for node in tree.body) == 58
+    assert tuple(
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("_")
+    ) == (
+        "wrap_legacy_artifact_snapshot",
+        "project_evidence_envelope_to_legacy_artifact_snapshot",
+    )
     assert tuple(
         node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)
     ) == ("EvidenceRecordRelationship",)
@@ -1287,7 +1304,7 @@ def _validate_current_evidence_inventory(source: bytes) -> None:
         compact = name.replace("_", "").casefold()
         assert not any(
             fragment in compact
-            for fragment in FORBIDDEN_POST_S06_EVIDENCE_SURFACE_FRAGMENTS
+            for fragment in FORBIDDEN_POST_S07_EVIDENCE_SURFACE_FRAGMENTS
         )
         if "acquisitionrun" in compact:
             assert name in {
@@ -1761,12 +1778,14 @@ def test_current_p03_s01_inventory_and_export_mutations_are_rejected() -> None:
         "OmissionRecord",
         "CompletenessRecord",
         "PublicationProvenance",
-        "LegacyEvidenceAdapter",
-        "EvidenceEnvelope",
+        "EvidenceAdapterRegistry",
+        "EvidenceConfidence",
         "EvidenceContractCorpus",
+        "EvidenceReview",
+        "RepositorySnapshot",
     ),
 )
-def test_current_p03_post_s06_surface_is_rejected(early_surface: str) -> None:
+def test_current_p03_post_s07_surface_is_rejected(early_surface: str) -> None:
     source = (REPOSITORY_ROOT / EVIDENCE_MODULE).read_bytes()
     mutated = source + f"\nclass {early_surface}:\n    pass\n".encode()
     with pytest.raises(AssertionError):
@@ -1952,9 +1971,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P03.S02` is complete" in roadmap
     assert "`S1.P03.S03` is complete" in roadmap
     assert "`S1.P03.S04` is complete" in roadmap
-    assert "`S1.P03.S05` is complete" in roadmap
-    assert "`S1.P03.S06` is complete" in roadmap
-    assert "`S1.P03.S07` is next and not started" in roadmap
+    assert "`S1.P03.S05`, `S1.P03.S06`, and `S1.P03.S07` are complete" in roadmap
+    assert "`S1.P03.S08` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:

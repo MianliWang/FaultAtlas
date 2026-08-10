@@ -29,9 +29,9 @@ aspirational Slice as scheduled work.
   complete, `S1.P02.S04` is complete, `S1.P02.S05` is complete, and
   `S1.P02.S06` is complete. `S1.P02.S07` is complete. `S1.P03` is active;
   `S1.P03.S01` is complete, `S1.P03.S02` is complete, `S1.P03.S03` is
-  complete, `S1.P03.S04` is complete, `S1.P03.S05` is complete, and
-  `S1.P03.S06` is complete. `S1.P03.S07` is next and not started, and
-  `S1.P03.S08` through `S1.P03.S09` are not started.
+  complete, `S1.P03.S04` is complete, and `S1.P03.S05`, `S1.P03.S06`, and
+  `S1.P03.S07` are complete. `S1.P03.S08` is next and not started, and
+  `S1.P03.S09` is not started.
   `S1.P04` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -68,8 +68,8 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P02.S05` is complete, and `S1.P02.S06` is complete.
 `S1.P02.S07` is complete. `S1.P03` is active; `S1.P03.S01` is complete,
 `S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
-`S1.P03.S05` is complete, and `S1.P03.S06` is complete. `S1.P03.S07` is next
-and not started, and `S1.P03.S08` through `S1.P03.S09` are not started.
+`S1.P03.S05`, `S1.P03.S06`, and `S1.P03.S07` are complete. `S1.P03.S08` is
+next and not started, and `S1.P03.S09` is not started.
 `S1.P04` through `S1.P10` are not started, and `S2-S9` remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
@@ -122,9 +122,9 @@ observations while preserving immutable commit identity. S1.P02.S04 adds
 revision-qualified repository paths, and S1.P02.S05 adds separate bounded
 line, byte, and diff-hunk locators. S1.P02.S06 publishes the internal,
 source-only revision and locator contract corpus without adding a production
-reader, resolver, or persistence contract. Retrieval provenance, conflict
-resolution, lifecycle transition history, evidence envelopes, and migration
-remain unimplemented.
+reader, resolver, or persistence contract. At the S1.P02 closure boundary,
+retrieval provenance, conflict resolution, lifecycle transition history,
+evidence envelopes, and migration remained unimplemented.
 
 ## S1.P02 — Revision-qualified Locators
 
@@ -152,7 +152,7 @@ versioned, internal, source-only revision/locator contract corpus; S07
 publishes the internal, case-calibrated Phase closure. `S1.P03` is active;
 its S01 retrieval-request foundation, S02 request/response metadata, and S03
 exact retained-artifact records are complete. No production corpus reader,
-locator resolver, Evidence Envelope, or persistence contract exists.
+locator resolver, or persistence contract exists.
 
 ## S1.P03 — Evidence Envelope
 
@@ -168,8 +168,8 @@ The provisional current-Phase sequence is:
 6. `S1.P03.S06` — Completeness, Omissions, and Publication Provenance
    (complete)
 7. `S1.P03.S07` — Evidence Envelope Composition and Legacy Adapter
-   (next; not started)
-8. `S1.P03.S08` — Evidence Contract Corpus (not started)
+   (complete)
+8. `S1.P03.S08` — Evidence Contract Corpus (next; not started)
 9. `S1.P03.S09` — Integration and Phase Closure (not started)
 
 This sequence remains provisional until each Slice begins. S01 establishes
@@ -200,10 +200,22 @@ S06 also records protected-PR publication provenance for the exact acquisition
 and correction durable records, preserving stable repository identity,
 reviewed head versus squash revision, explicit reviewed-tree/squash-tree
 equality, PR CI versus natural main CI, and subject immutability. It claims no
-complete hidden or private history. These models embed no bytes and perform no
-I/O. Readers, writers, storage, persistence, migration, adapters, the Evidence
-Envelope, and a P03 contract corpus remain deferred to S07-S09 or their
-preserved later owners.
+complete hidden or private history. S07 adds strict, in-memory Evidence Envelope
+composition over these already-typed records while preserving `None` as an
+unrepresented component inventory and `()` as known empty only within the
+envelope. The canonical current envelope contains one acquisition run, zero
+transformations, one correction, one completeness assessment, and the ordered
+acquisition and correction publications. It keeps unchanged `ArtifactSnapshot`
+v1 values behind the outer wrapper and uses an explicit versioned adapter for
+lossless legacy wrapping and fail-closed legacy projection. No publication
+provenance is asserted for S07 itself. The existing S01-S06 modern evidence
+records embed no artifact payloads. A legacy-wrapping S07 envelope can carry
+the bounded `ArtifactSnapshot.payload_text` only as part of the unchanged
+legacy snapshot; the models perform no I/O. Readers, writers, storage,
+persistence, migration, canonical envelope bytes, repository snapshots,
+confidence and review, adapters beyond the explicit in-memory legacy boundary,
+and a P03 contract corpus remain deferred to S08-S09 or their preserved later
+owners.
 
 ## Preserved later Stage 1 phases
 
@@ -233,8 +245,14 @@ structured omission records, complete-with-declared-omissions semantics, and
 protected-PR publication provenance with separate PR and natural-main checks.
 It does not embed artifact bytes or storage locations, claim complete hidden or
 private history, or implement readers, writers, storage, persistence,
-migration, adapters, a corpus, or the Evidence Envelope. `S1.P03.S07` remains
-next and not started.
+migration, or a corpus. The `S1.P03.S07` layer adds strict in-memory Evidence
+Envelope composition, explicit unknown versus known-empty component
+inventories, unchanged legacy `ArtifactSnapshot` v1 composition behind an
+outer wrapper, and versioned, loss-aware legacy wrapping and projection. It
+does not implement readers, writers, storage, persistence, migration,
+canonical envelope bytes, repository snapshots, confidence or review, a
+contract corpus, or adapters beyond that explicit legacy boundary.
+`S1.P03.S08` is next and not started; `S1.P03.S09` is not started.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and

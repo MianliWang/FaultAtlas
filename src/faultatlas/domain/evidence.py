@@ -1,4 +1,4 @@
-"""Strict request, response, artifact, acquisition, and evidence-relation models.
+"""Strict request, response, artifact, acquisition, and evidence models.
 
 The models in this module identify one request attempt by acquisition-run ID
 and run-local ordinal. Retrieval authority, method, origin-relative route, and
@@ -13,11 +13,13 @@ additive corrections, and separate supersession edges without embedding record
 bytes or storage locations. Declared evidence scopes preserve explicit
 requirement outcomes and structured omissions, while publication records bind
 exact reviewed and published revisions to successful observed checks. This
-module performs no I/O and does not execute transformations or publication
-checks, define canonical writers, migration, persistence, or an Evidence
-Envelope.
+module also composes typed records in an outer evidence envelope and provides
+an explicit, loss-aware in-memory mapping for legacy ArtifactSnapshot values.
+It performs no I/O and does not execute transformations or publication checks,
+define canonical writers, migration, persistence, or durable envelope bytes.
 """
 
+import json
 import re
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -35,6 +37,7 @@ from pydantic import (
     model_validator,
 )
 
+from faultatlas.domain.compatibility import CompatibilityStatus
 from faultatlas.domain.identity import (
     AuthorityRole,
     NumberedSourceObjectIdentity,
@@ -44,6 +47,7 @@ from faultatlas.domain.identity import (
     SourceObjectKind,
 )
 from faultatlas.domain.revision import GitCommitIdentity, GitTreeIdentity
+from faultatlas.domain.source import ArtifactSnapshot
 
 __all__ = [
     "AcquisitionRunId",
@@ -98,6 +102,12 @@ __all__ = [
     "PublicationCheckName",
     "SuccessfulPublicationCheck",
     "EvidencePublication",
+    "EvidenceEnvelope",
+    "LegacyEvidenceCompatibilityReason",
+    "LegacyArtifactSnapshotEnvelopeMappingResult",
+    "LegacyArtifactSnapshotProjectionResult",
+    "wrap_legacy_artifact_snapshot",
+    "project_evidence_envelope_to_legacy_artifact_snapshot",
 ]
 
 _MAX_RUN_ID_LENGTH = 160
@@ -127,6 +137,15 @@ _MAX_EVIDENCE_RECORDS_PER_REQUIREMENT = 16
 _MAX_REQUIREMENTS_PER_ASSESSMENT = 512
 _MAX_PUBLICATION_CHECK_NAME_LENGTH = 128
 _MAX_PUBLICATION_CHECK_ATTEMPT = 2_147_483_647
+_MAX_ENVELOPE_LEGACY_SNAPSHOTS = 64
+_MAX_ENVELOPE_REQUEST_MEMBERSHIPS = 4096
+_MAX_ENVELOPE_ACQUISITION_RUNS = 64
+_MAX_ENVELOPE_TRANSFORMATIONS = 256
+_MAX_ENVELOPE_RECORD_RELATIONSHIPS = 256
+_MAX_ENVELOPE_COMPLETENESS_ASSESSMENTS = 256
+_MAX_ENVELOPE_PUBLICATIONS = 256
+_LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_ID = "legacy-artifact-snapshot-v1-envelope-adapter"
+_LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_VERSION = "1"
 _ASSERTED_UTC_STARTED_AT_PATTERN = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
     r"(?:\.[0-9]{1,6})?(?:Z|\+00:00)"
@@ -2919,3 +2938,567 @@ class EvidencePublication(_EvidenceRecordBase):
         if self.reviewed_tree != self.published_tree:
             raise ValueError("reviewed_tree must equal published_tree")
         return self
+
+
+class EvidenceEnvelope(_EvidenceRecordBase):
+    """Bounded composition of already-typed legacy and modern evidence records."""
+
+    legacy_snapshots: tuple[ArtifactSnapshot, ...] | None
+    request_memberships: tuple[AcquisitionRequestMembership, ...] | None
+    acquisition_runs: tuple[AcquisitionRun, ...] | None
+    transformations: tuple[EvidenceTransformation, ...] | None
+    record_relationships: tuple[EvidenceRecordRelationship, ...] | None
+    completeness_assessments: tuple[EvidenceCompletenessAssessment, ...] | None
+    publications: tuple[EvidencePublication, ...] | None
+
+    @field_validator(
+        "legacy_snapshots",
+        "request_memberships",
+        "acquisition_runs",
+        "transformations",
+        "record_relationships",
+        "completeness_assessments",
+        "publications",
+        mode="before",
+    )
+    @classmethod
+    def _require_bounded_typed_component_tuple(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if value is None:
+            return value
+
+        field_name = info.field_name or "component collection"
+        maximum: int
+        expected_type: type[BaseModel] | tuple[type[BaseModel], ...]
+        expected_name: str
+        if field_name == "legacy_snapshots":
+            maximum = _MAX_ENVELOPE_LEGACY_SNAPSHOTS
+            expected_type = ArtifactSnapshot
+            expected_name = "ArtifactSnapshot"
+        elif field_name == "request_memberships":
+            maximum = _MAX_ENVELOPE_REQUEST_MEMBERSHIPS
+            expected_type = AcquisitionRequestMembership
+            expected_name = "AcquisitionRequestMembership"
+        elif field_name == "acquisition_runs":
+            maximum = _MAX_ENVELOPE_ACQUISITION_RUNS
+            expected_type = AcquisitionRun
+            expected_name = "AcquisitionRun"
+        elif field_name == "transformations":
+            maximum = _MAX_ENVELOPE_TRANSFORMATIONS
+            expected_type = EvidenceTransformation
+            expected_name = "EvidenceTransformation"
+        elif field_name == "record_relationships":
+            maximum = _MAX_ENVELOPE_RECORD_RELATIONSHIPS
+            expected_type = (EvidenceCorrection, EvidenceSupersession)
+            expected_name = "EvidenceCorrection or EvidenceSupersession"
+        elif field_name == "completeness_assessments":
+            maximum = _MAX_ENVELOPE_COMPLETENESS_ASSESSMENTS
+            expected_type = EvidenceCompletenessAssessment
+            expected_name = "EvidenceCompletenessAssessment"
+        elif field_name == "publications":
+            maximum = _MAX_ENVELOPE_PUBLICATIONS
+            expected_type = EvidencePublication
+            expected_name = "EvidencePublication"
+        else:
+            raise AssertionError("unexpected EvidenceEnvelope component field")
+
+        if info.mode == "json":
+            if isinstance(value, list):
+                raw_value = cast(list[object], value)
+                if len(raw_value) > maximum:
+                    raise ValueError(
+                        f"{field_name} must contain at most {maximum} entries"
+                    )
+                if field_name == "legacy_snapshots":
+                    return tuple(
+                        ArtifactSnapshot.model_validate_json(json.dumps(item))
+                        if isinstance(item, dict)
+                        else item
+                        for item in raw_value
+                    )
+                return tuple(raw_value)
+            return value
+        if info.mode != "python":
+            return value
+        if isinstance(value, list):
+            raw_list = cast(list[object], value)
+            if len(raw_list) > maximum:
+                raise ValueError(f"{field_name} must contain at most {maximum} entries")
+            raise ValueError(f"{field_name} must be a tuple or None in Python input")
+        if type(value) is not tuple:
+            raise ValueError(f"{field_name} must be a tuple or None in Python input")
+        typed_value = cast(tuple[object, ...], value)
+        if len(typed_value) > maximum:
+            raise ValueError(f"{field_name} must contain at most {maximum} entries")
+        if not all(isinstance(item, expected_type) for item in typed_value):
+            raise ValueError(
+                f"{field_name} entries must be {expected_name} values in Python input"
+            )
+        return typed_value
+
+    @model_validator(mode="after")
+    def _validate_composition(self) -> Self:
+        components = (
+            self.legacy_snapshots,
+            self.request_memberships,
+            self.acquisition_runs,
+            self.transformations,
+            self.record_relationships,
+            self.completeness_assessments,
+            self.publications,
+        )
+        if not any(component for component in components):
+            raise ValueError("evidence envelope must contain at least one record")
+
+        if self.legacy_snapshots is not None and len(set(self.legacy_snapshots)) != len(
+            self.legacy_snapshots
+        ):
+            raise ValueError("legacy_snapshots must not contain duplicate values")
+
+        if self.request_memberships is not None:
+            request_ids = tuple(
+                membership.request_id for membership in self.request_memberships
+            )
+            if len(set(request_ids)) != len(request_ids):
+                raise ValueError(
+                    "request_memberships must use unique request_id values"
+                )
+
+        if self.acquisition_runs is not None:
+            run_ids = tuple(run.run_id for run in self.acquisition_runs)
+            if len(set(run_ids)) != len(run_ids):
+                raise ValueError("acquisition_runs must use unique run_id values")
+
+        if self.transformations is not None:
+            transformation_ids = tuple(
+                transformation.transformation_id
+                for transformation in self.transformations
+            )
+            if len(set(transformation_ids)) != len(transformation_ids):
+                raise ValueError(
+                    "transformations must use unique transformation_id values"
+                )
+
+        if self.record_relationships is not None:
+            relationship_ids = tuple(
+                (relationship.relationship_kind, relationship.relationship_id)
+                for relationship in self.record_relationships
+            )
+            if len(set(relationship_ids)) != len(relationship_ids):
+                raise ValueError(
+                    "record_relationships must use unique typed relationship identities"
+                )
+
+        if self.completeness_assessments is not None:
+            assessment_ids = tuple(
+                assessment.assessment_id for assessment in self.completeness_assessments
+            )
+            if len(set(assessment_ids)) != len(assessment_ids):
+                raise ValueError(
+                    "completeness_assessments must use unique assessment_id values"
+                )
+
+        if self.publications is not None:
+            publication_ids = tuple(
+                publication.publication_id for publication in self.publications
+            )
+            if len(set(publication_ids)) != len(publication_ids):
+                raise ValueError("publications must use unique publication_id values")
+
+        standalone_request_ids = {
+            (
+                membership.request_id.acquisition_run_id.root,
+                membership.request_id.request_ordinal.root,
+            )
+            for membership in self.request_memberships or ()
+        }
+        nested_request_ids = {
+            (
+                membership.request_id.acquisition_run_id.root,
+                membership.request_id.request_ordinal.root,
+            )
+            for run in self.acquisition_runs or ()
+            for membership in run.requests
+        }
+        if standalone_request_ids & nested_request_ids:
+            raise ValueError(
+                "a request_id must not appear both as a standalone membership "
+                "and inside an acquisition run"
+            )
+        return self
+
+
+class LegacyEvidenceCompatibilityReason(StrEnum):
+    """Exact reasons why an envelope cannot project losslessly to legacy v1."""
+
+    LEGACY_SNAPSHOT_ABSENT = "legacy_snapshot_absent"
+    MULTIPLE_LEGACY_SNAPSHOTS_NOT_REPRESENTABLE = (
+        "multiple_legacy_snapshots_not_representable"
+    )
+    MODERN_COMPONENTS_NOT_REPRESENTABLE = "modern_components_not_representable"
+
+
+class LegacyArtifactSnapshotEnvelopeMappingResult(_EvidenceRecordBase):
+    """Validated lossless wrapping of one legacy ArtifactSnapshot."""
+
+    adapter_id: EvidenceRelationId
+    adapter_version: EvidenceVersion
+    status: CompatibilityStatus
+    source_snapshot: ArtifactSnapshot
+    envelope: EvidenceEnvelope
+    reasons: tuple[LegacyEvidenceCompatibilityReason, ...]
+
+    @field_validator("adapter_id", mode="before")
+    @classmethod
+    def _require_typed_python_adapter_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRelationId):
+            raise ValueError("adapter_id must be an EvidenceRelationId in Python input")
+        return value
+
+    @field_validator("adapter_version", mode="before")
+    @classmethod
+    def _require_typed_python_adapter_version(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceVersion):
+            raise ValueError(
+                "adapter_version must be an EvidenceVersion in Python input"
+            )
+        return value
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _require_typed_python_status(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, CompatibilityStatus):
+            raise ValueError("status must be a CompatibilityStatus in Python input")
+        return value
+
+    @field_validator("source_snapshot", mode="before")
+    @classmethod
+    def _require_typed_python_source_snapshot(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json" and isinstance(value, dict):
+            return ArtifactSnapshot.model_validate_json(json.dumps(value))
+        if info.mode == "python" and not isinstance(value, ArtifactSnapshot):
+            raise ValueError(
+                "source_snapshot must be an ArtifactSnapshot in Python input"
+            )
+        return value
+
+    @field_validator("envelope", mode="before")
+    @classmethod
+    def _require_typed_python_envelope(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceEnvelope):
+            raise ValueError("envelope must be an EvidenceEnvelope in Python input")
+        return value
+
+    @field_validator("reasons", mode="before")
+    @classmethod
+    def _require_typed_python_reasons(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json":
+            if isinstance(value, list):
+                return tuple(cast(list[object], value))
+            return value
+        if info.mode != "python":
+            return value
+        if type(value) is not tuple:
+            raise ValueError("reasons must be a tuple in Python input")
+        typed_value = cast(tuple[object, ...], value)
+        if not all(
+            isinstance(item, LegacyEvidenceCompatibilityReason) for item in typed_value
+        ):
+            raise ValueError(
+                "reasons entries must be LegacyEvidenceCompatibilityReason "
+                "values in Python input"
+            )
+        return typed_value
+
+    @model_validator(mode="after")
+    def _validate_mapping(self) -> Self:
+        if self.adapter_id.root != _LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_ID:
+            raise ValueError("adapter_id must identify the canonical legacy adapter")
+        if self.adapter_version.root != _LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_VERSION:
+            raise ValueError("adapter_version must be the canonical adapter version")
+        if self.status is not CompatibilityStatus.LOSSLESSLY_MAPPABLE:
+            raise ValueError("legacy snapshot wrapping must be losslessly_mappable")
+        if self.reasons:
+            raise ValueError("lossless legacy snapshot wrapping must have no reasons")
+        if self.envelope.legacy_snapshots != (self.source_snapshot,):
+            raise ValueError(
+                "envelope must preserve exactly the source legacy snapshot"
+            )
+        modern_components = (
+            self.envelope.request_memberships,
+            self.envelope.acquisition_runs,
+            self.envelope.transformations,
+            self.envelope.record_relationships,
+            self.envelope.completeness_assessments,
+            self.envelope.publications,
+        )
+        if any(component is not None for component in modern_components):
+            raise ValueError(
+                "legacy snapshot wrapping must leave every modern component "
+                "unrepresented"
+            )
+        return self
+
+
+class LegacyArtifactSnapshotProjectionResult(_EvidenceRecordBase):
+    """Validated fail-closed projection from an envelope to legacy v1."""
+
+    adapter_id: EvidenceRelationId
+    adapter_version: EvidenceVersion
+    status: CompatibilityStatus
+    source_envelope: EvidenceEnvelope
+    projected_snapshot: ArtifactSnapshot | None
+    reasons: tuple[LegacyEvidenceCompatibilityReason, ...]
+
+    @field_validator("adapter_id", mode="before")
+    @classmethod
+    def _require_typed_python_adapter_id(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceRelationId):
+            raise ValueError("adapter_id must be an EvidenceRelationId in Python input")
+        return value
+
+    @field_validator("adapter_version", mode="before")
+    @classmethod
+    def _require_typed_python_adapter_version(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceVersion):
+            raise ValueError(
+                "adapter_version must be an EvidenceVersion in Python input"
+            )
+        return value
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _require_typed_python_status(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, CompatibilityStatus):
+            raise ValueError("status must be a CompatibilityStatus in Python input")
+        return value
+
+    @field_validator("source_envelope", mode="before")
+    @classmethod
+    def _require_typed_python_source_envelope(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, EvidenceEnvelope):
+            raise ValueError(
+                "source_envelope must be an EvidenceEnvelope in Python input"
+            )
+        return value
+
+    @field_validator("projected_snapshot", mode="before")
+    @classmethod
+    def _require_typed_python_projected_snapshot(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json" and isinstance(value, dict):
+            return ArtifactSnapshot.model_validate_json(json.dumps(value))
+        if (
+            info.mode == "python"
+            and value is not None
+            and not isinstance(value, ArtifactSnapshot)
+        ):
+            raise ValueError(
+                "projected_snapshot must be an ArtifactSnapshot or None in Python input"
+            )
+        return value
+
+    @field_validator("reasons", mode="before")
+    @classmethod
+    def _require_typed_python_reasons(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json":
+            if isinstance(value, list):
+                return tuple(cast(list[object], value))
+            return value
+        if info.mode != "python":
+            return value
+        if type(value) is not tuple:
+            raise ValueError("reasons must be a tuple in Python input")
+        typed_value = cast(tuple[object, ...], value)
+        if not all(
+            isinstance(item, LegacyEvidenceCompatibilityReason) for item in typed_value
+        ):
+            raise ValueError(
+                "reasons entries must be LegacyEvidenceCompatibilityReason "
+                "values in Python input"
+            )
+        return typed_value
+
+    @model_validator(mode="after")
+    def _validate_projection(self) -> Self:
+        if self.adapter_id.root != _LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_ID:
+            raise ValueError("adapter_id must identify the canonical legacy adapter")
+        if self.adapter_version.root != _LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_VERSION:
+            raise ValueError("adapter_version must be the canonical adapter version")
+
+        legacy_snapshots = self.source_envelope.legacy_snapshots
+        modern_components = (
+            self.source_envelope.request_memberships,
+            self.source_envelope.acquisition_runs,
+            self.source_envelope.transformations,
+            self.source_envelope.record_relationships,
+            self.source_envelope.completeness_assessments,
+            self.source_envelope.publications,
+        )
+        expected_status: CompatibilityStatus
+        expected_snapshot: ArtifactSnapshot | None
+        expected_reasons: tuple[LegacyEvidenceCompatibilityReason, ...]
+        if legacy_snapshots is None or len(legacy_snapshots) == 0:
+            expected_status = CompatibilityStatus.NOT_MAPPABLE
+            expected_snapshot = None
+            expected_reasons = (
+                LegacyEvidenceCompatibilityReason.LEGACY_SNAPSHOT_ABSENT,
+            )
+        elif len(legacy_snapshots) > 1:
+            expected_status = CompatibilityStatus.NOT_MAPPABLE
+            expected_snapshot = None
+            expected_reasons = (
+                LegacyEvidenceCompatibilityReason.MULTIPLE_LEGACY_SNAPSHOTS_NOT_REPRESENTABLE,
+            )
+        elif any(component is not None for component in modern_components):
+            expected_status = CompatibilityStatus.PARTIALLY_MAPPABLE
+            expected_snapshot = None
+            expected_reasons = (
+                LegacyEvidenceCompatibilityReason.MODERN_COMPONENTS_NOT_REPRESENTABLE,
+            )
+        else:
+            expected_status = CompatibilityStatus.LOSSLESSLY_MAPPABLE
+            expected_snapshot = legacy_snapshots[0]
+            expected_reasons = ()
+
+        if self.status is not expected_status:
+            raise ValueError("projection status does not match the source envelope")
+        if self.projected_snapshot != expected_snapshot:
+            raise ValueError("projected_snapshot does not match the source envelope")
+        if self.reasons != expected_reasons:
+            raise ValueError("projection reasons do not match the source envelope")
+        return self
+
+
+def wrap_legacy_artifact_snapshot(
+    source_snapshot: ArtifactSnapshot,
+) -> LegacyArtifactSnapshotEnvelopeMappingResult:
+    """Preserve one validated legacy snapshot inside an otherwise unknown envelope."""
+
+    if not isinstance(cast(object, source_snapshot), ArtifactSnapshot):
+        raise TypeError("source_snapshot must be an ArtifactSnapshot")
+    envelope = EvidenceEnvelope(
+        legacy_snapshots=(source_snapshot,),
+        request_memberships=None,
+        acquisition_runs=None,
+        transformations=None,
+        record_relationships=None,
+        completeness_assessments=None,
+        publications=None,
+    )
+    return LegacyArtifactSnapshotEnvelopeMappingResult(
+        adapter_id=EvidenceRelationId.model_validate(
+            _LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_ID
+        ),
+        adapter_version=EvidenceVersion.model_validate(
+            _LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_VERSION
+        ),
+        status=CompatibilityStatus.LOSSLESSLY_MAPPABLE,
+        source_snapshot=source_snapshot,
+        envelope=envelope,
+        reasons=(),
+    )
+
+
+def project_evidence_envelope_to_legacy_artifact_snapshot(
+    source_envelope: EvidenceEnvelope,
+) -> LegacyArtifactSnapshotProjectionResult:
+    """Project only an exactly representable legacy-only envelope."""
+
+    if not isinstance(cast(object, source_envelope), EvidenceEnvelope):
+        raise TypeError("source_envelope must be an EvidenceEnvelope")
+    legacy_snapshots = source_envelope.legacy_snapshots
+    modern_components = (
+        source_envelope.request_memberships,
+        source_envelope.acquisition_runs,
+        source_envelope.transformations,
+        source_envelope.record_relationships,
+        source_envelope.completeness_assessments,
+        source_envelope.publications,
+    )
+    status: CompatibilityStatus
+    projected_snapshot: ArtifactSnapshot | None
+    reasons: tuple[LegacyEvidenceCompatibilityReason, ...]
+    if legacy_snapshots is None or len(legacy_snapshots) == 0:
+        status = CompatibilityStatus.NOT_MAPPABLE
+        projected_snapshot = None
+        reasons = (LegacyEvidenceCompatibilityReason.LEGACY_SNAPSHOT_ABSENT,)
+    elif len(legacy_snapshots) > 1:
+        status = CompatibilityStatus.NOT_MAPPABLE
+        projected_snapshot = None
+        reasons = (
+            LegacyEvidenceCompatibilityReason.MULTIPLE_LEGACY_SNAPSHOTS_NOT_REPRESENTABLE,
+        )
+    elif any(component is not None for component in modern_components):
+        status = CompatibilityStatus.PARTIALLY_MAPPABLE
+        projected_snapshot = None
+        reasons = (
+            LegacyEvidenceCompatibilityReason.MODERN_COMPONENTS_NOT_REPRESENTABLE,
+        )
+    else:
+        status = CompatibilityStatus.LOSSLESSLY_MAPPABLE
+        projected_snapshot = legacy_snapshots[0]
+        reasons = ()
+
+    return LegacyArtifactSnapshotProjectionResult(
+        adapter_id=EvidenceRelationId.model_validate(
+            _LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_ID
+        ),
+        adapter_version=EvidenceVersion.model_validate(
+            _LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_VERSION
+        ),
+        status=status,
+        source_envelope=source_envelope,
+        projected_snapshot=projected_snapshot,
+        reasons=reasons,
+    )

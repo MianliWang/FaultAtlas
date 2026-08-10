@@ -169,6 +169,12 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "PublicationCheckName",
     "SuccessfulPublicationCheck",
     "EvidencePublication",
+    "EvidenceEnvelope",
+    "LegacyEvidenceCompatibilityReason",
+    "LegacyArtifactSnapshotEnvelopeMappingResult",
+    "LegacyArtifactSnapshotProjectionResult",
+    "wrap_legacy_artifact_snapshot",
+    "project_evidence_envelope_to_legacy_artifact_snapshot",
 )
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -534,7 +540,7 @@ def _assert_root_config(model: type[RootModel[Any]]) -> None:
 
 def test_exact_s06_export_and_production_surfaces() -> None:
     assert tuple(evidence_module.__all__) == EXPECTED_EVIDENCE_EXPORTS
-    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 52
+    assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 58
     assert not set(EXPECTED_EVIDENCE_EXPORTS) & set(vars(faultatlas))
     assert not set(EXPECTED_EVIDENCE_EXPORTS) & set(vars(domain_package))
     production_files = {
@@ -612,7 +618,7 @@ def test_exact_s06_model_fields_and_configs() -> None:
         _assert_root_config(root_model)
 
 
-def test_s07_and_io_surfaces_remain_absent() -> None:
+def test_s08_plus_and_io_surfaces_remain_absent() -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     tree = ast.parse(source)
     definitions = {
@@ -621,14 +627,16 @@ def test_s07_and_io_surfaces_remain_absent() -> None:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
     }
     forbidden_definitions = {
-        "EvidenceEnvelope",
-        "LegacyEvidenceAdapter",
+        "EvidenceAdapterRegistry",
+        "EvidenceConfidence",
+        "EvidenceContractCorpus",
         "EvidenceMigration",
         "EvidencePersistence",
         "EvidenceReader",
+        "EvidenceReview",
         "EvidenceWriter",
         "EvidenceStorage",
-        "EvidenceContractCorpus",
+        "RepositorySnapshot",
     }
     assert not definitions & forbidden_definitions
     forbidden_import_roots = {
@@ -1697,10 +1705,10 @@ def test_models_are_frozen_and_extra_forbidden() -> None:
             setattr(cast(Any, model), field, "changed")
 
 
-def test_inventory_failure_sensitivity_detects_missing_unexpected_and_s07() -> None:
+def test_inventory_failure_sensitivity_detects_missing_and_unexpected_exports() -> None:
     exports = list(EXPECTED_EVIDENCE_EXPORTS)
     missing = tuple(exports[:-1])
-    unexpected = tuple((*exports, "EvidenceEnvelope"))
+    unexpected = tuple((*exports, "EvidenceContractCorpus"))
     with pytest.raises(AssertionError):
         assert missing == EXPECTED_EVIDENCE_EXPORTS
     with pytest.raises(AssertionError):

@@ -99,9 +99,17 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "PublicationCheckName",
     "SuccessfulPublicationCheck",
     "EvidencePublication",
+    "EvidenceEnvelope",
+    "LegacyEvidenceCompatibilityReason",
+    "LegacyArtifactSnapshotEnvelopeMappingResult",
+    "LegacyArtifactSnapshotProjectionResult",
+    "wrap_legacy_artifact_snapshot",
+    "project_evidence_envelope_to_legacy_artifact_snapshot",
 )
 EXPECTED_EVIDENCE_CLASSES = set(EXPECTED_EVIDENCE_EXPORTS) - {
-    "EvidenceRecordRelationship"
+    "EvidenceRecordRelationship",
+    "project_evidence_envelope_to_legacy_artifact_snapshot",
+    "wrap_legacy_artifact_snapshot",
 } | {"_ArtifactRecordBase", "_EvidenceRecordBase", "_RetrievalRecordBase"}
 EXPECTED_EVIDENCE_TYPE_ALIASES = {"EvidenceRecordRelationship"}
 EXPECTED_EVIDENCE_ASSIGNMENTS = {
@@ -135,6 +143,15 @@ EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "_MAX_REQUIREMENTS_PER_ASSESSMENT",
     "_MAX_PUBLICATION_CHECK_NAME_LENGTH",
     "_MAX_PUBLICATION_CHECK_ATTEMPT",
+    "_MAX_ENVELOPE_LEGACY_SNAPSHOTS",
+    "_MAX_ENVELOPE_REQUEST_MEMBERSHIPS",
+    "_MAX_ENVELOPE_ACQUISITION_RUNS",
+    "_MAX_ENVELOPE_TRANSFORMATIONS",
+    "_MAX_ENVELOPE_RECORD_RELATIONSHIPS",
+    "_MAX_ENVELOPE_COMPLETENESS_ASSESSMENTS",
+    "_MAX_ENVELOPE_PUBLICATIONS",
+    "_LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_ID",
+    "_LEGACY_ARTIFACT_SNAPSHOT_ADAPTER_VERSION",
     "_RUN_ID_PATTERN",
     "_HTTP_TOKEN_PATTERN",
     "_MEDIA_TYPE_PATTERN",
@@ -167,6 +184,7 @@ EXPECTED_EVIDENCE_ASSIGNMENTS = {
     "_PublicationCheckNameValue",
 }
 EXPECTED_EVIDENCE_IMPORTS = {
+    "json": {None},
     "re": {None},
     "datetime": {"UTC", "datetime", "timedelta"},
     "enum": {"StrEnum"},
@@ -182,6 +200,7 @@ EXPECTED_EVIDENCE_IMPORTS = {
         "field_validator",
         "model_validator",
     },
+    "faultatlas.domain.compatibility": {"CompatibilityStatus"},
     "faultatlas.domain.identity": {
         "AuthorityRole",
         "NumberedSourceObjectIdentity",
@@ -191,6 +210,7 @@ EXPECTED_EVIDENCE_IMPORTS = {
         "SourceObjectKind",
     },
     "faultatlas.domain.revision": {"GitCommitIdentity", "GitTreeIdentity"},
+    "faultatlas.domain.source": {"ArtifactSnapshot"},
 }
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
@@ -301,7 +321,7 @@ def _validate_evidence_surface(source: str) -> None:
     tree = ast.parse(source)
     exports = _parse_exports(source)
     assert exports == EXPECTED_EVIDENCE_EXPORTS
-    assert len(exports) == len(set(exports)) == 52
+    assert len(exports) == len(set(exports)) == 58
     classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
     type_aliases = {
         node.name.id for node in tree.body if isinstance(node, ast.TypeAlias)
@@ -330,13 +350,15 @@ def _validate_evidence_surface(source: str) -> None:
         if isinstance(target, ast.Name)
     }
     assert classes == EXPECTED_EVIDENCE_CLASSES
-    assert len(classes) == 54
+    assert len(classes) == 58
     assert type_aliases == EXPECTED_EVIDENCE_TYPE_ALIASES
     assert public_symbols == EXPECTED_EVIDENCE_EXPORTS
     assert functions == {
         "_has_ascii_control",
         "_normalize_asserted_utc",
         "_require_asserted_utc_json",
+        "project_evidence_envelope_to_legacy_artifact_snapshot",
+        "wrap_legacy_artifact_snapshot",
     }
     assert assignments == EXPECTED_EVIDENCE_ASSIGNMENTS
 
@@ -383,7 +405,7 @@ def _validate_package_root_exports(source: str) -> None:
     assert _parse_exports(source) == ("__version__",)
 
 
-def _assert_no_post_s06_surface(source: str) -> None:
+def _assert_no_post_s07_surface(source: str) -> None:
     tree = ast.parse(source)
     definitions = {
         node.name
@@ -395,15 +417,17 @@ def _assert_no_post_s06_surface(source: str) -> None:
     )
     forbidden = {
         "AcquisitionRunRecord",
+        "EvidenceAdapterRegistry",
+        "EvidenceConfidence",
         "EvidenceContractCorpus",
-        "EvidenceEnvelope",
         "EvidenceMigration",
         "EvidencePersistence",
         "EvidenceReader",
+        "EvidenceReview",
         "EvidenceStorage",
         "EvidenceWriter",
-        "LegacyEvidenceAdapter",
         "OmissionRecord",
+        "RepositorySnapshot",
         "RepresentationObservation",
         "ResponseIdentity",
         "ResponseObservation",
@@ -1334,11 +1358,13 @@ def test_production_inventory_mutations_are_rejected(mutation: str) -> None:
         "EvidenceReader",
         "EvidenceStorage",
         "EvidenceWriter",
-        "LegacyEvidenceAdapter",
-        "EvidenceEnvelope",
+        "EvidenceAdapterRegistry",
+        "EvidenceConfidence",
+        "EvidenceReview",
+        "RepositorySnapshot",
     ),
 )
-def test_post_s06_surface_mutations_are_rejected(class_name: str) -> None:
+def test_post_s07_surface_mutations_are_rejected(class_name: str) -> None:
     source = EVIDENCE_SOURCE.read_text(encoding="utf-8")
     mutated = source + f"\n\nclass {class_name}:\n    pass\n"
     with pytest.raises(AssertionError):
@@ -1425,8 +1451,8 @@ def test_predecessor_production_models_and_artifact_snapshot_are_unchanged() -> 
     )
 
 
-def test_no_p03_contract_corpus_reader_or_envelope_exists() -> None:
-    _assert_no_post_s06_surface(EVIDENCE_SOURCE.read_text(encoding="utf-8"))
+def test_no_p03_contract_corpus_reader_or_s08_plus_surface_exists() -> None:
+    _assert_no_post_s07_surface(EVIDENCE_SOURCE.read_text(encoding="utf-8"))
     assert not (REPOSITORY_ROOT / "reference_corpus/contracts/evidence").exists()
     assert not (
         REPOSITORY_ROOT / "reference_corpus/contracts/retrieval-request"
