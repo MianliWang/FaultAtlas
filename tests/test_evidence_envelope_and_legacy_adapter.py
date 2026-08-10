@@ -1582,27 +1582,26 @@ def test_wrapper_preserves_legacy_locator_without_remapping_or_modern_fabricatio
 
 def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -> None:
     tree = ast.parse(EVIDENCE_SOURCE.read_text(encoding="utf-8"))
+    reviewed_import_roots = {
+        "datetime",
+        "enum",
+        "faultatlas",
+        "json",
+        "pydantic",
+        "re",
+        "typing",
+    }
     imported_roots = {
         alias.name.split(".")[0]
         for node in ast.walk(tree)
         if isinstance(node, ast.Import)
         for alias in node.names
     } | {
-        (node.module or "").split(".")[0]
+        "faultatlas" if node.level else (node.module or "").split(".")[0]
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom)
     }
-    assert not imported_roots & {
-        "asyncio",
-        "httpx",
-        "io",
-        "os",
-        "pathlib",
-        "requests",
-        "socket",
-        "subprocess",
-        "urllib",
-    }
+    assert not imported_roots - reviewed_import_roots
 
     adapter_function_names = {
         "wrap_legacy_artifact_snapshot",
@@ -1629,8 +1628,11 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
 
     namespace_lookup_attributes = {"__dict__", "__globals__"}
     namespace_lookup_functions = {"globals", "locals", "vars"}
+    namespace_lookup_names = {"__builtins__"}
 
     def is_namespace_expression(node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in namespace_lookup_names
         if isinstance(node, ast.Attribute):
             return node.attr in namespace_lookup_attributes
         if isinstance(node, ast.Call):
@@ -1753,7 +1755,9 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         "setattr",
         "vars",
     }
+    forbidden_reflection_attributes = {"__getattr__", "__getattribute__"}
     qualified_dynamic_call_members = {
+        "__builtins__": forbidden_dynamic_call_symbols,
         "builtins": forbidden_dynamic_call_symbols,
         "importlib": {"import_module"},
         "operator": {"attrgetter", "methodcaller"},
@@ -1820,6 +1824,10 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         return False
 
     def introduces_forbidden_capability(node: ast.expr) -> bool:
+        if isinstance(node, ast.Attribute) and node.attr in (
+            forbidden_reflection_attributes
+        ):
+            return True
         if isinstance(node, (ast.Name, ast.Attribute)):
             if resolves_to_forbidden_capability(ast.unparse(node)):
                 return True
