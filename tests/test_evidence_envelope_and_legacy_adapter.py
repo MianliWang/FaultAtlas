@@ -1650,10 +1650,28 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
             if node.returns is not None:
                 annotation_roots.append(node.returns)
 
+    def direct_repository_identity_reference_ids(root: ast.AST) -> set[int]:
+        if isinstance(root, ast.Name):
+            return {id(root)} if root.id == repository_identity_symbol else set()
+        if isinstance(root, ast.Attribute):
+            base = root.value
+            while isinstance(base, ast.Attribute):
+                base = base.value
+            if root.attr == repository_identity_symbol and isinstance(base, ast.Name):
+                return {id(root)}
+            return set()
+        if isinstance(root, ast.Tuple):
+            return {
+                reference_id
+                for element in root.elts
+                for reference_id in direct_repository_identity_reference_ids(element)
+            }
+        return set()
+
     allowed_repository_identity_reference_ids = {
-        id(reference)
+        reference_id
         for annotation in annotation_roots
-        for reference in symbol_references(annotation, repository_identity_symbol)
+        for reference_id in direct_repository_identity_reference_ids(annotation)
     }
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or len(node.args) < 2:
@@ -1661,8 +1679,7 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         if ast.unparse(node.func) not in {"isinstance", "builtins.isinstance"}:
             continue
         allowed_repository_identity_reference_ids.update(
-            id(reference)
-            for reference in symbol_references(node.args[1], repository_identity_symbol)
+            direct_repository_identity_reference_ids(node.args[1])
         )
 
     assert not [
@@ -1718,6 +1735,19 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
             for alias in forbidden_call_aliases
         )
 
+    def assignment_target_paths(target: ast.AST) -> set[str]:
+        if isinstance(target, (ast.Name, ast.Attribute)):
+            return {ast.unparse(target)}
+        if isinstance(target, (ast.Tuple, ast.List)):
+            return {
+                path
+                for element in target.elts
+                for path in assignment_target_paths(element)
+            }
+        if isinstance(target, ast.Starred):
+            return assignment_target_paths(target.value)
+        return set()
+
     alias_assignments: list[tuple[set[str], set[str]]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
@@ -1729,9 +1759,7 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         if node.value is None:
             continue
         target_paths = {
-            ast.unparse(target)
-            for target in targets
-            if isinstance(target, (ast.Name, ast.Attribute))
+            path for target in targets for path in assignment_target_paths(target)
         }
         value_paths = {
             ast.unparse(value)
