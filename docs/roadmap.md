@@ -208,11 +208,14 @@ transformations, one correction, one completeness assessment, and the ordered
 acquisition and correction publications. It keeps unchanged `ArtifactSnapshot`
 v1 values behind the outer wrapper and uses an explicit versioned adapter for
 lossless legacy wrapping and fail-closed legacy projection. No publication
-provenance is asserted for S07 itself. These models embed no bytes and perform
-no I/O. Readers, writers, storage, persistence, migration, canonical envelope
-bytes, repository snapshots, confidence and review, adapters beyond the
-explicit in-memory legacy boundary, and a P03 contract corpus remain deferred
-to S08-S09 or their preserved later owners.
+provenance is asserted for S07 itself. The existing S01-S06 modern evidence
+records embed no artifact payloads. A legacy-wrapping S07 envelope can carry
+the bounded `ArtifactSnapshot.payload_text` only as part of the unchanged
+legacy snapshot; the models perform no I/O. Readers, writers, storage,
+persistence, migration, canonical envelope bytes, repository snapshots,
+confidence and review, adapters beyond the explicit in-memory legacy boundary,
+and a P03 contract corpus remain deferred to S08-S09 or their preserved later
+owners.
 
 ## Preserved later Stage 1 phases
 
