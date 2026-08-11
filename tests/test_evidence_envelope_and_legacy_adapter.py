@@ -1582,29 +1582,50 @@ def test_wrapper_preserves_legacy_locator_without_remapping_or_modern_fabricatio
 
 def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -> None:
     tree = ast.parse(EVIDENCE_SOURCE.read_text(encoding="utf-8"))
-    reviewed_import_modules = {
-        "datetime",
-        "enum",
-        "faultatlas.domain.compatibility",
-        "faultatlas.domain.identity",
-        "faultatlas.domain.revision",
-        "faultatlas.domain.source",
-        "json",
-        "pydantic",
-        "re",
-        "typing",
+    reviewed_plain_imports = {"json", "re"}
+    reviewed_from_imports = {
+        "datetime": {"UTC", "datetime", "timedelta"},
+        "enum": {"StrEnum"},
+        "faultatlas.domain.compatibility": {"CompatibilityStatus"},
+        "faultatlas.domain.identity": {
+            "AuthorityRole",
+            "NumberedSourceObjectIdentity",
+            "ProviderAuthority",
+            "ProviderGlobalId",
+            "RepositoryIdentity",
+            "SourceObjectKind",
+        },
+        "faultatlas.domain.revision": {"GitCommitIdentity", "GitTreeIdentity"},
+        "faultatlas.domain.source": {"ArtifactSnapshot"},
+        "pydantic": {
+            "AwareDatetime",
+            "BaseModel",
+            "ConfigDict",
+            "Field",
+            "RootModel",
+            "StringConstraints",
+            "ValidationInfo",
+            "field_validator",
+            "model_validator",
+        },
+        "typing": {"Annotated", "Literal", "Self", "cast"},
     }
-    imported_modules = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    } | {
-        f"{'.' * node.level}{node.module or ''}"
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-    }
-    assert not imported_modules - reviewed_import_modules
+    unreviewed_imports: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname is not None or alias.name not in reviewed_plain_imports:
+                    unreviewed_imports.append((node.lineno, ast.unparse(node)))
+        elif isinstance(node, ast.ImportFrom):
+            reviewed_names = (
+                set[str]()
+                if node.level
+                else reviewed_from_imports.get(node.module or "", set[str]())
+            )
+            for alias in node.names:
+                if alias.asname is not None or alias.name not in reviewed_names:
+                    unreviewed_imports.append((node.lineno, ast.unparse(node)))
+    assert not unreviewed_imports
 
     adapter_function_names = {
         "wrap_legacy_artifact_snapshot",
@@ -1617,56 +1638,210 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         and node.name in adapter_function_names
     ]
     assert {node.name for node in adapter_functions} == adapter_function_names
+    approved_builtin_names = {
+        "AssertionError",
+        "TypeError",
+        "ValueError",
+        "all",
+        "any",
+        "bool",
+        "classmethod",
+        "dict",
+        "enumerate",
+        "frozenset",
+        "int",
+        "isinstance",
+        "len",
+        "list",
+        "object",
+        "ord",
+        "set",
+        "str",
+        "tuple",
+        "type",
+    }
+    approved_call_operations = {
+        "add",
+        "astimezone",
+        "compile",
+        "dumps",
+        "endswith",
+        "fromisoformat",
+        "fullmatch",
+        "isascii",
+        "isspace",
+        "model_validate",
+        "model_validate_json",
+        "search",
+        "split",
+        "startswith",
+        "strip",
+        "utcoffset",
+    }
+    reviewed_node_kinds = {
+        "And",
+        "AnnAssign",
+        "Assign",
+        "Attribute",
+        "BinOp",
+        "BitAnd",
+        "BitOr",
+        "BoolOp",
+        "Call",
+        "ClassDef",
+        "Compare",
+        "Constant",
+        "Eq",
+        "ExceptHandler",
+        "Expr",
+        "For",
+        "FormattedValue",
+        "FunctionDef",
+        "GeneratorExp",
+        "Gt",
+        "If",
+        "IfExp",
+        "Import",
+        "ImportFrom",
+        "In",
+        "Is",
+        "IsNot",
+        "JoinedStr",
+        "List",
+        "Load",
+        "Lt",
+        "LtE",
+        "Module",
+        "Mult",
+        "Name",
+        "Not",
+        "NotEq",
+        "NotIn",
+        "Or",
+        "Raise",
+        "Return",
+        "Set",
+        "SetComp",
+        "Slice",
+        "Store",
+        "Subscript",
+        "Try",
+        "Tuple",
+        "TypeAlias",
+        "USub",
+        "UnaryOp",
+        "alias",
+        "arg",
+        "arguments",
+        "comprehension",
+        "keyword",
+    }
+    reviewed_top_level_statements = {
+        "AnnAssign",
+        "Assign",
+        "ClassDef",
+        "Expr",
+        "FunctionDef",
+        "Import",
+        "ImportFrom",
+        "TypeAlias",
+    }
+
+    assert not {type(node).__name__ for node in ast.walk(tree)} - reviewed_node_kinds
+    assert (
+        not {type(node).__name__ for node in tree.body} - reviewed_top_level_statements
+    )
+    assert not [
+        node.lineno
+        for node in tree.body
+        if isinstance(node, ast.Expr) and not isinstance(node.value, ast.Constant)
+    ]
+
+    parent_nodes: dict[int, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parent_nodes[id(child)] = parent
+
+    scope_kinds = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+    def enclosing_scope(node: ast.AST) -> ast.AST:
+        current = parent_nodes.get(id(node))
+        while current is not None and not isinstance(current, scope_kinds):
+            current = parent_nodes.get(id(current))
+        return current if current is not None else tree
+
+    scope_bindings: dict[int, set[str]] = {}
+    module_bindings: list[str] = []
+
+    def record_binding(node: ast.AST, name: str) -> None:
+        scope = enclosing_scope(node)
+        scope_bindings.setdefault(id(scope), set()).add(name)
+        if scope is tree:
+            module_bindings.append(name)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            record_binding(node, node.id)
+        elif isinstance(node, ast.arg):
+            record_binding(node, node.arg)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            record_binding(node, node.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                record_binding(node, (alias.asname or alias.name).split(".")[0])
+        elif isinstance(node, ast.ExceptHandler) and node.name is not None:
+            record_binding(node, node.name)
+
+    module_declared_names = scope_bindings.get(id(tree), set())
+    assert not [name for name in module_bindings if module_bindings.count(name) > 1]
+    assert not module_declared_names & approved_builtin_names
+    assert not [
+        name
+        for scope_id, names in scope_bindings.items()
+        if scope_id != id(tree)
+        for name in names & (module_declared_names | approved_builtin_names)
+    ]
+
+    def resolvable_names(node: ast.AST) -> set[str]:
+        names = module_declared_names | approved_builtin_names
+        scope = enclosing_scope(node)
+        while True:
+            names = names | scope_bindings.get(id(scope), set())
+            if scope is tree:
+                return names
+            scope = enclosing_scope(scope)
+
+    assert not [
+        (node.lineno, node.id)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name)
+        and isinstance(node.ctx, ast.Load)
+        and node.id not in resolvable_names(node)
+    ]
+
+    approved_call_names = module_declared_names | approved_builtin_names
+    assert not [
+        (node.lineno, ast.unparse(node.func))
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and not (
+            isinstance(node.func, ast.Name) and node.func.id in approved_call_names
+        )
+        and not (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.attr in approved_call_operations
+        )
+    ]
+
+    assert not [
+        (node.lineno, node.attr)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr.startswith("_")
+    ]
+
     source_locator_mapper_symbol = "map_legacy_source_locator"
     repository_identity_symbol = "RepositoryIdentity"
-    forbidden_semantic_import_aliases = {
-        alias.asname or alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
-        if alias.name == source_locator_mapper_symbol
-        or (alias.name == repository_identity_symbol and alias.asname is not None)
-    }
-    assert not forbidden_semantic_import_aliases
-
-    namespace_lookup_attributes = {
-        "__builtins__",
-        "__dict__",
-        "__globals__",
-        "f_builtins",
-        "f_globals",
-        "f_locals",
-    }
-    namespace_lookup_functions = {"globals", "locals", "vars"}
-    namespace_lookup_names = {"__builtins__"}
-
-    def is_namespace_expression(node: ast.AST) -> bool:
-        if isinstance(node, ast.Name):
-            return node.id in namespace_lookup_names
-        if isinstance(node, ast.Attribute):
-            return node.attr in namespace_lookup_attributes
-        if isinstance(node, ast.Call):
-            return ast.unparse(node.func).split(".")[-1] in namespace_lookup_functions
-        return False
-
-    namespace_lookup_methods = {"__getitem__", "get", "pop", "setdefault"}
-
-    def constant_string(node: ast.expr | None) -> str | None:
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            return node.value
-        return None
-
-    def namespace_lookup_key(node: ast.AST | None) -> str | None:
-        if isinstance(node, ast.Subscript) and is_namespace_expression(node.value):
-            return constant_string(node.slice)
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in namespace_lookup_methods
-            and is_namespace_expression(node.func.value)
-        ):
-            return constant_string(node.args[0] if node.args else None)
-        return None
 
     def symbol_references(root: ast.AST, symbol: str) -> list[ast.expr]:
         return [
@@ -1675,7 +1850,6 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
             if isinstance(reference, ast.expr)
             if (isinstance(reference, ast.Name) and reference.id == symbol)
             or (isinstance(reference, ast.Attribute) and reference.attr == symbol)
-            or namespace_lookup_key(reference) == symbol
         ]
 
     assert not [
@@ -1711,25 +1885,6 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
             }
         return set()
 
-    module_bound_names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
-            module_bound_names.add(node.id)
-        elif isinstance(node, ast.arg):
-            module_bound_names.add(node.arg)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            module_bound_names.add(node.name)
-        elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            module_bound_names.update(
-                (alias.asname or alias.name).split(".")[0] for alias in node.names
-            )
-        elif isinstance(node, ast.ExceptHandler) and node.name is not None:
-            module_bound_names.add(node.name)
-
-    unshadowed_isinstance_targets = (
-        set[str]() if "isinstance" in module_bound_names else {"isinstance"}
-    )
-
     allowed_repository_identity_reference_ids = {
         reference_id
         for annotation in annotation_roots
@@ -1738,7 +1893,7 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or len(node.args) < 2:
             continue
-        if ast.unparse(node.func) not in unshadowed_isinstance_targets:
+        if not isinstance(node.func, ast.Name) or node.func.id != "isinstance":
             continue
         allowed_repository_identity_reference_ids.update(
             direct_repository_identity_reference_ids(node.args[1])
@@ -1749,129 +1904,6 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         for reference in symbol_references(tree, repository_identity_symbol)
         if id(reference) not in allowed_repository_identity_reference_ids
     ]
-
-    forbidden_dynamic_call_symbols = {
-        "__import__",
-        "attrgetter",
-        "compile",
-        "delattr",
-        "eval",
-        "exec",
-        "getattr",
-        "globals",
-        "import_module",
-        "locals",
-        "methodcaller",
-        "setattr",
-        "vars",
-    }
-    forbidden_io_builtin_symbols = {"breakpoint", "input", "open", "print"}
-    forbidden_builtin_symbols = (
-        forbidden_dynamic_call_symbols | forbidden_io_builtin_symbols
-    )
-    forbidden_reflection_attributes = {
-        "__base__",
-        "__bases__",
-        "__getattr__",
-        "__getattribute__",
-        "__mro__",
-        "__subclasses__",
-        "mro",
-    }
-    forbidden_lookup_keys = forbidden_builtin_symbols | forbidden_reflection_attributes
-    qualified_dynamic_call_members = {
-        "__builtins__": forbidden_builtin_symbols,
-        "builtins": forbidden_builtin_symbols,
-        "importlib": {"import_module"},
-        "operator": {"attrgetter", "methodcaller"},
-    }
-    forbidden_capability_paths = set(forbidden_builtin_symbols)
-    forbidden_capability_paths.update(
-        f"{module}.{member}"
-        for module, members in qualified_dynamic_call_members.items()
-        for member in members
-    )
-    forbidden_capability_namespaces = set(qualified_dynamic_call_members)
-    forbidden_import_bindings = (
-        forbidden_builtin_symbols
-        | forbidden_reflection_attributes
-        | forbidden_capability_namespaces
-        | namespace_lookup_attributes
-        | namespace_lookup_names
-    )
-    forbidden_capability_imports: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name not in qualified_dynamic_call_members:
-                    continue
-                module_alias = alias.asname or alias.name
-                forbidden_capability_namespaces.add(module_alias)
-                forbidden_capability_paths.update(
-                    f"{module_alias}.{member}"
-                    for member in qualified_dynamic_call_members[alias.name]
-                )
-        elif isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                if alias.name not in forbidden_import_bindings:
-                    continue
-                forbidden_capability_paths.add(alias.asname or alias.name)
-                forbidden_capability_imports.append((node.lineno, alias.name))
-
-    assert not forbidden_capability_imports
-
-    def resolves_to_forbidden_capability(path: str) -> bool:
-        return any(
-            path == capability or path.startswith(f"{capability}.")
-            for capability in forbidden_capability_paths
-        )
-
-    parent_nodes: dict[int, ast.AST] = {}
-    for parent in ast.walk(tree):
-        for child in ast.iter_child_nodes(parent):
-            parent_nodes[id(child)] = parent
-
-    def is_capability_namespace(node: ast.expr) -> bool:
-        if isinstance(node, ast.Attribute) and node.attr in namespace_lookup_attributes:
-            return is_capability_namespace(node.value)
-        return (
-            isinstance(node, (ast.Name, ast.Attribute))
-            and ast.unparse(node) in forbidden_capability_namespaces
-        )
-
-    def is_bounded_namespace_traversal(node: ast.expr) -> bool:
-        parent = parent_nodes.get(id(node))
-        if not is_namespace_expression(node):
-            return isinstance(parent, ast.Attribute) and parent.value is node
-        if isinstance(parent, ast.Subscript):
-            return parent.value is node and namespace_lookup_key(parent) is not None
-        if (
-            isinstance(parent, ast.Attribute)
-            and parent.value is node
-            and parent.attr in namespace_lookup_methods
-        ):
-            return namespace_lookup_key(parent_nodes.get(id(parent))) is not None
-        return False
-
-    def introduces_forbidden_capability(node: ast.expr) -> bool:
-        if isinstance(node, ast.Attribute) and node.attr in (
-            forbidden_reflection_attributes
-        ):
-            return True
-        if isinstance(node, (ast.Name, ast.Attribute)):
-            if resolves_to_forbidden_capability(ast.unparse(node)):
-                return True
-            if is_capability_namespace(node) or is_namespace_expression(node):
-                return not is_bounded_namespace_traversal(node)
-            return False
-        return namespace_lookup_key(node) in forbidden_lookup_keys
-
-    prohibited_capability_uses = [
-        (node.lineno, ast.unparse(node))
-        for node in ast.walk(tree)
-        if isinstance(node, ast.expr) and introduces_forbidden_capability(node)
-    ]
-    assert not prohibited_capability_uses
 
     adapter_call_targets = {
         ast.unparse(node.func)
