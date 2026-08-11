@@ -124,6 +124,7 @@ LICENSE_RELATIVE = (
     "reference_corpus/pytest-4412/acquisitions/"
     "run-0001-s04-v1-base-4c9cde74-head-690a63b9/artifacts/LICENSE"
 )
+CANONICAL_RUN_ID = "run-0001-s04-v1-base-4c9cde74-head-690a63b9"
 IDENTITY_CORPUS_RELATIVE = "reference_corpus/contracts/identity"
 REVISION_CORPUS_RELATIVE = "reference_corpus/contracts/revision-locator"
 
@@ -155,7 +156,7 @@ class LockedFile:
 
 EXPECTED_LOCKS = {
     "contract.md": LockedFile(
-        9385, "aea70b255de90fdef9b863caa01a57c51bdbd44074159f670d248c13aa656d7e"
+        9385, "2a39c3c1c29444660e9a3b0fa901f5ec95d1d95a1999ab7ca78d8cb59353e792"
     ),
     "invalid-vectors.json": LockedFile(
         141878, "a379f425e31e1a8627818fb2f4a8afb420975680048f0ecb14da6305022b3592"
@@ -164,16 +165,16 @@ EXPECTED_LOCKS = {
         87, "cfa302e3629fd78a3c839bd71f04872e6cc0516ffe7e5e8be4cc13ebee377c85"
     ),
     "manifest.json": LockedFile(
-        21416, "b16097c187f942ba72cabdc6ec4cf9a540eb851e64fd5199f4c72113ce25cf88"
+        21578, "b35aaff6bde13bf6360e8d75dcc898714e393d1353856d76ada082e2b0f11273"
     ),
     "manifest.sha256": LockedFile(
-        80, "88b9b1013766c25f2e58f43b1de7cf24374e9275421c41520eadcf38266f0bb8"
+        80, "55ce5723d11d7ccdc0ee1e6d958974d0c60887c8c61aa0348c6cb2dee38820cb"
     ),
     "replay-vectors.json": LockedFile(
-        82450, "429600bc8cc6481e7847b67661bb3c0b633052754c5ffaf1a5719ce34357b6cb"
+        83531, "45e38447e28be393b1e1e8afdf016c796690550c8bb95613d9f6087d3872038d"
     ),
     "replay-vectors.sha256": LockedFile(
-        86, "9e48c4e4c18cc9132bdcf5ec50827d6b13f8fd6a18ff3bf8afd3d4e97bd66ffb"
+        86, "5b2d81994063a760502fbd13cad3557b4c47909b90f96a8feff42d57d1bcba32"
     ),
     "valid-vectors.json": LockedFile(
         182770, "49a005d2ab8e321e0867c5346db187e4a7736a392fd8b7eb4d343ed100385b86"
@@ -1029,15 +1030,20 @@ def _assert_source_pointer(vector: dict[str, Any], manifest: dict[str, Any]) -> 
     projections = _assert_projection_shape(vector)
     pointer = cast(dict[str, Any], vector["source_pointer"])
     operation = cast(str, vector["operation"])
-    if operation in {"replay_record", "replay_envelope"}:
-        assert projections
-    elif operation == "replay_artifact":
-        assert not projections
-
     authority = cast(str, pointer["authority"])
     path = pointer["path"]
     digest = pointer["sha256"]
     replay_contract = cast(dict[str, Any], manifest["replay_contract"])
+    if operation in {"replay_record", "replay_envelope"}:
+        assert projections
+    elif operation == "replay_artifact":
+        assert not projections
+    else:
+        # A non-synthetic adapter replay must carry bounded provenance; only a
+        # declared synthetic fixture may stand on corpus-authored values alone.
+        assert operation in {"adapter_project", "adapter_wrap"}
+        assert bool(projections) is (path is not None)
+
     if path is None:
         assert digest is None
         assert not projections
@@ -1085,13 +1091,17 @@ def _projected_value(
 DERIVATION_RULES = {
     "authored",
     "component_count",
+    "component_inventory",
     "difference",
+    "legacy_projection_outcome",
     "manifest_artifact_digest_scope",
     "ordered_component_ids",
     "product",
+    "represented_modern_components",
     "source_file_byte_length",
     "sum",
 }
+LEGACY_PROJECTION_FIELDS = {"reasons", "snapshot_present", "status"}
 AUTHORING_SLICES = {f"S1.P03.S0{index}" for index in range(1, 8)}
 
 
@@ -1129,6 +1139,13 @@ def _assert_derivation_shape(expected: dict[str, Any]) -> list[dict[str, Any]]:
                 {"component", "fact", "rule"},
                 {"component", "fact", "minus_fact", "rule"},
             )
+        elif rule == "component_inventory":
+            assert set(entry) == {"component", "fact", "rule"}
+        elif rule == "represented_modern_components":
+            assert set(entry) == {"fact", "rule"}
+        elif rule == "legacy_projection_outcome":
+            assert set(entry) == {"fact", "outcome_field", "rule"}
+            assert entry["outcome_field"] in LEGACY_PROJECTION_FIELDS
         else:
             assert rule == "ordered_component_ids"
             assert set(entry) == {"component", "fact", "rule"}
@@ -1172,8 +1189,14 @@ def _derived_value(
             assert isinstance(value, list)
             total += len(cast(list[Any], value))
         return total
+    if rule == "represented_modern_components":
+        return _represented_modern_components(inventory)
+    if rule == "legacy_projection_outcome":
+        return _legacy_projection_outcome(inventory)[cast(str, entry["outcome_field"])]
     component = cast(str, entry["component"])
     assert component in ENVELOPE_COMPONENT_FIELDS
+    if rule == "component_inventory":
+        return inventory[component]
     count = inventory[component]
     assert count is not None
     if rule == "component_count":
@@ -1377,6 +1400,58 @@ def _envelope_inventory(envelope: EvidenceEnvelope) -> dict[str, int | None]:
     return inventory
 
 
+def _represented_modern_components(
+    inventory: dict[str, int | None],
+) -> list[str]:
+    return [field for field in MODERN_COMPONENT_FIELDS if inventory[field] is not None]
+
+
+def _legacy_projection_outcome(inventory: dict[str, int | None]) -> dict[str, Any]:
+    """Independently recompute the reviewed S1.P03.S07 fail-closed rule.
+
+    The rule is restated here from the envelope's own component inventory so a
+    replayed adapter claim is justified by actual envelope state rather than by
+    a corpus-authored expectation.
+    """
+
+    legacy = inventory["legacy_snapshots"]
+    if legacy is None or legacy == 0:
+        return {
+            "reasons": ["legacy_snapshot_absent"],
+            "snapshot_present": False,
+            "status": "not_mappable",
+        }
+    if legacy > 1:
+        return {
+            "reasons": ["multiple_legacy_snapshots_not_representable"],
+            "snapshot_present": False,
+            "status": "not_mappable",
+        }
+    if _represented_modern_components(inventory):
+        return {
+            "reasons": ["modern_components_not_representable"],
+            "snapshot_present": False,
+            "status": "partially_mappable",
+        }
+    return {"reasons": [], "snapshot_present": True, "status": "losslessly_mappable"}
+
+
+def _adapter_projection_facts(
+    envelope: EvidenceEnvelope, projection: LegacyArtifactSnapshotProjectionResult
+) -> dict[str, Any]:
+    inventory = _envelope_inventory(envelope)
+    return {
+        "acquisition_run_ids": [
+            run.run_id.root for run in envelope.acquisition_runs or ()
+        ],
+        "legacy_snapshot_inventory": inventory["legacy_snapshots"],
+        "modern_components_represented": _represented_modern_components(inventory),
+        "projected_snapshot_present": projection.projected_snapshot is not None,
+        "reasons": [reason.value for reason in projection.reasons],
+        "status": projection.status.value,
+    }
+
+
 def _envelope_facts(envelope: EvidenceEnvelope) -> dict[str, Any]:
     relationships = envelope.record_relationships or ()
     return {
@@ -1513,6 +1588,18 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         assert expected["projected_equals_expected_snapshot"] is True
     else:
         assert projection.projected_snapshot is None
+
+    pointer = cast(dict[str, Any], vector["source_pointer"])
+    if pointer["path"] is None:
+        assert "component_inventory" not in expected
+        assert "derivations" not in expected
+        assert "facts" not in expected
+        return
+    inventory = _envelope_inventory(source_envelope)
+    assert inventory == expected["component_inventory"]
+    facts = _adapter_projection_facts(source_envelope, projection)
+    assert facts == expected["facts"]
+    _assert_fact_provenance(vector, facts, expected, MANIFEST_DOCUMENT, inventory)
 
 
 def _assert_fs_regular_0644(path: Path) -> None:
@@ -1825,6 +1912,9 @@ def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
         "every_fact_is_projected_or_derived_by_declared_rule"
     )
     assert replay_contract["derivation_rules"] == sorted(DERIVATION_RULES)
+    assert replay_contract["adapter_provenance"] == (
+        "non_synthetic_adapter_replay_requires_bounded_projection"
+    )
     assert replay_contract["projection_kinds"] == sorted(PROJECTION_KINDS)
     assert replay_contract["authority_resolution"] == (
         "pointer_authority_path_and_digest_must_resolve_through_manifest"
@@ -2575,6 +2665,8 @@ REQUIRED_MUTATIONS = (
     "replay-derivation-rule-missing",
     "manifest-publication-tree-inequality",
     "manifest-publication-verification-overclaimed",
+    "replay-canonical-adapter-empty-provenance",
+    "replay-canonical-adapter-coherent-legacy-change",
     "fixture-missing",
     "fixture-cycle",
     "manifest-count-changed",
@@ -2591,7 +2683,7 @@ REQUIRED_MUTATIONS = (
     "synthetic-package-corpus-member",
     "historical-pytest-license-inserted",
 )
-assert len(REQUIRED_MUTATIONS) == 56
+assert len(REQUIRED_MUTATIONS) == 58
 
 
 def _copied_documents() -> dict[str, dict[str, Any]]:
@@ -2620,6 +2712,60 @@ def _synthetic_package_members(
         ]
     )
     return tuple(members)
+
+
+def _mutation_routing_groups() -> list[frozenset[str]]:
+    """Extract the mutation names each dispatch branch actually claims.
+
+    Routing correctness must not depend on branch ordering, so the groups are
+    read back from this module's own syntax tree and checked for exhaustive,
+    pairwise-disjoint coverage of the required mutation set.
+    """
+
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "test_required_mutation_is_rejected"
+    )
+    groups: list[frozenset[str]] = []
+    for statement in function.body:
+        if isinstance(statement, ast.If):
+            # Only branches that terminate the dispatch route a mutation; an
+            # inner selector that merely picks a payload does not.
+            if not isinstance(statement.body[-1], ast.Return):
+                continue
+            test = statement.test
+        elif isinstance(statement, ast.Assert):
+            test = statement.test
+        else:
+            continue
+        if not isinstance(test, ast.Compare) or len(test.ops) != 1:
+            continue
+        operator = test.ops[0]
+        if isinstance(operator, ast.Eq):
+            groups.append(frozenset({cast(str, ast.literal_eval(test.comparators[0]))}))
+        elif isinstance(operator, ast.In):
+            groups.append(
+                frozenset(cast(set[str], ast.literal_eval(test.comparators[0])))
+            )
+    return groups
+
+
+def test_mutation_routing_is_exhaustive_and_mutually_exclusive() -> None:
+    groups = _mutation_routing_groups()
+    assert groups
+    seen: set[str] = set()
+    for group in groups:
+        assert group
+        overlap = group & seen
+        assert not overlap, f"mutation routing groups overlap on {sorted(overlap)!r}"
+        seen |= group
+    assert seen == set(REQUIRED_MUTATIONS), (
+        f"unrouted {sorted(set(REQUIRED_MUTATIONS) - seen)!r}; "
+        f"unknown {sorted(seen - set(REQUIRED_MUTATIONS))!r}"
+    )
 
 
 @pytest.mark.parametrize("mutation", REQUIRED_MUTATIONS)
@@ -2882,10 +3028,6 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
     if mutation in {
         "replay-authority-not-registered",
         "replay-authority-path-unregistered",
-        "replay-derivation-recompute-mismatch",
-        "replay-derivation-rule-missing",
-        "manifest-publication-tree-inequality",
-        "manifest-publication-verification-overclaimed",
     }:
         vector = copy.deepcopy(
             _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
@@ -2917,6 +3059,11 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             )
         )
         if mutation == "replay-derivation-recompute-mismatch":
+            # Change the replayed record and its expected fact together so the
+            # direct fact comparison still agrees and only recomputation from
+            # the bounded source rejects the claim.
+            record = cast(dict[str, Any], vector["input"]["record"])
+            cast(dict[str, Any], record["correction_record"])["byte_length"] = 60831
             vector["expected"]["facts"]["correction_byte_length"] = 60831
         else:
             derivations = cast(list[dict[str, Any]], vector["expected"]["derivations"])
@@ -2943,6 +3090,33 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             section["tracked_evidence_available"] = True
         with pytest.raises(AssertionError):
             _assert_manifest_integrity(documents)
+        return
+
+    if mutation in {
+        "replay-canonical-adapter-empty-provenance",
+        "replay-canonical-adapter-coherent-legacy-change",
+    }:
+        vector = copy.deepcopy(
+            _vector_by_id(
+                REPLAY_DOCUMENT,
+                "evidence.replay.envelope.canonical-current-not-legacy-projectable",
+            )
+        )
+        if mutation == "replay-canonical-adapter-empty-provenance":
+            cast(list[Any], vector["source_pointer"]["projections"]).clear()
+        else:
+            # Rewrite the replayed canonical envelope and its expected facts
+            # together; only the bounded projection into the acquisition record
+            # still disagrees.
+            resolved = _resolved_input(vector, REPLAY_DOCUMENT)
+            replaced = _json_text(resolved).replace(
+                CANONICAL_RUN_ID, "run-0002-synthetic-coherent-change"
+            )
+            vector["input"] = json.loads(replaced)
+            facts = cast(dict[str, Any], vector["expected"]["facts"])
+            facts["acquisition_run_ids"] = ["run-0002-synthetic-coherent-change"]
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
         return
 
     if mutation == "replay-decision-reference-unregistered":
@@ -3058,13 +3232,16 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             _assert_package_root_exports(["__version__", "EvidenceEnvelope"])
         return
 
+    assert mutation in {
+        "synthetic-package-corpus-member",
+        "historical-pytest-license-inserted",
+    }
     project_license = (REPOSITORY_ROOT / "LICENSE").read_bytes()
     historical_license = (REPOSITORY_ROOT / LICENSE_RELATIVE).read_bytes()
     if mutation == "synthetic-package-corpus-member":
         name = f"{CORPUS_RELATIVE}/manifest.json"
         data = b"{}\n"
     else:
-        assert mutation == "historical-pytest-license-inserted"
         name = "faultatlas-0.1.0/COPYING.pytest"
         data = historical_license
     members = _synthetic_package_members(extra_name=name, extra_data=data)
