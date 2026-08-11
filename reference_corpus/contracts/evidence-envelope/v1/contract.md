@@ -9,7 +9,7 @@ Derived, non-authoritative Markdown; the canonical JSON files remain the sole co
 - Corpus identity: `faultatlas-evidence-envelope-contract-corpus`
 - Corpus version: `1`
 - Manifest SHA-256:
-  `8a51ec4d54a97e2492573aaf603df73c3a6511bbac3fc5acedafffb606657857`
+  `ec0e44ac24d7c9043e955eb1be266f0a44746e20a41120224e4d40fe17982f0a`
 
 ## Scope
 
@@ -164,9 +164,10 @@ never conflates them.
    validated composition state. The declared rules are
    `artifact_digest_algorithm`, `completeness_status`, `component_count`,
    `component_inventory`, `difference`, `legacy_projection_outcome`,
-   `manifest_artifact_count`, `manifest_artifact_digest_scope`, `product`,
-   `represented_modern_components`, `source_file_byte_length`,
-   `source_ordered_subset`, and `sum`.
+   `product`, `represented_modern_components`, `source_file_byte_length`,
+   `source_ordered_subset`, and `sum`. A value the corpus manifest itself
+   declares is not immutable evidence, so no derivation is rooted in the
+   manifest.
 3. Slice-authored contract label. An exact identifier or label a named
    `S1.P03` Slice introduced, which no earlier record contains. Authored
    labels are declared in `authored_labels` with their value, their authoring
@@ -200,8 +201,7 @@ expected value is a comparison target and is never a computation input, so a
 fact cannot authenticate itself directly or through any chain. Every fact
 carries the set of independent provenance roots its ancestry reaches:
 `bounded_source_projection`, `bounded_source_bytes`, `bounded_source_document`,
-`manifest_registry`, and `composition_state`. Every chain must terminate in at
-least one of them.
+and `composition_state`. Every chain must terminate in at least one of them.
 
 The evidence classification is computed from those roots and then compared with
 the declaration rather than accepted from it:
@@ -217,6 +217,13 @@ the declaration rather than accepted from it:
 
 Relabelling a vector into any other classification is therefore rejected, in
 both directions, without any vector identity being hard-coded.
+
+An envelope replay exposes only a few composition facts, so each populated
+component element is additionally required to equal the record that its own
+standalone replay vector projects out of bounded evidence, and every populated
+element must be covered. A coherent edit to a nested run, correction,
+completeness, or publication field therefore has to survive that record's own
+projections as well.
 
 A vector may name more than one bounded authority. Every pointer must be used
 by a projection or a derivation, no fact may be projected out of two different
