@@ -1286,6 +1286,18 @@ def test_mapping_result_rejects_snapshot_or_envelope_loss_and_modern_known_empty
         LegacyArtifactSnapshotEnvelopeMappingResult.model_validate(modern_known_empty)
 
 
+def test_mapping_result_rejects_fabricated_nonempty_modern_component() -> None:
+    snapshot = _synthetic_snapshot(507)
+    payload = _model_payload(wrap_legacy_artifact_snapshot(snapshot))
+    payload["envelope"] = _envelope(
+        legacy_snapshots=(snapshot,),
+        request_memberships=(_synthetic_membership(507),),
+    )
+
+    with pytest.raises(ValidationError, match="modern component"):
+        LegacyArtifactSnapshotEnvelopeMappingResult.model_validate(payload)
+
+
 @pytest.mark.parametrize(
     "invalid_reasons",
     [
@@ -1570,27 +1582,50 @@ def test_wrapper_preserves_legacy_locator_without_remapping_or_modern_fabricatio
 
 def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -> None:
     tree = ast.parse(EVIDENCE_SOURCE.read_text(encoding="utf-8"))
-    imported_roots = {
-        alias.name.split(".")[0]
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    } | {
-        (node.module or "").split(".")[0]
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
+    reviewed_plain_imports = {"json", "re"}
+    reviewed_from_imports = {
+        "datetime": {"UTC", "datetime", "timedelta"},
+        "enum": {"StrEnum"},
+        "faultatlas.domain.compatibility": {"CompatibilityStatus"},
+        "faultatlas.domain.identity": {
+            "AuthorityRole",
+            "NumberedSourceObjectIdentity",
+            "ProviderAuthority",
+            "ProviderGlobalId",
+            "RepositoryIdentity",
+            "SourceObjectKind",
+        },
+        "faultatlas.domain.revision": {"GitCommitIdentity", "GitTreeIdentity"},
+        "faultatlas.domain.source": {"ArtifactSnapshot"},
+        "pydantic": {
+            "AwareDatetime",
+            "BaseModel",
+            "ConfigDict",
+            "Field",
+            "RootModel",
+            "StringConstraints",
+            "ValidationInfo",
+            "field_validator",
+            "model_validator",
+        },
+        "typing": {"Annotated", "Literal", "Self", "cast"},
     }
-    assert not imported_roots & {
-        "asyncio",
-        "httpx",
-        "io",
-        "os",
-        "pathlib",
-        "requests",
-        "socket",
-        "subprocess",
-        "urllib",
-    }
+    unreviewed_imports: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname is not None or alias.name not in reviewed_plain_imports:
+                    unreviewed_imports.append((node.lineno, ast.unparse(node)))
+        elif isinstance(node, ast.ImportFrom):
+            reviewed_names = (
+                set[str]()
+                if node.level
+                else reviewed_from_imports.get(node.module or "", set[str]())
+            )
+            for alias in node.names:
+                if alias.asname is not None or alias.name not in reviewed_names:
+                    unreviewed_imports.append((node.lineno, ast.unparse(node)))
+    assert not unreviewed_imports
 
     adapter_function_names = {
         "wrap_legacy_artifact_snapshot",
@@ -1603,19 +1638,290 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         and node.name in adapter_function_names
     ]
     assert {node.name for node in adapter_functions} == adapter_function_names
-    call_names = {
-        node.func.id
+    approved_builtin_names = {
+        "AssertionError",
+        "TypeError",
+        "ValueError",
+        "all",
+        "any",
+        "bool",
+        "classmethod",
+        "dict",
+        "enumerate",
+        "frozenset",
+        "int",
+        "isinstance",
+        "len",
+        "list",
+        "object",
+        "ord",
+        "set",
+        "str",
+        "tuple",
+        "type",
+    }
+    approved_call_operations = {
+        "add",
+        "astimezone",
+        "compile",
+        "dumps",
+        "endswith",
+        "fromisoformat",
+        "fullmatch",
+        "isascii",
+        "isspace",
+        "model_validate",
+        "model_validate_json",
+        "search",
+        "split",
+        "startswith",
+        "strip",
+        "utcoffset",
+    }
+    reviewed_node_kinds = {
+        "And",
+        "AnnAssign",
+        "Assign",
+        "Attribute",
+        "BinOp",
+        "BitAnd",
+        "BitOr",
+        "BoolOp",
+        "Call",
+        "ClassDef",
+        "Compare",
+        "Constant",
+        "Eq",
+        "ExceptHandler",
+        "Expr",
+        "For",
+        "FormattedValue",
+        "FunctionDef",
+        "GeneratorExp",
+        "Gt",
+        "If",
+        "IfExp",
+        "Import",
+        "ImportFrom",
+        "In",
+        "Is",
+        "IsNot",
+        "JoinedStr",
+        "List",
+        "Load",
+        "Lt",
+        "LtE",
+        "Module",
+        "Mult",
+        "Name",
+        "Not",
+        "NotEq",
+        "NotIn",
+        "Or",
+        "Raise",
+        "Return",
+        "Set",
+        "SetComp",
+        "Slice",
+        "Store",
+        "Subscript",
+        "Try",
+        "Tuple",
+        "TypeAlias",
+        "USub",
+        "UnaryOp",
+        "alias",
+        "arg",
+        "arguments",
+        "comprehension",
+        "keyword",
+    }
+    reviewed_top_level_statements = {
+        "AnnAssign",
+        "Assign",
+        "ClassDef",
+        "Expr",
+        "FunctionDef",
+        "Import",
+        "ImportFrom",
+        "TypeAlias",
+    }
+
+    assert not {type(node).__name__ for node in ast.walk(tree)} - reviewed_node_kinds
+    assert (
+        not {type(node).__name__ for node in tree.body} - reviewed_top_level_statements
+    )
+    assert not [
+        node.lineno
+        for node in tree.body
+        if isinstance(node, ast.Expr) and not isinstance(node.value, ast.Constant)
+    ]
+
+    parent_nodes: dict[int, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parent_nodes[id(child)] = parent
+
+    scope_kinds = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+    def enclosing_scope(node: ast.AST) -> ast.AST:
+        current = parent_nodes.get(id(node))
+        while current is not None and not isinstance(current, scope_kinds):
+            current = parent_nodes.get(id(current))
+        return current if current is not None else tree
+
+    scope_bindings: dict[int, set[str]] = {}
+    module_bindings: list[str] = []
+
+    def record_binding(node: ast.AST, name: str) -> None:
+        scope = enclosing_scope(node)
+        scope_bindings.setdefault(id(scope), set()).add(name)
+        if scope is tree:
+            module_bindings.append(name)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            record_binding(node, node.id)
+        elif isinstance(node, ast.arg):
+            record_binding(node, node.arg)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            record_binding(node, node.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                record_binding(node, (alias.asname or alias.name).split(".")[0])
+        elif isinstance(node, ast.ExceptHandler) and node.name is not None:
+            record_binding(node, node.name)
+
+    module_declared_names = scope_bindings.get(id(tree), set())
+    assert not [name for name in module_bindings if module_bindings.count(name) > 1]
+    assert not module_declared_names & approved_builtin_names
+    assert not [
+        name
+        for scope_id, names in scope_bindings.items()
+        if scope_id != id(tree)
+        for name in names & (module_declared_names | approved_builtin_names)
+    ]
+
+    def resolvable_names(node: ast.AST) -> set[str]:
+        names = module_declared_names | approved_builtin_names
+        scope = enclosing_scope(node)
+        while True:
+            names = names | scope_bindings.get(id(scope), set())
+            if scope is tree:
+                return names
+            scope = enclosing_scope(scope)
+
+    assert not [
+        (node.lineno, node.id)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name)
+        and isinstance(node.ctx, ast.Load)
+        and node.id not in resolvable_names(node)
+    ]
+
+    approved_call_names = module_declared_names | approved_builtin_names
+    assert not [
+        (node.lineno, ast.unparse(node.func))
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and not (
+            isinstance(node.func, ast.Name) and node.func.id in approved_call_names
+        )
+        and not (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.attr in approved_call_operations
+        )
+    ]
+
+    assert not [
+        (node.lineno, node.attr)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr.startswith("_")
+    ]
+
+    source_locator_mapper_symbol = "map_legacy_source_locator"
+    repository_identity_symbol = "RepositoryIdentity"
+
+    def symbol_references(root: ast.AST, symbol: str) -> list[ast.expr]:
+        return [
+            reference
+            for reference in ast.walk(root)
+            if isinstance(reference, ast.expr)
+            if (isinstance(reference, ast.Name) and reference.id == symbol)
+            or (isinstance(reference, ast.Attribute) and reference.attr == symbol)
+        ]
+
+    assert not [
+        (reference.lineno, ast.unparse(reference))
+        for reference in symbol_references(tree, source_locator_mapper_symbol)
+    ]
+
+    annotation_roots: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg) and node.annotation is not None:
+            annotation_roots.append(node.annotation)
+        elif isinstance(node, ast.AnnAssign):
+            annotation_roots.append(node.annotation)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.returns is not None:
+                annotation_roots.append(node.returns)
+
+    def direct_repository_identity_reference_ids(root: ast.AST) -> set[int]:
+        if isinstance(root, ast.Name):
+            return {id(root)} if root.id == repository_identity_symbol else set()
+        if isinstance(root, ast.Attribute):
+            base = root.value
+            while isinstance(base, ast.Attribute):
+                base = base.value
+            if root.attr == repository_identity_symbol and isinstance(base, ast.Name):
+                return {id(root)}
+            return set()
+        if isinstance(root, ast.Tuple):
+            return {
+                reference_id
+                for element in root.elts
+                for reference_id in direct_repository_identity_reference_ids(element)
+            }
+        return set()
+
+    allowed_repository_identity_reference_ids = {
+        reference_id
+        for annotation in annotation_roots
+        for reference_id in direct_repository_identity_reference_ids(annotation)
+    }
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or len(node.args) < 2:
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "isinstance":
+            continue
+        allowed_repository_identity_reference_ids.update(
+            direct_repository_identity_reference_ids(node.args[1])
+        )
+
+    assert not [
+        (reference.lineno, ast.unparse(reference))
+        for reference in symbol_references(tree, repository_identity_symbol)
+        if id(reference) not in allowed_repository_identity_reference_ids
+    ]
+
+    adapter_call_targets = {
+        ast.unparse(node.func)
         for function in adapter_functions
         for node in ast.walk(function)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        if isinstance(node, ast.Call)
     }
-    assert not call_names & {
-        "compile",
-        "eval",
-        "exec",
-        "getenv",
-        "open",
-        "sha256",
+    assert adapter_call_targets == {
+        "EvidenceEnvelope",
+        "EvidenceRelationId.model_validate",
+        "EvidenceVersion.model_validate",
+        "LegacyArtifactSnapshotEnvelopeMappingResult",
+        "LegacyArtifactSnapshotProjectionResult",
+        "TypeError",
+        "any",
+        "cast",
+        "isinstance",
+        "len",
     }
 
     class_names = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
