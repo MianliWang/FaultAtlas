@@ -163,7 +163,7 @@ class LockedFile:
 
 EXPECTED_LOCKS = {
     "contract.md": LockedFile(
-        12808, "dbe7b60e2e1fbe0826dbee070d6a6718c9a94f0097cfd83a4d6dd9dd3bd8e5c1"
+        13088, "81a375a3e419f5a3a25b20e56a7f3ff6e850afec0ddcf788d96be4d74ed9ec28"
     ),
     "invalid-vectors.json": LockedFile(
         141878, "a379f425e31e1a8627818fb2f4a8afb420975680048f0ecb14da6305022b3592"
@@ -172,16 +172,16 @@ EXPECTED_LOCKS = {
         87, "cfa302e3629fd78a3c839bd71f04872e6cc0516ffe7e5e8be4cc13ebee377c85"
     ),
     "manifest.json": LockedFile(
-        22487, "25a18b67ccd29418b89725e58876403ff70c1e73d7161592dae15f902a9f3ba7"
+        22555, "8a51ec4d54a97e2492573aaf603df73c3a6511bbac3fc5acedafffb606657857"
     ),
     "manifest.sha256": LockedFile(
-        80, "8f1886acf5ccd720ae306fe086609d59cf3a969dd057a2d1c77a887fd49a5411"
+        80, "28363d938a3d00829eea92e81e7c5c8f51fa10aa316bfc26c6d61df09324e072"
     ),
     "replay-vectors.json": LockedFile(
-        84525, "9c7d5b4a0ffc3f47be2fb63c4585cbb9cb299274e2624ffa9e096cb970ce0b70"
+        84406, "69e1418d50f0179c210fcc04b71f89b3150f107f1dabb40ba58b43c50cb50b4f"
     ),
     "replay-vectors.sha256": LockedFile(
-        86, "4fd5b685cd0e34b760072dd30dab2431866bd2211e56aa85ae700cd8b1a372ed"
+        86, "8fdd390dd5755b2bb4b9ee177722b1e9caaa583a96b6e7f524f6fa8666993a34"
     ),
     "valid-vectors.json": LockedFile(
         182770, "49a005d2ab8e321e0867c5346db187e4a7736a392fd8b7eb4d343ed100385b86"
@@ -1233,12 +1233,6 @@ def _compute_completeness_status(
     return _completeness_status(context.outcomes)
 
 
-def _compute_universal_completeness_claim(
-    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
-) -> Any:
-    return _completeness_status(context.outcomes) == "scope_satisfied"
-
-
 def _compute_component_count(
     entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
 ) -> Any:
@@ -1472,10 +1466,6 @@ DERIVATION_REGISTRY: dict[str, DerivationRule] = {
         roots=frozenset(),
         compute=_compute_sum,
         list_operands=("addend_facts",),
-    ),
-    "universal_completeness_claim": DerivationRule(
-        roots=frozenset({COMPOSITION_ROOT_KIND}),
-        compute=_compute_universal_completeness_claim,
     ),
 }
 DERIVATION_RULES = frozenset(DERIVATION_REGISTRY)
@@ -1904,8 +1894,6 @@ def _replay_assessment_facts(
         ],
         "scope_id": assessment.scope_id.root,
         "status": assessment.status.value,
-        "universal_completeness_claimed": assessment.status
-        is EvidenceCompletenessStatus.SCOPE_SATISFIED,
     }
 
 
@@ -2551,11 +2539,15 @@ def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
     boundaries = cast(dict[str, Any], manifest["semantic_boundaries"])
     assert set(boundaries) == {
         "corpus_canonical_json_bytes",
+        "declared_scope_completeness",
         "future_durable_production_record_bytes",
         "python_model_equality",
         "retained_exact_artifact_bytes",
         "semantic_json_representation",
     }
+    assert boundaries["declared_scope_completeness"] == (
+        "bounded_to_one_declared_scope_never_a_universal_completeness_claim"
+    )
     assert boundaries["future_durable_production_record_bytes"] == "owned_by_S1.P10"
 
 
@@ -3372,6 +3364,45 @@ def _graph_depth(graph: ProvenanceGraph) -> int:
             (depth.get(operand, 0) for operand in operands), default=0
         )
     return max(depth.values(), default=0)
+
+
+SCOPE_BOUNDED_COMPLETENESS_STATUSES = {
+    "scope_partial",
+    "scope_satisfied",
+    "scope_satisfied_with_declared_omissions",
+    "scope_unknown",
+}
+
+
+def test_scope_completeness_is_never_a_universal_claim() -> None:
+    """Scope satisfaction is bounded to one declared scope.
+
+    `EvidenceCompletenessStatus` is derived only from the outcomes inside one
+    explicit scope, so no status value may be promoted into a claim about
+    evidence outside that scope. The corpus therefore states no universality
+    fact at all rather than inferring one from `scope_satisfied`.
+    """
+
+    assert {
+        status.value for status in EvidenceCompletenessStatus
+    } == SCOPE_BOUNDED_COMPLETENESS_STATUSES
+    source = (REPOSITORY_ROOT / "src/faultatlas/domain/evidence.py").read_text(
+        encoding="utf-8"
+    )
+    assert "universal" not in source.lower()
+    # Prose may name the boundary; no machine-readable claim may assert it.
+    assert not any("universal" in rule for rule in DERIVATION_REGISTRY)
+    for vector in _vectors(REPLAY_DOCUMENT):
+        expected = cast(dict[str, Any], vector["expected"])
+        for entry in cast(list[dict[str, Any]], expected.get("derivations", [])):
+            assert "universal" not in cast(str, entry["rule"])
+        for name in cast(dict[str, Any], expected.get("facts", {})):
+            assert "universal" not in name
+        for entry in cast(list[dict[str, Any]], expected.get("authored_labels", [])):
+            assert "universal" not in cast(str, entry["label"])
+        for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
+            for entry in cast(list[dict[str, Any]], pointer["projections"]):
+                assert "universal" not in cast(str, entry["fact"])
 
 
 def test_derivation_registry_is_complete_and_exercised() -> None:

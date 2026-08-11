@@ -9,7 +9,7 @@ Derived, non-authoritative Markdown; the canonical JSON files remain the sole co
 - Corpus identity: `faultatlas-evidence-envelope-contract-corpus`
 - Corpus version: `1`
 - Manifest SHA-256:
-  `25a18b67ccd29418b89725e58876403ff70c1e73d7161592dae15f902a9f3ba7`
+  `8a51ec4d54a97e2492573aaf603df73c3a6511bbac3fc5acedafffb606657857`
 
 ## Scope
 
@@ -166,7 +166,7 @@ never conflates them.
    `component_inventory`, `difference`, `legacy_projection_outcome`,
    `manifest_artifact_count`, `manifest_artifact_digest_scope`, `product`,
    `represented_modern_components`, `source_file_byte_length`,
-   `source_ordered_subset`, `sum`, and `universal_completeness_claim`.
+   `source_ordered_subset`, and `sum`.
 3. Slice-authored contract label. An exact identifier or label a named
    `S1.P03` Slice introduced, which no earlier record contains. Authored
    labels are declared in `authored_labels` with their value, their authoring
@@ -265,6 +265,11 @@ collection ceiling at maximum plus one, identity and linkage mismatches, the
 publication invariants, and the `S1.P03.S07` envelope and adapter invariants.
 
 ## Boundaries
+
+Completeness is bounded to one declared scope. `EvidenceCompletenessStatus` is
+derived only from the outcomes inside that scope, so `scope_satisfied` is never
+promoted into a claim about evidence outside it. The corpus therefore states no
+universality fact at all rather than inferring one from a scope status.
 
 Python model equality, semantic JSON representation, corpus canonical JSON
 bytes, retained exact artifact bytes, and future durable production record
