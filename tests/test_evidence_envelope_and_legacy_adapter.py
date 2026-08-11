@@ -1769,7 +1769,15 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
     forbidden_builtin_symbols = (
         forbidden_dynamic_call_symbols | forbidden_io_builtin_symbols
     )
-    forbidden_reflection_attributes = {"__getattr__", "__getattribute__"}
+    forbidden_reflection_attributes = {
+        "__base__",
+        "__bases__",
+        "__getattr__",
+        "__getattribute__",
+        "__mro__",
+        "__subclasses__",
+        "mro",
+    }
     forbidden_lookup_keys = forbidden_builtin_symbols | forbidden_reflection_attributes
     qualified_dynamic_call_members = {
         "__builtins__": forbidden_builtin_symbols,
@@ -1784,6 +1792,13 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         for member in members
     )
     forbidden_capability_namespaces = set(qualified_dynamic_call_members)
+    forbidden_import_bindings = (
+        forbidden_builtin_symbols
+        | forbidden_reflection_attributes
+        | forbidden_capability_namespaces
+        | namespace_lookup_attributes
+        | namespace_lookup_names
+    )
     forbidden_capability_imports: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -1798,7 +1813,7 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
                 )
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
-                if alias.name not in forbidden_builtin_symbols:
+                if alias.name not in forbidden_import_bindings:
                     continue
                 forbidden_capability_paths.add(alias.asname or alias.name)
                 forbidden_capability_imports.append((node.lineno, alias.name))
