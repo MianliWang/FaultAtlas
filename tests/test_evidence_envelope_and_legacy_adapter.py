@@ -1629,7 +1629,14 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
     }
     assert not forbidden_semantic_import_aliases
 
-    namespace_lookup_attributes = {"__builtins__", "__dict__", "__globals__"}
+    namespace_lookup_attributes = {
+        "__builtins__",
+        "__dict__",
+        "__globals__",
+        "f_builtins",
+        "f_globals",
+        "f_locals",
+    }
     namespace_lookup_functions = {"globals", "locals", "vars"}
     namespace_lookup_names = {"__builtins__"}
 
@@ -1719,9 +1726,9 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         elif isinstance(node, ast.ExceptHandler) and node.name is not None:
             module_bound_names.add(node.name)
 
-    unshadowed_isinstance_targets = {"builtins.isinstance"}
-    if "isinstance" not in module_bound_names:
-        unshadowed_isinstance_targets.add("isinstance")
+    unshadowed_isinstance_targets = (
+        set[str]() if "isinstance" in module_bound_names else {"isinstance"}
+    )
 
     allowed_repository_identity_reference_ids = {
         reference_id
@@ -1758,17 +1765,19 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         "setattr",
         "vars",
     }
-    forbidden_reflection_attributes = {"__getattr__", "__getattribute__"}
-    forbidden_lookup_keys = (
-        forbidden_dynamic_call_symbols | forbidden_reflection_attributes
+    forbidden_io_builtin_symbols = {"breakpoint", "input", "open", "print"}
+    forbidden_builtin_symbols = (
+        forbidden_dynamic_call_symbols | forbidden_io_builtin_symbols
     )
+    forbidden_reflection_attributes = {"__getattr__", "__getattribute__"}
+    forbidden_lookup_keys = forbidden_builtin_symbols | forbidden_reflection_attributes
     qualified_dynamic_call_members = {
-        "__builtins__": forbidden_dynamic_call_symbols,
-        "builtins": forbidden_dynamic_call_symbols,
+        "__builtins__": forbidden_builtin_symbols,
+        "builtins": forbidden_builtin_symbols,
         "importlib": {"import_module"},
         "operator": {"attrgetter", "methodcaller"},
     }
-    forbidden_capability_paths = set(forbidden_dynamic_call_symbols)
+    forbidden_capability_paths = set(forbidden_builtin_symbols)
     forbidden_capability_paths.update(
         f"{module}.{member}"
         for module, members in qualified_dynamic_call_members.items()
@@ -1789,7 +1798,7 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
                 )
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
-                if alias.name not in forbidden_dynamic_call_symbols:
+                if alias.name not in forbidden_builtin_symbols:
                     continue
                 forbidden_capability_paths.add(alias.asname or alias.name)
                 forbidden_capability_imports.append((node.lineno, alias.name))
