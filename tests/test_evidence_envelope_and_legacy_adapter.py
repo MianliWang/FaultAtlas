@@ -1582,26 +1582,29 @@ def test_wrapper_preserves_legacy_locator_without_remapping_or_modern_fabricatio
 
 def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -> None:
     tree = ast.parse(EVIDENCE_SOURCE.read_text(encoding="utf-8"))
-    reviewed_import_roots = {
+    reviewed_import_modules = {
         "datetime",
         "enum",
-        "faultatlas",
+        "faultatlas.domain.compatibility",
+        "faultatlas.domain.identity",
+        "faultatlas.domain.revision",
+        "faultatlas.domain.source",
         "json",
         "pydantic",
         "re",
         "typing",
     }
-    imported_roots = {
-        alias.name.split(".")[0]
+    imported_modules = {
+        alias.name
         for node in ast.walk(tree)
         if isinstance(node, ast.Import)
         for alias in node.names
     } | {
-        "faultatlas" if node.level else (node.module or "").split(".")[0]
+        f"{'.' * node.level}{node.module or ''}"
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom)
     }
-    assert not imported_roots - reviewed_import_roots
+    assert not imported_modules - reviewed_import_modules
 
     adapter_function_names = {
         "wrap_legacy_artifact_snapshot",
@@ -1626,7 +1629,7 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
     }
     assert not forbidden_semantic_import_aliases
 
-    namespace_lookup_attributes = {"__dict__", "__globals__"}
+    namespace_lookup_attributes = {"__builtins__", "__dict__", "__globals__"}
     namespace_lookup_functions = {"globals", "locals", "vars"}
     namespace_lookup_names = {"__builtins__"}
 
@@ -1756,6 +1759,9 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         "vars",
     }
     forbidden_reflection_attributes = {"__getattr__", "__getattribute__"}
+    forbidden_lookup_keys = (
+        forbidden_dynamic_call_symbols | forbidden_reflection_attributes
+    )
     qualified_dynamic_call_members = {
         "__builtins__": forbidden_dynamic_call_symbols,
         "builtins": forbidden_dynamic_call_symbols,
@@ -1834,7 +1840,7 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
             if is_capability_namespace(node) or is_namespace_expression(node):
                 return not is_bounded_namespace_traversal(node)
             return False
-        return namespace_lookup_key(node) in forbidden_dynamic_call_symbols
+        return namespace_lookup_key(node) in forbidden_lookup_keys
 
     prohibited_capability_uses = [
         (node.lineno, ast.unparse(node))
