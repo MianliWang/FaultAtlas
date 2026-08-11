@@ -87,6 +87,7 @@ EVIDENCE_SOURCE = REPOSITORY_ROOT / "src/faultatlas/domain/evidence.py"
 SOURCE_SOURCE = REPOSITORY_ROOT / "src/faultatlas/domain/source.py"
 COMPATIBILITY_SOURCE = REPOSITORY_ROOT / "src/faultatlas/domain/compatibility.py"
 CORPUS_ROOT = REPOSITORY_ROOT / "reference_corpus/pytest-4412"
+EVIDENCE_CONTRACT_CORPUS_RELATIVE = "reference_corpus/contracts/evidence-envelope/v1"
 
 CANONICAL_RUN_ID = "run-0001-s04-v1-base-4c9cde74-head-690a63b9"
 CANONICAL_STARTED_AT = datetime(2026, 7, 24, 11, 3, 15, 269222, tzinfo=UTC)
@@ -1943,7 +1944,39 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
     assert not hasattr(evidence_module, "EvidenceEnvelopeCanonicalBytes")
     assert not hasattr(evidence_module, "EvidenceRepositorySnapshot")
     assert not hasattr(evidence_module, "EvidenceConfidenceReview")
-    assert not (CORPUS_ROOT / "contracts" / "evidence-envelope").exists()
+
+    evidence_bytes = EVIDENCE_SOURCE.read_bytes()
+    assert b"reference_corpus" not in evidence_bytes
+    assert EVIDENCE_CONTRACT_CORPUS_RELATIVE.encode() not in evidence_bytes
+    corpus_reader_tokens = ("corpus", "reader", "writer", "registry", "storage")
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            module = "" if isinstance(node, ast.Import) else (node.module or "")
+            names = [module, *(alias.name for alias in node.names)]
+            assert not any(
+                token in name.casefold()
+                for name in names
+                for token in corpus_reader_tokens
+            )
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            assert node.func.id not in {"open", "eval", "exec", "__import__"}
+        if isinstance(node, ast.Attribute):
+            assert node.attr not in {
+                "read_bytes",
+                "read_text",
+                "write_bytes",
+                "write_text",
+                "open",
+            }
+    corpus_executor = REPOSITORY_ROOT / "tests/test_evidence_contract_corpus.py"
+    assert corpus_executor.is_file()
+    assert corpus_executor.relative_to(REPOSITORY_ROOT).parts[0] == "tests"
+    assert not (REPOSITORY_ROOT / "src/faultatlas/domain/corpus.py").exists()
+    production_files = {
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in (REPOSITORY_ROOT / "src").rglob("*.py")
+    }
+    assert production_files == EXPECTED_PRODUCTION_FILES
 
 
 @pytest.mark.parametrize("missing", ENVELOPE_FIELDS[1:])

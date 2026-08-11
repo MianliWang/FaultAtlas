@@ -1023,5 +1023,46 @@ The canonical current P03 envelope therefore projects as `not_mappable` with
 completeness, or publication fact is coerced into a legacy snapshot. S07 adds
 no migration, persistence, storage, reader, writer, canonical envelope bytes,
 format registry, repository snapshot, confidence or review, contract corpus,
-or service API. `S1.P03.S07` is complete, `S1.P03` remains active,
-`S1.P03.S08` is next and not started, and `S1.P03.S09` is not started.
+or service API.
+
+## S1.P03.S08 evidence contract corpus
+
+`S1.P03.S08` publishes the internal, source-repository-only, case-calibrated
+evidence contract corpus at `reference_corpus/contracts/evidence-envelope/v1`
+under corpus identity `faultatlas-evidence-envelope-contract-corpus` version
+`1`. It freezes the already-published `S1.P03.S01`-`S1.P03.S07` behavior and
+changes no production source.
+
+The corpus holds exactly nine tracked files: a manifest, three vector
+documents, their four `sha256` sidecars, and a derived non-authoritative
+`contract.md`. Vectors are classified in three categories:
+
+- valid vectors accept explicit JSON and strictly typed Python input across
+  every S01-S07 semantic layer;
+- invalid vectors freeze contractual rejection with a structured failure
+  category, error location, and error type; and
+- replay vectors reproduce the case-calibrated facts.
+
+Replay covers the two retained exact artifacts, the sealed 32-request
+acquisition run, the single `S1.P00.S04.C01` correction, the seventeen-
+requirement declared-retention completeness assessment, both protected
+publication records, the canonical current `EvidenceEnvelope`, and the
+synthetic legacy adapter matrix. The canonical envelope replays with no legacy
+snapshot, no standalone membership, one acquisition run, a known-empty
+transformation inventory, one correction, one completeness assessment, and the
+acquisition and correction publications in that order; its canonical
+transformation and supersession counts are both zero, and it projects to legacy
+v1 as `not_mappable` with `legacy_snapshot_absent`. Legacy adapter fixtures are
+explicitly synthetic and never derived from pytest #4412 evidence.
+
+The corpus byte convention `json-sort-keys-compact-utf8-lf-v1` applies only to
+these tracked corpus files. It is not production canonicalization, not a
+durable `EvidenceEnvelope` byte format, and not a public wire format; Python
+model equality, semantic JSON, corpus canonical bytes, retained exact artifact
+bytes, and future durable record bytes remain distinct concepts. The executor
+`tests/test_evidence_contract_corpus.py` is test-only, uses a fixed explicit
+registry, and adds no production reader, writer, validator, persistence, or
+migration. Corpus bytes are excluded from packaged artifacts.
+
+`S1.P03.S07` and `S1.P03.S08` are complete, `S1.P03` remains active, and
+`S1.P03.S09` is next and not started.
