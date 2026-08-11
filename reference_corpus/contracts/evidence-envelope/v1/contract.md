@@ -9,7 +9,7 @@ Derived, non-authoritative Markdown; the canonical JSON files remain the sole co
 - Corpus identity: `faultatlas-evidence-envelope-contract-corpus`
 - Corpus version: `1`
 - Manifest SHA-256:
-  `f02a41deb343a709d1f024025784960b600ad76e2f504fd3f7a85f402feb231e`
+  `012b47e3172ce7d5e8ace01e5f1c7d5e0928ba72259f68f8d1155b19b9e05252`
 
 ## Scope
 
@@ -149,15 +149,18 @@ The canonical envelope projects to legacy v1 as `not_mappable` with
 `legacy_snapshot_absent` and no projected snapshot; no legacy snapshot is ever
 fabricated from modern evidence.
 
-Every canonical replay vector names one bounded source document and the exact
-locked lexemes that document must contain, so a locked claim is validated
-against the authority that actually carries it rather than against an unrelated
-file whose whole-file digest happens to match. Publication provenance is
-therefore sourced from the `S1.P00` phase closure, the acquisition run from the
-acquisition record, and the correction and completeness facts from the
-`S1.P00.S04.C01` addendum. Facts that are reviewed derivations rather than
-literal source lexemes are declared explicitly, and a fact that is neither
-sourced nor declared derived is rejected.
+Every canonical replay vector names one bounded source document and projects
+each locked fact out of that document through an explicit JSON pointer, so a
+claim is validated against the authority that actually carries it rather than
+against an unrelated file whose whole-file digest happens to match. Publication
+provenance is therefore projected from the `S1.P00` phase-closure slice ledger,
+the acquisition run from the acquisition record, and the correction and
+completeness facts from the `S1.P00.S04.C01` addendum. The six projection kinds
+are `collect`, `length`, `self_digest`, `singleton`, `text`, and `value`, which
+cover string, integer, boolean, and list facts alike. Every fact is either
+projected or explicitly declared a reviewed derivation; a fact that is neither
+is rejected, and every vector rationale reference must resolve through the
+manifest authority registry.
 
 ## Legacy adapter replay
 
