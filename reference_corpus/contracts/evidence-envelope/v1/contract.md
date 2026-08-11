@@ -9,7 +9,7 @@ Derived, non-authoritative Markdown; the canonical JSON files remain the sole co
 - Corpus identity: `faultatlas-evidence-envelope-contract-corpus`
 - Corpus version: `1`
 - Manifest SHA-256:
-  `1db40c259e40dc6eb5f6019f2355fba9ac6a272f16b45856c9fd75bd14baf97b`
+  `f02a41deb343a709d1f024025784960b600ad76e2f504fd3f7a85f402feb231e`
 
 ## Scope
 
@@ -148,6 +148,16 @@ trees, and separate pull-request and natural-main checks.
 The canonical envelope projects to legacy v1 as `not_mappable` with
 `legacy_snapshot_absent` and no projected snapshot; no legacy snapshot is ever
 fabricated from modern evidence.
+
+Every canonical replay vector names one bounded source document and the exact
+locked lexemes that document must contain, so a locked claim is validated
+against the authority that actually carries it rather than against an unrelated
+file whose whole-file digest happens to match. Publication provenance is
+therefore sourced from the `S1.P00` phase closure, the acquisition run from the
+acquisition record, and the correction and completeness facts from the
+`S1.P00.S04.C01` addendum. Facts that are reviewed derivations rather than
+literal source lexemes are declared explicitly, and a fact that is neither
+sourced nor declared derived is rejected.
 
 ## Legacy adapter replay
 

@@ -155,7 +155,7 @@ class LockedFile:
 
 EXPECTED_LOCKS = {
     "contract.md": LockedFile(
-        7374, "a391958867d047e783c652ae9bbae282fcf3c9148e621ecb21633f5d96c6f221"
+        8023, "bf0eb99e8a49c5f6f093dd577870ac0a96de3f59e1eb62be454c91023b235380"
     ),
     "invalid-vectors.json": LockedFile(
         141878, "a379f425e31e1a8627818fb2f4a8afb420975680048f0ecb14da6305022b3592"
@@ -164,16 +164,16 @@ EXPECTED_LOCKS = {
         87, "cfa302e3629fd78a3c839bd71f04872e6cc0516ffe7e5e8be4cc13ebee377c85"
     ),
     "manifest.json": LockedFile(
-        20019, "1db40c259e40dc6eb5f6019f2355fba9ac6a272f16b45856c9fd75bd14baf97b"
+        20384, "f02a41deb343a709d1f024025784960b600ad76e2f504fd3f7a85f402feb231e"
     ),
     "manifest.sha256": LockedFile(
-        80, "7b50090e3b4d09410deae96ed0cca92d2a5d0482117b6321b6e23291f9e85da4"
+        80, "cb62e211eddf4cc651b5173940eec1cae9eabd2ddd9079b06954ea0e481ef215"
     ),
     "replay-vectors.json": LockedFile(
-        75388, "dcf3a6133ff495bf9aec207fc3cf6bbdf9b26ec5ef1a13de83ecb8c8b85c0112"
+        78122, "98551aa0668783e502a385e4a194c34147ab47bbf5023c2b1db998f65e7359cd"
     ),
     "replay-vectors.sha256": LockedFile(
-        86, "04a37a1f7de55b49217f1cc366595873aedad9897f9007724cd3d016ff88d3e5"
+        86, "04e544b6c50e1098dbf345c4bf32bffdb6faaa87dd46021e4fb2b381749e0c43"
     ),
     "valid-vectors.json": LockedFile(
         182770, "49a005d2ab8e321e0867c5346db187e4a7736a392fd8b7eb4d343ed100385b86"
@@ -948,20 +948,80 @@ def _assert_source_pointer(vector: dict[str, Any]) -> None:
     raw_pointer = vector["source_pointer"]
     assert isinstance(raw_pointer, dict)
     pointer = cast(dict[str, Any], raw_pointer)
-    assert set(pointer) == {"authority", "path", "sha256"}
+    assert set(pointer) == {"authority", "path", "sha256", "source_lexemes"}
     authority = pointer["authority"]
     assert isinstance(authority, str) and authority
+    lexemes = pointer["source_lexemes"]
+    assert isinstance(lexemes, list)
+    typed_lexemes = cast(list[Any], lexemes)
+    assert all(isinstance(item, str) and item for item in typed_lexemes)
+    assert typed_lexemes == sorted(cast(list[str], typed_lexemes))
+    assert len(set(cast(list[str], typed_lexemes))) == len(typed_lexemes)
+
+    operation = cast(str, vector["operation"])
+    if operation in {"replay_record", "replay_envelope"}:
+        assert typed_lexemes
+    elif operation == "replay_artifact":
+        assert not typed_lexemes
+
     path = pointer["path"]
     digest = pointer["sha256"]
     if path is None:
         assert digest is None
+        assert not typed_lexemes
         assert vector["evidence_classification"] == "synthetic_contract_example"
         return
     assert isinstance(path, str) and isinstance(digest, str)
     pure = PurePosixPath(path)
     assert not pure.is_absolute()
     assert ".." not in pure.parts
-    assert _sha256((REPOSITORY_ROOT / path).read_bytes()) == digest
+    raw = (REPOSITORY_ROOT / path).read_bytes()
+    assert _sha256(raw) == digest
+    if typed_lexemes:
+        source_text = raw.decode("utf-8")
+        for lexeme in cast(list[str], typed_lexemes):
+            assert lexeme in source_text, (
+                f"{vector['id']} lexeme {lexeme!r} is absent from {path}"
+            )
+
+
+def _string_leaves(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [
+            leaf for item in cast(list[Any], value) for leaf in _string_leaves(item)
+        ]
+    return []
+
+
+def _assert_fact_provenance(
+    vector: dict[str, Any], facts: dict[str, Any], expected: dict[str, Any]
+) -> None:
+    pointer = cast(dict[str, Any], vector["source_pointer"])
+    raw_derived = expected["derived_facts"]
+    assert isinstance(raw_derived, list)
+    derived = cast(list[str], raw_derived)
+    assert all(isinstance(item, str) for item in derived)
+    assert derived == sorted(derived)
+    assert len(set(derived)) == len(derived)
+    assert set(derived) <= set(facts)
+
+    available = set(cast(list[str], pointer["source_lexemes"]))
+    pointer_digest = pointer["sha256"]
+    if isinstance(pointer_digest, str):
+        available.add(pointer_digest)
+    for key, value in sorted(facts.items()):
+        leaves = _string_leaves(value)
+        if not leaves:
+            assert key not in derived
+            continue
+        if key in derived:
+            continue
+        missing = [leaf for leaf in leaves if leaf not in available]
+        assert not missing, (
+            f"{vector['id']} fact {key!r} claims unsourced lexemes {missing!r}"
+        )
 
 
 def _replay_run_facts(run: AcquisitionRun) -> dict[str, Any]:
@@ -1052,10 +1112,15 @@ def _replay_assessment_facts(
 def _replay_publication_facts(publication: EvidencePublication) -> dict[str, Any]:
     return {
         "main_check_event": publication.main_check.event.value,
+        "main_check_job_id": publication.main_check.job_id.root,
+        "main_check_run_id": publication.main_check.run_id.root,
         "publication_id": publication.publication_id.root,
+        "published_at": publication.published_at.isoformat().replace("+00:00", "Z"),
         "published_revision": publication.published_revision.full_digest,
         "published_tree": publication.published_tree.full_digest,
         "pull_request_check_event": publication.pull_request_check.event.value,
+        "pull_request_check_job_id": publication.pull_request_check.job_id.root,
+        "pull_request_check_run_id": publication.pull_request_check.run_id.root,
         "pull_request_number": (
             publication.pull_request_identity.repository_scoped_number.root
         ),
@@ -1143,6 +1208,7 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         assert identity.digest.value.root == _sha256(raw)
         assert identity.digest.scope.root == expected["digest_scope"]
         assert identity.digest.algorithm.value == expected["digest_algorithm"]
+        assert expected["derived_facts"] == ["digest_algorithm", "digest_scope"]
         return
 
     if operation == "replay_record":
@@ -1151,7 +1217,9 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         model = _validate_model(MODEL_TARGETS[target], record, "json")
         _round_trip_model(MODEL_TARGETS[target], model)
         _assert_expected_dump(expected, _semantic_dump(model), record)
-        assert _replay_record_facts(target, model) == expected["facts"]
+        facts = _replay_record_facts(target, model)
+        assert facts == expected["facts"]
+        _assert_fact_provenance(vector, facts, expected)
         assert expected["runtime_target"] == target
         return
 
@@ -1163,7 +1231,9 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         _round_trip_model(EvidenceEnvelope, envelope)
         _assert_expected_dump(expected, _semantic_dump(envelope), payload)
         assert _envelope_inventory(envelope) == expected["component_inventory"]
-        assert _envelope_facts(envelope) == expected["facts"]
+        envelope_facts = _envelope_facts(envelope)
+        assert envelope_facts == expected["facts"]
+        _assert_fact_provenance(vector, envelope_facts, expected)
         assert expected["runtime_target"] == target
         return
 
@@ -1462,6 +1532,15 @@ def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
     replay_contract = cast(dict[str, Any], manifest["replay_contract"])
     assert replay_contract["production_replay_io"] is False
     assert replay_contract["production_lookup"] == "none"
+    assert replay_contract["source_lexeme_verification"] == (
+        "required_for_record_and_envelope_replay"
+    )
+    assert replay_contract["source_pointer_fields"] == [
+        "authority",
+        "path",
+        "sha256",
+        "source_lexemes",
+    ]
     assert replay_contract["canonical_envelope"] == {
         "acquisition_runs": 1,
         "completeness_assessments": 1,
@@ -2147,6 +2226,10 @@ REQUIRED_MUTATIONS = (
     "replay-adapter-status-changed",
     "replay-adapter-reason-changed",
     "replay-source-pointer-digest-changed",
+    "replay-source-pointer-retargeted",
+    "replay-source-lexeme-absent",
+    "replay-unsourced-fact-not-declared-derived",
+    "replay-derived-fact-list-unsorted",
     "fixture-missing",
     "fixture-cycle",
     "manifest-count-changed",
@@ -2163,7 +2246,7 @@ REQUIRED_MUTATIONS = (
     "synthetic-package-corpus-member",
     "historical-pytest-license-inserted",
 )
-assert len(REQUIRED_MUTATIONS) == 43
+assert len(REQUIRED_MUTATIONS) == 47
 
 
 def _copied_documents() -> dict[str, dict[str, Any]]:
@@ -2401,11 +2484,42 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
         return
 
-    if mutation == "replay-source-pointer-digest-changed":
+    if mutation in {
+        "replay-source-pointer-digest-changed",
+        "replay-source-lexeme-absent",
+    }:
         vector = copy.deepcopy(
             _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.run.canonical-32-request")
         )
-        vector["source_pointer"]["sha256"] = "f" * 64
+        if mutation == "replay-source-pointer-digest-changed":
+            vector["source_pointer"]["sha256"] = "f" * 64
+        else:
+            lexemes = cast(list[str], vector["source_pointer"]["source_lexemes"])
+            lexemes.append("zzz-lexeme-absent-from-the-acquisition-record")
+            lexemes.sort()
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {
+        "replay-source-pointer-retargeted",
+        "replay-unsourced-fact-not-declared-derived",
+        "replay-derived-fact-list-unsorted",
+    }:
+        vector = copy.deepcopy(
+            _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
+        )
+        if mutation == "replay-source-pointer-retargeted":
+            vector["source_pointer"]["path"] = ACQUISITION_RELATIVE
+            vector["source_pointer"]["sha256"] = _sha256(
+                (REPOSITORY_ROOT / ACQUISITION_RELATIVE).read_bytes()
+            )
+        elif mutation == "replay-unsourced-fact-not-declared-derived":
+            derived = cast(list[str], vector["expected"]["derived_facts"])
+            derived.remove("publication_id")
+        else:
+            derived = cast(list[str], vector["expected"]["derived_facts"])
+            derived.reverse()
         with pytest.raises(AssertionError):
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
         return
