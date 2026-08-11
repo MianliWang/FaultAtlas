@@ -9,7 +9,7 @@ Derived, non-authoritative Markdown; the canonical JSON files remain the sole co
 - Corpus identity: `faultatlas-evidence-envelope-contract-corpus`
 - Corpus version: `1`
 - Manifest SHA-256:
-  `012b47e3172ce7d5e8ace01e5f1c7d5e0928ba72259f68f8d1155b19b9e05252`
+  `6361c8a0db326f8e863bd06db77175ce27b2f49aad273c08d3af6d22e59ef0c6`
 
 ## Scope
 
@@ -159,8 +159,10 @@ completeness facts from the `S1.P00.S04.C01` addendum. The six projection kinds
 are `collect`, `length`, `self_digest`, `singleton`, `text`, and `value`, which
 cover string, integer, boolean, and list facts alike. Every fact is either
 projected or explicitly declared a reviewed derivation; a fact that is neither
-is rejected, and every vector rationale reference must resolve through the
-manifest authority registry.
+is rejected. Each pointer's logical authority, path, and digest must resolve
+together through the manifest registry, so a mistyped or unrelated authority is
+rejected even when its path, digest, and projections are otherwise valid, and
+every vector rationale reference must resolve through the same registry.
 
 ## Legacy adapter replay
 

@@ -155,7 +155,7 @@ class LockedFile:
 
 EXPECTED_LOCKS = {
     "contract.md": LockedFile(
-        8257, "9643e82adaf829b5149f777b178f98d45a9b032ddce3869dc308db0d19b30933"
+        8461, "e34eb107741c76db351bafb5c9c1d698d1f5220771be2e83a64b48f029f93d0a"
     ),
     "invalid-vectors.json": LockedFile(
         141878, "a379f425e31e1a8627818fb2f4a8afb420975680048f0ecb14da6305022b3592"
@@ -164,10 +164,10 @@ EXPECTED_LOCKS = {
         87, "cfa302e3629fd78a3c839bd71f04872e6cc0516ffe7e5e8be4cc13ebee377c85"
     ),
     "manifest.json": LockedFile(
-        20826, "012b47e3172ce7d5e8ace01e5f1c7d5e0928ba72259f68f8d1155b19b9e05252"
+        21088, "6361c8a0db326f8e863bd06db77175ce27b2f49aad273c08d3af6d22e59ef0c6"
     ),
     "manifest.sha256": LockedFile(
-        80, "5a8d7a865530b94c2852434e3b749881ff311acbd0309ceeb4ca8571e2482fb6"
+        80, "a31eb543d9142d5a533f9af8d6f04096c925b2965f8c23a5d5011d730f6296d2"
     ),
     "replay-vectors.json": LockedFile(
         81027, "e8e757582201da443c4c456d4b9d64491e470af4777f70df3fa6ea13fed0b5fe"
@@ -1002,7 +1002,30 @@ def _assert_projection_shape(vector: dict[str, Any]) -> list[dict[str, Any]]:
     return projections
 
 
-def _assert_source_pointer(vector: dict[str, Any]) -> None:
+def _assert_registered_authority(
+    manifest: dict[str, Any], authority: str, path: str, digest: str
+) -> None:
+    matches: list[tuple[list[str], str]] = []
+    for source in cast(list[dict[str, Any]], manifest["source_decisions"]):
+        if source["path"] == path:
+            matches.append(
+                (cast(list[str], source["authority_ids"]), cast(str, source["sha256"]))
+            )
+    replay_contract = cast(dict[str, Any], manifest["replay_contract"])
+    for artifact in cast(list[dict[str, Any]], replay_contract["artifacts"]):
+        if artifact["path"] == path:
+            matches.append(
+                ([cast(str, artifact["authority"])], cast(str, artifact["sha256"]))
+            )
+    assert len(matches) == 1, f"{path} is not registered exactly once in the manifest"
+    authority_ids, registered_digest = matches[0]
+    assert authority in authority_ids, (
+        f"authority {authority!r} is not registered for {path}"
+    )
+    assert registered_digest == digest
+
+
+def _assert_source_pointer(vector: dict[str, Any], manifest: dict[str, Any]) -> None:
     projections = _assert_projection_shape(vector)
     pointer = cast(dict[str, Any], vector["source_pointer"])
     operation = cast(str, vector["operation"])
@@ -1011,18 +1034,23 @@ def _assert_source_pointer(vector: dict[str, Any]) -> None:
     elif operation == "replay_artifact":
         assert not projections
 
+    authority = cast(str, pointer["authority"])
     path = pointer["path"]
     digest = pointer["sha256"]
+    replay_contract = cast(dict[str, Any], manifest["replay_contract"])
     if path is None:
         assert digest is None
         assert not projections
         assert vector["evidence_classification"] == "synthetic_contract_example"
+        assert authority == replay_contract["synthetic_authority"]
         return
     assert isinstance(path, str) and isinstance(digest, str)
+    assert authority != replay_contract["synthetic_authority"]
     pure = PurePosixPath(path)
     assert not pure.is_absolute()
     assert ".." not in pure.parts
     assert _sha256((REPOSITORY_ROOT / path).read_bytes()) == digest
+    _assert_registered_authority(manifest, authority, path, digest)
 
 
 def _projected_value(
@@ -1255,7 +1283,7 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         "reviewed_derived_composition",
         "synthetic_contract_example",
     }
-    _assert_source_pointer(vector)
+    _assert_source_pointer(vector, MANIFEST_DOCUMENT)
     value = _resolved_input(vector, document)
     assert isinstance(value, dict)
     replay_input = cast(dict[str, Any], value)
@@ -1609,6 +1637,10 @@ def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
         "every_fact_is_projected_or_declared_derived"
     )
     assert replay_contract["projection_kinds"] == sorted(PROJECTION_KINDS)
+    assert replay_contract["authority_resolution"] == (
+        "pointer_authority_path_and_digest_must_resolve_through_manifest"
+    )
+    assert replay_contract["synthetic_authority"] == "synthetic-legacy-adapter-fixture"
     assert replay_contract["source_pointer_fields"] == [
         "authority",
         "path",
@@ -1631,6 +1663,13 @@ def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
         "status": "not_mappable",
     }
     for artifact in cast(list[dict[str, Any]], replay_contract["artifacts"]):
+        assert set(artifact) == {
+            "authority",
+            "byte_length",
+            "digest_scope",
+            "path",
+            "sha256",
+        }
         raw = (REPOSITORY_ROOT / cast(str, artifact["path"])).read_bytes()
         assert len(raw) == artifact["byte_length"]
         assert _sha256(raw) == artifact["sha256"]
@@ -2035,6 +2074,7 @@ def _corpus_vector_count(relative: str) -> int:
     return total
 
 
+MANIFEST_DOCUMENT = _load_document("manifest.json")
 VALID_DOCUMENT = _load_document("valid-vectors.json")
 INVALID_DOCUMENT = _load_document("invalid-vectors.json")
 REPLAY_DOCUMENT = _load_document("replay-vectors.json")
@@ -2338,6 +2378,8 @@ REQUIRED_MUTATIONS = (
     "replay-numeric-fact-changed",
     "replay-derived-fact-list-unsorted",
     "replay-decision-reference-unregistered",
+    "replay-authority-not-registered",
+    "replay-authority-path-unregistered",
     "fixture-missing",
     "fixture-cycle",
     "manifest-count-changed",
@@ -2354,7 +2396,7 @@ REQUIRED_MUTATIONS = (
     "synthetic-package-corpus-member",
     "historical-pytest-license-inserted",
 )
-assert len(REQUIRED_MUTATIONS) == 50
+assert len(REQUIRED_MUTATIONS) == 52
 
 
 def _copied_documents() -> dict[str, dict[str, Any]]:
@@ -2636,6 +2678,30 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
         else:
             derived = cast(list[str], vector["expected"]["derived_facts"])
             derived.reverse()
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {
+        "replay-authority-not-registered",
+        "replay-authority-path-unregistered",
+    }:
+        vector = copy.deepcopy(
+            _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
+        )
+        if mutation == "replay-authority-not-registered":
+            vector["source_pointer"]["authority"] = (
+                "run-0001-s04-v1-base-4c9cde74-head-690a63b9"
+            )
+        else:
+            vector["source_pointer"]["path"] = (
+                "reference_corpus/pytest-4412/case/case.json"
+            )
+            vector["source_pointer"]["sha256"] = _sha256(
+                (
+                    REPOSITORY_ROOT / "reference_corpus/pytest-4412/case/case.json"
+                ).read_bytes()
+            )
         with pytest.raises(AssertionError):
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
         return
