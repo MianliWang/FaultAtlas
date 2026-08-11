@@ -155,7 +155,7 @@ class LockedFile:
 
 EXPECTED_LOCKS = {
     "contract.md": LockedFile(
-        8461, "e34eb107741c76db351bafb5c9c1d698d1f5220771be2e83a64b48f029f93d0a"
+        9385, "aea70b255de90fdef9b863caa01a57c51bdbd44074159f670d248c13aa656d7e"
     ),
     "invalid-vectors.json": LockedFile(
         141878, "a379f425e31e1a8627818fb2f4a8afb420975680048f0ecb14da6305022b3592"
@@ -164,16 +164,16 @@ EXPECTED_LOCKS = {
         87, "cfa302e3629fd78a3c839bd71f04872e6cc0516ffe7e5e8be4cc13ebee377c85"
     ),
     "manifest.json": LockedFile(
-        21088, "6361c8a0db326f8e863bd06db77175ce27b2f49aad273c08d3af6d22e59ef0c6"
+        21416, "b16097c187f942ba72cabdc6ec4cf9a540eb851e64fd5199f4c72113ce25cf88"
     ),
     "manifest.sha256": LockedFile(
-        80, "a31eb543d9142d5a533f9af8d6f04096c925b2965f8c23a5d5011d730f6296d2"
+        80, "88b9b1013766c25f2e58f43b1de7cf24374e9275421c41520eadcf38266f0bb8"
     ),
     "replay-vectors.json": LockedFile(
-        81027, "e8e757582201da443c4c456d4b9d64491e470af4777f70df3fa6ea13fed0b5fe"
+        82450, "429600bc8cc6481e7847b67661bb3c0b633052754c5ffaf1a5719ce34357b6cb"
     ),
     "replay-vectors.sha256": LockedFile(
-        86, "85e2b92fef43e045a4f070745722a74aeada376936ddf49d2382d0be9dfcbdbd"
+        86, "9e48c4e4c18cc9132bdcf5ec50827d6b13f8fd6a18ff3bf8afd3d4e97bd66ffb"
     ),
     "valid-vectors.json": LockedFile(
         182770, "49a005d2ab8e321e0867c5346db187e4a7736a392fd8b7eb4d343ed100385b86"
@@ -1082,17 +1082,126 @@ def _projected_value(
     return collected
 
 
+DERIVATION_RULES = {
+    "authored",
+    "component_count",
+    "difference",
+    "manifest_artifact_digest_scope",
+    "ordered_component_ids",
+    "product",
+    "source_file_byte_length",
+    "sum",
+}
+AUTHORING_SLICES = {f"S1.P03.S0{index}" for index in range(1, 8)}
+
+
+def _assert_derivation_shape(expected: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = expected["derivations"]
+    assert isinstance(raw, list)
+    derivations = cast(list[dict[str, Any]], raw)
+    names: list[str] = []
+    for entry in derivations:
+        assert isinstance(entry, dict)
+        fact = entry["fact"]
+        rule = entry["rule"]
+        assert isinstance(fact, str) and fact
+        assert rule in DERIVATION_RULES
+        if rule == "authored":
+            assert set(entry) == {"authored_by", "fact", "rule"}
+            assert entry["authored_by"] in AUTHORING_SLICES
+        elif rule in {"manifest_artifact_digest_scope", "source_file_byte_length"}:
+            assert set(entry) == {"fact", "rule"}
+        elif rule == "difference":
+            assert set(entry) == {
+                "fact",
+                "minuend_fact",
+                "rule",
+                "subtrahend_length_fact",
+            }
+        elif rule == "product":
+            assert set(entry) == {"factor_fact", "fact", "multiplier", "rule"}
+            assert type(entry["multiplier"]) is int
+        elif rule == "sum":
+            assert set(entry) == {"fact", "length_facts", "rule"}
+            assert isinstance(entry["length_facts"], list)
+        elif rule == "component_count":
+            assert set(entry) in (
+                {"component", "fact", "rule"},
+                {"component", "fact", "minus_fact", "rule"},
+            )
+        else:
+            assert rule == "ordered_component_ids"
+            assert set(entry) == {"component", "fact", "rule"}
+        names.append(fact)
+    assert names == sorted(names)
+    assert len(set(names)) == len(names)
+    return derivations
+
+
+def _derived_value(
+    entry: dict[str, Any],
+    facts: dict[str, Any],
+    inventory: dict[str, int | None],
+    pointer: dict[str, Any],
+    manifest: dict[str, Any],
+) -> Any:
+    rule = cast(str, entry["rule"])
+    if rule == "authored":
+        return facts[cast(str, entry["fact"])]
+    if rule == "source_file_byte_length":
+        return len((REPOSITORY_ROOT / cast(str, pointer["path"])).read_bytes())
+    if rule == "manifest_artifact_digest_scope":
+        replay_contract = cast(dict[str, Any], manifest["replay_contract"])
+        artifacts = cast(list[dict[str, Any]], replay_contract["artifacts"])
+        matches = [item for item in artifacts if item["path"] == pointer["path"]]
+        assert len(matches) == 1
+        return matches[0]["digest_scope"]
+    if rule == "difference":
+        minuend = facts[cast(str, entry["minuend_fact"])]
+        subtrahend = facts[cast(str, entry["subtrahend_length_fact"])]
+        assert type(minuend) is int and isinstance(subtrahend, list)
+        return minuend - len(cast(list[Any], subtrahend))
+    if rule == "product":
+        factor = facts[cast(str, entry["factor_fact"])]
+        assert type(factor) is int
+        return factor * cast(int, entry["multiplier"])
+    if rule == "sum":
+        total = 0
+        for name in cast(list[str], entry["length_facts"]):
+            value = facts[name]
+            assert isinstance(value, list)
+            total += len(cast(list[Any], value))
+        return total
+    component = cast(str, entry["component"])
+    assert component in ENVELOPE_COMPONENT_FIELDS
+    count = inventory[component]
+    assert count is not None
+    if rule == "component_count":
+        if "minus_fact" in entry:
+            other = facts[cast(str, entry["minus_fact"])]
+            assert type(other) is int
+            return count - other
+        return count
+    assert rule == "ordered_component_ids"
+    value = facts[cast(str, entry["fact"])]
+    assert isinstance(value, list)
+    identifiers = cast(list[Any], value)
+    assert len(set(identifiers)) == len(identifiers)
+    assert len(identifiers) == count
+    return identifiers
+
+
 def _assert_fact_provenance(
-    vector: dict[str, Any], facts: dict[str, Any], expected: dict[str, Any]
+    vector: dict[str, Any],
+    facts: dict[str, Any],
+    expected: dict[str, Any],
+    manifest: dict[str, Any],
+    inventory: dict[str, int | None] | None = None,
 ) -> None:
     pointer = cast(dict[str, Any], vector["source_pointer"])
     projections = _assert_projection_shape(vector)
-    raw_derived = expected["derived_facts"]
-    assert isinstance(raw_derived, list)
-    derived = cast(list[str], raw_derived)
-    assert all(isinstance(item, str) for item in derived)
-    assert derived == sorted(derived)
-    assert len(set(derived)) == len(derived)
+    derivations = _assert_derivation_shape(expected)
+    derived = [cast(str, entry["fact"]) for entry in derivations]
 
     projected = {cast(str, entry["fact"]) for entry in projections}
     assert projected.isdisjoint(derived)
@@ -1104,13 +1213,24 @@ def _assert_fact_provenance(
     path = pointer["path"]
     digest = pointer["sha256"]
     assert isinstance(path, str) and isinstance(digest, str)
-    document = _parse_canonical_json((REPOSITORY_ROOT / path).read_bytes())
+    document = (
+        _parse_canonical_json((REPOSITORY_ROOT / path).read_bytes())
+        if projections
+        else {}
+    )
     for entry in projections:
         fact = cast(str, entry["fact"])
         actual = _projected_value(document, entry, digest)
         assert actual == facts[fact], (
             f"{vector['id']} fact {fact!r} is {facts[fact]!r} but "
             f"{path}{entry['json_pointer']} projects {actual!r}"
+        )
+    for entry in derivations:
+        fact = cast(str, entry["fact"])
+        recomputed = _derived_value(entry, facts, inventory or {}, pointer, manifest)
+        assert recomputed == facts[fact], (
+            f"{vector['id']} derived fact {fact!r} is {facts[fact]!r} but "
+            f"rule {entry['rule']!r} recomputes {recomputed!r}"
         )
 
 
@@ -1306,7 +1426,15 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         assert identity.digest.value.root == _sha256(raw)
         assert identity.digest.scope.root == expected["digest_scope"]
         assert identity.digest.algorithm.value == expected["digest_algorithm"]
-        assert expected["derived_facts"] == ["digest_algorithm", "digest_scope"]
+        _assert_fact_provenance(
+            vector,
+            {
+                "digest_algorithm": identity.digest.algorithm.value,
+                "digest_scope": identity.digest.scope.root,
+            },
+            expected,
+            MANIFEST_DOCUMENT,
+        )
         return
 
     if operation == "replay_record":
@@ -1317,7 +1445,7 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         _assert_expected_dump(expected, _semantic_dump(model), record)
         facts = _replay_record_facts(target, model)
         assert facts == expected["facts"]
-        _assert_fact_provenance(vector, facts, expected)
+        _assert_fact_provenance(vector, facts, expected, MANIFEST_DOCUMENT)
         assert expected["runtime_target"] == target
         return
 
@@ -1328,10 +1456,13 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         assert isinstance(envelope, EvidenceEnvelope)
         _round_trip_model(EvidenceEnvelope, envelope)
         _assert_expected_dump(expected, _semantic_dump(envelope), payload)
-        assert _envelope_inventory(envelope) == expected["component_inventory"]
+        inventory = _envelope_inventory(envelope)
+        assert inventory == expected["component_inventory"]
         envelope_facts = _envelope_facts(envelope)
         assert envelope_facts == expected["facts"]
-        _assert_fact_provenance(vector, envelope_facts, expected)
+        _assert_fact_provenance(
+            vector, envelope_facts, expected, MANIFEST_DOCUMENT, inventory
+        )
         assert expected["runtime_target"] == target
         return
 
@@ -1480,6 +1611,63 @@ def _manifest_target_symbols(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     raw = manifest["target_symbols"]
     assert isinstance(raw, list)
     return cast(list[dict[str, Any]], raw)
+
+
+SHA1_PATTERN = re.compile(r"[0-9a-f]{40}")
+
+
+def _assert_originating_publications(manifest: dict[str, Any]) -> None:
+    section = cast(dict[str, Any], manifest["originating_publications"])
+    assert set(section) == {
+        "records",
+        "tracked_evidence_available",
+        "verification_owner",
+        "verification_state",
+    }
+    assert section["tracked_evidence_available"] is False
+    assert section["verification_owner"] == "S1.P03.S09"
+    assert section["verification_state"] == (
+        "structurally_validated_pending_phase_closure_evidence"
+    )
+
+    records = cast(list[dict[str, Any]], section["records"])
+    assert len(records) == 8
+    numbers = [cast(int, record["pull_request"]) for record in records]
+    assert numbers == sorted(numbers)
+    assert numbers == list(range(31, 39))
+    reviewed_heads: set[str] = set()
+    squashes: set[str] = set()
+    product_slices: list[str] = []
+    corrective_slices: list[str] = []
+    for record in records:
+        assert set(record) == {
+            "publication_kind",
+            "pull_request",
+            "reviewed_head",
+            "reviewed_tree",
+            "slice_id",
+            "squash",
+            "squash_tree",
+        }
+        for field in ("reviewed_head", "reviewed_tree", "squash", "squash_tree"):
+            value = record[field]
+            assert isinstance(value, str)
+            assert SHA1_PATTERN.fullmatch(value)
+        assert record["reviewed_tree"] == record["squash_tree"]
+        assert record["reviewed_head"] != record["squash"]
+        reviewed_heads.add(cast(str, record["reviewed_head"]))
+        squashes.add(cast(str, record["squash"]))
+        slice_id = cast(str, record["slice_id"])
+        assert slice_id in AUTHORING_SLICES
+        if record["publication_kind"] == "product":
+            product_slices.append(slice_id)
+        else:
+            assert record["publication_kind"] == "test_only_corrective"
+            corrective_slices.append(slice_id)
+    assert len(reviewed_heads) == 8
+    assert len(squashes) == 8
+    assert product_slices == sorted(AUTHORING_SLICES)
+    assert corrective_slices == ["S1.P03.S07"]
 
 
 def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
@@ -1634,8 +1822,9 @@ def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
         "required_for_record_and_envelope_replay"
     )
     assert replay_contract["fact_provenance"] == (
-        "every_fact_is_projected_or_declared_derived"
+        "every_fact_is_projected_or_derived_by_declared_rule"
     )
+    assert replay_contract["derivation_rules"] == sorted(DERIVATION_RULES)
     assert replay_contract["projection_kinds"] == sorted(PROJECTION_KINDS)
     assert replay_contract["authority_resolution"] == (
         "pointer_authority_path_and_digest_must_resolve_through_manifest"
@@ -1681,6 +1870,8 @@ def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
         decoded = raw.decode("utf-8")
         for authority_id in cast(list[str], source["authority_ids"]):
             assert authority_id in decoded
+
+    _assert_originating_publications(manifest)
 
     boundaries = cast(dict[str, Any], manifest["semantic_boundaries"])
     assert set(boundaries) == {
@@ -2376,10 +2567,14 @@ REQUIRED_MUTATIONS = (
     "replay-projection-kind-changed",
     "replay-unclassified-fact",
     "replay-numeric-fact-changed",
-    "replay-derived-fact-list-unsorted",
+    "replay-derivation-list-unsorted",
     "replay-decision-reference-unregistered",
     "replay-authority-not-registered",
     "replay-authority-path-unregistered",
+    "replay-derivation-recompute-mismatch",
+    "replay-derivation-rule-missing",
+    "manifest-publication-tree-inequality",
+    "manifest-publication-verification-overclaimed",
     "fixture-missing",
     "fixture-cycle",
     "manifest-count-changed",
@@ -2396,7 +2591,7 @@ REQUIRED_MUTATIONS = (
     "synthetic-package-corpus-member",
     "historical-pytest-license-inserted",
 )
-assert len(REQUIRED_MUTATIONS) == 52
+assert len(REQUIRED_MUTATIONS) == 56
 
 
 def _copied_documents() -> dict[str, dict[str, Any]]:
@@ -2662,7 +2857,7 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
     if mutation in {
         "replay-source-pointer-retargeted",
         "replay-unclassified-fact",
-        "replay-derived-fact-list-unsorted",
+        "replay-derivation-list-unsorted",
     }:
         vector = copy.deepcopy(
             _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
@@ -2672,12 +2867,14 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             vector["source_pointer"]["sha256"] = _sha256(
                 (REPOSITORY_ROOT / ACQUISITION_RELATIVE).read_bytes()
             )
-        elif mutation == "replay-unclassified-fact":
-            derived = cast(list[str], vector["expected"]["derived_facts"])
-            derived.remove("publication_id")
         else:
-            derived = cast(list[str], vector["expected"]["derived_facts"])
-            derived.reverse()
+            derivations = cast(list[dict[str, Any]], vector["expected"]["derivations"])
+            if mutation == "replay-unclassified-fact":
+                derivations[:] = [
+                    entry for entry in derivations if entry["fact"] != "publication_id"
+                ]
+            else:
+                derivations.reverse()
         with pytest.raises(AssertionError):
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
         return
@@ -2685,6 +2882,10 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
     if mutation in {
         "replay-authority-not-registered",
         "replay-authority-path-unregistered",
+        "replay-derivation-recompute-mismatch",
+        "replay-derivation-rule-missing",
+        "manifest-publication-tree-inequality",
+        "manifest-publication-verification-overclaimed",
     }:
         vector = copy.deepcopy(
             _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
@@ -2704,6 +2905,44 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             )
         with pytest.raises(AssertionError):
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {
+        "replay-derivation-recompute-mismatch",
+        "replay-derivation-rule-missing",
+    }:
+        vector = copy.deepcopy(
+            _vector_by_id(
+                REPLAY_DOCUMENT, "evidence.replay.relationship.s04-c01-correction"
+            )
+        )
+        if mutation == "replay-derivation-recompute-mismatch":
+            vector["expected"]["facts"]["correction_byte_length"] = 60831
+        else:
+            derivations = cast(list[dict[str, Any]], vector["expected"]["derivations"])
+            derivations[:] = [
+                entry
+                for entry in derivations
+                if entry["fact"] != "correction_byte_length"
+            ]
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {
+        "manifest-publication-tree-inequality",
+        "manifest-publication-verification-overclaimed",
+    }:
+        documents = _copied_documents()
+        section = cast(
+            dict[str, Any], documents["manifest.json"]["originating_publications"]
+        )
+        if mutation == "manifest-publication-tree-inequality":
+            cast(list[dict[str, Any]], section["records"])[0]["squash_tree"] = "a" * 40
+        else:
+            section["tracked_evidence_available"] = True
+        with pytest.raises(AssertionError):
+            _assert_manifest_integrity(documents)
         return
 
     if mutation == "replay-decision-reference-unregistered":

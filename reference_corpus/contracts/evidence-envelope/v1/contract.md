@@ -9,7 +9,7 @@ Derived, non-authoritative Markdown; the canonical JSON files remain the sole co
 - Corpus identity: `faultatlas-evidence-envelope-contract-corpus`
 - Corpus version: `1`
 - Manifest SHA-256:
-  `6361c8a0db326f8e863bd06db77175ce27b2f49aad273c08d3af6d22e59ef0c6`
+  `b16097c187f942ba72cabdc6ec4cf9a540eb851e64fd5199f4c72113ce25cf88`
 
 ## Scope
 
@@ -158,11 +158,25 @@ the acquisition run from the acquisition record, and the correction and
 completeness facts from the `S1.P00.S04.C01` addendum. The six projection kinds
 are `collect`, `length`, `self_digest`, `singleton`, `text`, and `value`, which
 cover string, integer, boolean, and list facts alike. Every fact is either
-projected or explicitly declared a reviewed derivation; a fact that is neither
-is rejected. Each pointer's logical authority, path, and digest must resolve
-together through the manifest registry, so a mistyped or unrelated authority is
-rejected even when its path, digest, and projections are otherwise valid, and
-every vector rationale reference must resolve through the same registry.
+projected or carries a declared derivation rule that the executor recomputes:
+`source_file_byte_length`, `manifest_artifact_digest_scope`, `difference`,
+`product`, `sum`, `component_count`, `ordered_component_ids`, or `authored`
+with an explicit authoring Slice for values that have no source counterpart. A
+fact that is neither projected nor derived by a rule is rejected. Each pointer's
+logical authority, path, and digest must resolve together through the manifest
+registry, so a mistyped or unrelated authority is rejected even when its path,
+digest, and projections are otherwise valid, and every vector rationale
+reference must resolve through the same registry.
+
+`manifest.originating_publications` records the `S1.P03.S01`-`S1.P03.S07`
+publication chain. No tracked publication evidence for those Slices exists yet,
+so the corpus does not claim source-backed provenance for them: the section
+declares `tracked_evidence_available` false and names `S1.P03.S09` as the
+verification owner, while its eight records are structurally validated for
+exact pull-request ordering, 40-character lowercase Git identity lexemes,
+reviewed-tree and squash-tree equality, distinct reviewed and squash revisions,
+unique identities, complete `S01`-`S07` product coverage, and exactly one
+test-only corrective publication.
 
 ## Legacy adapter replay
 
