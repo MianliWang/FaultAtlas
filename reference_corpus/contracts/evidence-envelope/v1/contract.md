@@ -9,7 +9,7 @@ Derived, non-authoritative Markdown; the canonical JSON files remain the sole co
 - Corpus identity: `faultatlas-evidence-envelope-contract-corpus`
 - Corpus version: `1`
 - Manifest SHA-256:
-  `b35aaff6bde13bf6360e8d75dcc898714e393d1353856d76ada082e2b0f11273`
+  `64c6a6459f1e5348bee8a96bcf2865fdf07caea235151d80fbafbd0f6c241dee`
 
 ## Scope
 
@@ -134,8 +134,9 @@ acyclic graph.
 The canonical pytest #4412 envelope contains no legacy snapshot and no
 standalone request membership, one sealed 32-request acquisition run, a
 known-empty transformation inventory, one `S1.P00.S04.C01` correction, one
-completeness assessment, and the acquisition and correction publications in
-that order. Canonical transformation and supersession counts are both zero.
+completeness assessment, and the acquisition and correction publications in the
+order the `S1.P00` slice ledger records their published subjects. Canonical
+transformation and supersession counts are both zero.
 
 The two retained exact artifacts are locked by digest scope, SHA-256, and byte
 length and are replayed against the tracked immutable reference bytes. The
@@ -149,24 +150,56 @@ The canonical envelope projects to legacy v1 as `not_mappable` with
 `legacy_snapshot_absent` and no projected snapshot; no legacy snapshot is ever
 fabricated from modern evidence.
 
-Every canonical replay vector names one bounded source document and projects
-each locked fact out of that document through an explicit JSON pointer, so a
-claim is validated against the authority that actually carries it rather than
-against an unrelated file whose whole-file digest happens to match. Publication
-provenance is therefore projected from the `S1.P00` phase-closure slice ledger,
-the acquisition run from the acquisition record, and the correction and
-completeness facts from the `S1.P00.S04.C01` addendum. The six projection kinds
-are `collect`, `length`, `self_digest`, `singleton`, `text`, and `value`, which
-cover string, integer, boolean, and list facts alike. Every fact is either
-projected or carries a declared derivation rule that the executor recomputes:
-`source_file_byte_length`, `manifest_artifact_digest_scope`, `difference`,
-`product`, `sum`, `component_count`, `ordered_component_ids`, or `authored`
-with an explicit authoring Slice for values that have no source counterpart. A
-fact that is neither projected nor derived by a rule is rejected. Each pointer's
-logical authority, path, and digest must resolve together through the manifest
-registry, so a mistyped or unrelated authority is rejected even when its path,
-digest, and projections are otherwise valid, and every vector rationale
-reference must resolve through the same registry.
+## Replay provenance taxonomy
+
+Replayed values fall into five explicitly separated categories, and the corpus
+never conflates them.
+
+1. Immutable source projection. A fact projected out of a named bounded source
+   document through an explicit JSON pointer. The six projection kinds are
+   `collect`, `length`, `self_digest`, `singleton`, `text`, and `value`, which
+   cover string, integer, boolean, and list facts alike.
+2. Deterministic reviewed derivation. A fact the executor recomputes from
+   bounded source bytes, the manifest registry, or validated envelope state.
+   The declared rules are `artifact_digest_algorithm`, `completeness_status`,
+   `component_count`, `component_inventory`, `difference`,
+   `legacy_projection_outcome`, `manifest_artifact_digest_scope`, `product`,
+   `represented_modern_components`, `source_file_byte_length`,
+   `source_ordered_subset`, `sum`, and `universal_completeness_claim`. No
+   derivation may return the fact it claims to verify; a derivation that
+   simply restated its target would authenticate nothing.
+3. Slice-authored contract label. An exact identifier or label a named
+   `S1.P03` Slice introduced, which no earlier record contains. Authored
+   labels are declared in `authored_labels` with their value, their authoring
+   Slice, and any applicable decision reference. They are contract data, not
+   source evidence, and are never described as immutable source facts,
+   projected facts, derived facts, or independently recomputed facts.
+4. Reviewed derived composition. The canonical envelope composition itself.
+5. Synthetic contract example. Explicitly synthetic legacy adapter fixtures.
+
+`expected.facts` may hold only projected or recomputed values. A value that is
+neither projected, nor derived by a declared rule, nor declared as an authored
+label is rejected. A vector that carries authored labels is classified
+`bounded_source_plus_slice_authored_contract` rather than
+`immutable_source_fact`, so source-backed claims and Slice-authored labels stay
+distinguishable by machine-readable corpus structure.
+
+A vector may name more than one bounded authority. Every pointer must be used
+by a projection or a derivation, no fact may be projected out of two different
+authorities, and each pointer's logical authority, path, and digest must
+resolve together through the manifest registry, so a mistyped or unrelated
+authority is rejected even when its path, digest, and projections are otherwise
+valid. Publication provenance is projected from the `S1.P00` phase-closure
+slice ledger, the acquisition run from the acquisition record, and the
+correction and completeness facts from the `S1.P00.S04.C01` addendum. Every
+vector rationale reference must resolve through the same registry.
+
+Canonical publication ordering is bound to bounded evidence rather than to
+authored identifiers. The executor reads each publication's
+`subject_record.sha256` from the validated envelope in component order and
+compares it against the subject digests the `S1.P00` slice ledger records in
+its own array order. Reversing the canonical publications, even together with
+every authored publication identifier, is therefore rejected.
 
 `manifest.originating_publications` records the `S1.P03.S01`-`S1.P03.S07`
 publication chain. No tracked publication evidence for those Slices exists yet,

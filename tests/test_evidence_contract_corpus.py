@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from typing import Any, NoReturn, cast
+from typing import Any, NamedTuple, NoReturn, cast
 
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -125,6 +125,12 @@ LICENSE_RELATIVE = (
     "run-0001-s04-v1-base-4c9cde74-head-690a63b9/artifacts/LICENSE"
 )
 CANONICAL_RUN_ID = "run-0001-s04-v1-base-4c9cde74-head-690a63b9"
+P00_CLOSURE_RELATIVE = (
+    "reference_corpus/pytest-4412/closures/s1-p00-phase-closure/closure.json"
+)
+P00_CLOSURE_AUTHORITY = "faultatlas-pytest-4412-s1-p00-phase-closure"
+PROVIDER_REPOSITORY_ID = "1303365003"
+ALTERNATE_REPOSITORY_ID = "1303365004"
 IDENTITY_CORPUS_RELATIVE = "reference_corpus/contracts/identity"
 REVISION_CORPUS_RELATIVE = "reference_corpus/contracts/revision-locator"
 
@@ -156,7 +162,7 @@ class LockedFile:
 
 EXPECTED_LOCKS = {
     "contract.md": LockedFile(
-        9385, "2a39c3c1c29444660e9a3b0fa901f5ec95d1d95a1999ab7ca78d8cb59353e792"
+        11249, "9401cc9e8a040b4c61d79414a4279d368bf17a5ccfe345d5de4994524956999f"
     ),
     "invalid-vectors.json": LockedFile(
         141878, "a379f425e31e1a8627818fb2f4a8afb420975680048f0ecb14da6305022b3592"
@@ -165,16 +171,16 @@ EXPECTED_LOCKS = {
         87, "cfa302e3629fd78a3c839bd71f04872e6cc0516ffe7e5e8be4cc13ebee377c85"
     ),
     "manifest.json": LockedFile(
-        21578, "b35aaff6bde13bf6360e8d75dcc898714e393d1353856d76ada082e2b0f11273"
+        22129, "64c6a6459f1e5348bee8a96bcf2865fdf07caea235151d80fbafbd0f6c241dee"
     ),
     "manifest.sha256": LockedFile(
-        80, "55ce5723d11d7ccdc0ee1e6d958974d0c60887c8c61aa0348c6cb2dee38820cb"
+        80, "9fbb018bc52576f205f8a4e7ce353fa097a8b116212e6cc5cc544bf338c1fc36"
     ),
     "replay-vectors.json": LockedFile(
-        83531, "45e38447e28be393b1e1e8afdf016c796690550c8bb95613d9f6087d3872038d"
+        84419, "a1e0901b93be23df45d79fe1a2877ed7d28ec58974127352b2130f012a14af72"
     ),
     "replay-vectors.sha256": LockedFile(
-        86, "5b2d81994063a760502fbd13cad3557b4c47909b90f96a8feff42d57d1bcba32"
+        86, "3b6f8d567c13d665c455b7c74895abf0ebed4714f1eeb6ab820b81552fac88a2"
     ),
     "valid-vectors.json": LockedFile(
         182770, "49a005d2ab8e321e0867c5346db187e4a7736a392fd8b7eb4d343ed100385b86"
@@ -971,10 +977,8 @@ def _resolve_json_pointer(document: dict[str, Any], json_pointer: str) -> Any:
     return current
 
 
-def _assert_projection_shape(vector: dict[str, Any]) -> list[dict[str, Any]]:
-    raw_pointer = vector["source_pointer"]
-    assert isinstance(raw_pointer, dict)
-    pointer = cast(dict[str, Any], raw_pointer)
+def _assert_projection_shape(pointer: dict[str, Any]) -> list[dict[str, Any]]:
+    assert isinstance(pointer, dict)
     assert set(pointer) == {"authority", "path", "projections", "sha256"}
     authority = pointer["authority"]
     assert isinstance(authority, str) and authority
@@ -1026,37 +1030,65 @@ def _assert_registered_authority(
     assert registered_digest == digest
 
 
-def _assert_source_pointer(vector: dict[str, Any], manifest: dict[str, Any]) -> None:
-    projections = _assert_projection_shape(vector)
-    pointer = cast(dict[str, Any], vector["source_pointer"])
+def _assert_source_pointers(
+    vector: dict[str, Any], manifest: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Validate every bounded authority a replay vector stands on.
+
+    A vector may name more than one immutable source document, so each pointer
+    resolves independently through the manifest registry and no fact may be
+    projected out of two different authorities.
+    """
+
+    raw = vector["source_pointers"]
+    assert isinstance(raw, list)
+    pointers = cast(list[dict[str, Any]], raw)
+    assert pointers
+    authorities = [cast(str, item["authority"]) for item in pointers]
+    assert authorities == sorted(authorities)
+    assert len(set(authorities)) == len(authorities)
     operation = cast(str, vector["operation"])
-    authority = cast(str, pointer["authority"])
-    path = pointer["path"]
-    digest = pointer["sha256"]
     replay_contract = cast(dict[str, Any], manifest["replay_contract"])
+    synthetic = cast(str, replay_contract["synthetic_authority"])
+    projected: set[str] = set()
+    paths: set[str] = set()
+    for pointer in pointers:
+        projections = _assert_projection_shape(pointer)
+        names = {cast(str, entry["fact"]) for entry in projections}
+        assert names.isdisjoint(projected)
+        projected |= names
+        authority = cast(str, pointer["authority"])
+        path = pointer["path"]
+        digest = pointer["sha256"]
+        if path is None:
+            assert digest is None
+            assert not projections
+            assert len(pointers) == 1
+            assert authority == synthetic
+            assert operation in {"adapter_project", "adapter_wrap"}
+            assert vector["evidence_classification"] == "synthetic_contract_example"
+            continue
+        assert authority != synthetic
+        assert isinstance(path, str) and isinstance(digest, str)
+        pure = PurePosixPath(path)
+        assert not pure.is_absolute()
+        assert ".." not in pure.parts
+        assert path not in paths
+        paths.add(path)
+        assert _sha256((REPOSITORY_ROOT / path).read_bytes()) == digest
+        _assert_registered_authority(manifest, authority, path, digest)
+
     if operation in {"replay_record", "replay_envelope"}:
-        assert projections
+        assert projected
     elif operation == "replay_artifact":
-        assert not projections
+        assert len(pointers) == 1
+        assert not projected
     else:
         # A non-synthetic adapter replay must carry bounded provenance; only a
         # declared synthetic fixture may stand on corpus-authored values alone.
         assert operation in {"adapter_project", "adapter_wrap"}
-        assert bool(projections) is (path is not None)
-
-    if path is None:
-        assert digest is None
-        assert not projections
-        assert vector["evidence_classification"] == "synthetic_contract_example"
-        assert authority == replay_contract["synthetic_authority"]
-        return
-    assert isinstance(path, str) and isinstance(digest, str)
-    assert authority != replay_contract["synthetic_authority"]
-    pure = PurePosixPath(path)
-    assert not pure.is_absolute()
-    assert ".." not in pure.parts
-    assert _sha256((REPOSITORY_ROOT / path).read_bytes()) == digest
-    _assert_registered_authority(manifest, authority, path, digest)
+        assert bool(projected) is (pointers[0]["path"] is not None)
+    return pointers
 
 
 def _projected_value(
@@ -1089,20 +1121,49 @@ def _projected_value(
 
 
 DERIVATION_RULES = {
-    "authored",
+    "artifact_digest_algorithm",
+    "completeness_status",
     "component_count",
     "component_inventory",
     "difference",
     "legacy_projection_outcome",
     "manifest_artifact_digest_scope",
-    "ordered_component_ids",
     "product",
     "represented_modern_components",
     "source_file_byte_length",
+    "source_ordered_subset",
     "sum",
+    "universal_completeness_claim",
+}
+POINTER_BOUND_RULES = {
+    "artifact_digest_algorithm",
+    "manifest_artifact_digest_scope",
+    "source_file_byte_length",
+}
+DOCUMENT_BOUND_RULES = {"source_ordered_subset"}
+STATE_ONLY_RULES = {
+    "completeness_status",
+    "represented_modern_components",
+    "universal_completeness_claim",
 }
 LEGACY_PROJECTION_FIELDS = {"reasons", "snapshot_present", "status"}
 AUTHORING_SLICES = {f"S1.P03.S0{index}" for index in range(1, 8)}
+EVIDENCE_CLASSIFICATIONS = {
+    "bounded_source_plus_slice_authored_contract",
+    "immutable_source_fact",
+    "reviewed_derived_composition",
+    "synthetic_contract_example",
+}
+SLICE_AUTHORED_CLASSIFICATION = "bounded_source_plus_slice_authored_contract"
+DIGEST_ALGORITHM_CANDIDATES = (
+    "sha1",
+    "sha224",
+    "sha256",
+    "sha384",
+    "sha512",
+    "sha3_256",
+)
+PARTIAL_OUTCOME_VALUES = frozenset({"inaccessible", "unavailable", "unsupported"})
 
 
 def _assert_derivation_shape(expected: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1116,10 +1177,33 @@ def _assert_derivation_shape(expected: dict[str, Any]) -> list[dict[str, Any]]:
         rule = entry["rule"]
         assert isinstance(fact, str) and fact
         assert rule in DERIVATION_RULES
-        if rule == "authored":
-            assert set(entry) == {"authored_by", "fact", "rule"}
-            assert entry["authored_by"] in AUTHORING_SLICES
-        elif rule in {"manifest_artifact_digest_scope", "source_file_byte_length"}:
+        if rule in POINTER_BOUND_RULES:
+            assert set(entry) == {"authority", "fact", "rule"}
+        elif rule == "source_ordered_subset":
+            assert set(entry) == {
+                "authority",
+                "fact",
+                "member_json_pointers",
+                "order_json_pointer",
+                "order_key",
+                "rule",
+            }
+            members = entry["member_json_pointers"]
+            assert isinstance(members, list)
+            typed_members = cast(list[Any], members)
+            assert len(typed_members) > 1
+            assert all(
+                isinstance(item, str) and item.startswith("/") for item in typed_members
+            )
+            ordered_members = cast(list[str], typed_members)
+            assert ordered_members == sorted(ordered_members)
+            assert len(set(ordered_members)) == len(ordered_members)
+            order_pointer = entry["order_json_pointer"]
+            assert isinstance(order_pointer, str) and order_pointer.startswith("/")
+            order_key = entry["order_key"]
+            assert isinstance(order_key, str) and order_key
+            assert not order_key.startswith("/") and not order_key.endswith("/")
+        elif rule in STATE_ONLY_RULES:
             assert set(entry) == {"fact", "rule"}
         elif rule == "difference":
             assert set(entry) == {
@@ -1141,38 +1225,116 @@ def _assert_derivation_shape(expected: dict[str, Any]) -> list[dict[str, Any]]:
             )
         elif rule == "component_inventory":
             assert set(entry) == {"component", "fact", "rule"}
-        elif rule == "represented_modern_components":
-            assert set(entry) == {"fact", "rule"}
-        elif rule == "legacy_projection_outcome":
+        else:
+            assert rule == "legacy_projection_outcome"
             assert set(entry) == {"fact", "outcome_field", "rule"}
             assert entry["outcome_field"] in LEGACY_PROJECTION_FIELDS
-        else:
-            assert rule == "ordered_component_ids"
-            assert set(entry) == {"component", "fact", "rule"}
         names.append(fact)
     assert names == sorted(names)
     assert len(set(names)) == len(names)
     return derivations
 
 
+class ReplayContext(NamedTuple):
+    """Everything a declared derivation may recompute a fact from."""
+
+    manifest: dict[str, Any]
+    pointers: dict[str, dict[str, Any]]
+    documents: dict[str, dict[str, Any]]
+    inventory: dict[str, int | None]
+    outcomes: tuple[str, ...]
+
+
+def _completeness_status(outcomes: tuple[str, ...]) -> str:
+    """Independently recompute the reviewed S1.P03.S06 derived-status rule."""
+
+    unique = set(outcomes)
+    assert unique
+    if "unknown" in unique:
+        return "scope_unknown"
+    if unique & PARTIAL_OUTCOME_VALUES:
+        return "scope_partial"
+    if "intentionally_omitted" in unique:
+        return "scope_satisfied_with_declared_omissions"
+    return "scope_satisfied"
+
+
+def _ordered_source_values(
+    document: dict[str, Any], json_pointer: str, key: str
+) -> list[str]:
+    """Collect one nested key from an ordered source array, in its own order."""
+
+    resolved = _resolve_json_pointer(document, json_pointer)
+    assert isinstance(resolved, list)
+    values: list[str] = []
+    for item in cast(list[Any], resolved):
+        node: Any = item
+        for part in key.split("/"):
+            if not isinstance(node, dict):
+                node = None
+                break
+            mapping = cast(dict[str, Any], node)
+            if part not in mapping:
+                node = None
+                break
+            node = mapping[part]
+        if isinstance(node, str):
+            values.append(node)
+    return values
+
+
 def _derived_value(
-    entry: dict[str, Any],
-    facts: dict[str, Any],
-    inventory: dict[str, int | None],
-    pointer: dict[str, Any],
-    manifest: dict[str, Any],
+    entry: dict[str, Any], facts: dict[str, Any], context: ReplayContext
 ) -> Any:
+    """Recompute one declared fact.
+
+    Every branch computes its value from bounded source bytes, the manifest
+    registry, verified envelope state, or an explicit relation over other
+    already verified facts. No branch may return the fact it claims to verify.
+    """
+
     rule = cast(str, entry["rule"])
-    if rule == "authored":
-        return facts[cast(str, entry["fact"])]
+    if rule == "artifact_digest_algorithm":
+        pointer = context.pointers[cast(str, entry["authority"])]
+        raw = (REPOSITORY_ROOT / cast(str, pointer["path"])).read_bytes()
+        matches = [
+            name
+            for name in DIGEST_ALGORITHM_CANDIDATES
+            if hashlib.new(name, raw).hexdigest() == pointer["sha256"]
+        ]
+        assert len(matches) == 1
+        return matches[0]
+    if rule == "completeness_status":
+        return _completeness_status(context.outcomes)
+    if rule == "universal_completeness_claim":
+        return _completeness_status(context.outcomes) == "scope_satisfied"
     if rule == "source_file_byte_length":
+        pointer = context.pointers[cast(str, entry["authority"])]
         return len((REPOSITORY_ROOT / cast(str, pointer["path"])).read_bytes())
     if rule == "manifest_artifact_digest_scope":
-        replay_contract = cast(dict[str, Any], manifest["replay_contract"])
+        pointer = context.pointers[cast(str, entry["authority"])]
+        replay_contract = cast(dict[str, Any], context.manifest["replay_contract"])
         artifacts = cast(list[dict[str, Any]], replay_contract["artifacts"])
         matches = [item for item in artifacts if item["path"] == pointer["path"]]
         assert len(matches) == 1
         return matches[0]["digest_scope"]
+    if rule == "source_ordered_subset":
+        document = context.documents[cast(str, entry["authority"])]
+        ordered = _ordered_source_values(
+            document,
+            cast(str, entry["order_json_pointer"]),
+            cast(str, entry["order_key"]),
+        )
+        placed: list[tuple[int, str]] = []
+        for json_pointer in cast(list[str], entry["member_json_pointers"]):
+            member = _resolve_json_pointer(document, json_pointer)
+            assert isinstance(member, str)
+            assert ordered.count(member) == 1, (
+                f"{member!r} is not a unique member of {json_pointer!r}"
+            )
+            placed.append((ordered.index(member), member))
+        assert len({index for index, _ in placed}) == len(placed)
+        return [member for _, member in sorted(placed)]
     if rule == "difference":
         minuend = facts[cast(str, entry["minuend_fact"])]
         subtrahend = facts[cast(str, entry["subtrahend_length_fact"])]
@@ -1190,69 +1352,163 @@ def _derived_value(
             total += len(cast(list[Any], value))
         return total
     if rule == "represented_modern_components":
-        return _represented_modern_components(inventory)
+        return _represented_modern_components(context.inventory)
     if rule == "legacy_projection_outcome":
-        return _legacy_projection_outcome(inventory)[cast(str, entry["outcome_field"])]
+        outcome = _legacy_projection_outcome(context.inventory)
+        return outcome[cast(str, entry["outcome_field"])]
     component = cast(str, entry["component"])
     assert component in ENVELOPE_COMPONENT_FIELDS
     if rule == "component_inventory":
-        return inventory[component]
-    count = inventory[component]
+        return context.inventory[component]
+    count = context.inventory[component]
     assert count is not None
-    if rule == "component_count":
-        if "minus_fact" in entry:
-            other = facts[cast(str, entry["minus_fact"])]
-            assert type(other) is int
-            return count - other
-        return count
-    assert rule == "ordered_component_ids"
-    value = facts[cast(str, entry["fact"])]
-    assert isinstance(value, list)
-    identifiers = cast(list[Any], value)
-    assert len(set(identifiers)) == len(identifiers)
-    assert len(identifiers) == count
-    return identifiers
+    assert rule == "component_count"
+    if "minus_fact" in entry:
+        other = facts[cast(str, entry["minus_fact"])]
+        assert type(other) is int
+        return count - other
+    return count
+
+
+def _assert_authored_labels(expected: dict[str, Any]) -> dict[str, Any]:
+    """Validate the exact contract labels a named Slice introduced.
+
+    An authored label is declared contract data. It is never presented as an
+    immutable source fact, a projected fact, or an independently derived fact.
+    """
+
+    raw = expected.get("authored_labels")
+    if raw is None:
+        return {}
+    assert isinstance(raw, list)
+    entries = cast(list[dict[str, Any]], raw)
+    assert entries
+    labels: dict[str, Any] = {}
+    names: list[str] = []
+    for entry in entries:
+        assert isinstance(entry, dict)
+        allowed = {"authored_by", "label", "value"}
+        assert set(entry) in (allowed, allowed | {"decision_references"})
+        label = entry["label"]
+        assert isinstance(label, str) and label
+        assert entry["authored_by"] in AUTHORING_SLICES
+        if "decision_references" in entry:
+            references = entry["decision_references"]
+            assert isinstance(references, list)
+            typed = cast(list[Any], references)
+            assert typed
+            assert all(
+                isinstance(item, str) and item.startswith("decision:") for item in typed
+            )
+            ordered = cast(list[str], typed)
+            assert ordered == sorted(ordered)
+            assert len(set(ordered)) == len(ordered)
+        names.append(label)
+        labels[label] = entry["value"]
+    assert names == sorted(names)
+    assert len(set(names)) == len(names)
+    return labels
 
 
 def _assert_fact_provenance(
     vector: dict[str, Any],
-    facts: dict[str, Any],
+    observed: dict[str, Any],
     expected: dict[str, Any],
     manifest: dict[str, Any],
     inventory: dict[str, int | None] | None = None,
+    outcomes: tuple[str, ...] = (),
 ) -> None:
-    pointer = cast(dict[str, Any], vector["source_pointer"])
-    projections = _assert_projection_shape(vector)
+    """Classify every observed value as projected, derived, or Slice-authored.
+
+    `expected["facts"]` may only hold facts that are projected out of bounded
+    source bytes or recomputed by a declared derivation. Slice-authored
+    contract labels live in `expected["authored_labels"]` and never claim
+    source provenance.
+    """
+
+    pointers = cast(list[dict[str, Any]], vector["source_pointers"])
     derivations = _assert_derivation_shape(expected)
-    derived = [cast(str, entry["fact"]) for entry in derivations]
-
-    projected = {cast(str, entry["fact"]) for entry in projections}
-    assert projected.isdisjoint(derived)
-    assert projected | set(derived) == set(facts), (
-        f"{vector['id']} leaves facts unclassified: "
-        f"{sorted(set(facts) - projected - set(derived))!r}"
+    labels = _assert_authored_labels(expected)
+    classification = cast(str, vector["evidence_classification"])
+    assert bool(labels) is (classification == SLICE_AUTHORED_CLASSIFICATION), (
+        f"{vector['id']} declares {len(labels)} authored labels as {classification!r}"
     )
 
-    path = pointer["path"]
-    digest = pointer["sha256"]
-    assert isinstance(path, str) and isinstance(digest, str)
-    document = (
-        _parse_canonical_json((REPOSITORY_ROOT / path).read_bytes())
-        if projections
-        else {}
-    )
-    for entry in projections:
-        fact = cast(str, entry["fact"])
-        actual = _projected_value(document, entry, digest)
-        assert actual == facts[fact], (
-            f"{vector['id']} fact {fact!r} is {facts[fact]!r} but "
-            f"{path}{entry['json_pointer']} projects {actual!r}"
+    by_authority = {cast(str, item["authority"]): item for item in pointers}
+    needed = {cast(str, item["authority"]) for item in pointers if item["projections"]}
+    used = set(needed)
+    for entry in derivations:
+        if "authority" not in entry:
+            continue
+        authority = cast(str, entry["authority"])
+        assert authority in by_authority, (
+            f"{vector['id']} derives from unregistered authority {authority!r}"
         )
+        used.add(authority)
+        if cast(str, entry["rule"]) in DOCUMENT_BOUND_RULES:
+            needed.add(authority)
+    assert used == set(by_authority), (
+        f"{vector['id']} carries unused source pointers: "
+        f"{sorted(set(by_authority) - used)!r}"
+    )
+
+    documents = {
+        authority: _parse_canonical_json(
+            (REPOSITORY_ROOT / cast(str, by_authority[authority]["path"])).read_bytes()
+        )
+        for authority in sorted(needed)
+    }
+
+    projected: set[str] = set()
+    for pointer in pointers:
+        authority = cast(str, pointer["authority"])
+        projections = _assert_projection_shape(pointer)
+        if not projections:
+            continue
+        digest = cast(str, pointer["sha256"])
+        document = documents[authority]
+        for entry in projections:
+            fact = cast(str, entry["fact"])
+            projected.add(fact)
+            actual = _projected_value(document, entry, digest)
+            assert actual == observed[fact], (
+                f"{vector['id']} fact {fact!r} is {observed[fact]!r} but "
+                f"{pointer['path']}{entry['json_pointer']} projects {actual!r}"
+            )
+
+    derived = [cast(str, entry["fact"]) for entry in derivations]
+    declared = cast(dict[str, Any], expected.get("facts", {}))
+    assert projected.isdisjoint(derived)
+    assert projected.isdisjoint(labels)
+    assert set(derived).isdisjoint(labels)
+    assert projected | set(derived) == set(declared), (
+        f"{vector['id']} declares facts without provenance: "
+        f"{sorted(set(declared) - projected - set(derived))!r}"
+    )
+    assert set(declared) | set(labels) == set(observed), (
+        f"{vector['id']} leaves values unclassified: "
+        f"{sorted(set(observed) - set(declared) - set(labels))!r}"
+    )
+    for name, value in declared.items():
+        assert observed[name] == value
+    for name, value in labels.items():
+        assert observed[name] == value, (
+            f"{vector['id']} authored label {name!r} declares {value!r} "
+            f"but the replayed record carries {observed[name]!r}"
+        )
+
+    context = ReplayContext(
+        manifest=manifest,
+        pointers=by_authority,
+        documents=documents,
+        inventory=inventory or {},
+        outcomes=outcomes,
+    )
     for entry in derivations:
         fact = cast(str, entry["fact"])
-        recomputed = _derived_value(entry, facts, inventory or {}, pointer, manifest)
-        assert recomputed == facts[fact], (
-            f"{vector['id']} derived fact {fact!r} is {facts[fact]!r} but "
+        recomputed = _derived_value(entry, observed, context)
+        assert recomputed == observed[fact], (
+            f"{vector['id']} derived fact {fact!r} is {observed[fact]!r} but "
             f"rule {entry['rule']!r} recomputes {recomputed!r}"
         )
 
@@ -1462,8 +1718,8 @@ def _envelope_facts(envelope: EvidenceEnvelope) -> dict[str, Any]:
             [item for item in relationships if isinstance(item, EvidenceSupersession)]
         ),
         "canonical_transformation_count": len(envelope.transformations or ()),
-        "publication_order": [
-            publication.publication_id.root
+        "publication_subject_order": [
+            publication.subject_record.sha256.root
             for publication in envelope.publications or ()
         ],
         "run_ids": [run.run_id.root for run in envelope.acquisition_runs or ()],
@@ -1473,12 +1729,8 @@ def _envelope_facts(envelope: EvidenceEnvelope) -> dict[str, Any]:
 def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> None:
     _assert_operation_target(vector)
     assert vector["input_mode"] == "replay"
-    assert vector["evidence_classification"] in {
-        "immutable_source_fact",
-        "reviewed_derived_composition",
-        "synthetic_contract_example",
-    }
-    _assert_source_pointer(vector, MANIFEST_DOCUMENT)
+    assert vector["evidence_classification"] in EVIDENCE_CLASSIFICATIONS
+    pointers = _assert_source_pointers(vector, MANIFEST_DOCUMENT)
     value = _resolved_input(vector, document)
     assert isinstance(value, dict)
     replay_input = cast(dict[str, Any], value)
@@ -1490,7 +1742,7 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
     if operation == "replay_artifact":
         assert set(replay_input) == {"artifact_identity", "artifact_path"}
         artifact_path = cast(str, replay_input["artifact_path"])
-        assert artifact_path == vector["source_pointer"]["path"]
+        assert artifact_path == pointers[0]["path"]
         raw = (REPOSITORY_ROOT / artifact_path).read_bytes()
         assert len(raw) == expected["byte_length"]
         assert _sha256(raw) == expected["sha256"]
@@ -1499,8 +1751,6 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         )
         assert identity.byte_length.root == len(raw)
         assert identity.digest.value.root == _sha256(raw)
-        assert identity.digest.scope.root == expected["digest_scope"]
-        assert identity.digest.algorithm.value == expected["digest_algorithm"]
         _assert_fact_provenance(
             vector,
             {
@@ -1519,8 +1769,14 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         _round_trip_model(MODEL_TARGETS[target], model)
         _assert_expected_dump(expected, _semantic_dump(model), record)
         facts = _replay_record_facts(target, model)
-        assert facts == expected["facts"]
-        _assert_fact_provenance(vector, facts, expected, MANIFEST_DOCUMENT)
+        outcomes: tuple[str, ...] = ()
+        if isinstance(model, EvidenceCompletenessAssessment):
+            outcomes = tuple(
+                requirement.outcome.value for requirement in model.requirements
+            )
+        _assert_fact_provenance(
+            vector, facts, expected, MANIFEST_DOCUMENT, outcomes=outcomes
+        )
         assert expected["runtime_target"] == target
         return
 
@@ -1534,7 +1790,6 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         inventory = _envelope_inventory(envelope)
         assert inventory == expected["component_inventory"]
         envelope_facts = _envelope_facts(envelope)
-        assert envelope_facts == expected["facts"]
         _assert_fact_provenance(
             vector, envelope_facts, expected, MANIFEST_DOCUMENT, inventory
         )
@@ -1589,8 +1844,8 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
     else:
         assert projection.projected_snapshot is None
 
-    pointer = cast(dict[str, Any], vector["source_pointer"])
-    if pointer["path"] is None:
+    if pointers[0]["path"] is None:
+        assert "authored_labels" not in expected
         assert "component_inventory" not in expected
         assert "derivations" not in expected
         assert "facts" not in expected
@@ -1598,7 +1853,6 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
     inventory = _envelope_inventory(source_envelope)
     assert inventory == expected["component_inventory"]
     facts = _adapter_projection_facts(source_envelope, projection)
-    assert facts == expected["facts"]
     _assert_fact_provenance(vector, facts, expected, MANIFEST_DOCUMENT, inventory)
 
 
@@ -1912,6 +2166,27 @@ def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
         "every_fact_is_projected_or_derived_by_declared_rule"
     )
     assert replay_contract["derivation_rules"] == sorted(DERIVATION_RULES)
+    assert replay_contract["derivation_contract"] == (
+        "no_derivation_returns_its_own_target_fact"
+    )
+    assert replay_contract["evidence_classifications"] == sorted(
+        EVIDENCE_CLASSIFICATIONS
+    )
+    assert replay_contract["authored_label_contract"] == (
+        "slice_authored_labels_are_declared_contract_data_not_source_evidence"
+    )
+    assert replay_contract["authored_label_fields"] == [
+        "authored_by",
+        "decision_references",
+        "label",
+        "value",
+    ]
+    assert replay_contract["publication_order_provenance"] == (
+        "publication_subject_order_projected_from_s1_p00_slice_ledger_order"
+    )
+    assert replay_contract["source_pointer_cardinality"] == (
+        "one_or_more_bounded_authorities_each_projected_or_derived_from"
+    )
     assert replay_contract["adapter_provenance"] == (
         "non_synthetic_adapter_replay_requires_bounded_projection"
     )
@@ -1997,7 +2272,7 @@ def _assert_vector_structure(documents: dict[str, dict[str, Any]]) -> None:
                 "target_symbol",
             }
             if filename == "replay-vectors.json":
-                expected_keys |= {"evidence_classification", "source_pointer"}
+                expected_keys |= {"evidence_classification", "source_pointers"}
             else:
                 expected_keys.add("decision_references")
             assert set(vector) == expected_keys
@@ -2013,7 +2288,8 @@ def _assert_vector_structure(documents: dict[str, dict[str, Any]]) -> None:
             if vector["input_mode"] == "json":
                 _assert_no_python_markers(vector["input"])
             if filename == "replay-vectors.json":
-                _assert_projection_shape(vector)
+                for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
+                    _assert_projection_shape(pointer)
             else:
                 references = vector["decision_references"]
                 assert isinstance(references, list)
@@ -2041,6 +2317,10 @@ def _assert_decision_registry(documents: dict[str, dict[str, Any]]) -> None:
     for filename in ("valid-vectors.json", "invalid-vectors.json"):
         for vector in _vectors(documents[filename]):
             referenced.update(cast(list[str], vector["decision_references"]))
+    for vector in _vectors(documents["replay-vectors.json"]):
+        expected = cast(dict[str, Any], vector["expected"])
+        for entry in cast(list[dict[str, Any]], expected.get("authored_labels", [])):
+            referenced.update(cast(list[str], entry.get("decision_references", [])))
     assert referenced
     assert referenced <= registered, sorted(referenced - registered)
     assert {item for item in registered if item.startswith("decision:")} == referenced
@@ -2667,6 +2947,15 @@ REQUIRED_MUTATIONS = (
     "manifest-publication-verification-overclaimed",
     "replay-canonical-adapter-empty-provenance",
     "replay-canonical-adapter-coherent-legacy-change",
+    "replay-source-backed-fact-coherent-change",
+    "replay-authored-label-value-mismatch",
+    "replay-authored-label-declaration-removed",
+    "replay-authored-label-misclassified-as-source",
+    "replay-authored-derivation-rule-reintroduced",
+    "replay-canonical-publication-order-reversed",
+    "replay-publication-subject-digest-changed",
+    "replay-source-pointer-unused",
+    "replay-duplicate-projected-fact",
     "fixture-missing",
     "fixture-cycle",
     "manifest-count-changed",
@@ -2683,7 +2972,7 @@ REQUIRED_MUTATIONS = (
     "synthetic-package-corpus-member",
     "historical-pytest-license-inserted",
 )
-assert len(REQUIRED_MUTATIONS) == 58
+assert len(REQUIRED_MUTATIONS) == 67
 
 
 def _copied_documents() -> dict[str, dict[str, Any]]:
@@ -2712,6 +3001,137 @@ def _synthetic_package_members(
         ]
     )
     return tuple(members)
+
+
+def _module_function(name: str) -> ast.FunctionDef:
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    return next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    )
+
+
+def _dispatched_derivation_rules() -> set[str]:
+    """Read the rule names `_derived_value` actually computes a value for."""
+
+    names: set[str] = set()
+    for node in ast.walk(_module_function("_derived_value")):
+        if not isinstance(node, ast.Compare) or len(node.ops) != 1:
+            continue
+        left = node.left
+        if not isinstance(left, ast.Name) or left.id != "rule":
+            continue
+        operator = node.ops[0]
+        if isinstance(operator, ast.Eq):
+            names.add(cast(str, ast.literal_eval(node.comparators[0])))
+        elif isinstance(operator, ast.In):
+            names |= set(cast(set[str], ast.literal_eval(node.comparators[0])))
+    return names
+
+
+def _self_authenticating_derivation_reads() -> list[str]:
+    """Find any derivation branch that reads the very fact it must verify."""
+
+    offenders: list[str] = []
+    for node in ast.walk(_module_function("_derived_value")):
+        if not isinstance(node, ast.Subscript):
+            continue
+        target = node.value
+        if not isinstance(target, ast.Name) or target.id != "facts":
+            continue
+        if "entry['fact']" in ast.unparse(node.slice).replace('"', "'"):
+            offenders.append(ast.unparse(node))
+    return offenders
+
+
+def test_no_replay_derivation_is_self_authenticating() -> None:
+    assert _self_authenticating_derivation_reads() == []
+    assert "authored" not in DERIVATION_RULES
+    assert "ordered_component_ids" not in DERIVATION_RULES
+    for vector in _vectors(REPLAY_DOCUMENT):
+        expected = cast(dict[str, Any], vector["expected"])
+        rules = {
+            cast(str, entry["rule"])
+            for entry in cast(list[dict[str, Any]], expected.get("derivations", []))
+        }
+        assert rules <= DERIVATION_RULES
+
+
+def test_every_derivation_rule_is_computed_and_exercised() -> None:
+    assert _dispatched_derivation_rules() == DERIVATION_RULES
+    used: set[str] = set()
+    for vector in _vectors(REPLAY_DOCUMENT):
+        expected = cast(dict[str, Any], vector["expected"])
+        for entry in cast(list[dict[str, Any]], expected.get("derivations", [])):
+            used.add(cast(str, entry["rule"]))
+    assert used == DERIVATION_RULES, (
+        f"unexercised {sorted(DERIVATION_RULES - used)!r}; "
+        f"undeclared {sorted(used - DERIVATION_RULES)!r}"
+    )
+
+
+def _canonical_envelope_order_derivation() -> tuple[
+    dict[str, Any], ReplayContext, list[str]
+]:
+    vector = _vector_by_id(
+        REPLAY_DOCUMENT, "evidence.replay.envelope.canonical-current"
+    )
+    expected = cast(dict[str, Any], _resolved_expected(vector, REPLAY_DOCUMENT))
+    entry = next(
+        item
+        for item in cast(list[dict[str, Any]], expected["derivations"])
+        if item["rule"] == "source_ordered_subset"
+    )
+    pointers = {
+        cast(str, item["authority"]): item
+        for item in cast(list[dict[str, Any]], vector["source_pointers"])
+    }
+    authority = cast(str, entry["authority"])
+    document = _parse_canonical_json(
+        (REPOSITORY_ROOT / cast(str, pointers[authority]["path"])).read_bytes()
+    )
+    context = ReplayContext(
+        manifest=MANIFEST_DOCUMENT,
+        pointers=pointers,
+        documents={authority: document},
+        inventory={},
+        outcomes=(),
+    )
+    facts = cast(dict[str, Any], expected["facts"])
+    return entry, context, cast(list[str], facts["publication_subject_order"])
+
+
+def test_publication_order_follows_bounded_ledger_not_corpus_order() -> None:
+    entry, context, locked = _canonical_envelope_order_derivation()
+    derived = cast(list[str], _derived_value(entry, {}, context))
+    assert derived == locked
+    assert derived != list(reversed(derived))
+    swapped = dict(entry)
+    swapped["member_json_pointers"] = list(
+        reversed(cast(list[str], entry["member_json_pointers"]))
+    )
+    assert _derived_value(swapped, {}, context) == derived
+
+
+def test_authored_label_change_leaves_source_provenance_intact() -> None:
+    vector = copy.deepcopy(
+        _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
+    )
+    expected = cast(dict[str, Any], vector["expected"])
+    before = copy.deepcopy(cast(dict[str, Any], expected["facts"]))
+    resolved = _json_text(_resolved_input(vector, REPLAY_DOCUMENT))
+    replaced = resolved.replace(PROVIDER_REPOSITORY_ID, ALTERNATE_REPOSITORY_ID)
+    assert replaced != resolved
+    vector["input"] = json.loads(replaced)
+    entry = next(
+        item
+        for item in cast(list[dict[str, Any]], expected["authored_labels"])
+        if item["label"] == "repository_provider_id"
+    )
+    entry["value"] = ALTERNATE_REPOSITORY_ID
+    _assert_replay_vector(vector, REPLAY_DOCUMENT)
+    assert cast(dict[str, Any], expected["facts"]) == before
 
 
 def _mutation_routing_groups() -> list[frozenset[str]]:
@@ -2984,12 +3404,11 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
         vector = copy.deepcopy(
             _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.run.canonical-32-request")
         )
-        projections = cast(
-            list[dict[str, Any]], vector["source_pointer"]["projections"]
-        )
+        pointer = cast(list[dict[str, Any]], vector["source_pointers"])[0]
+        projections = cast(list[dict[str, Any]], pointer["projections"])
         entry = next(item for item in projections if item["fact"] == "request_count")
         if mutation == "replay-source-pointer-digest-changed":
-            vector["source_pointer"]["sha256"] = "f" * 64
+            pointer["sha256"] = "f" * 64
         elif mutation == "replay-projection-pointer-changed":
             entry["json_pointer"] = "/artifacts"
         elif mutation == "replay-projection-kind-changed":
@@ -3000,27 +3419,33 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
         return
 
-    if mutation in {
-        "replay-source-pointer-retargeted",
-        "replay-unclassified-fact",
-        "replay-derivation-list-unsorted",
-    }:
+    if mutation in {"replay-source-pointer-retargeted", "replay-unclassified-fact"}:
         vector = copy.deepcopy(
             _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
         )
+        pointer = cast(list[dict[str, Any]], vector["source_pointers"])[0]
         if mutation == "replay-source-pointer-retargeted":
-            vector["source_pointer"]["path"] = ACQUISITION_RELATIVE
-            vector["source_pointer"]["sha256"] = _sha256(
+            pointer["path"] = ACQUISITION_RELATIVE
+            pointer["sha256"] = _sha256(
                 (REPOSITORY_ROOT / ACQUISITION_RELATIVE).read_bytes()
             )
         else:
-            derivations = cast(list[dict[str, Any]], vector["expected"]["derivations"])
-            if mutation == "replay-unclassified-fact":
-                derivations[:] = [
-                    entry for entry in derivations if entry["fact"] != "publication_id"
-                ]
-            else:
-                derivations.reverse()
+            projections = cast(list[dict[str, Any]], pointer["projections"])
+            projections[:] = [
+                entry for entry in projections if entry["fact"] != "published_tree"
+            ]
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation == "replay-derivation-list-unsorted":
+        vector = copy.deepcopy(
+            _vector_by_id(
+                REPLAY_DOCUMENT,
+                "evidence.replay.completeness.s04-c01-declared-scope",
+            )
+        )
+        cast(list[dict[str, Any]], vector["expected"]["derivations"]).reverse()
         with pytest.raises(AssertionError):
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
         return
@@ -3032,15 +3457,12 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
         vector = copy.deepcopy(
             _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
         )
+        pointer = cast(list[dict[str, Any]], vector["source_pointers"])[0]
         if mutation == "replay-authority-not-registered":
-            vector["source_pointer"]["authority"] = (
-                "run-0001-s04-v1-base-4c9cde74-head-690a63b9"
-            )
+            pointer["authority"] = "run-0001-s04-v1-base-4c9cde74-head-690a63b9"
         else:
-            vector["source_pointer"]["path"] = (
-                "reference_corpus/pytest-4412/case/case.json"
-            )
-            vector["source_pointer"]["sha256"] = _sha256(
+            pointer["path"] = "reference_corpus/pytest-4412/case/case.json"
+            pointer["sha256"] = _sha256(
                 (
                     REPOSITORY_ROOT / "reference_corpus/pytest-4412/case/case.json"
                 ).read_bytes()
@@ -3103,7 +3525,8 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             )
         )
         if mutation == "replay-canonical-adapter-empty-provenance":
-            cast(list[Any], vector["source_pointer"]["projections"]).clear()
+            pointers = cast(list[dict[str, Any]], vector["source_pointers"])
+            cast(list[Any], pointers[0]["projections"]).clear()
         else:
             # Rewrite the replayed canonical envelope and its expected facts
             # together; only the bounded projection into the acquisition record
@@ -3115,6 +3538,112 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             vector["input"] = json.loads(replaced)
             facts = cast(dict[str, Any], vector["expected"]["facts"])
             facts["acquisition_run_ids"] = ["run-0002-synthetic-coherent-change"]
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation == "replay-source-backed-fact-coherent-change":
+        vector = copy.deepcopy(
+            _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
+        )
+        facts = cast(dict[str, Any], vector["expected"]["facts"])
+        original = cast(str, facts["published_tree"])
+        replacement = "a" * 40
+        resolved = _json_text(_resolved_input(vector, REPLAY_DOCUMENT))
+        vector["input"] = json.loads(resolved.replace(original, replacement))
+        facts["published_tree"] = replacement
+        facts["reviewed_tree"] = replacement
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {
+        "replay-authored-label-value-mismatch",
+        "replay-authored-label-declaration-removed",
+        "replay-authored-label-misclassified-as-source",
+        "replay-authored-derivation-rule-reintroduced",
+    }:
+        vector = copy.deepcopy(
+            _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
+        )
+        expected = cast(dict[str, Any], vector["expected"])
+        labels = cast(list[dict[str, Any]], expected["authored_labels"])
+        if mutation == "replay-authored-label-value-mismatch":
+            entry = next(
+                item for item in labels if item["label"] == "repository_provider_id"
+            )
+            entry["value"] = ALTERNATE_REPOSITORY_ID
+        elif mutation == "replay-authored-label-declaration-removed":
+            labels[:] = [
+                item for item in labels if item["label"] != "repository_provider_id"
+            ]
+        elif mutation == "replay-authored-label-misclassified-as-source":
+            vector["evidence_classification"] = "immutable_source_fact"
+        else:
+            cast(list[dict[str, Any]], expected["derivations"]).append(
+                {
+                    "authored_by": "S1.P03.S06",
+                    "fact": "publication_id",
+                    "rule": "authored",
+                }
+            )
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {
+        "replay-canonical-publication-order-reversed",
+        "replay-publication-subject-digest-changed",
+    }:
+        vector = copy.deepcopy(
+            _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.envelope.canonical-current")
+        )
+        resolved = cast(
+            dict[str, Any],
+            copy.deepcopy(_resolved_input(vector, REPLAY_DOCUMENT)),
+        )
+        envelope = cast(dict[str, Any], resolved["envelope"])
+        publications = cast(list[dict[str, Any]], envelope["publications"])
+        facts = cast(dict[str, Any], vector["expected"]["facts"])
+        order = cast(list[str], facts["publication_subject_order"])
+        if mutation == "replay-canonical-publication-order-reversed":
+            # Reverse the components and the expected order together; only the
+            # bounded S1.P00 ledger subject order still disagrees.
+            publications.reverse()
+            order.reverse()
+        else:
+            subject = cast(dict[str, Any], publications[0]["subject_record"])
+            subject["sha256"] = "f" * 64
+            order[0] = "f" * 64
+        vector["input"] = resolved
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {"replay-source-pointer-unused", "replay-duplicate-projected-fact"}:
+        vector = copy.deepcopy(
+            _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.run.canonical-32-request")
+        )
+        projections: list[dict[str, Any]] = []
+        if mutation == "replay-duplicate-projected-fact":
+            projections.append(
+                {
+                    "fact": "run_id",
+                    "json_pointer": "/slice_ledger/items/3/slice_id",
+                    "kind": "value",
+                }
+            )
+        cast(list[dict[str, Any]], vector["source_pointers"]).insert(
+            0,
+            {
+                "authority": P00_CLOSURE_AUTHORITY,
+                "path": P00_CLOSURE_RELATIVE,
+                "projections": projections,
+                "sha256": _sha256(
+                    (REPOSITORY_ROOT / P00_CLOSURE_RELATIVE).read_bytes()
+                ),
+            },
+        )
         with pytest.raises(AssertionError):
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
         return
