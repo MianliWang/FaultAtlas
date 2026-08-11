@@ -9,7 +9,7 @@ Derived, non-authoritative Markdown; the canonical JSON files remain the sole co
 - Corpus identity: `faultatlas-evidence-envelope-contract-corpus`
 - Corpus version: `1`
 - Manifest SHA-256:
-  `64c6a6459f1e5348bee8a96bcf2865fdf07caea235151d80fbafbd0f6c241dee`
+  `25a18b67ccd29418b89725e58876403ff70c1e73d7161592dae15f902a9f3ba7`
 
 ## Scope
 
@@ -160,14 +160,13 @@ never conflates them.
    `collect`, `length`, `self_digest`, `singleton`, `text`, and `value`, which
    cover string, integer, boolean, and list facts alike.
 2. Deterministic reviewed derivation. A fact the executor recomputes from
-   bounded source bytes, the manifest registry, or validated envelope state.
-   The declared rules are `artifact_digest_algorithm`, `completeness_status`,
-   `component_count`, `component_inventory`, `difference`,
-   `legacy_projection_outcome`, `manifest_artifact_digest_scope`, `product`,
+   bounded source bytes, a bounded source document, the manifest registry, or
+   validated composition state. The declared rules are
+   `artifact_digest_algorithm`, `completeness_status`, `component_count`,
+   `component_inventory`, `difference`, `legacy_projection_outcome`,
+   `manifest_artifact_count`, `manifest_artifact_digest_scope`, `product`,
    `represented_modern_components`, `source_file_byte_length`,
-   `source_ordered_subset`, `sum`, and `universal_completeness_claim`. No
-   derivation may return the fact it claims to verify; a derivation that
-   simply restated its target would authenticate nothing.
+   `source_ordered_subset`, `sum`, and `universal_completeness_claim`.
 3. Slice-authored contract label. An exact identifier or label a named
    `S1.P03` Slice introduced, which no earlier record contains. Authored
    labels are declared in `authored_labels` with their value, their authoring
@@ -179,10 +178,45 @@ never conflates them.
 
 `expected.facts` may hold only projected or recomputed values. A value that is
 neither projected, nor derived by a declared rule, nor declared as an authored
-label is rejected. A vector that carries authored labels is classified
-`bounded_source_plus_slice_authored_contract` rather than
-`immutable_source_fact`, so source-backed claims and Slice-authored labels stay
-distinguishable by machine-readable corpus structure.
+label is rejected.
+
+## Verified value graph
+
+Replay provenance is a computed property, not a set of prohibitions. Each
+replay vector induces a dependency graph over its own facts:
+
+- projected facts are read out of bounded source bytes and seed the verified
+  value set;
+- each derivation is a node whose edges point at the fact operands the
+  test-side rule registry declares for its rule, never at a corpus-authored
+  dependency list;
+- the graph is checked for duplicate targets, projected/derived collisions,
+  unknown operands, authored-label operands, direct self-reference, and cycles
+  of any length, then evaluated in topological order.
+
+A derivation consumes only already verified values, bounded source data, the
+manifest registry, and validated composition state. The corpus-authored
+expected value is a comparison target and is never a computation input, so a
+fact cannot authenticate itself directly or through any chain. Every fact
+carries the set of independent provenance roots its ancestry reaches:
+`bounded_source_projection`, `bounded_source_bytes`, `bounded_source_document`,
+`manifest_registry`, and `composition_state`. Every chain must terminate in at
+least one of them.
+
+The evidence classification is computed from those roots and then compared with
+the declaration rather than accepted from it:
+
+- no bounded source path and the declared synthetic authority ->
+  `synthetic_contract_example`;
+- bounded source provenance with one or more authored labels ->
+  `bounded_source_plus_slice_authored_contract`;
+- no authored labels and some fact reaching `composition_state` ->
+  `reviewed_derived_composition`;
+- no authored labels and every fact rooted only in bounded source or the
+  manifest registry -> `immutable_source_fact`.
+
+Relabelling a vector into any other classification is therefore rejected, in
+both directions, without any vector identity being hard-coded.
 
 A vector may name more than one bounded authority. Every pointer must be used
 by a projection or a derivation, no fact may be projected out of two different

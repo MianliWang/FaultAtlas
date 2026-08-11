@@ -13,6 +13,7 @@ import subprocess
 import tarfile
 import zipfile
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
@@ -162,7 +163,7 @@ class LockedFile:
 
 EXPECTED_LOCKS = {
     "contract.md": LockedFile(
-        11249, "9401cc9e8a040b4c61d79414a4279d368bf17a5ccfe345d5de4994524956999f"
+        12808, "dbe7b60e2e1fbe0826dbee070d6a6718c9a94f0097cfd83a4d6dd9dd3bd8e5c1"
     ),
     "invalid-vectors.json": LockedFile(
         141878, "a379f425e31e1a8627818fb2f4a8afb420975680048f0ecb14da6305022b3592"
@@ -171,16 +172,16 @@ EXPECTED_LOCKS = {
         87, "cfa302e3629fd78a3c839bd71f04872e6cc0516ffe7e5e8be4cc13ebee377c85"
     ),
     "manifest.json": LockedFile(
-        22129, "64c6a6459f1e5348bee8a96bcf2865fdf07caea235151d80fbafbd0f6c241dee"
+        22487, "25a18b67ccd29418b89725e58876403ff70c1e73d7161592dae15f902a9f3ba7"
     ),
     "manifest.sha256": LockedFile(
-        80, "9fbb018bc52576f205f8a4e7ce353fa097a8b116212e6cc5cc544bf338c1fc36"
+        80, "8f1886acf5ccd720ae306fe086609d59cf3a969dd057a2d1c77a887fd49a5411"
     ),
     "replay-vectors.json": LockedFile(
-        84419, "a1e0901b93be23df45d79fe1a2877ed7d28ec58974127352b2130f012a14af72"
+        84525, "9c7d5b4a0ffc3f47be2fb63c4585cbb9cb299274e2624ffa9e096cb970ce0b70"
     ),
     "replay-vectors.sha256": LockedFile(
-        86, "3b6f8d567c13d665c455b7c74895abf0ebed4714f1eeb6ab820b81552fac88a2"
+        86, "4fd5b685cd0e34b760072dd30dab2431866bd2211e56aa85ae700cd8b1a372ed"
     ),
     "valid-vectors.json": LockedFile(
         182770, "49a005d2ab8e321e0867c5346db187e4a7736a392fd8b7eb4d343ed100385b86"
@@ -1069,6 +1070,7 @@ def _assert_source_pointers(
             assert vector["evidence_classification"] == "synthetic_contract_example"
             continue
         assert authority != synthetic
+        assert vector["evidence_classification"] != "synthetic_contract_example"
         assert isinstance(path, str) and isinstance(digest, str)
         pure = PurePosixPath(path)
         assert not pure.is_absolute()
@@ -1120,32 +1122,6 @@ def _projected_value(
     return collected
 
 
-DERIVATION_RULES = {
-    "artifact_digest_algorithm",
-    "completeness_status",
-    "component_count",
-    "component_inventory",
-    "difference",
-    "legacy_projection_outcome",
-    "manifest_artifact_digest_scope",
-    "product",
-    "represented_modern_components",
-    "source_file_byte_length",
-    "source_ordered_subset",
-    "sum",
-    "universal_completeness_claim",
-}
-POINTER_BOUND_RULES = {
-    "artifact_digest_algorithm",
-    "manifest_artifact_digest_scope",
-    "source_file_byte_length",
-}
-DOCUMENT_BOUND_RULES = {"source_ordered_subset"}
-STATE_ONLY_RULES = {
-    "completeness_status",
-    "represented_modern_components",
-    "universal_completeness_claim",
-}
 LEGACY_PROJECTION_FIELDS = {"reasons", "snapshot_present", "status"}
 AUTHORING_SLICES = {f"S1.P03.S0{index}" for index in range(1, 8)}
 EVIDENCE_CLASSIFICATIONS = {
@@ -1155,6 +1131,9 @@ EVIDENCE_CLASSIFICATIONS = {
     "synthetic_contract_example",
 }
 SLICE_AUTHORED_CLASSIFICATION = "bounded_source_plus_slice_authored_contract"
+SYNTHETIC_CLASSIFICATION = "synthetic_contract_example"
+COMPOSITION_CLASSIFICATION = "reviewed_derived_composition"
+IMMUTABLE_SOURCE_CLASSIFICATION = "immutable_source_fact"
 DIGEST_ALGORITHM_CANDIDATES = (
     "sha1",
     "sha224",
@@ -1165,78 +1144,29 @@ DIGEST_ALGORITHM_CANDIDATES = (
 )
 PARTIAL_OUTCOME_VALUES = frozenset({"inaccessible", "unavailable", "unsupported"})
 
-
-def _assert_derivation_shape(expected: dict[str, Any]) -> list[dict[str, Any]]:
-    raw = expected["derivations"]
-    assert isinstance(raw, list)
-    derivations = cast(list[dict[str, Any]], raw)
-    names: list[str] = []
-    for entry in derivations:
-        assert isinstance(entry, dict)
-        fact = entry["fact"]
-        rule = entry["rule"]
-        assert isinstance(fact, str) and fact
-        assert rule in DERIVATION_RULES
-        if rule in POINTER_BOUND_RULES:
-            assert set(entry) == {"authority", "fact", "rule"}
-        elif rule == "source_ordered_subset":
-            assert set(entry) == {
-                "authority",
-                "fact",
-                "member_json_pointers",
-                "order_json_pointer",
-                "order_key",
-                "rule",
-            }
-            members = entry["member_json_pointers"]
-            assert isinstance(members, list)
-            typed_members = cast(list[Any], members)
-            assert len(typed_members) > 1
-            assert all(
-                isinstance(item, str) and item.startswith("/") for item in typed_members
-            )
-            ordered_members = cast(list[str], typed_members)
-            assert ordered_members == sorted(ordered_members)
-            assert len(set(ordered_members)) == len(ordered_members)
-            order_pointer = entry["order_json_pointer"]
-            assert isinstance(order_pointer, str) and order_pointer.startswith("/")
-            order_key = entry["order_key"]
-            assert isinstance(order_key, str) and order_key
-            assert not order_key.startswith("/") and not order_key.endswith("/")
-        elif rule in STATE_ONLY_RULES:
-            assert set(entry) == {"fact", "rule"}
-        elif rule == "difference":
-            assert set(entry) == {
-                "fact",
-                "minuend_fact",
-                "rule",
-                "subtrahend_length_fact",
-            }
-        elif rule == "product":
-            assert set(entry) == {"factor_fact", "fact", "multiplier", "rule"}
-            assert type(entry["multiplier"]) is int
-        elif rule == "sum":
-            assert set(entry) == {"fact", "length_facts", "rule"}
-            assert isinstance(entry["length_facts"], list)
-        elif rule == "component_count":
-            assert set(entry) in (
-                {"component", "fact", "rule"},
-                {"component", "fact", "minus_fact", "rule"},
-            )
-        elif rule == "component_inventory":
-            assert set(entry) == {"component", "fact", "rule"}
-        else:
-            assert rule == "legacy_projection_outcome"
-            assert set(entry) == {"fact", "outcome_field", "rule"}
-            assert entry["outcome_field"] in LEGACY_PROJECTION_FIELDS
-        names.append(fact)
-    assert names == sorted(names)
-    assert len(set(names)) == len(names)
-    return derivations
+# Independent provenance roots a verified value may ultimately stand on. A fact
+# whose complete ancestry stays inside the bounded-source and manifest-registry
+# roots is eligible for immutable-source classification; a fact that reaches
+# validated runtime composition state is not.
+PROJECTION_ROOT_KIND = "bounded_source_projection"
+COMPOSITION_ROOT_KIND = "composition_state"
+ROOT_KINDS = frozenset(
+    {
+        "bounded_source_bytes",
+        "bounded_source_document",
+        COMPOSITION_ROOT_KIND,
+        "manifest_registry",
+        PROJECTION_ROOT_KIND,
+    }
+)
 
 
 class ReplayContext(NamedTuple):
-    """Everything a declared derivation may recompute a fact from."""
+    """Independent inputs a derivation may compute from.
+
+    Deliberately carries no corpus-authored expectation: expected values are
+    comparison targets, never derivation inputs.
+    """
 
     manifest: dict[str, Any]
     pointers: dict[str, dict[str, Any]]
@@ -1283,98 +1213,458 @@ def _ordered_source_values(
     return values
 
 
-def _derived_value(
-    entry: dict[str, Any], facts: dict[str, Any], context: ReplayContext
+def _compute_artifact_digest_algorithm(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
 ) -> Any:
-    """Recompute one declared fact.
+    pointer = context.pointers[cast(str, entry["authority"])]
+    raw = (REPOSITORY_ROOT / cast(str, pointer["path"])).read_bytes()
+    matches = [
+        name
+        for name in DIGEST_ALGORITHM_CANDIDATES
+        if hashlib.new(name, raw).hexdigest() == pointer["sha256"]
+    ]
+    assert len(matches) == 1
+    return matches[0]
 
-    Every branch computes its value from bounded source bytes, the manifest
-    registry, verified envelope state, or an explicit relation over other
-    already verified facts. No branch may return the fact it claims to verify.
-    """
 
-    rule = cast(str, entry["rule"])
-    if rule == "artifact_digest_algorithm":
-        pointer = context.pointers[cast(str, entry["authority"])]
-        raw = (REPOSITORY_ROOT / cast(str, pointer["path"])).read_bytes()
-        matches = [
-            name
-            for name in DIGEST_ALGORITHM_CANDIDATES
-            if hashlib.new(name, raw).hexdigest() == pointer["sha256"]
-        ]
-        assert len(matches) == 1
-        return matches[0]
-    if rule == "completeness_status":
-        return _completeness_status(context.outcomes)
-    if rule == "universal_completeness_claim":
-        return _completeness_status(context.outcomes) == "scope_satisfied"
-    if rule == "source_file_byte_length":
-        pointer = context.pointers[cast(str, entry["authority"])]
-        return len((REPOSITORY_ROOT / cast(str, pointer["path"])).read_bytes())
-    if rule == "manifest_artifact_digest_scope":
-        pointer = context.pointers[cast(str, entry["authority"])]
-        replay_contract = cast(dict[str, Any], context.manifest["replay_contract"])
-        artifacts = cast(list[dict[str, Any]], replay_contract["artifacts"])
-        matches = [item for item in artifacts if item["path"] == pointer["path"]]
-        assert len(matches) == 1
-        return matches[0]["digest_scope"]
-    if rule == "source_ordered_subset":
-        document = context.documents[cast(str, entry["authority"])]
-        ordered = _ordered_source_values(
-            document,
-            cast(str, entry["order_json_pointer"]),
-            cast(str, entry["order_key"]),
-        )
-        placed: list[tuple[int, str]] = []
-        for json_pointer in cast(list[str], entry["member_json_pointers"]):
-            member = _resolve_json_pointer(document, json_pointer)
-            assert isinstance(member, str)
-            assert ordered.count(member) == 1, (
-                f"{member!r} is not a unique member of {json_pointer!r}"
-            )
-            placed.append((ordered.index(member), member))
-        assert len({index for index, _ in placed}) == len(placed)
-        return [member for _, member in sorted(placed)]
-    if rule == "difference":
-        minuend = facts[cast(str, entry["minuend_fact"])]
-        subtrahend = facts[cast(str, entry["subtrahend_length_fact"])]
-        assert type(minuend) is int and isinstance(subtrahend, list)
-        return minuend - len(cast(list[Any], subtrahend))
-    if rule == "product":
-        factor = facts[cast(str, entry["factor_fact"])]
-        assert type(factor) is int
-        return factor * cast(int, entry["multiplier"])
-    if rule == "sum":
-        total = 0
-        for name in cast(list[str], entry["length_facts"]):
-            value = facts[name]
-            assert isinstance(value, list)
-            total += len(cast(list[Any], value))
-        return total
-    if rule == "represented_modern_components":
-        return _represented_modern_components(context.inventory)
-    if rule == "legacy_projection_outcome":
-        outcome = _legacy_projection_outcome(context.inventory)
-        return outcome[cast(str, entry["outcome_field"])]
-    component = cast(str, entry["component"])
-    assert component in ENVELOPE_COMPONENT_FIELDS
-    if rule == "component_inventory":
-        return context.inventory[component]
-    count = context.inventory[component]
+def _compute_completeness_status(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    return _completeness_status(context.outcomes)
+
+
+def _compute_universal_completeness_claim(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    return _completeness_status(context.outcomes) == "scope_satisfied"
+
+
+def _compute_component_count(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    count = context.inventory[cast(str, entry["component"])]
     assert count is not None
-    assert rule == "component_count"
     if "minus_fact" in entry:
-        other = facts[cast(str, entry["minus_fact"])]
+        other = verified[cast(str, entry["minus_fact"])]
         assert type(other) is int
         return count - other
     return count
+
+
+def _compute_component_inventory(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    return context.inventory[cast(str, entry["component"])]
+
+
+def _compute_difference(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    minuend = verified[cast(str, entry["minuend_fact"])]
+    subtrahend = verified[cast(str, entry["subtrahend_length_fact"])]
+    assert type(minuend) is int and isinstance(subtrahend, list)
+    return minuend - len(cast(list[Any], subtrahend))
+
+
+def _compute_legacy_projection_outcome(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    outcome = _legacy_projection_outcome(context.inventory)
+    return outcome[cast(str, entry["outcome_field"])]
+
+
+def _compute_manifest_artifact_count(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    replay_contract = cast(dict[str, Any], context.manifest["replay_contract"])
+    return len(cast(list[Any], replay_contract["artifacts"]))
+
+
+def _compute_manifest_artifact_digest_scope(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    pointer = context.pointers[cast(str, entry["authority"])]
+    replay_contract = cast(dict[str, Any], context.manifest["replay_contract"])
+    artifacts = cast(list[dict[str, Any]], replay_contract["artifacts"])
+    matches = [item for item in artifacts if item["path"] == pointer["path"]]
+    assert len(matches) == 1
+    return matches[0]["digest_scope"]
+
+
+def _compute_product(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    factor = verified[cast(str, entry["factor_fact"])]
+    assert type(factor) is int
+    return factor * cast(int, entry["multiplier"])
+
+
+def _compute_represented_modern_components(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    return _represented_modern_components(context.inventory)
+
+
+def _compute_source_file_byte_length(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    pointer = context.pointers[cast(str, entry["authority"])]
+    return len((REPOSITORY_ROOT / cast(str, pointer["path"])).read_bytes())
+
+
+def _compute_source_ordered_subset(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    document = context.documents[cast(str, entry["authority"])]
+    ordered = _ordered_source_values(
+        document,
+        cast(str, entry["order_json_pointer"]),
+        cast(str, entry["order_key"]),
+    )
+    placed: list[tuple[int, str]] = []
+    for json_pointer in cast(list[str], entry["member_json_pointers"]):
+        member = _resolve_json_pointer(document, json_pointer)
+        assert isinstance(member, str)
+        assert ordered.count(member) == 1, (
+            f"{member!r} is not a unique member of {json_pointer!r}"
+        )
+        placed.append((ordered.index(member), member))
+    assert len({index for index, _ in placed}) == len(placed)
+    return [member for _, member in sorted(placed)]
+
+
+def _compute_sum(
+    entry: dict[str, Any], verified: dict[str, Any], context: ReplayContext
+) -> Any:
+    total = 0
+    for name in cast(list[str], entry["addend_facts"]):
+        value = verified[name]
+        assert type(value) is int
+        total += value
+    return total
+
+
+def _validate_authority(entry: dict[str, Any]) -> None:
+    authority = entry["authority"]
+    assert isinstance(authority, str) and authority
+
+
+def _validate_component(entry: dict[str, Any]) -> None:
+    assert entry["component"] in ENVELOPE_COMPONENT_FIELDS
+
+
+def _validate_legacy_projection_outcome(entry: dict[str, Any]) -> None:
+    assert entry["outcome_field"] in LEGACY_PROJECTION_FIELDS
+
+
+def _validate_product(entry: dict[str, Any]) -> None:
+    assert type(entry["multiplier"]) is int
+
+
+def _validate_source_ordered_subset(entry: dict[str, Any]) -> None:
+    _validate_authority(entry)
+    members = entry["member_json_pointers"]
+    assert isinstance(members, list)
+    typed = cast(list[Any], members)
+    assert len(typed) > 1
+    assert all(isinstance(item, str) and item.startswith("/") for item in typed)
+    ordered = cast(list[str], typed)
+    assert ordered == sorted(ordered)
+    assert len(set(ordered)) == len(ordered)
+    order_pointer = entry["order_json_pointer"]
+    assert isinstance(order_pointer, str) and order_pointer.startswith("/")
+    order_key = entry["order_key"]
+    assert isinstance(order_key, str) and order_key
+    assert not order_key.startswith("/") and not order_key.endswith("/")
+
+
+class DerivationRule(NamedTuple):
+    """One declared derivation rule and everything the graph needs from it.
+
+    `fact_operands`, `optional_fact_operands`, and `list_operands` are the only
+    corpus fields the executor treats as edges. A corpus-authored dependency
+    list is never trusted: the edges come from this registry.
+    """
+
+    roots: frozenset[str]
+    compute: Callable[[dict[str, Any], dict[str, Any], ReplayContext], Any]
+    fact_operands: tuple[str, ...] = ()
+    optional_fact_operands: tuple[str, ...] = ()
+    list_operands: tuple[str, ...] = ()
+    constants: tuple[str, ...] = ()
+    validate: Callable[[dict[str, Any]], None] | None = None
+
+
+DERIVATION_REGISTRY: dict[str, DerivationRule] = {
+    "artifact_digest_algorithm": DerivationRule(
+        roots=frozenset({"bounded_source_bytes"}),
+        compute=_compute_artifact_digest_algorithm,
+        constants=("authority",),
+        validate=_validate_authority,
+    ),
+    "completeness_status": DerivationRule(
+        roots=frozenset({COMPOSITION_ROOT_KIND}),
+        compute=_compute_completeness_status,
+    ),
+    "component_count": DerivationRule(
+        roots=frozenset({COMPOSITION_ROOT_KIND}),
+        compute=_compute_component_count,
+        optional_fact_operands=("minus_fact",),
+        constants=("component",),
+        validate=_validate_component,
+    ),
+    "component_inventory": DerivationRule(
+        roots=frozenset({COMPOSITION_ROOT_KIND}),
+        compute=_compute_component_inventory,
+        constants=("component",),
+        validate=_validate_component,
+    ),
+    "difference": DerivationRule(
+        roots=frozenset(),
+        compute=_compute_difference,
+        fact_operands=("minuend_fact", "subtrahend_length_fact"),
+    ),
+    "legacy_projection_outcome": DerivationRule(
+        roots=frozenset({COMPOSITION_ROOT_KIND}),
+        compute=_compute_legacy_projection_outcome,
+        constants=("outcome_field",),
+        validate=_validate_legacy_projection_outcome,
+    ),
+    "manifest_artifact_count": DerivationRule(
+        roots=frozenset({"manifest_registry"}),
+        compute=_compute_manifest_artifact_count,
+    ),
+    "manifest_artifact_digest_scope": DerivationRule(
+        roots=frozenset({"manifest_registry"}),
+        compute=_compute_manifest_artifact_digest_scope,
+        constants=("authority",),
+        validate=_validate_authority,
+    ),
+    "product": DerivationRule(
+        roots=frozenset(),
+        compute=_compute_product,
+        fact_operands=("factor_fact",),
+        constants=("multiplier",),
+        validate=_validate_product,
+    ),
+    "represented_modern_components": DerivationRule(
+        roots=frozenset({COMPOSITION_ROOT_KIND}),
+        compute=_compute_represented_modern_components,
+    ),
+    "source_file_byte_length": DerivationRule(
+        roots=frozenset({"bounded_source_bytes"}),
+        compute=_compute_source_file_byte_length,
+        constants=("authority",),
+        validate=_validate_authority,
+    ),
+    "source_ordered_subset": DerivationRule(
+        roots=frozenset({"bounded_source_document"}),
+        compute=_compute_source_ordered_subset,
+        constants=(
+            "authority",
+            "member_json_pointers",
+            "order_json_pointer",
+            "order_key",
+        ),
+        validate=_validate_source_ordered_subset,
+    ),
+    "sum": DerivationRule(
+        roots=frozenset(),
+        compute=_compute_sum,
+        list_operands=("addend_facts",),
+    ),
+    "universal_completeness_claim": DerivationRule(
+        roots=frozenset({COMPOSITION_ROOT_KIND}),
+        compute=_compute_universal_completeness_claim,
+    ),
+}
+DERIVATION_RULES = frozenset(DERIVATION_REGISTRY)
+AUTHORITY_BOUND_RULES = frozenset(
+    name for name, rule in DERIVATION_REGISTRY.items() if "authority" in rule.constants
+)
+DOCUMENT_BOUND_RULES = frozenset(
+    name
+    for name, rule in DERIVATION_REGISTRY.items()
+    if "bounded_source_document" in rule.roots
+)
+
+
+def _operand_facts(entry: dict[str, Any]) -> list[str]:
+    """Extract this derivation's fact operands from the rule registry."""
+
+    rule = DERIVATION_REGISTRY[cast(str, entry["rule"])]
+    names: list[str] = []
+    for field in rule.fact_operands:
+        names.append(cast(str, entry[field]))
+    for field in rule.optional_fact_operands:
+        if field in entry:
+            names.append(cast(str, entry[field]))
+    for field in rule.list_operands:
+        names.extend(cast(list[str], entry[field]))
+    return names
+
+
+def _assert_derivation_shape(expected: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = expected["derivations"]
+    assert isinstance(raw, list)
+    derivations = cast(list[dict[str, Any]], raw)
+    names: list[str] = []
+    for entry in derivations:
+        assert isinstance(entry, dict)
+        fact = entry["fact"]
+        rule_name = entry["rule"]
+        assert isinstance(fact, str) and fact
+        assert rule_name in DERIVATION_REGISTRY, (
+            f"unknown derivation rule {rule_name!r}"
+        )
+        rule = DERIVATION_REGISTRY[cast(str, rule_name)]
+        required = {
+            "fact",
+            "rule",
+            *rule.fact_operands,
+            *rule.list_operands,
+            *rule.constants,
+        }
+        present = set(entry)
+        assert required <= present, (
+            f"{fact!r} is missing {sorted(required - present)!r}"
+        )
+        extra = present - required
+        assert extra <= set(rule.optional_fact_operands), (
+            f"{fact!r} declares unexpected fields {sorted(extra)!r}"
+        )
+        for field in (*rule.fact_operands, *rule.optional_fact_operands):
+            if field in entry:
+                operand = entry[field]
+                assert isinstance(operand, str) and operand
+        for field in rule.list_operands:
+            operands = entry[field]
+            assert isinstance(operands, list)
+            typed = cast(list[Any], operands)
+            assert typed
+            assert all(isinstance(item, str) and item for item in typed)
+            ordered = cast(list[str], typed)
+            assert ordered == sorted(ordered)
+            assert len(set(ordered)) == len(ordered)
+        if rule.validate is not None:
+            rule.validate(entry)
+        names.append(fact)
+    assert names == sorted(names)
+    assert len(set(names)) == len(names)
+    return derivations
+
+
+class ProvenanceGraph(NamedTuple):
+    """The acyclic dependency graph over one replay vector's facts."""
+
+    derivations: dict[str, dict[str, Any]]
+    order: tuple[str, ...]
+    roots: dict[str, frozenset[str]]
+    edges: int
+
+
+def _build_provenance_graph(
+    vector_id: str,
+    projected: set[str],
+    derivations: list[dict[str, Any]],
+    labels: set[str],
+) -> ProvenanceGraph:
+    """Validate and topologically order the fact dependency graph.
+
+    Every derived fact must resolve through operands that are themselves
+    independently verified, the graph must be acyclic, and every chain must
+    terminate at an independent provenance root.
+    """
+
+    targets = [cast(str, entry["fact"]) for entry in derivations]
+    assert len(set(targets)) == len(targets), (
+        f"{vector_id} declares duplicate derivation targets"
+    )
+    by_target = {cast(str, entry["fact"]): entry for entry in derivations}
+    collisions = projected & set(by_target)
+    assert not collisions, (
+        f"{vector_id} both projects and derives {sorted(collisions)!r}"
+    )
+    assert labels.isdisjoint(projected | set(by_target)), (
+        f"{vector_id} declares an authored label that is also a fact"
+    )
+
+    edges = 0
+    for target, entry in by_target.items():
+        for operand in _operand_facts(entry):
+            edges += 1
+            assert operand != target, (
+                f"{vector_id} derivation {target!r} names itself as an operand"
+            )
+            assert operand not in labels, (
+                f"{vector_id} derivation {target!r} consumes authored label {operand!r}"
+            )
+            assert operand in projected or operand in by_target, (
+                f"{vector_id} derivation {target!r} names unknown operand {operand!r}"
+            )
+
+    order: list[str] = []
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(name: str, stack: tuple[str, ...]) -> None:
+        if name in visited:
+            return
+        assert name not in visiting, (
+            f"{vector_id} derivation graph has a cycle: {' -> '.join((*stack, name))}"
+        )
+        visiting.add(name)
+        for operand in _operand_facts(by_target[name]):
+            if operand in by_target:
+                visit(operand, (*stack, name))
+        visiting.discard(name)
+        visited.add(name)
+        order.append(name)
+
+    for target in sorted(by_target):
+        visit(target, ())
+    assert len(order) == len(by_target)
+
+    roots: dict[str, frozenset[str]] = {
+        name: frozenset({PROJECTION_ROOT_KIND}) for name in projected
+    }
+    for name in order:
+        rule = DERIVATION_REGISTRY[cast(str, by_target[name]["rule"])]
+        assert rule.roots <= ROOT_KINDS
+        inherited = set(rule.roots)
+        for operand in _operand_facts(by_target[name]):
+            inherited |= roots[operand]
+        assert inherited, (
+            f"{vector_id} derivation {name!r} terminates at no independent root"
+        )
+        roots[name] = frozenset(inherited)
+    return ProvenanceGraph(by_target, tuple(order), roots, edges)
+
+
+def _computed_classification(
+    pointers: list[dict[str, Any]], labels: dict[str, Any], graph: ProvenanceGraph
+) -> str:
+    """Derive the evidence classification from provenance roots.
+
+    The corpus-declared classification is never an input here; it is only ever
+    compared against this result.
+    """
+
+    if pointers[0]["path"] is None:
+        return SYNTHETIC_CLASSIFICATION
+    if labels:
+        return SLICE_AUTHORED_CLASSIFICATION
+    if any(COMPOSITION_ROOT_KIND in kinds for kinds in graph.roots.values()):
+        return COMPOSITION_CLASSIFICATION
+    return IMMUTABLE_SOURCE_CLASSIFICATION
 
 
 def _assert_authored_labels(expected: dict[str, Any]) -> dict[str, Any]:
     """Validate the exact contract labels a named Slice introduced.
 
     An authored label is declared contract data. It is never presented as an
-    immutable source fact, a projected fact, or an independently derived fact.
+    immutable source fact, a projected fact, or an independently derived fact,
+    and it may never serve as a derivation operand.
     """
 
     raw = expected.get("authored_labels")
@@ -1417,38 +1707,37 @@ def _assert_fact_provenance(
     manifest: dict[str, Any],
     inventory: dict[str, int | None] | None = None,
     outcomes: tuple[str, ...] = (),
-) -> None:
-    """Classify every observed value as projected, derived, or Slice-authored.
+) -> ProvenanceGraph:
+    """Recompute every replay fact from independently verified inputs.
 
-    `expected["facts"]` may only hold facts that are projected out of bounded
-    source bytes or recomputed by a declared derivation. Slice-authored
-    contract labels live in `expected["authored_labels"]` and never claim
-    source provenance.
+    Projected facts are read out of bounded source bytes and seed the verified
+    value set. Derivations are then evaluated in topological order, consuming
+    only already verified values, bounded roots, and validated composition
+    state. The corpus-authored expectation is compared afterwards; it is never
+    an input.
     """
 
+    vector_id = cast(str, vector["id"])
     pointers = cast(list[dict[str, Any]], vector["source_pointers"])
     derivations = _assert_derivation_shape(expected)
     labels = _assert_authored_labels(expected)
-    classification = cast(str, vector["evidence_classification"])
-    assert bool(labels) is (classification == SLICE_AUTHORED_CLASSIFICATION), (
-        f"{vector['id']} declares {len(labels)} authored labels as {classification!r}"
-    )
 
     by_authority = {cast(str, item["authority"]): item for item in pointers}
     needed = {cast(str, item["authority"]) for item in pointers if item["projections"]}
     used = set(needed)
     for entry in derivations:
-        if "authority" not in entry:
+        rule_name = cast(str, entry["rule"])
+        if rule_name not in AUTHORITY_BOUND_RULES:
             continue
         authority = cast(str, entry["authority"])
         assert authority in by_authority, (
-            f"{vector['id']} derives from unregistered authority {authority!r}"
+            f"{vector_id} derives from unregistered authority {authority!r}"
         )
         used.add(authority)
-        if cast(str, entry["rule"]) in DOCUMENT_BOUND_RULES:
+        if rule_name in DOCUMENT_BOUND_RULES:
             needed.add(authority)
     assert used == set(by_authority), (
-        f"{vector['id']} carries unused source pointers: "
+        f"{vector_id} carries unused source pointers: "
         f"{sorted(set(by_authority) - used)!r}"
     )
 
@@ -1459,43 +1748,30 @@ def _assert_fact_provenance(
         for authority in sorted(needed)
     }
 
-    projected: set[str] = set()
+    verified: dict[str, Any] = {}
     for pointer in pointers:
-        authority = cast(str, pointer["authority"])
         projections = _assert_projection_shape(pointer)
         if not projections:
             continue
+        document = documents[cast(str, pointer["authority"])]
         digest = cast(str, pointer["sha256"])
-        document = documents[authority]
         for entry in projections:
-            fact = cast(str, entry["fact"])
-            projected.add(fact)
-            actual = _projected_value(document, entry, digest)
-            assert actual == observed[fact], (
-                f"{vector['id']} fact {fact!r} is {observed[fact]!r} but "
-                f"{pointer['path']}{entry['json_pointer']} projects {actual!r}"
+            verified[cast(str, entry["fact"])] = _projected_value(
+                document, entry, digest
             )
+    projected = set(verified)
 
-    derived = [cast(str, entry["fact"]) for entry in derivations]
+    graph = _build_provenance_graph(vector_id, projected, derivations, set(labels))
+
     declared = cast(dict[str, Any], expected.get("facts", {}))
-    assert projected.isdisjoint(derived)
-    assert projected.isdisjoint(labels)
-    assert set(derived).isdisjoint(labels)
-    assert projected | set(derived) == set(declared), (
-        f"{vector['id']} declares facts without provenance: "
-        f"{sorted(set(declared) - projected - set(derived))!r}"
+    assert projected | set(graph.derivations) == set(declared), (
+        f"{vector_id} declares facts without provenance: "
+        f"{sorted(set(declared) - projected - set(graph.derivations))!r}"
     )
     assert set(declared) | set(labels) == set(observed), (
-        f"{vector['id']} leaves values unclassified: "
+        f"{vector_id} leaves values unclassified: "
         f"{sorted(set(observed) - set(declared) - set(labels))!r}"
     )
-    for name, value in declared.items():
-        assert observed[name] == value
-    for name, value in labels.items():
-        assert observed[name] == value, (
-            f"{vector['id']} authored label {name!r} declares {value!r} "
-            f"but the replayed record carries {observed[name]!r}"
-        )
 
     context = ReplayContext(
         manifest=manifest,
@@ -1504,13 +1780,33 @@ def _assert_fact_provenance(
         inventory=inventory or {},
         outcomes=outcomes,
     )
-    for entry in derivations:
-        fact = cast(str, entry["fact"])
-        recomputed = _derived_value(entry, observed, context)
-        assert recomputed == observed[fact], (
-            f"{vector['id']} derived fact {fact!r} is {observed[fact]!r} but "
-            f"rule {entry['rule']!r} recomputes {recomputed!r}"
+    for name in graph.order:
+        entry = graph.derivations[name]
+        rule = DERIVATION_REGISTRY[cast(str, entry["rule"])]
+        verified[name] = rule.compute(entry, verified, context)
+
+    for name, value in verified.items():
+        assert value == observed[name], (
+            f"{vector_id} fact {name!r} is {observed[name]!r} but its "
+            f"provenance graph computes {value!r}"
         )
+    for name, value in declared.items():
+        assert observed[name] == value, (
+            f"{vector_id} declares fact {name!r} as {value!r} but the replayed "
+            f"record carries {observed[name]!r}"
+        )
+    for name, value in labels.items():
+        assert observed[name] == value, (
+            f"{vector_id} authored label {name!r} declares {value!r} "
+            f"but the replayed record carries {observed[name]!r}"
+        )
+
+    computed = _computed_classification(pointers, labels, graph)
+    assert vector["evidence_classification"] == computed, (
+        f"{vector_id} declares {vector['evidence_classification']!r} but its "
+        f"provenance roots compute {computed!r}"
+    )
+    return graph
 
 
 def _replay_run_facts(run: AcquisitionRun) -> dict[str, Any]:
@@ -1594,6 +1890,13 @@ def _replay_assessment_facts(
         ],
         "omission_reason": next(iter(reasons)),
         "requirement_count": len(assessment.requirements),
+        "satisfied_requirement_count": len(
+            [
+                requirement
+                for requirement in assessment.requirements
+                if requirement.outcome is EvidenceRequirementOutcome.SATISFIED
+            ]
+        ),
         "satisfied_requirements": [
             requirement.requirement_id.root
             for requirement in assessment.requirements
@@ -2167,8 +2470,15 @@ def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
     )
     assert replay_contract["derivation_rules"] == sorted(DERIVATION_RULES)
     assert replay_contract["derivation_contract"] == (
-        "no_derivation_returns_its_own_target_fact"
+        "expected_values_are_comparison_targets_not_derivation_inputs"
     )
+    assert replay_contract["derivation_evaluation"] == (
+        "acyclic_dependency_graph_evaluated_over_verified_values"
+    )
+    assert replay_contract["classification_source"] == (
+        "computed_from_provenance_roots_then_compared_with_declaration"
+    )
+    assert replay_contract["provenance_root_kinds"] == sorted(ROOT_KINDS)
     assert replay_contract["evidence_classifications"] == sorted(
         EVIDENCE_CLASSIFICATIONS
     )
@@ -2956,6 +3266,20 @@ REQUIRED_MUTATIONS = (
     "replay-publication-subject-digest-changed",
     "replay-source-pointer-unused",
     "replay-duplicate-projected-fact",
+    "replay-self-reference-via-product-factor",
+    "replay-self-reference-via-difference-minuend",
+    "replay-self-reference-via-difference-subtrahend",
+    "replay-self-reference-via-sum-addend",
+    "replay-self-reference-via-component-minus",
+    "replay-derivation-two-node-cycle",
+    "replay-derivation-three-node-cycle",
+    "replay-derivation-unknown-operand",
+    "replay-derivation-authored-label-operand",
+    "replay-duplicate-derivation-target",
+    "replay-projected-derived-name-collision",
+    "replay-classification-composition-as-source",
+    "replay-classification-source-as-composition",
+    "replay-classification-synthetic-as-source",
     "fixture-missing",
     "fixture-cycle",
     "manifest-count-changed",
@@ -2972,7 +3296,7 @@ REQUIRED_MUTATIONS = (
     "synthetic-package-corpus-member",
     "historical-pytest-license-inserted",
 )
-assert len(REQUIRED_MUTATIONS) == 67
+assert len(REQUIRED_MUTATIONS) == 81
 
 
 def _copied_documents() -> dict[str, dict[str, Any]]:
@@ -3012,54 +3336,45 @@ def _module_function(name: str) -> ast.FunctionDef:
     )
 
 
-def _dispatched_derivation_rules() -> set[str]:
-    """Read the rule names `_derived_value` actually computes a value for."""
-
-    names: set[str] = set()
-    for node in ast.walk(_module_function("_derived_value")):
-        if not isinstance(node, ast.Compare) or len(node.ops) != 1:
-            continue
-        left = node.left
-        if not isinstance(left, ast.Name) or left.id != "rule":
-            continue
-        operator = node.ops[0]
-        if isinstance(operator, ast.Eq):
-            names.add(cast(str, ast.literal_eval(node.comparators[0])))
-        elif isinstance(operator, ast.In):
-            names |= set(cast(set[str], ast.literal_eval(node.comparators[0])))
-    return names
+def _derivation_compute_functions() -> list[ast.FunctionDef]:
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("_compute_")
+    ]
 
 
-def _self_authenticating_derivation_reads() -> list[str]:
-    """Find any derivation branch that reads the very fact it must verify."""
-
-    offenders: list[str] = []
-    for node in ast.walk(_module_function("_derived_value")):
-        if not isinstance(node, ast.Subscript):
-            continue
-        target = node.value
-        if not isinstance(target, ast.Name) or target.id != "facts":
-            continue
-        if "entry['fact']" in ast.unparse(node.slice).replace('"', "'"):
-            offenders.append(ast.unparse(node))
-    return offenders
+FORBIDDEN_COMPUTE_NAMES = frozenset({"declared", "expected", "facts", "observed"})
 
 
-def test_no_replay_derivation_is_self_authenticating() -> None:
-    assert _self_authenticating_derivation_reads() == []
-    assert "authored" not in DERIVATION_RULES
-    assert "ordered_component_ids" not in DERIVATION_RULES
-    for vector in _vectors(REPLAY_DOCUMENT):
-        expected = cast(dict[str, Any], vector["expected"])
-        rules = {
-            cast(str, entry["rule"])
-            for entry in cast(list[dict[str, Any]], expected.get("derivations", []))
-        }
-        assert rules <= DERIVATION_RULES
+def _vector_provenance_graph(vector: dict[str, Any]) -> ProvenanceGraph:
+    expected = cast(dict[str, Any], _resolved_expected(vector, REPLAY_DOCUMENT))
+    projected = {
+        cast(str, entry["fact"])
+        for pointer in cast(list[dict[str, Any]], vector["source_pointers"])
+        for entry in cast(list[dict[str, Any]], pointer["projections"])
+    }
+    derivations = (
+        _assert_derivation_shape(expected) if "derivations" in expected else []
+    )
+    labels = _assert_authored_labels(expected)
+    return _build_provenance_graph(
+        cast(str, vector["id"]), projected, derivations, set(labels)
+    )
 
 
-def test_every_derivation_rule_is_computed_and_exercised() -> None:
-    assert _dispatched_derivation_rules() == DERIVATION_RULES
+def _graph_depth(graph: ProvenanceGraph) -> int:
+    depth: dict[str, int] = {}
+    for name in graph.order:
+        operands = _operand_facts(graph.derivations[name])
+        depth[name] = 1 + max(
+            (depth.get(operand, 0) for operand in operands), default=0
+        )
+    return max(depth.values(), default=0)
+
+
+def test_derivation_registry_is_complete_and_exercised() -> None:
     used: set[str] = set()
     for vector in _vectors(REPLAY_DOCUMENT):
         expected = cast(dict[str, Any], vector["expected"])
@@ -3069,6 +3384,80 @@ def test_every_derivation_rule_is_computed_and_exercised() -> None:
         f"unexercised {sorted(DERIVATION_RULES - used)!r}; "
         f"undeclared {sorted(used - DERIVATION_RULES)!r}"
     )
+    assert "authored" not in DERIVATION_REGISTRY
+    assert "ordered_component_ids" not in DERIVATION_REGISTRY
+    for name, rule in DERIVATION_REGISTRY.items():
+        assert rule.compute.__name__ == f"_compute_{name}"
+        assert rule.roots <= ROOT_KINDS
+        operand_fields = (
+            *rule.fact_operands,
+            *rule.optional_fact_operands,
+            *rule.list_operands,
+        )
+        # A rule that introduces no independent root of its own may only be a
+        # transformation of other verified values, so it must take operands.
+        assert rule.roots or operand_fields, name
+        assert len(set(operand_fields)) == len(operand_fields)
+        assert set(operand_fields).isdisjoint(rule.constants)
+        assert PROJECTION_ROOT_KIND not in rule.roots
+
+
+def test_derivation_evaluator_never_reads_expected_values() -> None:
+    functions = _derivation_compute_functions()
+    assert {function.name for function in functions} == {
+        f"_compute_{rule}" for rule in DERIVATION_RULES
+    }
+    for function in functions:
+        names = {node.id for node in ast.walk(function) if isinstance(node, ast.Name)}
+        assert names.isdisjoint(FORBIDDEN_COMPUTE_NAMES), (
+            f"{function.name} reads {sorted(names & FORBIDDEN_COMPUTE_NAMES)!r}"
+        )
+        assert "entry['fact']" not in ast.unparse(function).replace('"', "'")
+    provenance = _module_function("_assert_fact_provenance")
+    calls = [
+        node
+        for node in ast.walk(provenance)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "compute"
+    ]
+    assert len(calls) == 1
+    assert [ast.unparse(argument) for argument in calls[0].args] == [
+        "entry",
+        "verified",
+        "context",
+    ]
+
+
+def test_replay_provenance_graphs_are_acyclic_and_rooted() -> None:
+    for vector in _vectors(REPLAY_DOCUMENT):
+        graph = _vector_provenance_graph(vector)
+        assert len(graph.order) == len(graph.derivations)
+        for name, kinds in graph.roots.items():
+            assert kinds, name
+            assert kinds <= ROOT_KINDS, name
+        seen: set[str] = set()
+        for name in graph.order:
+            for operand in _operand_facts(graph.derivations[name]):
+                # Topological order guarantees every operand is already
+                # verified when its consumer runs.
+                assert operand not in graph.derivations or operand in seen
+            seen.add(name)
+        # A cycle-free graph cannot have a chain longer than its node count.
+        assert _graph_depth(graph) <= max(len(graph.derivations), 1)
+
+
+def test_evidence_classification_is_graph_derived() -> None:
+    observed: dict[str, int] = {}
+    for vector in _vectors(REPLAY_DOCUMENT):
+        graph = _vector_provenance_graph(vector)
+        expected = cast(dict[str, Any], _resolved_expected(vector, REPLAY_DOCUMENT))
+        labels = _assert_authored_labels(expected)
+        pointers = cast(list[dict[str, Any]], vector["source_pointers"])
+        computed = _computed_classification(pointers, labels, graph)
+        assert vector["evidence_classification"] == computed, vector["id"]
+        observed[computed] = observed.get(computed, 0) + 1
+    assert set(observed) == EVIDENCE_CLASSIFICATIONS
 
 
 def _canonical_envelope_order_derivation() -> tuple[
@@ -3104,14 +3493,15 @@ def _canonical_envelope_order_derivation() -> tuple[
 
 def test_publication_order_follows_bounded_ledger_not_corpus_order() -> None:
     entry, context, locked = _canonical_envelope_order_derivation()
-    derived = cast(list[str], _derived_value(entry, {}, context))
+    compute = DERIVATION_REGISTRY["source_ordered_subset"].compute
+    derived = cast(list[str], compute(entry, {}, context))
     assert derived == locked
     assert derived != list(reversed(derived))
     swapped = dict(entry)
     swapped["member_json_pointers"] = list(
         reversed(cast(list[str], entry["member_json_pointers"]))
     )
-    assert _derived_value(swapped, {}, context) == derived
+    assert compute(swapped, {}, context) == derived
 
 
 def test_authored_label_change_leaves_source_provenance_intact() -> None:
@@ -3644,6 +4034,135 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
                 ),
             },
         )
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {
+        "replay-self-reference-via-product-factor",
+        "replay-self-reference-via-difference-minuend",
+        "replay-self-reference-via-difference-subtrahend",
+        "replay-derivation-two-node-cycle",
+        "replay-derivation-unknown-operand",
+        "replay-duplicate-derivation-target",
+        "replay-projected-derived-name-collision",
+        "replay-classification-source-as-composition",
+    }:
+        vector = copy.deepcopy(
+            _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.run.canonical-32-request")
+        )
+        derivations = cast(list[dict[str, Any]], vector["expected"]["derivations"])
+        difference = next(
+            entry for entry in derivations if entry["rule"] == "difference"
+        )
+        product = next(entry for entry in derivations if entry["rule"] == "product")
+        if mutation == "replay-self-reference-via-product-factor":
+            # The exact operand-aliasing shape reported against `ea57186`.
+            product["factor_fact"] = "unrepresented_component_count"
+            product["multiplier"] = 1
+        elif mutation == "replay-self-reference-via-difference-minuend":
+            difference["minuend_fact"] = "known_empty_membership_count"
+        elif mutation == "replay-self-reference-via-difference-subtrahend":
+            difference["subtrahend_length_fact"] = "known_empty_membership_count"
+        elif mutation == "replay-derivation-two-node-cycle":
+            difference["minuend_fact"] = "unrepresented_component_count"
+            product["factor_fact"] = "known_empty_membership_count"
+        elif mutation == "replay-derivation-unknown-operand":
+            product["factor_fact"] = "no_such_fact"
+        elif mutation == "replay-duplicate-derivation-target":
+            derivations.append(copy.deepcopy(product))
+        elif mutation == "replay-projected-derived-name-collision":
+            derivations.insert(
+                1, {"fact": "request_count", "rule": "manifest_artifact_count"}
+            )
+        else:
+            vector["evidence_classification"] = "reviewed_derived_composition"
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {
+        "replay-self-reference-via-sum-addend",
+        "replay-derivation-three-node-cycle",
+        "replay-derivation-authored-label-operand",
+    }:
+        vector = copy.deepcopy(
+            _vector_by_id(
+                REPLAY_DOCUMENT,
+                "evidence.replay.completeness.s04-c01-declared-scope",
+            )
+        )
+        derivations = cast(list[dict[str, Any]], vector["expected"]["derivations"])
+        total = next(
+            entry for entry in derivations if entry["fact"] == "requirement_count"
+        )
+        if mutation == "replay-self-reference-via-sum-addend":
+            total["addend_facts"] = ["requirement_count"]
+        elif mutation == "replay-derivation-authored-label-operand":
+            total["addend_facts"] = [
+                "intentionally_omitted_count",
+                "satisfied_requirements",
+            ]
+        else:
+            # requirement_count -> satisfied_requirement_count -> status -> back.
+            total["addend_facts"] = ["satisfied_requirement_count"]
+            satisfied = next(
+                entry
+                for entry in derivations
+                if entry["fact"] == "satisfied_requirement_count"
+            )
+            satisfied.clear()
+            satisfied.update(
+                {
+                    "fact": "satisfied_requirement_count",
+                    "factor_fact": "status",
+                    "multiplier": 1,
+                    "rule": "product",
+                }
+            )
+            status = next(entry for entry in derivations if entry["fact"] == "status")
+            status.clear()
+            status.update(
+                {
+                    "fact": "status",
+                    "factor_fact": "requirement_count",
+                    "multiplier": 1,
+                    "rule": "product",
+                }
+            )
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {
+        "replay-self-reference-via-component-minus",
+        "replay-classification-composition-as-source",
+    }:
+        vector = copy.deepcopy(
+            _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.envelope.canonical-current")
+        )
+        if mutation == "replay-self-reference-via-component-minus":
+            derivations = cast(list[dict[str, Any]], vector["expected"]["derivations"])
+            entry = next(
+                item
+                for item in derivations
+                if item["fact"] == "canonical_supersession_count"
+            )
+            entry["minus_fact"] = "canonical_supersession_count"
+        else:
+            vector["evidence_classification"] = "immutable_source_fact"
+        with pytest.raises(AssertionError):
+            _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation == "replay-classification-synthetic-as-source":
+        vector = copy.deepcopy(
+            _vector_by_id(
+                REPLAY_DOCUMENT,
+                "evidence.replay.legacy-adapter.project-legacy-absent",
+            )
+        )
+        vector["evidence_classification"] = "immutable_source_fact"
         with pytest.raises(AssertionError):
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
         return
