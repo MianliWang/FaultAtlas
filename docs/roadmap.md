@@ -27,12 +27,11 @@ aspirational Slice as scheduled work.
   `S1.P01.S05.C01` correction are complete. `S1.P02` is complete.
   `S1.P02.S01` is complete, `S1.P02.S02` is complete, `S1.P02.S03` is
   complete, `S1.P02.S04` is complete, `S1.P02.S05` is complete, and
-  `S1.P02.S06` is complete. `S1.P02.S07` is complete. `S1.P03` is active;
+  `S1.P02.S06` is complete. `S1.P02.S07` is complete. `S1.P03` is complete;
   `S1.P03.S01` is complete, `S1.P03.S02` is complete, `S1.P03.S03` is
   complete, `S1.P03.S04` is complete, and `S1.P03.S05`, `S1.P03.S06`,
-  `S1.P03.S07`, and `S1.P03.S08` are complete. `S1.P03.S09` is next and not
-  started.
-  `S1.P04` through `S1.P10` remain not started.
+  `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09` are complete. `S1.P04` is
+  next and not started. `S1.P05` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -66,11 +65,11 @@ including `S1.P01.S01` through `S1.P01.S06` and the `S1.P01.S05.C01`
 correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P02.S02` is complete, `S1.P02.S03` is complete, `S1.P02.S04` is complete,
 `S1.P02.S05` is complete, and `S1.P02.S06` is complete.
-`S1.P02.S07` is complete. `S1.P03` is active; `S1.P03.S01` is complete,
+`S1.P02.S07` is complete. `S1.P03` is complete; `S1.P03.S01` is complete,
 `S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
-`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, and `S1.P03.S08` are complete.
-`S1.P03.S09` is next and not started.
-`S1.P04` through `S1.P10` are not started, and `S2-S9` remain unimplemented.
+`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09`
+are complete. `S1.P04` is next and not started. `S1.P05` through `S1.P10`
+remain not started, and `S2-S9` remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -149,14 +148,13 @@ half-open byte spans, revision-line and exact-artifact-byte locators, old/new-si
 diff-hunk locators, and an explicitly discriminated bounded-locator union. The
 seven-Slice sequence remains fixed: S06 is complete and publishes only the
 versioned, internal, source-only revision/locator contract corpus; S07
-publishes the internal, case-calibrated Phase closure. `S1.P03` is active;
-its S01 retrieval-request foundation, S02 request/response metadata, and S03
-exact retained-artifact records are complete. No production corpus reader,
-locator resolver, or persistence contract exists.
+publishes the internal, case-calibrated Phase closure. `S1.P03` is complete
+and its S01-S09 sequence is closed. No production corpus reader, locator
+resolver, or persistence contract exists.
 
 ## S1.P03 — Evidence Envelope
 
-The provisional current-Phase sequence is:
+The complete Phase sequence is:
 
 1. `S1.P03.S01` — Retrieval Request Identity and Authority Foundation (complete)
 2. `S1.P03.S02` — Request Controls and Response Representation Observations
@@ -170,9 +168,9 @@ The provisional current-Phase sequence is:
 7. `S1.P03.S07` — Evidence Envelope Composition and Legacy Adapter
    (complete)
 8. `S1.P03.S08` — Evidence Contract Corpus (complete)
-9. `S1.P03.S09` — Integration and Phase Closure (next; not started)
+9. `S1.P03.S09` — Integration and Phase Closure (complete; closes `S1.P03`)
 
-This sequence remains provisional until each Slice begins. S01 establishes
+S01 establishes
 internal acquisition-run and request-attempt identity plus explicit retrieval
 authority, method, origin-relative route path, and strict UTC start time. S02
 adds explicit ordered request controls and immutable response-representation
@@ -220,7 +218,10 @@ S08 adds no production corpus reader, writer, validator, or persistence, and
 claims no durable `EvidenceEnvelope` byte contract. Readers, writers, storage,
 persistence, migration, canonical envelope bytes, repository snapshots,
 confidence and review, and adapters beyond the explicit in-memory legacy
-boundary remain deferred to S09 or their preserved later owners.
+boundary remain deferred to their preserved later owners. S09 integrates
+S01-S08 in the internal, case-calibrated Phase closure, locks the evidence
+corpus and its leaf-closure assurance, and establishes S1.P04 entry readiness
+without adding production behavior. `S1.P04` is next and not started.
 
 ## Preserved later Stage 1 phases
 
@@ -260,7 +261,11 @@ production contract-corpus capability, or adapters beyond that explicit legacy
 boundary. `S1.P03.S08` publishes the internal, source-only evidence contract
 corpus under `reference_corpus/contracts/evidence-envelope/v1` with a test-only
 executor and registry; it changes no production source. `S1.P03.S08` is
-complete; `S1.P03.S09` is next and not started.
+complete. `S1.P03.S09` publishes the internal Phase closure under
+`reference_corpus/contracts/evidence-envelope/closures/s1-p03-phase-closure`,
+integrates S01-S08, locks the corpus and verified replay-leaf assurance, and
+establishes S1.P04 readiness without changing production source. `S1.P03` and
+S01-S09 are complete; `S1.P04` is next and not started.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and
