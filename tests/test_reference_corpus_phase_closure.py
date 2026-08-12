@@ -521,7 +521,11 @@ EXPECTED_P03_SLICE_SEQUENCE = (
         "complete",
     ),
     ("S1.P03.S08", "Evidence Contract Corpus", "complete"),
-    ("S1.P03.S09", "Integration and Phase Closure", "next; not started"),
+    (
+        "S1.P03.S09",
+        "Integration and Phase Closure",
+        "complete; closes `S1.P03`",
+    ),
 )
 
 EXPECTED_REVISION_SYMBOLS = {
@@ -2040,16 +2044,17 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P02.S05` is complete" in normalized_roadmap
     assert "`S1.P02.S06` is complete" in normalized_roadmap
     assert "`S1.P02.S07` is complete" in normalized_roadmap
-    assert "`S1.P03` is active" in normalized_roadmap
+    assert "`S1.P03` is complete" in normalized_roadmap
     assert "`S1.P03.S01` is complete" in normalized_roadmap
     assert "`S1.P03.S02` is complete" in normalized_roadmap
     assert "`S1.P03.S03` is complete" in normalized_roadmap
     assert "`S1.P03.S04` is complete" in normalized_roadmap
     assert (
-        "`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, and `S1.P03.S08` are complete"
-        in normalized_roadmap
+        "`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and "
+        "`S1.P03.S09` are complete" in normalized_roadmap
     )
-    assert "`S1.P03.S09` is next and not started" in normalized_roadmap
+    assert "`S1.P04` is next and not started" in normalized_roadmap
+    assert "`S1.P05` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:
         assert f"`{slice_id}` — {title} ({state})" in normalized_roadmap
@@ -2073,6 +2078,8 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         "S1.P02.S03 uses the locked case without fabricating a complete "
         "canonical ref observation" in normalized_case_doc
     )
+    assert "## S1.P03.S09 Integration and Phase Closure" in case_doc
+    assert "S1.P04 remains not started" in case_doc
     assert (
         "directly retains ref lexeme `starred_with_side_effect` with head SHA "
         "`690a63b9218f72662cd3a67c6c200b758c88ce12`" in normalized_case_doc

@@ -2754,7 +2754,19 @@ def _prospective_modes(paths: set[str], tmp_path: Path) -> dict[str, str]:
 
 def _assert_corpus_inventory(root: Path) -> None:
     assert root.is_dir() and not root.is_symlink()
-    assert {entry.name for entry in root.parent.iterdir()} == {"v1"}
+    assert {entry.name for entry in root.parent.iterdir()} == {"closures", "v1"}
+    closures = root.parent / "closures"
+    assert closures.is_dir() and not closures.is_symlink()
+    assert {entry.name for entry in closures.iterdir()} == {"s1-p03-phase-closure"}
+    phase_closure = closures / "s1-p03-phase-closure"
+    assert phase_closure.is_dir() and not phase_closure.is_symlink()
+    assert {entry.name for entry in phase_closure.iterdir()} == {
+        "closure.json",
+        "closure.md",
+        "closure.sha256",
+    }
+    for entry in phase_closure.iterdir():
+        _assert_fs_regular_0644(entry)
     entries = tuple(root.iterdir())
     assert {entry.name for entry in entries} == EXPECTED_FILES
     for entry in entries:
@@ -3721,12 +3733,16 @@ def test_production_surface_is_unchanged() -> None:
     )
 
 
-def test_roadmap_records_s08_complete_and_s09_next() -> None:
+def test_roadmap_records_s08_and_s09_complete_with_p04_next() -> None:
     roadmap = (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
     assert "`S1.P03.S08` — Evidence Contract Corpus (complete)" in roadmap
-    assert "`S1.P03.S09` is next and not started" in roadmap
-    assert "`S1.P03` is active" in roadmap
-    assert "`S1.P04` through `S1.P10` remain not started" in roadmap
+    assert (
+        "`S1.P03.S09` — Integration and Phase Closure (complete; closes `S1.P03`)"
+        in roadmap
+    )
+    assert "`S1.P03` is complete" in roadmap
+    assert "`S1.P04` is next and not started" in roadmap
+    assert "`S1.P05` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap
     reference_case = (
         REPOSITORY_ROOT / "docs/reference_cases/pytest-4412.md"
@@ -5021,6 +5037,7 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
         contract_root = tmp_path / "evidence-envelope"
         root = contract_root / "v1"
         shutil.copytree(CORPUS_ROOT, root)
+        shutil.copytree(CORPUS_ROOT.parent / "closures", contract_root / "closures")
         _assert_corpus_inventory(root)
         extra = (
             root / "unexpected.json"

@@ -1064,5 +1064,33 @@ bytes, and future durable record bytes remain distinct concepts. The executor
 registry, and adds no production reader, writer, validator, persistence, or
 migration. Corpus bytes are excluded from packaged artifacts.
 
-`S1.P03.S07` and `S1.P03.S08` are complete, `S1.P03` remains active, and
-`S1.P03.S09` is next and not started.
+`S1.P03.S07` and `S1.P03.S08` are complete.
+
+## S1.P03.S09 Integration and Phase Closure
+
+`S1.P03.S09` publishes the internal, case-calibrated Evidence Envelope Phase
+closure at
+`reference_corpus/contracts/evidence-envelope/closures/s1-p03-phase-closure`.
+Canonical `closure.json` is the sole durable semantic authority, its sidecar
+locks the exact bytes, and `closure.md` is a synchronized non-authoritative
+view. The artifact is a sealed publication candidate; its own PR, reviewed
+head, squash revision, and CI evidence remain external publication facts until
+they actually exist.
+
+The closure integrates the published S01-S08 contracts without changing
+production behavior. It locks all nine production Python sources and the 58
+ordered evidence exports, the nine-file S08 corpus with 129 valid, 135 invalid,
+and 15 replay vectors, and the verified replay assurance: nine non-synthetic
+instances, 2,354 semantic leaves, zero uncovered leaves, zero ambiguous primary
+owners, an acyclic transitive replay dependency graph, and exact retained-byte
+termination. The canonical envelope remains the reviewed S04-S06 composition:
+zero transformations, one additive correction, zero supersessions, one scoped
+completeness assessment, and the acquisition publication followed by the
+correction publication. Legacy projection remains explicit and fail closed.
+
+These conclusions remain bounded to the internal pytest #4412-calibrated
+contract. Repository snapshots, development history, faults, patterns,
+transfer, confidence and review, persistence and durable production bytes,
+ingestion, retrieval, graphs, synthesis, advanced RAG, and productization stay
+with their recorded later owners. `S1.P03` and S01-S09 are complete. S1.P04 is
+eligible to begin, and S1.P04 remains not started.
