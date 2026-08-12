@@ -2,7 +2,7 @@
 
 `closure.json` is the sole durable semantic authority. This Markdown is a derived, non-authoritative view.
 
-Primary JSON SHA-256: `abc6dcd58f1d54491f84f27980db1de7a48cad791b73ac9878f7cdedd51d445c`
+Primary JSON SHA-256: `21a24e7ab572456f22d3aca572e10e76be69529770b96a131f3d4f624d0b481b`
 
 ## Executive Phase-closure verdict
 
@@ -31,6 +31,8 @@ S1.P03.S01 through S1.P03.S08 are published and independently locked. S1.P03.S09
 | 9 | `S1.P03.S09` — Integration and Phase Closure | `sealed_publication_candidate` | none; publication pending |
 
 PR #38 is an S07 test-assurance corrective publication, not another product-semantic Slice. PRs #39 and #40 are closed, unmerged, superseded S08 candidates retained as audit and review history; their historical unresolved threads are not represented as resolved. PR #41 is the successful S08 publication.
+
+For each successful predecessor publication, `closure.json` retains a bounded GitHub/Git observation snapshot. Exhausted review pagination, exact workflow run and `validate` job observations, and raw reviewed-head and squash commit objects are stored inside the canonical JSON and transitively locked by `closure.sha256`. The tests reconstruct both Git object identities and trees from the retained bytes before accepting the ledger claims.
 
 ## Locked implementation inventory
 

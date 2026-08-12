@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
@@ -45,16 +46,16 @@ REPLAY_PATH = CORPUS_ROOT / "replay-vectors.json"
 
 EXPECTED_CLOSURE_FILES = {
     "closure.json": (
-        51_720,
-        "abc6dcd58f1d54491f84f27980db1de7a48cad791b73ac9878f7cdedd51d445c",
+        127_921,
+        "21a24e7ab572456f22d3aca572e10e76be69529770b96a131f3d4f624d0b481b",
     ),
     "closure.md": (
-        10_020,
-        "59b5b76a755f22aacdc10a7e6a424bb6ceafd1523f8749f97ffe207228a3b9d6",
+        10_462,
+        "fe99a83ef91b16a590ccfb0178c5fc477d780b2a8bb4efe083cdd7eab47e7947",
     ),
     "closure.sha256": (
         79,
-        "4273c6171806946d107e1cd1e1e0036d621bc7fdfdd8bc2028a39014614caf8e",
+        "16068f08bf9ab929f601dbc010c0bc613a86f49f4e427070ebbf214a7ecf257a",
     ),
 }
 
@@ -91,106 +92,16 @@ EXPECTED_SLICE_TITLES = [
     ("S1.P03.S09", "Integration and Phase Closure"),
 ]
 
-EXPECTED_PUBLICATIONS = {
-    31: (
-        "S1.P03.S01",
-        "product_slice_publication",
-        "f6bc25194ff9ebc2840caa97c0545362dcd74011",
-        "7bcad3a701e12ac3daf86cc3ef3fe20b01dc7412",
-        "d2fd12f411e45a49234bf89669cfb0eeb870992d",
-        30_764_170_206,
-        91_539_858_486,
-        30_764_381_986,
-        91_540_406_947,
-    ),
-    32: (
-        "S1.P03.S02",
-        "product_slice_publication",
-        "a6b2a17ecbeec3e5fb5d1eed7601935bd00ba10c",
-        "462fe5ce7349be27d9e73320d314a0e9eb28ba88",
-        "cc8a6e3bcf528c0b1133b187d8bfbdc3d28a6940",
-        30_814_286_228,
-        91_688_106_659,
-        30_815_724_849,
-        91_692_849_906,
-    ),
-    33: (
-        "S1.P03.S03",
-        "product_slice_publication",
-        "dc65896b1f388f76e0b819fc97ee5b40349a1c32",
-        "6e381d6b8220727897d2407c5dcda8e44a824497",
-        "0af1d310f99cfbcd59ef368805b9042f29325181",
-        31_294_199_564,
-        93_196_481_425,
-        31_294_463_026,
-        93_197_153_223,
-    ),
-    34: (
-        "S1.P03.S04",
-        "product_slice_publication",
-        "0d3ea126745d26db804458b401d258cd346688d4",
-        "316aaba9ff5e455de89c3525d44627a5c8a13ece",
-        "39bc54163033c901661140c834cbeab51effc8f2",
-        31_298_433_192,
-        93_207_164_048,
-        31_298_682_654,
-        93_207_833_890,
-    ),
-    35: (
-        "S1.P03.S05",
-        "product_slice_publication",
-        "5bc5a3b8c1718fecc6fec3b9a7e51f8f5b1830af",
-        "00c913a1cf44454899eef17fd998eb83a5f2706f",
-        "abd8681b60b34723ee08e3f177c204b97aca1d88",
-        31_303_164_010,
-        93_219_134_186,
-        31_303_460_194,
-        93_219_890_570,
-    ),
-    36: (
-        "S1.P03.S06",
-        "product_slice_publication",
-        "ff9432a3928b32e1a34ba73adb939529aaad7f5e",
-        "07b326e9d6be5c3f1f2908431918ec86980f242b",
-        "7dbf6942d21255ae915b3df9974a36b03188f408",
-        31_337_574_066,
-        93_305_834_454,
-        31_338_108_270,
-        93_307_174_424,
-    ),
-    37: (
-        "S1.P03.S07",
-        "product_slice_publication",
-        "cf3a63be9aabee10d84cbf81cfc3367fdac8359e",
-        "d4c31be30adb47d0154d61effae4e002b2908a1b",
-        "84a3eaabd56f45e0de4e94bda332ceedcfc38fff",
-        31_346_068_219,
-        93_328_138_315,
-        31_346_371_716,
-        93_328_952_256,
-    ),
-    38: (
-        "S1.P03.S07",
-        "test_assurance_corrective_publication",
-        "cd5bec5816a899d1c85d48ebfb525583b8398d18",
-        "ff43cdc8a10e6d23c40afcc94a635bab3a986653",
-        "5a8fcb93a4e3d27f1c4abd6f95bce2a3c8b5802e",
-        31_457_297_519,
-        93_673_671_139,
-        31_458_350_710,
-        93_676_686_529,
-    ),
-    41: (
-        "S1.P03.S08",
-        "product_slice_publication",
-        "464b3da538d82be09442978eb5343bee243f63ea",
-        "9c7b06012146ed371e190d54b36ccdc42a79637e",
-        "8f00f5d05271430dc811d13600005a4cff81230f",
-        31_570_327_747,
-        94_030_730_824,
-        31_570_761_169,
-        94_032_054_788,
-    ),
+EXPECTED_PUBLICATION_SLICES = {
+    31: ("S1.P03.S01", "product_slice_publication"),
+    32: ("S1.P03.S02", "product_slice_publication"),
+    33: ("S1.P03.S03", "product_slice_publication"),
+    34: ("S1.P03.S04", "product_slice_publication"),
+    35: ("S1.P03.S05", "product_slice_publication"),
+    36: ("S1.P03.S06", "product_slice_publication"),
+    37: ("S1.P03.S07", "product_slice_publication"),
+    38: ("S1.P03.S07", "test_assurance_corrective_publication"),
+    41: ("S1.P03.S08", "product_slice_publication"),
 }
 
 EXPECTED_EVIDENCE_EXPORTS = (
@@ -636,7 +547,7 @@ def _assert_structure(document: dict[str, Any]) -> None:
         "name": "faultatlas-s1-p03-evidence-envelope-phase-closure",
         "public_contract": False,
         "publication_state": "sealed_publication_candidate",
-        "sealed_at": "2026-08-12T07:58:37Z",
+        "sealed_at": "2026-08-12T08:47:39Z",
         "version": "1",
     }
     phase = document["phase_identity"]
@@ -703,6 +614,175 @@ def _assert_source_locks(document: dict[str, Any], *, verify_files: bool) -> Non
             assert _sha256(raw) == expected_digest
 
 
+def _replay_git_commit(snapshot: dict[str, Any]) -> tuple[str, str]:
+    assert set(snapshot) == {
+        "byte_length",
+        "content_base64",
+        "encoding",
+        "object_type",
+        "sha1",
+    }
+    assert snapshot["encoding"] == "base64"
+    assert snapshot["object_type"] == "commit"
+    raw = base64.b64decode(snapshot["content_base64"], validate=True)
+    assert len(raw) == snapshot["byte_length"]
+    object_bytes = b"commit " + str(len(raw)).encode() + b"\0" + raw
+    assert hashlib.sha1(object_bytes).hexdigest() == snapshot["sha1"]  # noqa: S324
+    tree_match = re.match(rb"tree ([0-9a-f]{40})\n", raw)
+    assert tree_match is not None
+    return snapshot["sha1"], tree_match.group(1).decode()
+
+
+def _replay_check_snapshot(
+    snapshot: dict[str, Any], *, event: str, head_sha: str
+) -> dict[str, Any]:
+    assert snapshot["workflow"] == "CI"
+    assert snapshot["event"] == event
+    assert snapshot["head_sha"] == head_sha
+    assert snapshot["attempt"] == 1
+    assert snapshot["status"] == "completed"
+    assert snapshot["conclusion"] == "success"
+    assert snapshot["source_url"] == (
+        f"https://github.com/MianliWang/FaultAtlas/actions/runs/{snapshot['run_id']}"
+    )
+    job = snapshot["job"]
+    assert job["name"] == "validate"
+    assert job["status"] == "completed"
+    assert job["conclusion"] == "success"
+    assert job["url"] == f"{snapshot['source_url']}/job/{job['job_id']}"
+    assert all(
+        step["status"] == "completed" and step["conclusion"] == "success"
+        for step in job["steps"]
+    )
+    assert {
+        "Check formatting",
+        "Lint",
+        "Type-check",
+        "Test",
+        "Build distributions",
+        "Smoke-test package metadata and CLI",
+    } <= {step["name"] for step in job["steps"]}
+    replayed = {
+        "attempt": snapshot["attempt"],
+        "conclusion": snapshot["conclusion"],
+        "context": job["name"],
+        "event": snapshot["event"],
+        "head_sha": snapshot["head_sha"],
+        "job_id": job["job_id"],
+        "run_id": snapshot["run_id"],
+        "workflow": snapshot["workflow"],
+    }
+    if event == "push":
+        assert snapshot["branch"] == "main"
+        replayed["branch"] = snapshot["branch"]
+    else:
+        assert "branch" not in snapshot
+    return replayed
+
+
+def _replay_publication_evidence(section: dict[str, Any]) -> dict[int, Any]:
+    snapshots = section["publication_evidence_snapshots"]
+    assert snapshots["format"] == "faultatlas-bounded-publication-observation-snapshot"
+    assert snapshots["version"] == "1"
+    assert snapshots["repository"] == "MianliWang/FaultAtlas"
+    assert snapshots["captured_at"] == "2026-08-12T08:47:39Z"
+    assert snapshots["semantics"] == (
+        "retained_bounded_observation_not_live_provider_or_complete_history"
+    )
+    assert snapshots["lock"] == (
+        "canonical_snapshot_bytes_are_inside_closure.json_and_transitively_locked_by_closure.sha256"
+    )
+    assert snapshots["capture_sources"] == [
+        "GitHub_GraphQL_pull_request_and_fully_paginated_review_connections",
+        "GitHub_Actions_run_validate_job_and_step_observations",
+        "raw_Git_commit_object_payloads",
+    ]
+    records = snapshots["records"]
+    assert snapshots["record_count"] == len(records) == 9
+    assert [record["pull_request_number"] for record in records] == list(
+        EXPECTED_PUBLICATION_SLICES
+    )
+    replayed: dict[int, Any] = {}
+    for record in records:
+        number = record["pull_request_number"]
+        pull_request = record["github_pull_request"]
+        assert pull_request["number"] == number
+        assert pull_request["source_url"] == (
+            f"https://github.com/MianliWang/FaultAtlas/pull/{number}"
+        )
+        assert pull_request["state"] == "MERGED"
+        assert pull_request["merged"] is True
+        assert re.fullmatch(
+            r"2026-08-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",
+            pull_request["merged_at"],
+        )
+        reviewed_sha, reviewed_tree = _replay_git_commit(
+            record["git_commit_objects"]["reviewed_head"]
+        )
+        squash_sha, squash_tree = _replay_git_commit(
+            record["git_commit_objects"]["squash_revision"]
+        )
+        assert pull_request["head_ref_oid"] == reviewed_sha
+        assert pull_request["final_reviewed_commit"] == {
+            "oid": reviewed_sha,
+            "tree_oid": reviewed_tree,
+        }
+        assert pull_request["merge_commit"] == {
+            "oid": squash_sha,
+            "tree_oid": squash_tree,
+        }
+        assert reviewed_tree == squash_tree
+        reviews = pull_request["reviews"]
+        threads = pull_request["review_threads"]
+        requests = pull_request["review_requests"]
+        comments = pull_request["conversation_comments"]
+        assert all(
+            connection["page_complete"] is True
+            for connection in (reviews, threads, requests, comments)
+        )
+        assert reviews["total_count"] == len(reviews["nodes"])
+        assert threads["total_count"] == len(threads["nodes"])
+        assert requests["total_count"] == 0
+        assert len({review["id"] for review in reviews["nodes"]}) == len(
+            reviews["nodes"]
+        )
+        assert len({thread["id"] for thread in threads["nodes"]}) == len(
+            threads["nodes"]
+        )
+        assert all(
+            thread["comments_page_complete"] is True for thread in threads["nodes"]
+        )
+        changes_requested = sum(
+            review["state"] == "CHANGES_REQUESTED" for review in reviews["nodes"]
+        )
+        unresolved = sum(not thread["is_resolved"] for thread in threads["nodes"])
+        assert changes_requested == 0
+        assert unresolved == 0
+        pr_check = _replay_check_snapshot(
+            record["pull_request_check"], event="pull_request", head_sha=reviewed_sha
+        )
+        main_check = _replay_check_snapshot(
+            record["main_check"], event="push", head_sha=squash_sha
+        )
+        replayed[number] = {
+            "main_check": main_check,
+            "pull_request_check": pr_check,
+            "review_settlement": {
+                "actionable_unresolved_thread_count": unresolved,
+                "changes_requested_count": changes_requested,
+                "review_count": reviews["total_count"],
+                "review_request_count": requests["total_count"],
+                "settlement": "clean",
+                "thread_count": threads["total_count"],
+            },
+            "reviewed_head": reviewed_sha,
+            "reviewed_tree": reviewed_tree,
+            "squash_revision": squash_sha,
+            "squash_tree": squash_tree,
+        }
+    return replayed
+
+
 def _assert_ledger(document: dict[str, Any]) -> None:
     section = document["slice_ledger"]
     entries = section["entries"]
@@ -725,52 +805,27 @@ def _assert_ledger(document: dict[str, Any]) -> None:
     } == publication_ids
     assert entries[-1]["publication_ids"] == []
     by_pr = {item["pull_request"]: item for item in publications}
-    assert set(by_pr) == set(EXPECTED_PUBLICATIONS)
-    for pull_request, expected in EXPECTED_PUBLICATIONS.items():
-        (
-            slice_id,
-            classification,
-            head,
-            tree,
-            squash,
-            pr_run,
-            pr_job,
-            main_run,
-            main_job,
-        ) = expected
+    replayed = _replay_publication_evidence(section)
+    assert set(by_pr) == set(replayed) == set(EXPECTED_PUBLICATION_SLICES)
+    for pull_request, (slice_id, classification) in EXPECTED_PUBLICATION_SLICES.items():
         item = by_pr[pull_request]
+        evidence = replayed[pull_request]
         assert item["slice_id"] == slice_id
         assert item["classification"] == classification
-        assert item["reviewed_head"] == head
-        assert item["reviewed_tree"] == tree
-        assert item["squash_revision"] == squash
-        assert item["squash_tree"] == tree
+        assert item["reviewed_head"] == evidence["reviewed_head"]
+        assert item["reviewed_tree"] == evidence["reviewed_tree"]
+        assert item["squash_revision"] == evidence["squash_revision"]
+        assert item["squash_tree"] == evidence["squash_tree"]
         assert item["reviewed_tree_equals_squash_tree"] is True
         assert item["publication_state"] == "merged"
         assert item["merge_method"] == "protected_pull_request_squash_merge"
-        pr_check = item["pull_request_check"]
-        main_check = item["main_check"]
-        assert (pr_check["run_id"], pr_check["job_id"]) == (pr_run, pr_job)
-        assert (main_check["run_id"], main_check["job_id"]) == (
-            main_run,
-            main_job,
-        )
-        assert pr_check["event"] == "pull_request"
-        assert main_check["event"] == "push"
-        assert pr_check["head_sha"] == head
-        assert main_check["head_sha"] == squash
+        pr_check = evidence["pull_request_check"]
+        main_check = evidence["main_check"]
+        assert item["pull_request_check"] == pr_check
+        assert item["main_check"] == main_check
         assert pr_check["run_id"] != main_check["run_id"]
         assert pr_check["job_id"] != main_check["job_id"]
-        for check in (pr_check, main_check):
-            assert check["workflow"] == "CI"
-            assert check["context"] == "validate"
-            assert check["attempt"] == 1
-            assert check["conclusion"] == "success"
-        settlement = item["review_settlement"]
-        assert settlement["settlement"] == "clean"
-        assert settlement["actionable_unresolved_thread_count"] == 0
-        assert settlement["changes_requested_count"] == 0
-        assert settlement["review_request_count"] == 0
+        assert item["review_settlement"] == evidence["review_settlement"]
     assert by_pr[38]["classification"] == "test_assurance_corrective_publication"
     assert by_pr[38]["slice_id"] == "S1.P03.S07"
     candidates = section["superseded_candidates"]
