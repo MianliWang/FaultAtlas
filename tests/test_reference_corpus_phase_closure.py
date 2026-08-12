@@ -520,8 +520,8 @@ EXPECTED_P03_SLICE_SEQUENCE = (
         "Evidence Envelope Composition and Legacy Adapter",
         "complete",
     ),
-    ("S1.P03.S08", "Evidence Contract Corpus", "next; not started"),
-    ("S1.P03.S09", "Integration and Phase Closure", "not started"),
+    ("S1.P03.S08", "Evidence Contract Corpus", "complete"),
+    ("S1.P03.S09", "Integration and Phase Closure", "next; not started"),
 )
 
 EXPECTED_REVISION_SYMBOLS = {
@@ -1720,6 +1720,7 @@ def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
     identity_root = IDENTITY_V1_DIRECTORY.parent
     contracts_root = identity_root.parent
     assert {path.name for path in contracts_root.iterdir()} == {
+        "evidence-envelope",
         "identity",
         "revision-locator",
     }
@@ -2045,10 +2046,10 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P03.S03` is complete" in normalized_roadmap
     assert "`S1.P03.S04` is complete" in normalized_roadmap
     assert (
-        "`S1.P03.S05`, `S1.P03.S06`, and `S1.P03.S07` are complete"
+        "`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, and `S1.P03.S08` are complete"
         in normalized_roadmap
     )
-    assert "`S1.P03.S08` is next and not started" in normalized_roadmap
+    assert "`S1.P03.S09` is next and not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:
         assert f"`{slice_id}` — {title} ({state})" in normalized_roadmap

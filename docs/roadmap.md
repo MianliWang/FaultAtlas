@@ -29,9 +29,9 @@ aspirational Slice as scheduled work.
   complete, `S1.P02.S04` is complete, `S1.P02.S05` is complete, and
   `S1.P02.S06` is complete. `S1.P02.S07` is complete. `S1.P03` is active;
   `S1.P03.S01` is complete, `S1.P03.S02` is complete, `S1.P03.S03` is
-  complete, `S1.P03.S04` is complete, and `S1.P03.S05`, `S1.P03.S06`, and
-  `S1.P03.S07` are complete. `S1.P03.S08` is next and not started, and
-  `S1.P03.S09` is not started.
+  complete, `S1.P03.S04` is complete, and `S1.P03.S05`, `S1.P03.S06`,
+  `S1.P03.S07`, and `S1.P03.S08` are complete. `S1.P03.S09` is next and not
+  started.
   `S1.P04` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -68,8 +68,8 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P02.S05` is complete, and `S1.P02.S06` is complete.
 `S1.P02.S07` is complete. `S1.P03` is active; `S1.P03.S01` is complete,
 `S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
-`S1.P03.S05`, `S1.P03.S06`, and `S1.P03.S07` are complete. `S1.P03.S08` is
-next and not started, and `S1.P03.S09` is not started.
+`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, and `S1.P03.S08` are complete.
+`S1.P03.S09` is next and not started.
 `S1.P04` through `S1.P10` are not started, and `S2-S9` remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
@@ -169,8 +169,8 @@ The provisional current-Phase sequence is:
    (complete)
 7. `S1.P03.S07` — Evidence Envelope Composition and Legacy Adapter
    (complete)
-8. `S1.P03.S08` — Evidence Contract Corpus (next; not started)
-9. `S1.P03.S09` — Integration and Phase Closure (not started)
+8. `S1.P03.S08` — Evidence Contract Corpus (complete)
+9. `S1.P03.S09` — Integration and Phase Closure (next; not started)
 
 This sequence remains provisional until each Slice begins. S01 establishes
 internal acquisition-run and request-attempt identity plus explicit retrieval
@@ -211,11 +211,16 @@ lossless legacy wrapping and fail-closed legacy projection. No publication
 provenance is asserted for S07 itself. The existing S01-S06 modern evidence
 records embed no artifact payloads. A legacy-wrapping S07 envelope can carry
 the bounded `ArtifactSnapshot.payload_text` only as part of the unchanged
-legacy snapshot; the models perform no I/O. Readers, writers, storage,
+legacy snapshot; the models perform no I/O. S08 publishes the versioned,
+internal, source-repository-only evidence contract corpus that freezes S01-S07:
+deterministic valid, invalid, and replay vectors; the canonical pytest #4412
+`EvidenceEnvelope` replay; the synthetic legacy adapter replay; and a test-only
+executor and target registry. Its bytes are excluded from packaged artifacts.
+S08 adds no production corpus reader, writer, validator, or persistence, and
+claims no durable `EvidenceEnvelope` byte contract. Readers, writers, storage,
 persistence, migration, canonical envelope bytes, repository snapshots,
-confidence and review, adapters beyond the explicit in-memory legacy boundary,
-and a P03 contract corpus remain deferred to S08-S09 or their preserved later
-owners.
+confidence and review, and adapters beyond the explicit in-memory legacy
+boundary remain deferred to S09 or their preserved later owners.
 
 ## Preserved later Stage 1 phases
 
@@ -251,8 +256,11 @@ inventories, unchanged legacy `ArtifactSnapshot` v1 composition behind an
 outer wrapper, and versioned, loss-aware legacy wrapping and projection. It
 does not implement readers, writers, storage, persistence, migration,
 canonical envelope bytes, repository snapshots, confidence or review, a
-contract corpus, or adapters beyond that explicit legacy boundary.
-`S1.P03.S08` is next and not started; `S1.P03.S09` is not started.
+production contract-corpus capability, or adapters beyond that explicit legacy
+boundary. `S1.P03.S08` publishes the internal, source-only evidence contract
+corpus under `reference_corpus/contracts/evidence-envelope/v1` with a test-only
+executor and registry; it changes no production source. `S1.P03.S08` is
+complete; `S1.P03.S09` is next and not started.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and

@@ -1524,6 +1524,7 @@ def _assert_current_p03_s01_surface() -> None:
 def _assert_exact_s06_locator_contract_corpus() -> None:
     contracts_root = REPOSITORY_ROOT / "reference_corpus/contracts"
     assert {path.name for path in contracts_root.iterdir()} == {
+        "evidence-envelope",
         "identity",
         "revision-locator",
     }
@@ -1971,8 +1972,11 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P03.S02` is complete" in roadmap
     assert "`S1.P03.S03` is complete" in roadmap
     assert "`S1.P03.S04` is complete" in roadmap
-    assert "`S1.P03.S05`, `S1.P03.S06`, and `S1.P03.S07` are complete" in roadmap
-    assert "`S1.P03.S08` is next and not started" in roadmap
+    assert (
+        "`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, and `S1.P03.S08` are complete"
+        in roadmap
+    )
+    assert "`S1.P03.S09` is next and not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:
