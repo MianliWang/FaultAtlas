@@ -9,7 +9,7 @@ Derived, non-authoritative Markdown; the canonical JSON files remain the sole co
 - Corpus identity: `faultatlas-evidence-envelope-contract-corpus`
 - Corpus version: `1`
 - Manifest SHA-256:
-  `ec0e44ac24d7c9043e955eb1be266f0a44746e20a41120224e4d40fe17982f0a`
+  `139364b04676d59e4717a38e73b371b138146a2a933688ab3793aac6fd2e03f0`
 
 ## Scope
 
@@ -218,12 +218,50 @@ the declaration rather than accepted from it:
 Relabelling a vector into any other classification is therefore rejected, in
 both directions, without any vector identity being hard-coded.
 
-An envelope replay exposes only a few composition facts, so each populated
-component element is additionally required to equal the record that its own
-standalone replay vector projects out of bounded evidence, and every populated
-element must be covered. A coherent edit to a nested run, correction,
-completeness, or publication field therefore has to survive that record's own
-projections as well.
+## Canonical semantic-leaf closure
+
+Fact provenance proves the facts a replay declares. It does not by itself prove
+everything the replayed record carries, so every non-synthetic canonical replay
+is additionally leaf-closed.
+
+The executor flattens the validated model into stable semantic leaf paths,
+cross-checks that path set against the complete semantic dump, and requires
+
+```
+semantic_leaf_paths == primary_covered_leaf_paths
+```
+
+Every leaf has exactly one primary proof owner drawn from six classes:
+
+1. `bounded_source_projection` - the leaf resolves at an exact JSON pointer in a
+   registered immutable source document, with model sequence position mapped to
+   source sequence position rather than to any equal value.
+2. `verified_retained_bytes` - the leaf is hashed or measured from the actual
+   retained file.
+3. `deterministic_derivation` - the leaf equals a fact recomputed through the
+   acyclic provenance graph.
+4. `slice_authored_contract` - the value was genuinely introduced by an
+   `S1.P03` Slice and is declared separately from the record it verifies, with
+   its authoring Slice and any governing decision reference.
+5. `reviewed_contract_literal` - model introspection proves the concrete field
+   admits exactly one value. A multi-valued enumeration never qualifies, and the
+   permitted value is computed from the model rather than declared in corpus
+   data.
+6. `verified_child_replay` - a whole subtree is delegated to another canonical
+   replay that has itself already passed complete leaf verification.
+
+Child bindings are transitive verified dependencies, not raw corpus-record
+equality: a parent consumes the child's verified semantic result, the dependency
+graph is acyclic and memoized, a failed child invalidates its parent, and
+canonical pytest #4412 evidence may never terminate in synthetic replay data. A
+new field on a replayed production model becomes a new uncovered leaf and fails
+closed.
+
+Retained artifact identity therefore terminates twice over: each retained
+`ExactArtifactIdentity` inside the canonical run binds to the artifact replay
+that hashes and measures the real file, while the acquisition record's own
+`/artifacts` metadata corroborates the same digest, byte length, scope, and
+request ordinal.
 
 A vector may name more than one bounded authority. Every pointer must be used
 by a projection or a derivation, no fact may be projected out of two different

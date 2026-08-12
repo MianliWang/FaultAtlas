@@ -16,12 +16,22 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from enum import StrEnum
+from enum import Enum, StrEnum
 from pathlib import Path, PurePosixPath
-from typing import Any, NamedTuple, NoReturn, cast
+from types import UnionType
+from typing import (
+    Any,
+    Literal,
+    NamedTuple,
+    NoReturn,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+)
 
 import pytest
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, RootModel, TypeAdapter, ValidationError
 
 import faultatlas
 import faultatlas.domain as domain_package
@@ -163,7 +173,7 @@ class LockedFile:
 
 EXPECTED_LOCKS = {
     "contract.md": LockedFile(
-        13524, "f31bc4410ace0d60adc884a6e96403012415d08db0bae99c55884702d08a55e0"
+        15384, "cb33ba75bc77ee9ac1701a09846168fdc44098a821dc246c3129a7d2c8fddfef"
     ),
     "invalid-vectors.json": LockedFile(
         141878, "a379f425e31e1a8627818fb2f4a8afb420975680048f0ecb14da6305022b3592"
@@ -172,16 +182,16 @@ EXPECTED_LOCKS = {
         87, "cfa302e3629fd78a3c839bd71f04872e6cc0516ffe7e5e8be4cc13ebee377c85"
     ),
     "manifest.json": LockedFile(
-        22580, "ec0e44ac24d7c9043e955eb1be266f0a44746e20a41120224e4d40fe17982f0a"
+        22846, "139364b04676d59e4717a38e73b371b138146a2a933688ab3793aac6fd2e03f0"
     ),
     "manifest.sha256": LockedFile(
-        80, "1cdb48521fbc0386633659416cdc001457b47736ff9ec38ab968ff8d23d0718a"
+        80, "648f757f110fbe8ce5ac3376190375f48b42fbb4351f6860356086980d9972e4"
     ),
     "replay-vectors.json": LockedFile(
-        86348, "b8e0a9e379b056a71000f31337483b87bb7e207789e0930ae586396d9aa43568"
+        120288, "e677aa79cde9142975665f87a5c8be82ba8fa150c302ae11fbd1e863d4d2c32f"
     ),
     "replay-vectors.sha256": LockedFile(
-        86, "c75000992b6b12302dea087a62f52107c0115ce89f684fa7f8a70aee7aa3bf97"
+        86, "4b821d5c64c246ff90c8f43c816886312b6cc8008e6f3980bf81866f58bc2228"
     ),
     "valid-vectors.json": LockedFile(
         182770, "49a005d2ab8e321e0867c5346db187e4a7736a392fd8b7eb4d343ed100385b86"
@@ -1129,7 +1139,10 @@ def _projected_value(
 
 
 LEGACY_PROJECTION_FIELDS = {"reasons", "snapshot_present", "status"}
-AUTHORING_SLICES = {f"S1.P03.S0{index}" for index in range(1, 8)}
+PRODUCT_SLICES = {f"S1.P03.S0{index}" for index in range(1, 8)}
+# The corpus Slice itself authors the canonical envelope's representation
+# choices, so it may own authored leaves without being a product Slice.
+AUTHORING_SLICES = PRODUCT_SLICES | {"S1.P03.S08"}
 EVIDENCE_CLASSIFICATIONS = {
     "bounded_source_plus_slice_authored_contract",
     "immutable_source_fact",
@@ -1521,6 +1534,17 @@ def _assert_derivation_shape(expected: dict[str, Any]) -> list[dict[str, Any]]:
     return derivations
 
 
+class FactVerification(NamedTuple):
+    """The verified fact layer a leaf proof may stand on."""
+
+    graph: ProvenanceGraph
+    verified: dict[str, Any]
+    projected: frozenset[str]
+    classification: str
+    pointers: frozenset[str]
+    used_pointers: frozenset[str]
+
+
 class ProvenanceGraph(NamedTuple):
     """The acyclic dependency graph over one replay vector's facts."""
 
@@ -1674,7 +1698,7 @@ def _assert_fact_provenance(
     manifest: dict[str, Any],
     inventory: dict[str, int | None] | None = None,
     outcomes: tuple[str, ...] = (),
-) -> ProvenanceGraph:
+) -> FactVerification:
     """Recompute every replay fact from independently verified inputs.
 
     Projected facts are read out of bounded source bytes and seed the verified
@@ -1703,9 +1727,6 @@ def _assert_fact_provenance(
         used.add(path)
         if rule_name in DOCUMENT_BOUND_RULES:
             needed.add(path)
-    assert used == set(by_path), (
-        f"{vector_id} carries unused source pointers: {sorted(set(by_path) - used)!r}"
-    )
 
     documents = {
         path: _parse_canonical_json((REPOSITORY_ROOT / path).read_bytes())
@@ -1770,7 +1791,14 @@ def _assert_fact_provenance(
         f"{vector_id} declares {vector['evidence_classification']!r} but its "
         f"provenance roots compute {computed!r}"
     )
-    return graph
+    return FactVerification(
+        graph,
+        verified,
+        frozenset(projected),
+        computed,
+        frozenset(by_path),
+        frozenset(used),
+    )
 
 
 def _replay_run_facts(run: AcquisitionRun) -> dict[str, Any]:
@@ -1991,67 +2019,544 @@ def _envelope_facts(envelope: EvidenceEnvelope) -> dict[str, Any]:
     }
 
 
-def _assert_component_records(
-    vector: dict[str, Any],
-    expected: dict[str, Any],
-    envelope: dict[str, Any],
-    document: dict[str, Any],
-) -> None:
-    """Bind every nested canonical record to its own source-backed replay.
+# --- semantic leaf provenance ------------------------------------------------
+#
+# A canonical replay record is trusted only when every semantic leaf of its
+# validated representation has a proof that terminates in an independently
+# verified root. Model validation, an `equals_resolved_input` dump, and
+# equality with another corpus-authored record are not proofs.
 
-    An envelope replay exposes only a handful of composition facts, so each
-    populated component element is additionally required to equal the record
-    that its own standalone replay vector projects out of bounded evidence. A
-    coherent edit to a nested field therefore has to survive that vector's
-    projections as well.
+LEAF_PROOF_KINDS = frozenset(
+    {
+        "bounded_source_projection",
+        "deterministic_derivation",
+        "reviewed_contract_literal",
+        "slice_authored_contract",
+        "verified_child_replay",
+        "verified_retained_bytes",
+    }
+)
+
+
+def _unwrap_annotation(annotation: Any) -> Any:  # noqa: ANN401
+    """Reduce an annotation to the single type its leaf values inhabit."""
+
+    seen: set[Any] = set()
+    current: Any = annotation
+    while True:
+        origin = get_origin(current)
+        arguments = get_args(current)
+        if origin is Union or origin is UnionType:
+            present = [item for item in arguments if item is not type(None)]
+            if len(present) == 1:
+                current = present[0]
+                continue
+            return current
+        if origin is tuple:
+            declared = [item for item in arguments if item is not Ellipsis]
+            if len(set(declared)) == 1:
+                current = declared[0]
+                continue
+            return current
+        if getattr(current, "__metadata__", None) and arguments:
+            current = arguments[0]
+            continue
+        if (
+            isinstance(current, type)
+            and issubclass(current, cast(type[BaseModel], RootModel))
+            and current not in seen
+        ):
+            seen.add(current)
+            current = cast(Any, current).model_fields["root"].annotation
+            continue
+        return cast(Any, current)
+
+
+def _reviewed_contract_literal(annotation: Any) -> tuple[bool, Any]:
+    """Report whether the reviewed contract admits exactly one value here.
+
+    Only a single-argument `Literal` or a single-member enumeration qualifies.
+    A multi-valued enumeration is a choice, not a contract literal.
     """
 
-    raw = expected["component_records"]
+    resolved = _unwrap_annotation(annotation)
+    if get_origin(resolved) is Literal:
+        arguments = get_args(resolved)
+        if len(arguments) == 1:
+            return True, arguments[0]
+    if isinstance(resolved, type) and issubclass(resolved, Enum):
+        members = list(resolved)
+        if len(members) == 1:
+            return True, members[0].value
+    return False, None
+
+
+class SemanticLeaf(NamedTuple):
+    """One leaf of a validated record and the contract that declares it."""
+
+    value: Any
+    annotation: Any
+    declaring_model: str
+    field_name: str
+
+
+def _walk_semantic_leaves(
+    value: Any,
+    annotation: Any,
+    prefix: str,
+    declaring_model: str,
+    field_name: str,
+    out: dict[str, SemanticLeaf],
+) -> None:
+    if isinstance(value, BaseModel):
+        if isinstance(value, cast(type[BaseModel], RootModel)):
+            root = cast(Any, value).root
+            _walk_semantic_leaves(
+                root,
+                cast(Any, type(value)).model_fields["root"].annotation,
+                prefix,
+                type(value).__name__,
+                "root",
+                out,
+            )
+            return
+        for name, field in type(value).model_fields.items():
+            _walk_semantic_leaves(
+                getattr(value, name),
+                field.annotation,
+                f"{prefix}/{name}",
+                type(value).__name__,
+                name,
+                out,
+            )
+        return
+    if isinstance(value, tuple | list):
+        items: list[Any] = list(cast(Any, value))
+        if not items:
+            out[prefix or "/"] = SemanticLeaf(
+                [], annotation, declaring_model, field_name
+            )
+            return
+        arguments = get_args(_unwrap_annotation(annotation))
+        element = arguments[0] if arguments else None
+        for index, item in enumerate(items):
+            _walk_semantic_leaves(
+                item,
+                element if element is not None else type(item),
+                f"{prefix}/{index}",
+                declaring_model,
+                field_name,
+                out,
+            )
+        return
+    out[prefix or "/"] = SemanticLeaf(value, annotation, declaring_model, field_name)
+
+
+def _semantic_leaves(model: BaseModel) -> dict[str, SemanticLeaf]:
+    """Flatten a validated record into stable semantic leaf paths.
+
+    The walk is driven by the production model itself, so a new field on a
+    replayed model becomes a new uncovered leaf and fails closed.
+    """
+
+    leaves: dict[str, SemanticLeaf] = {}
+    _walk_semantic_leaves(model, type(model), "", type(model).__name__, "", leaves)
+    dumped: dict[str, Any] = {}
+    _walk_dump_leaves(_semantic_dump(model), "", dumped)
+    assert set(dumped) == set(leaves), (
+        f"leaf walk disagrees with the semantic dump: "
+        f"{sorted(set(dumped) ^ set(leaves))!r}"
+    )
+    return {
+        path: SemanticLeaf(
+            dumped[path], leaf.annotation, leaf.declaring_model, leaf.field_name
+        )
+        for path, leaf in leaves.items()
+    }
+
+
+def _walk_dump_leaves(value: Any, prefix: str, out: dict[str, Any]) -> None:
+    if isinstance(value, dict):
+        mapping = cast(dict[str, Any], value)
+        if not mapping:
+            out[prefix or "/"] = {}
+            return
+        for key in sorted(mapping):
+            _walk_dump_leaves(mapping[key], f"{prefix}/{key}", out)
+        return
+    if isinstance(value, list):
+        items = cast(list[Any], value)
+        if not items:
+            out[prefix or "/"] = []
+            return
+        for index, item in enumerate(items):
+            _walk_dump_leaves(item, f"{prefix}/{index}", out)
+        return
+    out[prefix or "/"] = value
+
+
+class LeafProof(NamedTuple):
+    """Why one semantic leaf is trusted."""
+
+    kind: str
+    owner: str
+
+
+LEAF_RULE_KINDS = frozenset(
+    {"authored", "bytes", "child", "contract_literal", "fact", "source"}
+)
+BYTE_MEASURES = frozenset({"byte_length", "sha256"})
+
+
+def _leaf_pattern_matches(pattern: str, path: str) -> tuple[int, ...] | None:
+    """Match a leaf path against a pattern whose `#` segments are indices."""
+
+    expected = pattern.split("/")
+    actual = path.split("/")
+    if len(expected) != len(actual):
+        return None
+    wildcards: list[int] = []
+    for want, have in zip(expected, actual):
+        if want.startswith("#"):
+            if not re.fullmatch(r"(?:0|[1-9][0-9]{0,5})", have):
+                return None
+            index = int(have)
+            bounds = want[1:]
+            if bounds:
+                low, _, high = bounds.partition("-")
+                assert low.isdigit() and high.isdigit(), (
+                    f"malformed bounded index pattern {want!r}"
+                )
+                if not int(low) <= index <= int(high):
+                    return None
+            wildcards.append(index)
+            continue
+        if want != have:
+            return None
+    return tuple(wildcards)
+
+
+def _expand_leaf_pattern(
+    pattern: str, paths: list[str]
+) -> list[tuple[str, tuple[int, ...]]]:
+    matched = [
+        (path, wildcards)
+        for path in paths
+        if (wildcards := _leaf_pattern_matches(pattern, path)) is not None
+    ]
+    # Sequence semantics follow numeric index order, not lexicographic paths.
+    matched.sort(key=lambda item: (item[1], item[0]))
+    return matched
+
+
+def _subtree_leaves(subtree: str, paths: list[str]) -> list[str]:
+    prefix = f"{subtree}/"
+    return [path for path in paths if path == subtree or path.startswith(prefix)]
+
+
+def _resolve_pointer_template(
+    template: str, wildcards: tuple[int, ...], rank: int
+) -> str:
+    resolved = template.replace("#seq", str(rank))
+    for index, value in enumerate(wildcards, start=1):
+        resolved = resolved.replace(f"#{index}", str(value))
+    assert "#" not in resolved, f"unresolved pointer template {template!r}"
+    return resolved
+
+
+class ReplayVerification(NamedTuple):
+    """A canonical replay vector proved leaf-complete."""
+
+    vector_id: str
+    dump: Any
+    leaves: dict[str, SemanticLeaf]
+    proofs: dict[str, LeafProof]
+    corroborations: dict[str, tuple[str, ...]]
+    children: tuple[str, ...]
+
+
+class ReplaySession:
+    """Verifies canonical replay vectors, memoized, with cycle detection."""
+
+    def __init__(self, document: dict[str, Any]) -> None:
+        self.document = document
+        self.results: dict[str, ReplayVerification] = {}
+        self.active: list[str] = []
+
+    def verify(self, vector_id: str) -> ReplayVerification:
+        cached = self.results.get(vector_id)
+        if cached is not None:
+            return cached
+        assert vector_id not in self.active, (
+            f"replay dependency cycle: {' -> '.join((*self.active, vector_id))}"
+        )
+        self.active.append(vector_id)
+        try:
+            verified = _verify_replay_vector(
+                _vector_by_id(self.document, vector_id), self.document, self
+            )
+            assert verified is not None, f"{vector_id} yields no verified replay"
+        finally:
+            self.active.pop()
+        self.results[vector_id] = verified
+        return verified
+
+
+def _assert_authored_leaves(expected: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Validate authored contract values declared apart from the record."""
+
+    raw = expected.get("authored_leaves")
+    if raw is None:
+        return {}
     assert isinstance(raw, list)
     entries = cast(list[dict[str, Any]], raw)
     assert entries
-    covered: set[tuple[str, int]] = set()
-    ordering: list[tuple[str, int]] = []
+    declared: dict[str, dict[str, Any]] = {}
+    names: list[str] = []
     for entry in entries:
         assert isinstance(entry, dict)
-        assert set(entry) == {"component", "index", "vector"}
-        component = entry["component"]
-        index = entry["index"]
-        source_id = entry["vector"]
-        assert component in ENVELOPE_COMPONENT_FIELDS
-        assert isinstance(component, str)
-        assert type(index) is int and index >= 0
-        assert isinstance(source_id, str) and source_id != vector["id"]
-        ordering.append((component, index))
-        source = _vector_by_id(document, source_id)
-        assert source["operation"] == "replay_record"
-        elements = envelope.get(component)
-        assert isinstance(elements, list)
-        typed = cast(list[Any], elements)
-        assert index < len(typed)
-        resolved = cast(dict[str, Any], _resolved_input(source, document))
-        assert typed[index] == resolved["record"], (
-            f"{vector['id']} component {component}[{index}] differs from the "
-            f"record {source_id} replays"
-        )
-        covered.add((component, index))
-    assert ordering == sorted(ordering)
-    assert len(set(ordering)) == len(ordering)
+        allowed = {"authored_by", "id", "values"}
+        assert set(entry) in (allowed, allowed | {"decision_references"})
+        identifier = entry["id"]
+        assert isinstance(identifier, str) and identifier
+        assert entry["authored_by"] in AUTHORING_SLICES
+        values = entry["values"]
+        assert isinstance(values, list) and cast(list[Any], values)
+        if "decision_references" in entry:
+            references = cast(list[Any], entry["decision_references"])
+            assert references
+            assert all(
+                isinstance(item, str) and item.startswith("decision:")
+                for item in references
+            )
+            ordered = cast(list[str], references)
+            assert ordered == sorted(ordered)
+        names.append(identifier)
+        declared[identifier] = entry
+    assert names == sorted(names)
+    assert len(set(names)) == len(names)
+    return declared
 
-    populated: set[tuple[str, int]] = set()
-    for field in ENVELOPE_COMPONENT_FIELDS:
-        elements = envelope.get(field)
-        if not isinstance(elements, list):
+
+def _leaf_matches_source(value: Any, resolved: Any) -> bool:
+    """Compare a semantic leaf with the source value that carries it."""
+
+    if value == resolved and type(value) is type(resolved):
+        return True
+    # Source documents record some identifiers as integers that the reviewed
+    # model carries as exact lexemes.
+    if isinstance(value, str) and type(resolved) is int:
+        return value == str(resolved)
+    return False
+
+
+def _assert_leaf_closure(
+    vector: dict[str, Any],
+    model: BaseModel,
+    expected: dict[str, Any],
+    facts: FactVerification,
+    session: ReplaySession,
+) -> ReplayVerification:
+    """Prove every semantic leaf of a canonical record terminates honestly."""
+
+    vector_id = cast(str, vector["id"])
+    leaves = _semantic_leaves(model)
+    paths = sorted(leaves)
+    raw = expected["leaf_proofs"]
+    assert isinstance(raw, list)
+    rules = cast(list[dict[str, Any]], raw)
+    assert rules
+    labels = _assert_authored_labels(expected)
+    contracts = _assert_authored_leaves(expected)
+    pointers = {
+        _pointer_key(item)
+        for item in cast(list[dict[str, Any]], vector["source_pointers"])
+    }
+    documents: dict[str, dict[str, Any]] = {}
+
+    primary: dict[str, LeafProof] = {}
+    corroborations: dict[str, list[str]] = {}
+    children: list[str] = []
+    source_paths: set[str] = set()
+
+    def claim(path: str, proof: LeafProof, corroborates: bool) -> None:
+        assert proof.kind in LEAF_PROOF_KINDS
+        if corroborates:
+            corroborations.setdefault(path, []).append(f"{proof.kind}:{proof.owner}")
+            return
+        assert path not in primary, (
+            f"{vector_id} leaf {path!r} has two primary proofs: "
+            f"{primary[path]!r} and {proof!r}"
+        )
+        primary[path] = proof
+
+    for rule in rules:
+        assert isinstance(rule, dict)
+        kind = rule["kind"]
+        assert kind in LEAF_RULE_KINDS, f"unknown leaf proof kind {kind!r}"
+        corroborates = rule.get("corroborates", False)
+        assert type(corroborates) is bool
+
+        if kind == "child":
+            assert set(rule) == {"kind", "subtree", "vector"}
+            subtree = cast(str, rule["subtree"])
+            covered = _subtree_leaves(subtree, paths)
+            assert covered, f"{vector_id} child subtree {subtree!r} matches no leaf"
+            child_id = cast(str, rule["vector"])
+            assert child_id != vector_id, f"{vector_id} binds a subtree to itself"
+            child_vector = _vector_by_id(session.document, child_id)
+            assert child_vector["operation"] in {
+                "replay_artifact",
+                "replay_envelope",
+                "replay_record",
+            }, f"{vector_id} binds a subtree to a non-record replay"
+            assert (
+                child_vector["evidence_classification"] != SYNTHETIC_CLASSIFICATION
+            ), f"{vector_id} binds canonical evidence to synthetic {child_id}"
+            child = session.verify(child_id)
+            children.append(child_id)
+            relatives = {path: path[len(subtree) :] or "/" for path in covered}
+            assert set(relatives.values()) == set(child.leaves), (
+                f"{vector_id} subtree {subtree!r} does not match the shape of "
+                f"{child_id}"
+            )
+            for path, relative in relatives.items():
+                assert leaves[path].value == child.leaves[relative].value, (
+                    f"{vector_id} leaf {path!r} differs from the verified "
+                    f"{child_id} replay"
+                )
+                claim(path, LeafProof("verified_child_replay", child_id), False)
             continue
-        for position in range(len(cast(list[Any], elements))):
-            populated.add((field, position))
-    assert covered == populated, (
-        f"{vector['id']} leaves nested records unauthenticated: "
-        f"{sorted(populated - covered)!r}"
+
+        pattern = cast(str, rule["pattern"])
+        matched = _expand_leaf_pattern(pattern, paths)
+        assert matched, f"{vector_id} leaf rule {pattern!r} matches no leaf"
+        for rank, (path, wildcards) in enumerate(matched):
+            leaf = leaves[path]
+            if kind == "contract_literal":
+                assert set(rule) <= {"kind", "pattern", "corroborates"}
+                unique, only = _reviewed_contract_literal(leaf.annotation)
+                assert unique, (
+                    f"{vector_id} leaf {path!r} is not uniquely constrained by "
+                    f"the reviewed contract"
+                )
+                assert leaf.value == only
+                proof = LeafProof(
+                    "reviewed_contract_literal",
+                    f"{leaf.declaring_model}.{leaf.field_name}",
+                )
+            elif kind == "source":
+                source_path = cast(str, rule["path"])
+                assert source_path in pointers, (
+                    f"{vector_id} leaf rule names unregistered source {source_path!r}"
+                )
+                source_paths.add(source_path)
+                document = documents.get(source_path)
+                if document is None:
+                    document = _parse_canonical_json(
+                        (REPOSITORY_ROOT / source_path).read_bytes()
+                    )
+                    documents[source_path] = document
+                pointer = _resolve_pointer_template(
+                    cast(str, rule["json_pointer"]), wildcards, rank
+                )
+                resolved = _resolve_json_pointer(document, pointer)
+                assert _leaf_matches_source(leaf.value, resolved), (
+                    f"{vector_id} leaf {path!r} is {leaf.value!r} but "
+                    f"{source_path}{pointer} carries {resolved!r}"
+                )
+                proof = LeafProof(
+                    "bounded_source_projection", f"{source_path}{pointer}"
+                )
+            elif kind == "bytes":
+                artifact = cast(str, rule["path"])
+                assert artifact in pointers
+                source_paths.add(artifact)
+                measure = cast(str, rule["measure"])
+                assert measure in BYTE_MEASURES
+                data = (REPOSITORY_ROOT / artifact).read_bytes()
+                actual: Any = len(data) if measure == "byte_length" else _sha256(data)
+                assert leaf.value == actual, (
+                    f"{vector_id} leaf {path!r} is {leaf.value!r} but the "
+                    f"retained bytes of {artifact} give {actual!r}"
+                )
+                proof = LeafProof("verified_retained_bytes", f"{artifact}#{measure}")
+            elif kind == "fact":
+                name = cast(str, rule["fact"])
+                assert name in facts.verified, (
+                    f"{vector_id} leaf rule names unverified fact {name!r}"
+                )
+                verified = facts.verified[name]
+                if rule.get("sequence", False):
+                    sequence = cast(list[Any], verified)
+                    assert isinstance(verified, list) and rank < len(sequence)
+                    want = sequence[rank]
+                else:
+                    want = verified
+                assert leaf.value == want, (
+                    f"{vector_id} leaf {path!r} is {leaf.value!r} but verified "
+                    f"fact {name!r} is {want!r}"
+                )
+                proof = LeafProof(
+                    "bounded_source_projection"
+                    if name in facts.projected
+                    else "deterministic_derivation",
+                    name,
+                )
+            else:
+                assert kind == "authored"
+                if "label" in rule:
+                    owner = cast(str, rule["label"])
+                    assert owner in labels
+                    want = labels[owner]
+                else:
+                    owner = cast(str, rule["contract"])
+                    assert owner in contracts, (
+                        f"{vector_id} authored leaf rule names undeclared "
+                        f"contract {owner!r}"
+                    )
+                    values = cast(list[Any], contracts[owner]["values"])
+                    want = values[rank] if rule.get("sequence", False) else values[0]
+                assert leaf.value == want, (
+                    f"{vector_id} leaf {path!r} is {leaf.value!r} but its "
+                    f"authored contract declares {want!r}"
+                )
+                proof = LeafProof("slice_authored_contract", owner)
+            claim(path, proof, corroborates)
+
+    assert facts.used_pointers | source_paths == facts.pointers, (
+        f"{vector_id} carries unused source pointers: "
+        f"{sorted(facts.pointers - facts.used_pointers - source_paths)!r}"
+    )
+    uncovered = set(leaves) - set(primary)
+    assert not uncovered, (
+        f"{vector_id} leaves {len(uncovered)} semantic leaves unproven; "
+        f"shapes: {sorted({re.sub(r'/[0-9]+', '/#', path) for path in uncovered})!r}"
+    )
+    return ReplayVerification(
+        vector_id,
+        _semantic_dump(model),
+        leaves,
+        primary,
+        {path: tuple(items) for path, items in corroborations.items()},
+        tuple(children),
     )
 
 
 def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> None:
+    _verify_replay_vector(vector, document, ReplaySession(document))
+
+
+def _verify_replay_vector(
+    vector: dict[str, Any], document: dict[str, Any], session: ReplaySession
+) -> ReplayVerification | None:
+    """Verify one replay vector through every applicable assurance layer.
+
+    A canonical record is returned as a `ReplayVerification` only after its
+    model validates, its semantic dump matches, its facts are graph-verified,
+    and every semantic leaf terminates in an honest proof.
+    """
+
     _assert_operation_target(vector)
     assert vector["input_mode"] == "replay"
     assert vector["evidence_classification"] in EVIDENCE_CLASSIFICATIONS
@@ -2077,8 +2582,7 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         )
         assert identity.byte_length.root == len(raw)
         assert identity.digest.value.root == _sha256(raw)
-        assert "component_records" not in expected
-        _assert_fact_provenance(
+        facts = _assert_fact_provenance(
             vector,
             {
                 "digest_algorithm": identity.digest.algorithm.value,
@@ -2087,7 +2591,7 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
             expected,
             MANIFEST_DOCUMENT,
         )
-        return
+        return _assert_leaf_closure(vector, identity, expected, facts, session)
 
     if operation == "replay_record":
         assert set(replay_input) == {"record"}
@@ -2101,12 +2605,11 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
             outcomes = tuple(
                 requirement.outcome.value for requirement in model.requirements
             )
-        assert "component_records" not in expected
-        _assert_fact_provenance(
+        verified = _assert_fact_provenance(
             vector, facts, expected, MANIFEST_DOCUMENT, outcomes=outcomes
         )
         assert expected["runtime_target"] == target
-        return
+        return _assert_leaf_closure(vector, model, expected, verified, session)
 
     if operation == "replay_envelope":
         assert set(replay_input) == {"envelope"}
@@ -2118,14 +2621,11 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
         inventory = _envelope_inventory(envelope)
         assert inventory == expected["component_inventory"]
         envelope_facts = _envelope_facts(envelope)
-        _assert_fact_provenance(
+        verified = _assert_fact_provenance(
             vector, envelope_facts, expected, MANIFEST_DOCUMENT, inventory
         )
-        _assert_component_records(
-            vector, expected, cast(dict[str, Any], payload), document
-        )
         assert expected["runtime_target"] == target
-        return
+        return _assert_leaf_closure(vector, envelope, expected, verified, session)
 
     if operation == "adapter_wrap":
         assert set(replay_input) == {"snapshot"}
@@ -2150,7 +2650,7 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
             for field in MODERN_COMPONENT_FIELDS
             if getattr(result.envelope, field) is not None
         ] == expected["modern_components_represented"]
-        return
+        return None
 
     assert operation == "adapter_project"
     assert set(replay_input) == {"envelope"}
@@ -2177,21 +2677,19 @@ def _assert_replay_vector(vector: dict[str, Any], document: dict[str, Any]) -> N
 
     if pointers[0]["path"] is None:
         assert "authored_labels" not in expected
+        assert "authored_leaves" not in expected
         assert "component_inventory" not in expected
-        assert "component_records" not in expected
         assert "derivations" not in expected
         assert "facts" not in expected
-        return
+        assert "leaf_proofs" not in expected
+        return None
     inventory = _envelope_inventory(source_envelope)
     assert inventory == expected["component_inventory"]
     facts = _adapter_projection_facts(source_envelope, projection)
-    _assert_fact_provenance(vector, facts, expected, MANIFEST_DOCUMENT, inventory)
-    _assert_component_records(
-        vector,
-        expected,
-        cast(dict[str, Any], replay_input["envelope"]),
-        document,
+    verified = _assert_fact_provenance(
+        vector, facts, expected, MANIFEST_DOCUMENT, inventory
     )
+    return _assert_leaf_closure(vector, source_envelope, expected, verified, session)
 
 
 def _assert_fs_regular_0644(path: Path) -> None:
@@ -2337,7 +2835,7 @@ def _assert_originating_publications(manifest: dict[str, Any]) -> None:
         reviewed_heads.add(cast(str, record["reviewed_head"]))
         squashes.add(cast(str, record["squash"]))
         slice_id = cast(str, record["slice_id"])
-        assert slice_id in AUTHORING_SLICES
+        assert slice_id in PRODUCT_SLICES
         if record["publication_kind"] == "product":
             product_slices.append(slice_id)
         else:
@@ -2345,7 +2843,7 @@ def _assert_originating_publications(manifest: dict[str, Any]) -> None:
             corrective_slices.append(slice_id)
     assert len(reviewed_heads) == 8
     assert len(squashes) == 8
-    assert product_slices == sorted(AUTHORING_SLICES)
+    assert product_slices == sorted(PRODUCT_SLICES)
     assert corrective_slices == ["S1.P03.S07"]
 
 
@@ -2515,8 +3013,12 @@ def _assert_manifest_integrity(documents: dict[str, dict[str, Any]]) -> None:
     )
     assert replay_contract["provenance_root_kinds"] == sorted(ROOT_KINDS)
     assert replay_contract["nested_record_authentication"] == (
-        "every_populated_envelope_component_equals_its_own_source_backed_replay"
+        "populated_components_bind_to_transitively_verified_child_replays"
     )
+    assert replay_contract["leaf_closure"] == (
+        "every_non_synthetic_canonical_semantic_leaf_has_one_primary_proof_owner"
+    )
+    assert replay_contract["leaf_proof_classes"] == sorted(LEAF_PROOF_KINDS)
     assert replay_contract["evidence_classifications"] == sorted(
         EVIDENCE_CLASSIFICATIONS
     )
@@ -3323,9 +3825,27 @@ REQUIRED_MUTATIONS = (
     "replay-classification-source-as-composition",
     "replay-classification-synthetic-as-source",
     "replay-envelope-nested-record-drift",
-    "replay-component-record-uncovered",
-    "replay-component-record-mismatched-vector",
     "replay-artifact-scope-coherent-drift",
+    "leaf-compare-diff-digest-drift",
+    "leaf-compare-diff-byte-length-drift",
+    "leaf-license-digest-drift",
+    "leaf-license-byte-length-drift",
+    "leaf-run-timestamp-drift",
+    "leaf-correction-drift",
+    "leaf-completeness-drift",
+    "leaf-publication-check-drift",
+    "leaf-proof-rule-removed",
+    "leaf-proof-rule-matches-nothing",
+    "leaf-proof-primary-overlap",
+    "leaf-child-binding-mismatched",
+    "leaf-child-replay-failure",
+    "leaf-child-self-dependency",
+    "leaf-child-dependency-cycle",
+    "leaf-synthetic-child-binding",
+    "leaf-contract-literal-multivalued",
+    "leaf-authored-value-drift",
+    "leaf-source-pointer-retargeted",
+    "leaf-sequence-reordered",
     "fixture-missing",
     "fixture-cycle",
     "manifest-count-changed",
@@ -3342,7 +3862,132 @@ REQUIRED_MUTATIONS = (
     "synthetic-package-corpus-member",
     "historical-pytest-license-inserted",
 )
-assert len(REQUIRED_MUTATIONS) == 85
+assert len(REQUIRED_MUTATIONS) == 103
+
+
+LEAF_DRIFT_PROBES: dict[str, tuple[str, str, str]] = {
+    "leaf-compare-diff-digest-drift": (
+        "evidence.replay.run.canonical-32-request",
+        "dca87a4df1edb2d1acb3fc821724483ee874c2feba6525b2c21e79cb3e8f7312",
+        "f" * 64,
+    ),
+    "leaf-compare-diff-byte-length-drift": (
+        "evidence.replay.run.canonical-32-request",
+        "1640",
+        "1639",
+    ),
+    "leaf-license-digest-drift": (
+        "evidence.replay.run.canonical-32-request",
+        "a1ebce15afc7b5cf98c7c6de512d1959d4bf61db8c6bf2f111286d483b40a997",
+        "e" * 64,
+    ),
+    "leaf-license-byte-length-drift": (
+        "evidence.replay.run.canonical-32-request",
+        "1096",
+        "1095",
+    ),
+    "leaf-run-timestamp-drift": (
+        "evidence.replay.run.canonical-32-request",
+        "2026-07-24T11:03:15.269222Z",
+        "2026-07-24T11:03:15.269223Z",
+    ),
+    "leaf-correction-drift": (
+        "evidence.replay.relationship.s04-c01-correction",
+        "faultatlas-acquisition",
+        "faultatlas-acquisition-renamed",
+    ),
+    "leaf-completeness-drift": (
+        "evidence.replay.completeness.s04-c01-declared-scope",
+        "issue_comment_bodies",
+        "issue_comment_bodies_renamed",
+    ),
+    "leaf-publication-check-drift": (
+        "evidence.replay.publication.acquisition",
+        "90821631028",
+        "90821631029",
+    ),
+}
+
+
+def _leaf_probe_document(mutation: str) -> tuple[dict[str, Any], str]:
+    """Build one mutated corpus for a leaf-provenance probe."""
+
+    document = copy.deepcopy(REPLAY_DOCUMENT)
+    run_id = "evidence.replay.run.canonical-32-request"
+    diff_id = "evidence.replay.artifact.compare-diff"
+    envelope_id = "evidence.replay.envelope.canonical-current"
+
+    if mutation in LEAF_DRIFT_PROBES:
+        vector_id, before, after = LEAF_DRIFT_PROBES[mutation]
+        vector = _vector_by_id(document, vector_id)
+        resolved = _json_text(_resolved_input(vector, document))
+        assert before in resolved
+        vector["input"] = json.loads(resolved.replace(before, after))
+        return document, vector_id
+
+    vector = _vector_by_id(document, run_id)
+    expected = cast(dict[str, Any], vector["expected"])
+    rules = cast(list[dict[str, Any]], expected["leaf_proofs"])
+    if mutation == "leaf-proof-rule-removed":
+        rules[:] = [item for item in rules if item.get("pattern") != "/run_id"]
+    elif mutation == "leaf-proof-rule-matches-nothing":
+        rules.append({"kind": "contract_literal", "pattern": "/absent_field"})
+    elif mutation == "leaf-proof-primary-overlap":
+        rules.append({"fact": "run_id", "kind": "fact", "pattern": "/run_id"})
+    elif mutation == "leaf-child-binding-mismatched":
+        entry = next(item for item in rules if item.get("vector") == diff_id)
+        entry["vector"] = "evidence.replay.artifact.historical-license"
+    elif mutation == "leaf-child-replay-failure":
+        child = _vector_by_id(document, diff_id)
+        cast(dict[str, Any], child["expected"])["sha256"] = "a" * 64
+    elif mutation == "leaf-child-self-dependency":
+        rules.append({"kind": "child", "subtree": "", "vector": run_id})
+    elif mutation == "leaf-child-dependency-cycle":
+        child = _vector_by_id(document, diff_id)
+        cast(list[dict[str, Any]], child["expected"]["leaf_proofs"]).append(
+            {"kind": "child", "subtree": "", "vector": run_id}
+        )
+    elif mutation == "leaf-synthetic-child-binding":
+        entry = next(item for item in rules if item.get("vector") == diff_id)
+        entry["vector"] = "evidence.replay.legacy-adapter.project-legacy-absent"
+    elif mutation == "leaf-contract-literal-multivalued":
+        rules[:] = [item for item in rules if item.get("pattern") != "/status"]
+        rules.append({"kind": "contract_literal", "pattern": "/status"})
+    elif mutation == "leaf-source-pointer-retargeted":
+        entry = next(
+            item
+            for item in rules
+            if item.get("pattern") == "/requests/#/request_id/request_ordinal"
+        )
+        entry["json_pointer"] = "/requests/records/#1/status"
+    elif mutation == "leaf-authored-value-drift":
+        assessment_id = "evidence.replay.completeness.s04-c01-declared-scope"
+        vector = _vector_by_id(document, assessment_id)
+        resolved = _json_text(_resolved_input(vector, document))
+        vector["input"] = json.loads(
+            resolved.replace("s04-c01-declared-evidence-scope", "s04-c01-renamed")
+        )
+        return document, assessment_id
+    else:
+        assert mutation == "leaf-sequence-reordered"
+        assessment_id = "evidence.replay.completeness.s04-c01-declared-scope"
+        vector = _vector_by_id(document, assessment_id)
+        leaves = cast(
+            list[dict[str, Any]],
+            cast(dict[str, Any], vector["expected"])["authored_leaves"],
+        )
+        entry = next(item for item in leaves if item["id"] == "omission_ids")
+        entry["values"] = list(reversed(cast(list[Any], entry["values"])))
+        return document, assessment_id
+    if mutation == "leaf-child-replay-failure":
+        return document, envelope_id
+    return document, run_id
+
+
+def _assert_leaf_probe_rejected(mutation: str) -> None:
+    document, vector_id = _leaf_probe_document(mutation)
+    with pytest.raises(AssertionError):
+        _assert_replay_vector(_vector_by_id(document, vector_id), document)
 
 
 def _copied_documents() -> dict[str, dict[str, Any]]:
@@ -3896,7 +4541,11 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
         vector = copy.deepcopy(
             _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
         )
-        pointer = cast(list[dict[str, Any]], vector["source_pointers"])[0]
+        pointer = next(
+            item
+            for item in cast(list[dict[str, Any]], vector["source_pointers"])
+            if item["path"] == P00_CLOSURE_RELATIVE
+        )
         if mutation == "replay-source-pointer-retargeted":
             pointer["path"] = ACQUISITION_RELATIVE
             pointer["sha256"] = _sha256(
@@ -3930,7 +4579,11 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
         vector = copy.deepcopy(
             _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.publication.acquisition")
         )
-        pointer = cast(list[dict[str, Any]], vector["source_pointers"])[0]
+        pointer = next(
+            item
+            for item in cast(list[dict[str, Any]], vector["source_pointers"])
+            if item["path"] == P00_CLOSURE_RELATIVE
+        )
         if mutation == "replay-authority-not-registered":
             pointer["authority"] = "run-0001-s04-v1-base-4c9cde74-head-690a63b9"
         else:
@@ -4201,15 +4854,12 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
         "replay-classification-composition-as-source",
         "replay-derivation-three-node-cycle",
         "replay-envelope-nested-record-drift",
-        "replay-component-record-uncovered",
-        "replay-component-record-mismatched-vector",
     }:
         vector = copy.deepcopy(
             _vector_by_id(REPLAY_DOCUMENT, "evidence.replay.envelope.canonical-current")
         )
         expected = cast(dict[str, Any], vector["expected"])
         derivations = cast(list[dict[str, Any]], expected["derivations"])
-        records = cast(list[dict[str, Any]], expected["component_records"])
         if mutation == "replay-self-reference-via-component-minus":
             entry = next(
                 item
@@ -4249,17 +4899,17 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             ]
             relationship["recorded_at"] = "2026-07-30T19:17:09.655781Z"
             vector["input"] = resolved
-        elif mutation == "replay-component-record-uncovered":
-            records[:] = [
-                item for item in records if item["component"] != "publications"
-            ]
         else:
-            entry = next(
-                item
-                for item in records
-                if item["component"] == "publications" and item["index"] == 0
+            resolved = cast(
+                dict[str, Any],
+                copy.deepcopy(_resolved_input(vector, REPLAY_DOCUMENT)),
             )
-            entry["vector"] = "evidence.replay.publication.correction"
+            envelope = cast(dict[str, Any], resolved["envelope"])
+            relationship = cast(list[dict[str, Any]], envelope["record_relationships"])[
+                0
+            ]
+            relationship["recorded_at"] = "2026-07-30T19:17:09.655781Z"
+            vector["input"] = resolved
         with pytest.raises(AssertionError):
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
         return
@@ -4286,6 +4936,31 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
         vector["evidence_classification"] = "immutable_source_fact"
         with pytest.raises(AssertionError):
             _assert_replay_vector(vector, REPLAY_DOCUMENT)
+        return
+
+    if mutation in {
+        "leaf-authored-value-drift",
+        "leaf-child-binding-mismatched",
+        "leaf-child-dependency-cycle",
+        "leaf-child-replay-failure",
+        "leaf-child-self-dependency",
+        "leaf-compare-diff-byte-length-drift",
+        "leaf-compare-diff-digest-drift",
+        "leaf-completeness-drift",
+        "leaf-contract-literal-multivalued",
+        "leaf-correction-drift",
+        "leaf-license-byte-length-drift",
+        "leaf-license-digest-drift",
+        "leaf-proof-primary-overlap",
+        "leaf-proof-rule-matches-nothing",
+        "leaf-proof-rule-removed",
+        "leaf-publication-check-drift",
+        "leaf-run-timestamp-drift",
+        "leaf-sequence-reordered",
+        "leaf-source-pointer-retargeted",
+        "leaf-synthetic-child-binding",
+    }:
+        _assert_leaf_probe_rejected(mutation)
         return
 
     if mutation == "replay-decision-reference-unregistered":
