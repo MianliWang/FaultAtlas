@@ -317,6 +317,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 EVIDENCE_MODULE_PATH = "src/faultatlas/domain/evidence.py"
@@ -1685,7 +1686,7 @@ def _working_source_bytes() -> dict[str, bytes]:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert set(sources) == EXPECTED_PRODUCTION_FILES
-    assert len(sources) == 9
+    assert len(sources) == len(EXPECTED_PRODUCTION_FILES)
     return sources
 
 

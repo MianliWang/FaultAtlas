@@ -131,6 +131,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 PREDECESSOR_LOCKS = {
@@ -2540,14 +2541,14 @@ def test_package_domain_roots_and_production_inventory_remain_exact() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert production_files == EXPECTED_PRODUCTION_FILES
-    assert len(production_files) == 9
+    assert len(production_files) == len(EXPECTED_PRODUCTION_FILES)
     assert faultatlas.__all__ == ["__version__"]
     assert getattr(domain_package, "__all__", None) in (None, [])
     assert not any(hasattr(faultatlas, name) for name in EXPECTED_EVIDENCE_EXPORTS)
     assert not any(hasattr(domain_package, name) for name in EXPECTED_EVIDENCE_EXPORTS)
 
 
-def test_unexpected_tenth_production_file_failure_sensitivity() -> None:
+def test_unexpected_extra_production_file_failure_sensitivity() -> None:
     mutated = EXPECTED_PRODUCTION_FILES | {"src/faultatlas/domain/response.py"}
     with pytest.raises(AssertionError):
         assert mutated == EXPECTED_PRODUCTION_FILES

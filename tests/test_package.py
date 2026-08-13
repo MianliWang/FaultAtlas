@@ -78,9 +78,11 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 EVIDENCE_MODULE_PATH = "src/faultatlas/domain/evidence.py"
+SNAPSHOT_MODULE_PATH = "src/faultatlas/domain/snapshot.py"
 
 type ArchiveKind = Literal["wheel", "sdist"]
 type MemberKind = Literal["file", "directory", "link", "special"]
@@ -196,7 +198,7 @@ def _assert_complete_source_package(
 ) -> None:
     assert set(working) == EXPECTED_PRODUCTION_FILES
     assert set(packaged) == EXPECTED_PRODUCTION_FILES
-    assert len(working) == len(packaged) == 9
+    assert len(working) == len(packaged) == len(EXPECTED_PRODUCTION_FILES)
     assert packaged[EVIDENCE_MODULE_PATH] == working[EVIDENCE_MODULE_PATH]
     assert packaged == working
 
@@ -376,18 +378,21 @@ def test_offline_build_excludes_reference_corpus_and_historical_license(
 @pytest.mark.parametrize(
     "mutation",
     (
-        "unexpected-tenth-source",
+        "unexpected-source",
         "missing-evidence-source",
+        "missing-snapshot-source",
         "evidence-byte-mismatch",
     ),
 )
 def test_package_source_inventory_mutation_is_rejected(mutation: str) -> None:
     working = _working_source_bytes()
     packaged = dict(working)
-    if mutation == "unexpected-tenth-source":
+    if mutation == "unexpected-source":
         packaged["src/faultatlas/domain/unexpected.py"] = b"pass\n"
     elif mutation == "missing-evidence-source":
         del packaged[EVIDENCE_MODULE_PATH]
+    elif mutation == "missing-snapshot-source":
+        del packaged[SNAPSHOT_MODULE_PATH]
     else:
         assert mutation == "evidence-byte-mismatch"
         packaged[EVIDENCE_MODULE_PATH] += b"\n"

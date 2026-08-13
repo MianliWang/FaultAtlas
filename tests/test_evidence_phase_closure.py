@@ -176,6 +176,10 @@ EXPECTED_PRODUCTION_SOURCES = (
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/source.py",
 )
+CURRENT_PRODUCTION_SOURCES = (
+    *EXPECTED_PRODUCTION_SOURCES,
+    "src/faultatlas/domain/snapshot.py",
+)
 
 EXPECTED_SOURCE_LOCKS = {
     "reference_corpus/contracts/evidence-envelope/v1/contract.md": (
@@ -1372,7 +1376,7 @@ def _independent_leaf_metrics() -> dict[str, Any]:
 def _assert_archive_sources(members: dict[str, bytes], *, wheel: bool) -> None:
     expected = {
         relative.removeprefix("src/"): (REPOSITORY_ROOT / relative).read_bytes()
-        for relative in EXPECTED_PRODUCTION_SOURCES
+        for relative in CURRENT_PRODUCTION_SOURCES
     }
     observed: dict[str, bytes] = {}
     for name, data in members.items():
@@ -1691,7 +1695,7 @@ def test_privacy_non_generalizations_and_scope_are_fail_closed() -> None:
     assert b"raw_provider_response" not in raw
 
 
-def test_roadmap_and_case_documentation_close_p03_without_starting_p04() -> None:
+def test_roadmap_advances_p04_while_case_preserves_p03_closure_state() -> None:
     roadmap = " ".join(
         (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
     )
@@ -1705,7 +1709,8 @@ def test_roadmap_and_case_documentation_close_p03_without_starting_p04() -> None
         "`S1.P03.S09` — Integration and Phase Closure (complete; closes `S1.P03`)"
         in roadmap
     )
-    assert "`S1.P04` is next and not started" in roadmap
+    assert "`S1.P04` is active and incomplete" in roadmap
+    assert "`S1.P04.S01` is complete" in roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented" in roadmap
     assert CLOSURE_RELATIVE in case

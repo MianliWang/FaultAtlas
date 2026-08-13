@@ -300,6 +300,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 EVIDENCE_MODULE_PATH = "src/faultatlas/domain/evidence.py"
@@ -1551,7 +1552,7 @@ def _assert_complete_package_sources(
 ) -> None:
     assert set(working) == EXPECTED_PRODUCTION_FILES
     assert set(packaged) == EXPECTED_PRODUCTION_FILES
-    assert len(working) == len(packaged) == 9
+    assert len(working) == len(packaged) == len(EXPECTED_PRODUCTION_FILES)
     assert packaged[EVIDENCE_MODULE_PATH] == working[EVIDENCE_MODULE_PATH]
     assert packaged == working
 
@@ -1823,7 +1824,7 @@ CORRECTION_VECTOR_IDS = tuple(
 )
 
 
-def test_exact_nine_file_inventory_is_regular_immutable_and_safe() -> None:
+def test_exact_current_file_inventory_is_regular_immutable_and_safe() -> None:
     _validate_corpus_inventory(CORPUS_ROOT)
 
 
@@ -2104,7 +2105,7 @@ def test_missing_or_extra_s06_closure_artifact_is_rejected() -> None:
 def test_current_correction_whole_source_inventory_is_exact() -> None:
     working = _working_source_bytes()
     assert set(working) == EXPECTED_PRODUCTION_FILES
-    assert len(working) == 9
+    assert len(working) == len(EXPECTED_PRODUCTION_FILES)
 
 
 def test_p02_revision_and_s06_s07_evidence_are_outside_the_immutable_p01_contract() -> (
@@ -2172,7 +2173,7 @@ def test_revision_locator_corpus_is_an_independent_contract_sibling() -> None:
 @pytest.mark.parametrize(
     "mutation",
     (
-        "unexpected-tenth-source",
+        "unexpected-extra-source",
         "missing-evidence-source",
         "evidence-byte-mismatch",
     ),
@@ -2180,7 +2181,7 @@ def test_revision_locator_corpus_is_an_independent_contract_sibling() -> None:
 def test_whole_source_inventory_mutation_is_rejected(mutation: str) -> None:
     working = _working_source_bytes()
     packaged = dict(working)
-    if mutation == "unexpected-tenth-source":
+    if mutation == "unexpected-extra-source":
         packaged["src/faultatlas/domain/unexpected.py"] = b"pass\n"
     elif mutation == "missing-evidence-source":
         del packaged[EVIDENCE_MODULE_PATH]

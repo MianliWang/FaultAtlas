@@ -184,7 +184,8 @@ EXPECTED_PRODUCTION = {
 }
 
 EVIDENCE_MODULE = "src/faultatlas/domain/evidence.py"
-CURRENT_PRODUCTION_FILES = {*EXPECTED_PRODUCTION, EVIDENCE_MODULE}
+SNAPSHOT_MODULE = "src/faultatlas/domain/snapshot.py"
+CURRENT_PRODUCTION_FILES = {*EXPECTED_PRODUCTION, EVIDENCE_MODULE, SNAPSHOT_MODULE}
 EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunId",
     "RetrievalRequestOrdinal",
@@ -1806,7 +1807,7 @@ def test_group_g_production_inventory_exports_and_absent_surfaces_are_exact() ->
     assert not any(hasattr(domain_package, name) for name in EXPECTED_EXPORTS)
 
 
-def test_current_p03_s01_production_inventory_and_exports_are_exact() -> None:
+def test_current_production_inventory_and_exports_are_exact() -> None:
     current = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
@@ -1867,7 +1868,8 @@ def test_group_m_historical_p03_readiness_and_current_s05_are_scope_guarded() ->
         "`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and "
         "`S1.P03.S09` are complete" in roadmap
     )
-    assert "`S1.P04` is next and not started" in roadmap
+    assert "`S1.P04` is active and incomplete" in roadmap
+    assert "`S1.P04.S01` is complete" in roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in roadmap
 
 
@@ -1964,11 +1966,10 @@ def test_required_mutation_inventory_is_exact() -> None:
     assert len(REQUIRED_MUTATIONS) == len(set(REQUIRED_MUTATIONS)) == 44
 
 
-def test_current_p03_s01_inventory_and_export_mutations_are_rejected() -> None:
+@pytest.mark.parametrize("missing", (EVIDENCE_MODULE, SNAPSHOT_MODULE))
+def test_current_inventory_and_export_mutations_are_rejected(missing: str) -> None:
     with pytest.raises(AssertionError):
-        _validate_current_production_inventory(
-            CURRENT_PRODUCTION_FILES - {EVIDENCE_MODULE}
-        )
+        _validate_current_production_inventory(CURRENT_PRODUCTION_FILES - {missing})
     with pytest.raises(AssertionError):
         _validate_current_production_inventory(
             CURRENT_PRODUCTION_FILES | {"src/faultatlas/domain/unexpected.py"}

@@ -167,6 +167,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 
@@ -968,13 +969,13 @@ def test_path_field_leakage_mutations_are_rejected(class_declaration: str) -> No
         _validate_path_field_separation(mutated)
 
 
-def test_production_inventory_remains_exactly_nine_sources() -> None:
+def test_current_production_inventory_is_exact() -> None:
     production_files = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert production_files == EXPECTED_PRODUCTION_FILES
-    assert len(production_files) == 9
+    assert len(production_files) == len(EXPECTED_PRODUCTION_FILES)
 
 
 def test_no_io_normalization_existence_or_s06_surface() -> None:

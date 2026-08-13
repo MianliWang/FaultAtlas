@@ -411,7 +411,9 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/source.py",
 }
 EVIDENCE_MODULE = "src/faultatlas/domain/evidence.py"
-CURRENT_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, EVIDENCE_MODULE}
+SNAPSHOT_MODULE = "src/faultatlas/domain/snapshot.py"
+P03_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, EVIDENCE_MODULE}
+CURRENT_PRODUCTION_FILES = {*P03_PRODUCTION_FILES, SNAPSHOT_MODULE}
 EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunId",
     "RetrievalRequestOrdinal",
@@ -1659,14 +1661,14 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
     assert not any(
         isinstance(node, (ast.Import, ast.ImportFrom)) for node in domain_root.body
     )
-    complete_production_source = b"\n".join(
-        (REPOSITORY_ROOT / path).read_bytes() for path in sorted(production_files)
+    p03_production_source = b"\n".join(
+        (REPOSITORY_ROOT / path).read_bytes() for path in sorted(P03_PRODUCTION_FILES)
     )
-    assert b"AlternateIdBinding" not in complete_production_source
-    assert b"EvidenceAdapterRegistry" not in complete_production_source
-    assert b"EvidenceContractCorpus" not in complete_production_source
-    assert b"MigrationRegistry" not in complete_production_source
-    assert b"RepositorySnapshot" not in complete_production_source
+    assert b"AlternateIdBinding" not in p03_production_source
+    assert b"EvidenceAdapterRegistry" not in p03_production_source
+    assert b"EvidenceContractCorpus" not in p03_production_source
+    assert b"MigrationRegistry" not in p03_production_source
+    assert b"RepositorySnapshot" not in p03_production_source
     for forbidden in (
         b"GitCommitRole",
         b"GitParentIdentity",
@@ -1677,7 +1679,7 @@ def test_production_surface_is_exact_and_legacy_models_are_unchanged() -> None:
         b"GitSymbolicRef",
         b"RepositorySnapshot",
     ):
-        assert forbidden not in complete_production_source
+        assert forbidden not in p03_production_source
     revision_tree = ast.parse(revision_source)
     revision_definitions = {
         node.name
@@ -1864,10 +1866,11 @@ def test_unexpected_production_module_is_rejected() -> None:
         _validate_production_file_inventory(mutated)
 
 
-def test_current_p03_s01_production_inventory_mutations_are_rejected() -> None:
+@pytest.mark.parametrize("missing", (EVIDENCE_MODULE, SNAPSHOT_MODULE))
+def test_current_production_inventory_mutations_are_rejected(missing: str) -> None:
     with pytest.raises(AssertionError):
         _validate_current_production_file_inventory(
-            CURRENT_PRODUCTION_FILES - {EVIDENCE_MODULE}
+            CURRENT_PRODUCTION_FILES - {missing}
         )
     with pytest.raises(AssertionError):
         _validate_current_production_file_inventory(
@@ -2053,7 +2056,8 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         "`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and "
         "`S1.P03.S09` are complete" in normalized_roadmap
     )
-    assert "`S1.P04` is next and not started" in normalized_roadmap
+    assert "`S1.P04` is active and incomplete" in normalized_roadmap
+    assert "`S1.P04.S01` is complete" in normalized_roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:

@@ -123,6 +123,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 FORBIDDEN_ARTIFACT_FIELDS = (
@@ -921,7 +922,7 @@ def test_evidence_exports_roots_inventory_and_s08_boundary_are_exact() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert production_files == EXPECTED_PRODUCTION_FILES
-    assert len(production_files) == 9
+    assert len(production_files) == len(EXPECTED_PRODUCTION_FILES)
     tree = ast.parse(EVIDENCE_SOURCE.read_bytes())
     definitions = {
         node.name
@@ -1069,7 +1070,7 @@ def test_evidence_export_inventory_is_mutation_sensitive(mutation: str) -> None:
         assert tuple(exports) == EXPECTED_EVIDENCE_EXPORTS
 
 
-def test_package_root_export_and_tenth_module_mutations_are_rejected() -> None:
+def test_package_root_export_and_extra_module_mutations_are_rejected() -> None:
     with pytest.raises(AssertionError):
         assert ["__version__", "ExactRetainedArtifact"] == ["__version__"]
     with pytest.raises(AssertionError):

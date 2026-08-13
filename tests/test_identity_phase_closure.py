@@ -214,8 +214,10 @@ CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION,
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/evidence.py",
+    "src/faultatlas/domain/snapshot.py",
 }
 EVIDENCE_MODULE = "src/faultatlas/domain/evidence.py"
+SNAPSHOT_MODULE = "src/faultatlas/domain/snapshot.py"
 EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunId",
     "RetrievalRequestOrdinal",
@@ -1741,11 +1743,10 @@ def test_current_revision_inventory_mutations_are_rejected(
         _validate_revision_inventory(unexpected_export.encode())
 
 
-def test_current_p03_s01_inventory_and_export_mutations_are_rejected() -> None:
+@pytest.mark.parametrize("missing", (EVIDENCE_MODULE, SNAPSHOT_MODULE))
+def test_current_inventory_and_export_mutations_are_rejected(missing: str) -> None:
     with pytest.raises(AssertionError):
-        _validate_current_production_inventory(
-            CURRENT_PRODUCTION_FILES - {EVIDENCE_MODULE}
-        )
+        _validate_current_production_inventory(CURRENT_PRODUCTION_FILES - {missing})
     with pytest.raises(AssertionError):
         _validate_current_production_inventory(
             CURRENT_PRODUCTION_FILES | {"src/faultatlas/domain/unexpected.py"}
@@ -1976,7 +1977,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
         "`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and "
         "`S1.P03.S09` are complete" in roadmap
     )
-    assert "`S1.P04` is next and not started" in roadmap
+    assert "`S1.P04` is active and incomplete" in roadmap
+    assert "`S1.P04.S01` is complete" in roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in roadmap
 
 
