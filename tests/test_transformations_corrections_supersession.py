@@ -266,6 +266,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 EXPECTED_MODEL_FIELDS = {
@@ -674,7 +675,7 @@ def test_preferred_runtime_imports_and_export_order_are_exact() -> None:
     assert len(evidence_module.__all__) == len(set(evidence_module.__all__)) == 58
 
 
-def test_package_roots_nine_sources_and_artifact_snapshot_boundary_are_unchanged() -> (
+def test_package_roots_current_sources_and_artifact_snapshot_boundary_are_exact() -> (
     None
 ):
     production_files = {
@@ -682,7 +683,7 @@ def test_package_roots_nine_sources_and_artifact_snapshot_boundary_are_unchanged
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert production_files == EXPECTED_PRODUCTION_FILES
-    assert len(production_files) == 9
+    assert len(production_files) == len(EXPECTED_PRODUCTION_FILES)
     assert faultatlas.__all__ == ["__version__"]
     assert getattr(domain_package, "__all__", None) in (None, [])
     assert not set(EXPECTED_EVIDENCE_EXPORTS) & set(vars(faultatlas))
@@ -2685,8 +2686,8 @@ def test_no_io_surface_is_mutation_sensitive(mutation: str) -> None:
         _validate_no_io_surface(f"{source}\n{mutation}")
 
 
-@pytest.mark.parametrize("mutation", ("missing-evidence", "unexpected-tenth"))
-def test_nine_source_inventory_is_mutation_sensitive(mutation: str) -> None:
+@pytest.mark.parametrize("mutation", ("missing-evidence", "unexpected-extra"))
+def test_current_source_inventory_is_mutation_sensitive(mutation: str) -> None:
     paths = set(EXPECTED_PRODUCTION_FILES)
     if mutation == "missing-evidence":
         paths.remove("src/faultatlas/domain/evidence.py")

@@ -142,6 +142,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 PREDECESSOR_LOCKS = {
@@ -1758,7 +1759,7 @@ def test_package_roots_and_production_inventory_remain_exact() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert production_files == EXPECTED_PRODUCTION_FILES
-    assert len(production_files) == 9
+    assert len(production_files) == len(EXPECTED_PRODUCTION_FILES)
     assert faultatlas.__all__ == ["__version__"]
     assert faultatlas.__version__ == "0.1.0"
     assert getattr(domain_package, "__all__", None) in (None, [])
@@ -1766,7 +1767,7 @@ def test_package_roots_and_production_inventory_remain_exact() -> None:
     assert not set(EXPECTED_EVIDENCE_EXPORTS) & set(vars(domain_package))
 
 
-@pytest.mark.parametrize("mutation", ("missing-evidence", "unexpected-tenth"))
+@pytest.mark.parametrize("mutation", ("missing-evidence", "unexpected-extra"))
 def test_production_inventory_is_mutation_sensitive(mutation: str) -> None:
     paths = set(EXPECTED_PRODUCTION_FILES)
     if mutation == "missing-evidence":

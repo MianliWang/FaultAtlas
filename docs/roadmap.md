@@ -31,7 +31,8 @@ aspirational Slice as scheduled work.
   `S1.P03.S01` is complete, `S1.P03.S02` is complete, `S1.P03.S03` is
   complete, `S1.P03.S04` is complete, and `S1.P03.S05`, `S1.P03.S06`,
   `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09` are complete. `S1.P04` is
-  next and not started. `S1.P05` through `S1.P10` remain not started.
+  active and incomplete; `S1.P04.S01` is complete. `S1.P05` through
+  `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -68,8 +69,9 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P02.S07` is complete. `S1.P03` is complete; `S1.P03.S01` is complete,
 `S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
 `S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09`
-are complete. `S1.P04` is next and not started. `S1.P05` through `S1.P10`
-remain not started, and `S2-S9` remain unimplemented.
+are complete. `S1.P04` is active and incomplete; `S1.P04.S01` is complete.
+`S1.P05` through `S1.P10` remain not started, and `S2-S9` remain
+unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -221,11 +223,22 @@ confidence and review, and adapters beyond the explicit in-memory legacy
 boundary remain deferred to their preserved later owners. S09 integrates
 S01-S08 in the internal, case-calibrated Phase closure, locks the evidence
 corpus and its leaf-closure assurance, and establishes S1.P04 entry readiness
-without adding production behavior. `S1.P04` is next and not started.
+without adding production behavior. At that sealed closure, S1.P04 was
+eligible to begin and its implementation state was `not_started`.
+
+## S1.P04 — Repository Snapshot Model
+
+`S1.P04` is active and incomplete. `S1.P04.S01` is complete. S01 defines the
+immutable snapshot subject identity as stable `RepositoryIdentity` plus
+immutable `GitCommitIdentity`. Mutable refs remain observations and are not
+snapshot identity. Root-tree binding, repository membership, Git modes,
+symlink and gitlink semantics, completeness, and evidence linkage remain
+deferred to later S1.P04 Slices. S01 introduces no Git or filesystem I/O and
+no persistence or durable serialization contract. `S1.P05` through `S1.P10`
+remain not started; S01 alone does not make S1.P05 eligible to begin.
 
 ## Preserved later Stage 1 phases
 
-- **S1.P04 — Repository Snapshot Model**
 - **S1.P05 — Development History Model**
 - **S1.P06 — Fault Instance Model**
 - **S1.P07 — Pattern & Invariant Model**
@@ -265,7 +278,9 @@ complete. `S1.P03.S09` publishes the internal Phase closure under
 `reference_corpus/contracts/evidence-envelope/closures/s1-p03-phase-closure`,
 integrates S01-S08, locks the corpus and verified replay-leaf assurance, and
 establishes S1.P04 readiness without changing production source. `S1.P03` and
-S01-S09 are complete; `S1.P04` is next and not started.
+S01-S09 are complete. The current live surface adds the pure
+`RepositorySnapshotIdentity` value in `faultatlas.domain.snapshot`; `S1.P04`
+is active and incomplete, and `S1.P04.S01` is complete.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and

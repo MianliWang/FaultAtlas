@@ -185,6 +185,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 
@@ -548,7 +549,7 @@ def test_exact_s06_export_and_production_surfaces() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert production_files == EXPECTED_PRODUCTION_FILES
-    assert len(production_files) == 9
+    assert len(production_files) == len(EXPECTED_PRODUCTION_FILES)
     assert faultatlas.__all__ == ["__version__"]
 
 

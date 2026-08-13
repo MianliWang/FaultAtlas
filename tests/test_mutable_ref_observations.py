@@ -87,6 +87,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 
@@ -905,14 +906,14 @@ def test_deferred_ref_and_history_model_mutations_are_rejected(symbol: str) -> N
         _validate_revision_public_surface(mutated)
 
 
-def test_production_inventory_remains_exactly_nine_modules() -> None:
+def test_current_production_inventory_is_exact() -> None:
     production_files = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
 
     _validate_production_inventory(production_files)
-    assert len(production_files) == 9
+    assert len(production_files) == len(EXPECTED_PRODUCTION_FILES)
     with pytest.raises(AssertionError):
         _validate_production_inventory(
             production_files | {"src/faultatlas/domain/ref_history.py"}

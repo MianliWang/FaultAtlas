@@ -298,6 +298,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
+    "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/source.py",
 }
 EXPECTED_PRODUCTION_LOCKS = {
@@ -3412,7 +3413,7 @@ def _working_source_bytes() -> dict[str, bytes]:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert set(sources) == EXPECTED_PRODUCTION_FILES
-    assert len(sources) == 9
+    assert len(sources) == len(EXPECTED_PRODUCTION_FILES)
     return sources
 
 
@@ -3708,7 +3709,7 @@ def test_predecessor_locks_remain_exact() -> None:
     assert "EXPECTED_EFFECTIVE_VECTOR_COUNT = 199" in identity_test
 
 
-def test_production_surface_is_unchanged() -> None:
+def test_predecessor_sources_remain_locked_with_exact_current_inventory() -> None:
     sources = _working_source_bytes()
     for relative, lock in EXPECTED_PRODUCTION_LOCKS.items():
         assert len(sources[relative]) == lock.byte_length
@@ -3733,7 +3734,7 @@ def test_production_surface_is_unchanged() -> None:
     )
 
 
-def test_roadmap_records_s08_and_s09_complete_with_p04_next() -> None:
+def test_roadmap_records_p03_complete_and_p04_s01_active() -> None:
     roadmap = (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
     assert "`S1.P03.S08` — Evidence Contract Corpus (complete)" in roadmap
     assert (
@@ -3741,7 +3742,8 @@ def test_roadmap_records_s08_and_s09_complete_with_p04_next() -> None:
         in roadmap
     )
     assert "`S1.P03` is complete" in roadmap
-    assert "`S1.P04` is next and not started" in roadmap
+    assert "`S1.P04` is active and incomplete" in roadmap
+    assert "`S1.P04.S01` is complete" in roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap
     reference_case = (
