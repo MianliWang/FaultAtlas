@@ -3734,7 +3734,7 @@ def test_predecessor_sources_remain_locked_with_exact_current_inventory() -> Non
     )
 
 
-def test_roadmap_records_p03_complete_and_p04_s01_active() -> None:
+def test_roadmap_records_p03_complete_and_p04_s02_complete() -> None:
     roadmap = (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
     assert "`S1.P03.S08` — Evidence Contract Corpus (complete)" in roadmap
     assert (
@@ -3744,6 +3744,8 @@ def test_roadmap_records_p03_complete_and_p04_s01_active() -> None:
     assert "`S1.P03` is complete" in roadmap
     assert "`S1.P04` is active and incomplete" in roadmap
     assert "`S1.P04.S01` is complete" in roadmap
+    assert "`S1.P04.S02` is complete" in roadmap
+    assert "`S1.P04.S03` is next and not started" in roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap
     reference_case = (
