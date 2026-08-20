@@ -32,8 +32,8 @@ aspirational Slice as scheduled work.
   complete, `S1.P03.S04` is complete, and `S1.P03.S05`, `S1.P03.S06`,
   `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09` are complete. `S1.P04` is
   active and incomplete; `S1.P04.S01` is complete, `S1.P04.S02` is complete,
-  and `S1.P04.S03` is next and not started. `S1.P05` through `S1.P10` remain
-  not started.
+  and `S1.P04.S03` is complete. `S1.P04.S04` is next and not started.
+  `S1.P05` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -71,8 +71,9 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
 `S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09`
 are complete. `S1.P04` is active and incomplete; `S1.P04.S01` is complete,
-`S1.P04.S02` is complete, and `S1.P04.S03` is next and not started. `S1.P05`
-through `S1.P10` remain not started, and `S2-S9` remain unimplemented.
+`S1.P04.S02` is complete, and `S1.P04.S03` is complete. `S1.P04.S04` is next
+and not started. `S1.P05` through `S1.P10` remain not started, and `S2-S9`
+remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
 repository graphs, RAG, model routing, artifact synthesis, services, UI, and
@@ -230,20 +231,61 @@ eligible to begin and its implementation state was `not_started`.
 ## S1.P04 — Repository Snapshot Model
 
 `S1.P04` is active and incomplete. `S1.P04.S01` is complete, `S1.P04.S02` is
-complete, and `S1.P04.S03` is next and not started. S01 defines the immutable
-snapshot subject identity as stable `RepositoryIdentity` plus immutable
-`GitCommitIdentity`; mutable refs remain observations and are not snapshot
-identity. S02 adds the separate strict, immutable
-`RepositorySnapshotRootTreeBinding` from that unchanged subject identity to a
-supplied intrinsic `GitTreeIdentity`. The tree is not part of S01 snapshot
-identity. The binding is evidence-neutral: construction enforces typed values
-and matching commit/tree hash algorithms but does not prove from Git object
-bytes that the commit references the tree. Distinct snapshot subjects may bind
-the same intrinsic tree and remain distinct. Repository membership; entry
-kind, mode, symlink, and gitlink semantics; completeness; evidence linkage;
-Git or filesystem I/O; and persistence or durable serialization remain
-deferred. `S1.P05` through `S1.P10` remain not started; S01 and S02 do not make
-S1.P05 eligible to begin.
+complete, `S1.P04.S03` is complete, and `S1.P04.S04` is next and not started.
+S01 defines the immutable snapshot subject identity as stable
+`RepositoryIdentity` plus immutable `GitCommitIdentity`; mutable refs remain
+observations and are not snapshot identity. S02 adds the separate strict,
+immutable `RepositorySnapshotRootTreeBinding` from that unchanged subject
+identity to a supplied intrinsic `GitTreeIdentity`. The tree is not part of
+S01 snapshot identity. The binding is evidence-neutral: construction enforces
+typed values and matching commit/tree hash algorithms but does not prove from
+Git object bytes that the commit references the tree. Distinct snapshot
+subjects may bind the same intrinsic tree and remain distinct.
+
+S03 adds the separate strict, immutable `RepositorySnapshotPathBinding` from
+that unchanged subject identity and one exact `GitRepositoryPath` to one
+supplied intrinsic `GitBlobIdentity` or `GitTreeIdentity`. The object position
+is a closed union discriminated by the existing intrinsic Git object kind, so
+no separate semantic entry-kind field exists; `GitCommitIdentity` is excluded
+and gitlink-like commit-at-path data fails closed. Construction enforces typed
+values and requires the bound object hash algorithm to match the snapshot
+revision algorithm. The association is supplied and evidence-neutral: it does
+not establish path existence, repository membership, reachability from the S02
+root tree, Git tree-entry correctness, or evidence provenance. S03 introduces
+no Git file mode, executable state, symbolic-link or gitlink semantics,
+membership collection, ordering, duplicate-path or collision detection,
+completeness, absence, evidence linkage, Git or filesystem I/O, or
+persistence. The repository root is not a path binding: `GitRepositoryPath`
+admits neither the empty path nor `.`, and the root remains represented solely
+by `RepositorySnapshotRootTreeBinding`. A child directory path may bind to a
+`GitTreeIdentity` without claiming that its children have been materialized.
+Exact P02 path semantics are inherited unchanged, so case-distinct and
+NFC/NFD-distinct spellings remain distinct bindings. One binding is
+independently meaningful and no snapshot aggregate exists.
+
+Repository membership collections; entry kind, mode, symlink, and gitlink
+semantics; ordering; duplicate-path and prefix collision rules; completeness;
+absence; evidence linkage; Git or filesystem I/O; and persistence or durable
+serialization remain deferred. `S1.P05` through `S1.P10` remain not started;
+S01, S02, and S03 do not make S1.P05 eligible to begin.
+
+The remaining `S1.P04` sequence below is PROVISIONAL planning only. It is not
+a commitment, it authorizes no work, and it establishes, reserves, or implies
+no product surface, module, model, field, export, or test. Each entry remains
+subject to its own Gate and may be renumbered, merged, split, or dropped; the
+slice count is fixed retrospectively at Phase closure, as `S1.P03` (nine) and
+`S1.P02` (seven) demonstrate:
+
+1. `S1.P04.S04` — bounded path-binding collection
+2. `S1.P04.S05` — snapshot scope and completeness
+3. `S1.P04.S06` — entry kind and Git mode semantics, evidence-gated
+4. `S1.P04.S07` — evidence-linked offline snapshot vertical
+5. `S1.P04.S08` — repository snapshot contract corpus
+6. `S1.P04.S09` — integration and Phase closure
+
+S06 is gated on evidence that does not yet exist in this repository. The
+retained canonical path-resolution evidence records no Git file mode for any
+leaf or traversal, so S06 is not guaranteed to implement mode.
 
 ## Preserved later Stage 1 phases
 
@@ -287,10 +329,12 @@ complete. `S1.P03.S09` publishes the internal Phase closure under
 integrates S01-S08, locks the corpus and verified replay-leaf assurance, and
 establishes S1.P04 readiness without changing production source. `S1.P03` and
 S01-S09 are complete. The current live surface adds the pure
-`RepositorySnapshotIdentity` and supplied, evidence-neutral
-`RepositorySnapshotRootTreeBinding` values in `faultatlas.domain.snapshot`;
-`S1.P04` is active and incomplete, `S1.P04.S01` and `S1.P04.S02` are complete,
-and `S1.P04.S03` is next and not started.
+`RepositorySnapshotIdentity` and the supplied, evidence-neutral
+`RepositorySnapshotRootTreeBinding` and `RepositorySnapshotPathBinding` values
+in `faultatlas.domain.snapshot`; `S1.P04` is active and incomplete,
+`S1.P04.S01`, `S1.P04.S02`, and `S1.P04.S03` are complete, and `S1.P04.S04` is
+next and not started. The path binding performs no Git or filesystem I/O and
+claims no repository membership, completeness, or evidence linkage.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and
