@@ -5,10 +5,19 @@ also carries supplied root-tree and path-to-object associations without
 verifying Git object bytes. A path binding associates one exact repository
 path with one supplied intrinsic blob or tree identity; it does not establish
 path existence, repository membership, root-tree reachability, Git tree-entry
-mode, symbolic-link or gitlink semantics, ordering, uniqueness against other
-bindings, or the absence of any other path. It does not resolve refs, inspect
-Git objects or files, aggregate snapshot collections, assess completeness,
-attach evidence, or define durable bytes.
+mode, symbolic-link or gitlink semantics, or the absence of any other path.
+
+A binding collection aggregates bounded supplied bindings sharing one snapshot
+subject, preserving the supplied order exactly and rejecting a repeated path
+without sorting, merging, or deduplication. That order is the supplied order
+alone and carries no Git-tree, lexical, canonical, or repository structural
+meaning. An empty collection aggregates zero supplied bindings rather than
+asserting that any path is absent, and aggregation is not repository
+membership.
+
+The module does not resolve refs, inspect Git objects or files, establish path
+prefix, ancestry, or tree topology, assess completeness, attach evidence, or
+define durable bytes.
 """
 
 from typing import Annotated, Self
@@ -34,6 +43,7 @@ __all__ = [
     "RepositorySnapshotIdentity",
     "RepositorySnapshotRootTreeBinding",
     "RepositorySnapshotPathBinding",
+    "RepositorySnapshotPathBindingCollection",
 ]
 
 
@@ -192,4 +202,48 @@ class RepositorySnapshotPathBinding(BaseModel):
             raise ValueError(
                 "bound object algorithm must match the snapshot revision algorithm"
             )
+        return self
+
+
+class RepositorySnapshotPathBindingCollection(BaseModel):
+    """Bounded ordered aggregate of supplied bindings for one snapshot."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    snapshot: RepositorySnapshotIdentity
+    bindings: Annotated[
+        tuple[RepositorySnapshotPathBinding, ...],
+        Field(max_length=4096),
+    ]
+
+    @field_validator("snapshot", mode="before")
+    @classmethod
+    def _require_typed_python_collection_snapshot(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value,
+            RepositorySnapshotIdentity,
+        ):
+            raise ValueError(
+                "snapshot must be a RepositorySnapshotIdentity in Python input"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _require_shared_snapshot_and_unique_paths(self) -> Self:
+        if any(binding.snapshot != self.snapshot for binding in self.bindings):
+            raise ValueError("every binding must carry the collection snapshot subject")
+        if len(frozenset(binding.path for binding in self.bindings)) != len(
+            self.bindings
+        ):
+            raise ValueError("bindings must not repeat a repository path")
         return self
