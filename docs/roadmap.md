@@ -270,7 +270,11 @@ serialization remain deferred. `S1.P05` through `S1.P10` remain not started;
 S01, S02, and S03 do not make S1.P05 eligible to begin.
 
 The remaining `S1.P04` sequence below is PROVISIONAL planning only. It is not
-a commitment, and the slice count is fixed retrospectively at Phase closure:
+a commitment, it authorizes no work, and it establishes, reserves, or implies
+no product surface, module, model, field, export, or test. Each entry remains
+subject to its own Gate and may be renumbered, merged, split, or dropped; the
+slice count is fixed retrospectively at Phase closure, as `S1.P03` (nine) and
+`S1.P02` (seven) demonstrate:
 
 1. `S1.P04.S04` — bounded path-binding collection
 2. `S1.P04.S05` — snapshot scope and completeness
