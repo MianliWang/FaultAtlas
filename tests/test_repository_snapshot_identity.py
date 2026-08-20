@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from annotated_types import MaxLen
 from pydantic import ValidationError
 
 import faultatlas.domain.snapshot as snapshot_module
@@ -36,6 +37,7 @@ from faultatlas.domain.revision import (
 from faultatlas.domain.snapshot import (
     RepositorySnapshotIdentity,
     RepositorySnapshotPathBinding,
+    RepositorySnapshotPathBindingCollection,
     RepositorySnapshotRootTreeBinding,
 )
 
@@ -1089,6 +1091,410 @@ def test_constructed_path_binding_is_revalidated() -> None:
         RepositorySnapshotPathBinding.model_validate(invalid)
 
 
+def _canonical_blob_bindings() -> tuple[RepositorySnapshotPathBinding, ...]:
+    snapshot = _canonical_snapshot()
+    return tuple(
+        RepositorySnapshotPathBinding(
+            snapshot=snapshot,
+            path=_path(path),
+            git_object=_blob(digest),
+        )
+        for path, digest in CANONICAL_BLOB_PATH_BINDINGS
+    )
+
+
+def _canonical_tree_bindings() -> tuple[RepositorySnapshotPathBinding, ...]:
+    snapshot = _canonical_snapshot()
+    return tuple(
+        RepositorySnapshotPathBinding(
+            snapshot=snapshot,
+            path=_path(path),
+            git_object=_tree(digest),
+        )
+        for path, digest in CANONICAL_TREE_PATH_BINDINGS
+    )
+
+
+def _collection(
+    bindings: tuple[RepositorySnapshotPathBinding, ...] = (),
+    snapshot: RepositorySnapshotIdentity | None = None,
+) -> RepositorySnapshotPathBindingCollection:
+    return RepositorySnapshotPathBindingCollection(
+        snapshot=snapshot if snapshot is not None else _snapshot(),
+        bindings=bindings,
+    )
+
+
+def test_empty_collection_aggregates_zero_supplied_bindings() -> None:
+    snapshot = _snapshot()
+
+    collection = _collection(snapshot=snapshot)
+
+    assert collection.snapshot == snapshot
+    assert collection.bindings == ()
+    assert len(collection.bindings) == 0
+
+
+def test_empty_and_nonempty_collections_over_one_snapshot_are_both_valid() -> None:
+    snapshot = _snapshot()
+
+    empty = _collection(snapshot=snapshot)
+    populated = _collection((_binding(snapshot=snapshot),), snapshot=snapshot)
+
+    assert empty.snapshot == populated.snapshot
+    assert empty != populated
+    assert empty.bindings == ()
+    assert len(populated.bindings) == 1
+
+
+def test_distinct_collections_over_one_snapshot_may_overlap_on_paths() -> None:
+    snapshot = _snapshot()
+    first = _collection((_binding("LICENSE", snapshot=snapshot),), snapshot=snapshot)
+    second = _collection(
+        (
+            _binding("LICENSE", _blob("4" * 40), snapshot=snapshot),
+            _binding("README.md", snapshot=snapshot),
+        ),
+        snapshot=snapshot,
+    )
+
+    assert first != second
+    assert first.bindings[0].path == second.bindings[0].path
+    assert first.bindings[0].git_object != second.bindings[0].git_object
+
+
+def test_single_binding_collection_is_representable() -> None:
+    binding = _binding()
+
+    collection = _collection((binding,))
+
+    assert collection.bindings == (binding,)
+
+
+def test_canonical_four_blob_aggregate_is_representable() -> None:
+    bindings = _canonical_blob_bindings()
+
+    collection = _collection(bindings, snapshot=_canonical_snapshot())
+
+    assert len(collection.bindings) == 4
+    assert tuple(binding.path.root for binding in collection.bindings) == tuple(
+        path for path, _ in CANONICAL_BLOB_PATH_BINDINGS
+    )
+    assert all(
+        type(binding.git_object) is GitBlobIdentity for binding in collection.bindings
+    )
+
+
+def test_canonical_nine_binding_aggregate_tolerates_prefix_chains() -> None:
+    bindings = _canonical_blob_bindings() + _canonical_tree_bindings()
+
+    collection = _collection(bindings, snapshot=_canonical_snapshot())
+
+    assert len(collection.bindings) == 9
+    paths = tuple(binding.path.root for binding in collection.bindings)
+    assert len(frozenset(paths)) == 9
+    for ancestor in ("src", "src/_pytest", "src/_pytest/assertion"):
+        assert ancestor in paths
+    assert "src/_pytest/assertion/rewrite.py" in paths
+
+
+def test_tree_binding_and_descendant_blob_binding_may_coexist() -> None:
+    snapshot = _snapshot()
+
+    collection = _collection(
+        (
+            _binding("a", _tree("5" * 40), snapshot=snapshot),
+            _binding("a/b", snapshot=snapshot),
+        ),
+        snapshot=snapshot,
+    )
+
+    assert len(collection.bindings) == 2
+    assert type(collection.bindings[0].git_object) is GitTreeIdentity
+    assert type(collection.bindings[1].git_object) is GitBlobIdentity
+
+
+def test_blob_binding_and_descendant_binding_are_not_rejected() -> None:
+    snapshot = _snapshot()
+
+    collection = _collection(
+        (
+            _binding("a", snapshot=snapshot),
+            _binding("a/b", _blob("4" * 40), snapshot=snapshot),
+        ),
+        snapshot=snapshot,
+    )
+
+    assert tuple(binding.path.root for binding in collection.bindings) == ("a", "a/b")
+
+
+def test_collection_accepts_the_maximum_supported_cardinality() -> None:
+    snapshot = _snapshot()
+    bindings = tuple(
+        _binding(f"generated/{index}.txt", snapshot=snapshot) for index in range(4096)
+    )
+
+    collection = _collection(bindings, snapshot=snapshot)
+
+    assert len(collection.bindings) == 4096
+
+
+def test_collection_rejects_more_than_the_maximum_supported_cardinality() -> None:
+    snapshot = _snapshot()
+    bindings = tuple(
+        _binding(f"generated/{index}.txt", snapshot=snapshot) for index in range(4097)
+    )
+
+    with pytest.raises(ValidationError) as error:
+        _collection(bindings, snapshot=snapshot)
+
+    assert error.value.errors()[0]["type"] == "too_long"
+
+
+def test_supplied_order_is_preserved_without_sorting_or_truncation() -> None:
+    snapshot = _canonical_snapshot()
+    bindings = _canonical_blob_bindings()
+
+    collection = _collection(bindings, snapshot=snapshot)
+
+    assert collection.bindings == bindings
+    assert tuple(binding.path.root for binding in collection.bindings) != tuple(
+        sorted(binding.path.root for binding in bindings)
+    )
+
+
+def test_reversed_supply_is_a_distinct_value_without_structural_meaning() -> None:
+    snapshot = _canonical_snapshot()
+    bindings = _canonical_blob_bindings()
+    reversed_bindings = tuple(reversed(bindings))
+
+    forward = _collection(bindings, snapshot=snapshot)
+    reverse = _collection(reversed_bindings, snapshot=snapshot)
+
+    assert forward != reverse
+    assert forward.bindings == tuple(reversed(reverse.bindings))
+    assert forward.snapshot == reverse.snapshot
+    assert frozenset(forward.bindings) == frozenset(reverse.bindings)
+
+
+def test_same_object_may_bind_to_distinct_paths_within_one_collection() -> None:
+    snapshot = _snapshot()
+    shared = _blob()
+
+    collection = _collection(
+        (
+            _binding("a/duplicate.txt", shared, snapshot=snapshot),
+            _binding("b/duplicate.txt", shared, snapshot=snapshot),
+        ),
+        snapshot=snapshot,
+    )
+
+    assert collection.bindings[0].git_object == collection.bindings[1].git_object
+    assert collection.bindings[0].path != collection.bindings[1].path
+
+
+def test_collection_is_frozen() -> None:
+    collection = _collection((_binding(),))
+
+    with pytest.raises(ValidationError):
+        collection.bindings = ()
+
+
+def test_collection_semantic_json_round_trip_preserves_exact_value() -> None:
+    snapshot = _canonical_snapshot()
+    original = _collection(_canonical_blob_bindings(), snapshot=snapshot)
+
+    encoded = original.model_dump_json()
+    restored = RepositorySnapshotPathBindingCollection.model_validate_json(encoded)
+
+    assert restored == original
+    assert restored.bindings == original.bindings
+    assert type(restored.snapshot) is RepositorySnapshotIdentity
+    assert all(
+        type(binding) is RepositorySnapshotPathBinding for binding in restored.bindings
+    )
+    assert json.loads(encoded) == original.model_dump(mode="json")
+    assert set(json.loads(encoded)) == {"snapshot", "bindings"}
+
+
+def test_collection_accepts_tuple_python_input_and_rejects_other_containers() -> None:
+    snapshot = _snapshot()
+    binding = _binding(snapshot=snapshot)
+
+    assert _collection((binding,), snapshot=snapshot).bindings == (binding,)
+
+    containers: tuple[object, ...] = (
+        [binding],
+        set((binding,)),
+        frozenset((binding,)),
+        (item for item in (binding,)),
+    )
+    for container in containers:
+        with pytest.raises(ValidationError) as error:
+            RepositorySnapshotPathBindingCollection.model_validate(
+                {"snapshot": snapshot, "bindings": container}
+            )
+        assert error.value.errors()[0]["type"] == "tuple_type"
+
+
+@pytest.mark.parametrize("missing", ("snapshot", "bindings"))
+def test_collection_required_fields_cannot_be_omitted(missing: str) -> None:
+    payload: dict[str, object] = {"snapshot": _snapshot(), "bindings": ()}
+    del payload[missing]
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotPathBindingCollection.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "binding_count",
+        "root_tree",
+        "members",
+        "entries",
+        "complete",
+        "completeness",
+        "absent",
+        "evidence",
+        "ordered",
+        "prefix",
+    ),
+)
+def test_collection_rejects_count_membership_and_completeness_fields(
+    field: str,
+) -> None:
+    payload: dict[str, object] = {
+        "snapshot": _snapshot(),
+        "bindings": (),
+        field: 0,
+    }
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotPathBindingCollection.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    (_repository(), _commit(), _tree(), _blob(), _qualified_path(), "github/37489525"),
+)
+def test_collection_rejects_non_snapshot_subjects(snapshot: object) -> None:
+    with pytest.raises(ValidationError):
+        RepositorySnapshotPathBindingCollection.model_validate(
+            {"snapshot": snapshot, "bindings": ()}
+        )
+
+
+@pytest.mark.parametrize(
+    "child",
+    ("LICENSE", 37489525, None, _qualified_path(), _blob()),
+)
+def test_collection_rejects_untyped_children(child: object) -> None:
+    with pytest.raises(ValidationError):
+        RepositorySnapshotPathBindingCollection.model_validate(
+            {"snapshot": _snapshot(), "bindings": (child,)}
+        )
+
+
+def test_collection_rejects_python_mapping_children() -> None:
+    binding = _binding()
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotPathBindingCollection.model_validate(
+            {
+                "snapshot": _snapshot(),
+                "bindings": (binding.model_dump(mode="python"),),
+            }
+        )
+
+
+def test_collection_rejects_a_single_foreign_snapshot_child() -> None:
+    snapshot = _snapshot()
+    foreign = _snapshot(repository_id="99999999")
+
+    with pytest.raises(ValidationError, match="collection snapshot subject"):
+        _collection((_binding(snapshot=foreign),), snapshot=snapshot)
+
+
+def test_collection_rejects_mixed_local_and_foreign_snapshot_children() -> None:
+    snapshot = _snapshot()
+    foreign = _snapshot("2" * 40)
+
+    with pytest.raises(ValidationError, match="collection snapshot subject"):
+        _collection(
+            (
+                _binding("LICENSE", snapshot=snapshot),
+                _binding("README.md", snapshot=foreign),
+            ),
+            snapshot=snapshot,
+        )
+
+
+def test_collection_rejects_an_identical_duplicate_path_without_deduplication() -> None:
+    snapshot = _snapshot()
+    binding = _binding("LICENSE", snapshot=snapshot)
+
+    with pytest.raises(ValidationError, match="must not repeat a repository path"):
+        _collection((binding, binding), snapshot=snapshot)
+
+
+def test_collection_rejects_a_conflicting_duplicate_path() -> None:
+    snapshot = _snapshot()
+
+    with pytest.raises(ValidationError, match="must not repeat a repository path"):
+        _collection(
+            (
+                _binding("LICENSE", _blob("3" * 40), snapshot=snapshot),
+                _binding("LICENSE", _blob("4" * 40), snapshot=snapshot),
+            ),
+            snapshot=snapshot,
+        )
+
+
+def test_collection_rejects_a_duplicate_path_across_object_kinds() -> None:
+    snapshot = _snapshot()
+
+    with pytest.raises(ValidationError, match="must not repeat a repository path"):
+        _collection(
+            (
+                _binding("src", _tree("5" * 40), snapshot=snapshot),
+                _binding("src", _blob("6" * 40), snapshot=snapshot),
+            ),
+            snapshot=snapshot,
+        )
+
+
+def test_collection_extra_fields_fail_closed() -> None:
+    with pytest.raises(ValidationError):
+        RepositorySnapshotPathBindingCollection.model_validate(
+            {"snapshot": _snapshot(), "bindings": (), "verified": True}
+        )
+
+
+def test_collection_revalidates_nested_children() -> None:
+    snapshot = _snapshot()
+    invalid_child = RepositorySnapshotPathBinding.model_construct(
+        snapshot=snapshot,
+        path=GitRepositoryPath.model_construct(root="/LICENSE"),
+        git_object=_blob(),
+    )
+
+    with pytest.raises(ValidationError):
+        _collection((invalid_child,), snapshot=snapshot)
+
+
+def test_constructed_collection_is_revalidated() -> None:
+    snapshot = _snapshot()
+    binding = _binding("LICENSE", snapshot=snapshot)
+    invalid = RepositorySnapshotPathBindingCollection.model_construct(
+        snapshot=snapshot,
+        bindings=(binding, binding),
+    )
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotPathBindingCollection.model_validate(invalid)
+
+
 def test_model_and_module_surfaces_are_exact_and_local() -> None:
     assert tuple(RepositorySnapshotIdentity.model_fields) == (
         "repository",
@@ -1149,14 +1555,40 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "revalidate_instances": "always",
         "validate_default": True,
     }
+    assert tuple(RepositorySnapshotPathBindingCollection.model_fields) == (
+        "snapshot",
+        "bindings",
+    )
+    assert RepositorySnapshotPathBindingCollection.model_fields[
+        "snapshot"
+    ].annotation is (RepositorySnapshotIdentity)
+    assert (
+        RepositorySnapshotPathBindingCollection.model_fields["bindings"].annotation
+        == (tuple[RepositorySnapshotPathBinding, ...])
+    )
+    assert RepositorySnapshotPathBindingCollection.model_fields[
+        "bindings"
+    ].metadata == [MaxLen(max_length=4096)]
+    assert RepositorySnapshotPathBindingCollection.model_config == {
+        "frozen": True,
+        "extra": "forbid",
+        "strict": True,
+        "revalidate_instances": "always",
+        "validate_default": True,
+    }
     assert snapshot_module.__all__ == [
         "RepositorySnapshotIdentity",
         "RepositorySnapshotRootTreeBinding",
         "RepositorySnapshotPathBinding",
+        "RepositorySnapshotPathBindingCollection",
     ]
     assert RepositorySnapshotIdentity.__module__ == "faultatlas.domain.snapshot"
     assert RepositorySnapshotRootTreeBinding.__module__ == "faultatlas.domain.snapshot"
     assert RepositorySnapshotPathBinding.__module__ == "faultatlas.domain.snapshot"
+    assert (
+        RepositorySnapshotPathBindingCollection.__module__
+        == "faultatlas.domain.snapshot"
+    )
 
 
 def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() -> None:
@@ -1168,6 +1600,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ast.ImportFrom,
         ast.ImportFrom,
         ast.Assign,
+        ast.ClassDef,
         ast.ClassDef,
         ast.ClassDef,
         ast.ClassDef,
@@ -1207,6 +1640,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "RepositorySnapshotIdentity",
         "RepositorySnapshotRootTreeBinding",
         "RepositorySnapshotPathBinding",
+        "RepositorySnapshotPathBindingCollection",
     ]
     assert [type(node) for node in classes[0].body] == [
         ast.Expr,
@@ -1236,6 +1670,14 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ast.FunctionDef,
         ast.FunctionDef,
     ]
+    assert [type(node) for node in classes[3].body] == [
+        ast.Expr,
+        ast.Assign,
+        ast.AnnAssign,
+        ast.AnnAssign,
+        ast.FunctionDef,
+        ast.FunctionDef,
+    ]
     assert not [
         node
         for node in tree.body
@@ -1257,7 +1699,12 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
             if isinstance(target, ast.Name)
         ]
         for class_node in classes
-    ] == [["model_config"], ["model_config"], ["model_config"]]
+    ] == [
+        ["model_config"],
+        ["model_config"],
+        ["model_config"],
+        ["model_config"],
+    ]
     assert [
         [
             node.target.id
@@ -1269,6 +1716,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ["repository", "revision"],
         ["snapshot", "root_tree"],
         ["snapshot", "path", "git_object"],
+        ["snapshot", "bindings"],
     ]
     assert [
         [
@@ -1293,6 +1741,10 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
             "_require_typed_python_git_object",
             "_require_matching_object_hash_algorithm",
         ],
+        [
+            "_require_typed_python_collection_snapshot",
+            "_require_shared_snapshot_and_unique_paths",
+        ],
     ]
     for class_index, expected_left in (
         (1, "self.root_tree.algorithm"),
@@ -1315,6 +1767,31 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
             expected_left,
             "self.snapshot.revision.algorithm",
         ]
+    collection_validator = classes[3].body[-1]
+    assert isinstance(collection_validator, ast.FunctionDef)
+    collection_comparisons = [
+        node for node in ast.walk(collection_validator) if isinstance(node, ast.Compare)
+    ]
+    assert len(collection_comparisons) == 2
+    assert [
+        (
+            [type(operator) for operator in comparison.ops],
+            [
+                ast.unparse(comparison.left),
+                *(ast.unparse(other) for other in comparison.comparators),
+            ],
+        )
+        for comparison in collection_comparisons
+    ] == [
+        (
+            [ast.NotEq],
+            [
+                "len(frozenset((binding.path for binding in self.bindings)))",
+                "len(self.bindings)",
+            ],
+        ),
+        ([ast.NotEq], ["binding.snapshot", "self.snapshot"]),
+    ]
     calls = {
         node.func.id
         for node in ast.walk(tree)
@@ -1324,8 +1801,11 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "ConfigDict",
         "Field",
         "ValueError",
+        "any",
         "field_validator",
+        "frozenset",
         "isinstance",
+        "len",
         "model_validator",
     }
     assert not [
@@ -1348,16 +1828,22 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "GitTreeIdentity",
         "RepositoryIdentity",
         "RepositorySnapshotIdentity",
+        "RepositorySnapshotPathBinding",
         "Self",
         "ValidationInfo",
         "ValueError",
+        "any",
+        "binding",
         "classmethod",
         "field_validator",
+        "frozenset",
         "info",
         "isinstance",
+        "len",
         "model_validator",
         "object",
         "self",
+        "tuple",
         "value",
     }
     assert [
@@ -1374,6 +1860,13 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ("info", "mode"),
         ("info", "mode"),
         ("self", "git_object"),
+        ("info", "mode"),
+        ("self", "bindings"),
         ("self", "snapshot"),
         ("self", "snapshot"),
+        ("binding", "snapshot"),
+        ("self", "snapshot"),
+        ("self", "bindings"),
+        ("binding", "path"),
+        ("self", "bindings"),
     ]
