@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from annotated_types import MaxLen
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 import faultatlas.domain.snapshot as snapshot_module
 from faultatlas.domain.identity import (
@@ -2225,7 +2225,7 @@ def test_coverage_rejects_hybrid_mappings_with_typed_nested_values(
     payload: dict[str, object] = {"scope": scope, "collection": collection}
     payload[field] = hybrid
 
-    with pytest.raises(ValidationError, match="typed values in Python input"):
+    with pytest.raises(ValidationError, match="exactly typed in Python input"):
         RepositorySnapshotDeclaredPathScopeCoverage.model_validate(payload)
 
 
@@ -2254,9 +2254,56 @@ def test_coverage_rejects_attribute_backed_children_under_from_attributes(
         else _AttributeBackedCollection(collection)
     )
 
-    with pytest.raises(ValidationError, match="typed values in Python input"):
+    with pytest.raises(ValidationError, match="exactly typed in Python input"):
         RepositorySnapshotDeclaredPathScopeCoverage.model_validate(
             payload, from_attributes=True
+        )
+
+
+class _ModelScopeLookalike(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    snapshot: object
+    declared_paths: object
+
+
+class _ModelCollectionLookalike(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    snapshot: object
+    bindings: object
+
+
+@pytest.mark.parametrize("field", ("scope", "collection"))
+def test_coverage_rejects_foreign_model_children_under_from_attributes(
+    field: str,
+) -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+    payload: dict[str, object] = {"scope": scope, "collection": collection}
+    payload[field] = (
+        _ModelScopeLookalike(
+            snapshot=scope.snapshot, declared_paths=scope.declared_paths
+        )
+        if field == "scope"
+        else _ModelCollectionLookalike(
+            snapshot=collection.snapshot, bindings=collection.bindings
+        )
+    )
+
+    with pytest.raises(ValidationError, match="exactly typed in Python input"):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(
+            payload, from_attributes=True
+        )
+
+
+def test_coverage_rejects_swapped_children_under_from_attributes() -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+
+    with pytest.raises(ValidationError, match="exactly typed in Python input"):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(
+            {"scope": collection, "collection": scope}, from_attributes=True
         )
 
 
@@ -2828,6 +2875,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "cast",
         "classmethod",
         "declared",
+        "expected",
         "field_validator",
         "frozenset",
         "handler",
@@ -2843,6 +2891,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "str",
         "supplied",
         "tuple",
+        "type",
         "value",
     }
     assert [
@@ -2850,6 +2899,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
     ] == [
+        ("info", "mode"),
         ("info", "mode"),
         ("info", "mode"),
         ("info", "mode"),
@@ -2866,7 +2916,6 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ("info", "mode"),
         ("self", "declared_paths"),
         ("info", "mode"),
-        ("info", "mode"),
         ("self", "scope"),
         ("self", "scope"),
         ("self", "collection"),
@@ -2877,6 +2926,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ("self", "snapshot"),
         ("self", "bindings"),
         ("self", "declared_paths"),
+        ("info", "field_name"),
         ("binding", "path"),
         ("self", "collection"),
         ("self", "scope"),

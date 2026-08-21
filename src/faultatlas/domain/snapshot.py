@@ -354,10 +354,16 @@ class RepositorySnapshotDeclaredPathScopeCoverage(BaseModel):
         handler: ValidatorFunctionWrapHandler,
         info: ValidationInfo,
     ) -> object:
-        if info.mode == "python" and not isinstance(value, BaseModel):
-            raise ValueError(
-                "scope and collection must be typed values in Python input"
+        if info.mode == "python":
+            expected: type[BaseModel] = (
+                RepositorySnapshotDeclaredPathScope
+                if info.field_name == "scope"
+                else RepositorySnapshotPathBindingCollection
             )
+            if not isinstance(value, expected):
+                raise ValueError(
+                    "scope and collection must be exactly typed in Python input"
+                )
         if info.mode == "json" and isinstance(value, Mapping):
             supplied = cast(Mapping[str, object], value)
             return handler(
