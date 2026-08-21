@@ -2208,6 +2208,45 @@ def test_coverage_python_construction_rejects_nested_mappings(field: str) -> Non
         RepositorySnapshotDeclaredPathScopeCoverage.model_validate(payload)
 
 
+@pytest.mark.parametrize("field", ("scope", "collection"))
+def test_coverage_rejects_hybrid_mappings_with_typed_nested_values(
+    field: str,
+) -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+    hybrid: dict[str, object] = (
+        {"snapshot": scope.snapshot, "declared_paths": scope.declared_paths}
+        if field == "scope"
+        else {
+            "snapshot": collection.snapshot,
+            "bindings": collection.bindings,
+        }
+    )
+    payload: dict[str, object] = {"scope": scope, "collection": collection}
+    payload[field] = hybrid
+
+    with pytest.raises(ValidationError, match="typed values in Python input"):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(payload)
+
+
+def test_coverage_json_input_still_accepts_nested_arrays() -> None:
+    original = _coverage(
+        _canonical_nine_scope_paths(),
+        _canonical_blob_bindings() + _canonical_tree_bindings(),
+    )
+    payload = json.loads(original.model_dump_json())
+
+    assert isinstance(payload["collection"]["bindings"], list)
+    assert isinstance(payload["scope"]["declared_paths"], list)
+
+    restored = RepositorySnapshotDeclaredPathScopeCoverage.model_validate_json(
+        json.dumps(payload)
+    )
+
+    assert restored == original
+    assert restored.collection.bindings == original.collection.bindings
+
+
 def test_coverage_extra_fields_fail_closed() -> None:
     with pytest.raises(ValidationError):
         RepositorySnapshotDeclaredPathScopeCoverage.model_validate(
@@ -2441,6 +2480,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ast.ImportFrom,
         ast.ImportFrom,
         ast.ImportFrom,
+        ast.ImportFrom,
         ast.Assign,
         ast.ClassDef,
         ast.ClassDef,
@@ -2456,6 +2496,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         if isinstance(node, ast.ImportFrom)
     ]
     assert imports == [
+        ("collections.abc", ("Mapping",)),
         ("typing", ("Annotated", "Self", "cast")),
         (
             "pydantic",
@@ -2464,6 +2505,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
                 "ConfigDict",
                 "Field",
                 "ValidationInfo",
+                "ValidatorFunctionWrapHandler",
                 "field_validator",
                 "model_validator",
             ),
@@ -2538,6 +2580,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ast.Assign,
         ast.AnnAssign,
         ast.AnnAssign,
+        ast.FunctionDef,
         ast.FunctionDef,
     ]
     assert not [
@@ -2616,7 +2659,10 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
             "_require_typed_python_declared_paths",
             "_require_unique_declared_paths",
         ],
-        ["_require_covered_declared_paths"],
+        [
+            "_require_typed_python_children",
+            "_require_covered_declared_paths",
+        ],
     ]
     for class_index, expected_left in (
         (1, "self.root_tree.algorithm"),
@@ -2711,6 +2757,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "cast",
         "field_validator",
         "frozenset",
+        "handler",
         "isinstance",
         "len",
         "model_validator",
@@ -2734,6 +2781,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "GitCommitIdentity",
         "GitRepositoryPath",
         "GitTreeIdentity",
+        "Mapping",
         "RepositoryIdentity",
         "RepositorySnapshotDeclaredPathScope",
         "RepositorySnapshotIdentity",
@@ -2741,6 +2789,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "RepositorySnapshotPathBindingCollection",
         "Self",
         "ValidationInfo",
+        "ValidatorFunctionWrapHandler",
         "ValueError",
         "any",
         "binding",
@@ -2750,14 +2799,18 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "declared",
         "field_validator",
         "frozenset",
+        "handler",
         "info",
         "isinstance",
+        "key",
         "len",
         "list",
         "model_validator",
         "object",
         "path",
         "self",
+        "str",
+        "supplied",
         "tuple",
         "value",
     }
@@ -2781,6 +2834,8 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ("info", "mode"),
         ("info", "mode"),
         ("self", "declared_paths"),
+        ("info", "mode"),
+        ("info", "mode"),
         ("self", "scope"),
         ("self", "scope"),
         ("self", "collection"),

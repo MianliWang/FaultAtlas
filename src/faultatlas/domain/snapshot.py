@@ -41,6 +41,7 @@ existence, or root-tree reachability, assess snapshot or whole-repository
 completeness, represent absence, attach evidence, or define durable bytes.
 """
 
+from collections.abc import Mapping
 from typing import Annotated, Self, cast
 
 from pydantic import (
@@ -48,6 +49,7 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationInfo,
+    ValidatorFunctionWrapHandler,
     field_validator,
     model_validator,
 )
@@ -343,6 +345,30 @@ class RepositorySnapshotDeclaredPathScopeCoverage(BaseModel):
 
     scope: RepositorySnapshotDeclaredPathScope
     collection: RepositorySnapshotPathBindingCollection
+
+    @field_validator("scope", "collection", mode="wrap")
+    @classmethod
+    def _require_typed_python_children(
+        cls,
+        value: object,
+        handler: ValidatorFunctionWrapHandler,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and isinstance(value, Mapping):
+            raise ValueError(
+                "scope and collection must be typed values in Python input"
+            )
+        if info.mode == "json" and isinstance(value, Mapping):
+            supplied = cast(Mapping[str, object], value)
+            return handler(
+                {
+                    key: tuple(cast(list[object], supplied[key]))
+                    if isinstance(supplied[key], list)
+                    else supplied[key]
+                    for key in supplied
+                }
+            )
+        return handler(value)
 
     @model_validator(mode="after")
     def _require_covered_declared_paths(self) -> Self:
