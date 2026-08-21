@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from annotated_types import MaxLen
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 import faultatlas.domain.snapshot as snapshot_module
 from faultatlas.domain.identity import (
@@ -36,6 +36,7 @@ from faultatlas.domain.revision import (
 )
 from faultatlas.domain.snapshot import (
     RepositorySnapshotDeclaredPathScope,
+    RepositorySnapshotDeclaredPathScopeCoverage,
     RepositorySnapshotIdentity,
     RepositorySnapshotPathBinding,
     RepositorySnapshotPathBindingCollection,
@@ -1854,6 +1855,551 @@ def test_declared_scope_is_independent_of_any_binding_collection() -> None:
     assert len(collection.bindings) == 4
 
 
+def _coverage(
+    paths: tuple[GitRepositoryPath, ...],
+    bindings: tuple[RepositorySnapshotPathBinding, ...],
+    scope_snapshot: RepositorySnapshotIdentity | None = None,
+    collection_snapshot: RepositorySnapshotIdentity | None = None,
+) -> RepositorySnapshotDeclaredPathScopeCoverage:
+    return RepositorySnapshotDeclaredPathScopeCoverage(
+        scope=_scope(paths, snapshot=scope_snapshot or _canonical_snapshot()),
+        collection=_collection(
+            bindings, snapshot=collection_snapshot or _canonical_snapshot()
+        ),
+    )
+
+
+def test_canonical_four_path_scope_is_covered_by_the_four_blob_collection() -> None:
+    coverage = _coverage(_canonical_blob_scope_paths(), _canonical_blob_bindings())
+
+    assert coverage.scope.declared_paths == _canonical_blob_scope_paths()
+    assert coverage.collection.bindings == _canonical_blob_bindings()
+
+
+def test_canonical_four_path_scope_is_covered_by_the_nine_binding_collection() -> None:
+    bindings = _canonical_blob_bindings() + _canonical_tree_bindings()
+
+    coverage = _coverage(_canonical_blob_scope_paths(), bindings)
+
+    assert len(coverage.scope.declared_paths) == 4
+    assert len(coverage.collection.bindings) == 9
+
+
+def test_canonical_nine_path_scope_is_covered_by_the_nine_binding_collection() -> None:
+    bindings = _canonical_blob_bindings() + _canonical_tree_bindings()
+
+    coverage = _coverage(_canonical_nine_scope_paths(), bindings)
+
+    assert len(coverage.scope.declared_paths) == 9
+    assert len(coverage.collection.bindings) == 9
+
+
+def test_canonical_nine_path_scope_is_not_covered_by_the_four_blob_collection() -> None:
+    with pytest.raises(ValidationError, match="must have a supplied binding"):
+        _coverage(_canonical_nine_scope_paths(), _canonical_blob_bindings())
+
+
+def test_bindings_outside_the_declared_scope_do_not_prevent_coverage() -> None:
+    bindings = _canonical_blob_bindings() + _canonical_tree_bindings()
+
+    coverage = _coverage((_path("LICENSE"),), bindings)
+
+    declared = tuple(path.root for path in coverage.scope.declared_paths)
+    supplied = tuple(binding.path.root for binding in coverage.collection.bindings)
+    assert declared == ("LICENSE",)
+    assert len(supplied) == 9
+    assert any(path not in declared for path in supplied)
+
+
+def test_one_declared_path_without_a_binding_prevents_coverage() -> None:
+    bindings = _canonical_blob_bindings() + _canonical_tree_bindings()
+    paths = _canonical_blob_scope_paths() + (_path("never/bound.txt"),)
+
+    with pytest.raises(ValidationError, match="must have a supplied binding"):
+        _coverage(paths, bindings)
+
+
+@pytest.mark.parametrize(
+    ("reverse_scope", "reverse_collection"),
+    ((False, False), (True, False), (False, True), (True, True)),
+)
+def test_coverage_validity_does_not_depend_on_either_supplied_order(
+    reverse_scope: bool,
+    reverse_collection: bool,
+) -> None:
+    paths = _canonical_blob_scope_paths()
+    bindings = _canonical_blob_bindings()
+
+    coverage = _coverage(
+        tuple(reversed(paths)) if reverse_scope else paths,
+        tuple(reversed(bindings)) if reverse_collection else bindings,
+    )
+
+    assert len(coverage.scope.declared_paths) == 4
+    assert len(coverage.collection.bindings) == 4
+
+
+def test_reordered_coverage_witnesses_remain_distinct_values() -> None:
+    paths = _canonical_blob_scope_paths()
+    bindings = _canonical_blob_bindings()
+
+    forward = _coverage(paths, bindings)
+    reversed_scope = _coverage(tuple(reversed(paths)), bindings)
+    reversed_collection = _coverage(paths, tuple(reversed(bindings)))
+    both = _coverage(tuple(reversed(paths)), tuple(reversed(bindings)))
+
+    assert forward != reversed_scope
+    assert forward != reversed_collection
+    assert forward != both
+    assert reversed_scope != reversed_collection
+    assert forward.scope.declared_paths == paths
+    assert forward.collection.bindings == bindings
+
+
+def test_coverage_preserves_both_supplied_children_unchanged() -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+
+    coverage = RepositorySnapshotDeclaredPathScopeCoverage(
+        scope=scope, collection=collection
+    )
+
+    assert coverage.scope == scope
+    assert coverage.collection == collection
+    assert coverage.scope.declared_paths == scope.declared_paths
+    assert coverage.collection.bindings == collection.bindings
+
+
+def test_a_blob_backed_binding_covers_its_declared_path() -> None:
+    bindings = _canonical_blob_bindings() + _canonical_tree_bindings()
+
+    coverage = _coverage((_path("LICENSE"),), bindings)
+
+    covering = coverage.collection.bindings[0]
+    assert covering.path == _path("LICENSE")
+    assert type(covering.git_object) is GitBlobIdentity
+
+
+def test_a_tree_backed_binding_covers_its_declared_path() -> None:
+    bindings = _canonical_blob_bindings() + _canonical_tree_bindings()
+
+    coverage = _coverage((_path("src"),), bindings)
+
+    covering = coverage.collection.bindings[4]
+    assert covering.path == _path("src")
+    assert type(covering.git_object) is GitTreeIdentity
+
+
+def test_coverage_semantic_json_round_trip_preserves_exact_value() -> None:
+    original = _coverage(
+        _canonical_nine_scope_paths(),
+        _canonical_blob_bindings() + _canonical_tree_bindings(),
+    )
+
+    encoded = original.model_dump_json()
+    restored = RepositorySnapshotDeclaredPathScopeCoverage.model_validate_json(encoded)
+
+    assert restored == original
+    assert type(restored.scope) is RepositorySnapshotDeclaredPathScope
+    assert type(restored.collection) is RepositorySnapshotPathBindingCollection
+    assert restored.scope.declared_paths == original.scope.declared_paths
+    assert restored.collection.bindings == original.collection.bindings
+    assert json.loads(encoded) == original.model_dump(mode="json")
+    assert set(json.loads(encoded)) == {"scope", "collection"}
+
+
+def test_coverage_is_frozen() -> None:
+    coverage = _coverage(_canonical_blob_scope_paths(), _canonical_blob_bindings())
+
+    with pytest.raises(ValidationError):
+        coverage.scope = _scope((_path("LICENSE"),), snapshot=_canonical_snapshot())
+
+
+@pytest.mark.parametrize(
+    ("declared", "bindings"),
+    (((), ()), ((), "four"), ("four", ())),
+    ids=("empty-scope-empty-collection", "empty-scope", "empty-collection"),
+)
+def test_coverage_requires_a_non_empty_scope_and_covering_bindings(
+    declared: object,
+    bindings: object,
+) -> None:
+    paths = _canonical_blob_scope_paths() if declared == "four" else ()
+    supplied = _canonical_blob_bindings() if bindings == "four" else ()
+
+    with pytest.raises(ValidationError):
+        _coverage(paths, supplied)
+
+
+def test_an_empty_declared_scope_remains_a_valid_scope_value() -> None:
+    empty = _scope((), snapshot=_canonical_snapshot())
+
+    assert empty.declared_paths == ()
+
+    with pytest.raises(ValidationError, match="declare at least one path"):
+        RepositorySnapshotDeclaredPathScopeCoverage(
+            scope=empty,
+            collection=_collection(
+                _canonical_blob_bindings(), snapshot=_canonical_snapshot()
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("scope_snapshot", "collection_snapshot"),
+    (
+        ("99999999", None),
+        (None, "99999999"),
+    ),
+    ids=("foreign-scope-repository", "foreign-collection-repository"),
+)
+def test_coverage_rejects_distinct_repository_subjects(
+    scope_snapshot: str | None,
+    collection_snapshot: str | None,
+) -> None:
+    foreign = _snapshot(CANONICAL_REVISION, repository_id="99999999")
+    bindings = tuple(
+        RepositorySnapshotPathBinding(
+            snapshot=foreign, path=_path(path), git_object=_blob(digest)
+        )
+        for path, digest in CANONICAL_BLOB_PATH_BINDINGS
+    )
+
+    with pytest.raises(ValidationError, match="share the snapshot subject"):
+        RepositorySnapshotDeclaredPathScopeCoverage(
+            scope=_scope(
+                _canonical_blob_scope_paths(),
+                snapshot=foreign if scope_snapshot else _canonical_snapshot(),
+            ),
+            collection=_collection(
+                bindings if collection_snapshot else _canonical_blob_bindings(),
+                snapshot=foreign if collection_snapshot else _canonical_snapshot(),
+            ),
+        )
+
+
+def test_coverage_rejects_the_same_repository_under_a_distinct_revision() -> None:
+    other = _snapshot("4" * 40)
+    bindings = tuple(
+        RepositorySnapshotPathBinding(
+            snapshot=other, path=_path(path), git_object=_blob(digest)
+        )
+        for path, digest in CANONICAL_BLOB_PATH_BINDINGS
+    )
+
+    with pytest.raises(ValidationError, match="share the snapshot subject"):
+        RepositorySnapshotDeclaredPathScopeCoverage(
+            scope=_scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot()),
+            collection=_collection(bindings, snapshot=other),
+        )
+
+
+@pytest.mark.parametrize("missing", ("scope", "collection"))
+def test_coverage_required_fields_cannot_be_omitted(missing: str) -> None:
+    payload: dict[str, object] = {
+        "scope": _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot()),
+        "collection": _collection(
+            _canonical_blob_bindings(), snapshot=_canonical_snapshot()
+        ),
+    }
+    del payload[missing]
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "snapshot",
+        "declared_paths",
+        "bindings",
+        "status",
+        "outcome",
+        "assessment",
+        "result",
+        "complete",
+        "completeness",
+        "coverage_status",
+        "covered",
+        "fully_covered",
+        "satisfied",
+        "partial",
+        "absent",
+        "missing",
+        "missing_paths",
+        "covered_paths",
+        "uncovered_paths",
+        "unmatched_paths",
+        "unknown",
+        "unavailable",
+        "inaccessible",
+        "omitted",
+        "unresolved",
+        "membership",
+        "member",
+        "declared_count",
+        "binding_count",
+        "covered_count",
+        "missing_count",
+        "root_tree",
+        "evidence",
+    ),
+)
+def test_coverage_rejects_status_count_and_negative_state_fields(field: str) -> None:
+    payload: dict[str, object] = {
+        "scope": _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot()),
+        "collection": _collection(
+            _canonical_blob_bindings(), snapshot=_canonical_snapshot()
+        ),
+        field: 0,
+    }
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("scope", "LICENSE"),
+        ("scope", 37489525),
+        ("scope", None),
+        ("collection", "LICENSE"),
+        ("collection", 37489525),
+        ("collection", None),
+    ),
+)
+def test_coverage_rejects_untyped_children(field: str, value: object) -> None:
+    payload: dict[str, object] = {
+        "scope": _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot()),
+        "collection": _collection(
+            _canonical_blob_bindings(), snapshot=_canonical_snapshot()
+        ),
+    }
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(payload)
+
+
+def test_coverage_rejects_swapped_children() -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(
+            {"scope": collection, "collection": scope}
+        )
+
+
+@pytest.mark.parametrize("field", ("scope", "collection"))
+def test_coverage_python_construction_rejects_nested_mappings(field: str) -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+    payload: dict[str, object] = {"scope": scope, "collection": collection}
+    payload[field] = (
+        scope.model_dump(mode="python")
+        if field == "scope"
+        else collection.model_dump(mode="python")
+    )
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(payload)
+
+
+@pytest.mark.parametrize("field", ("scope", "collection"))
+def test_coverage_rejects_hybrid_mappings_with_typed_nested_values(
+    field: str,
+) -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+    hybrid: dict[str, object] = (
+        {"snapshot": scope.snapshot, "declared_paths": scope.declared_paths}
+        if field == "scope"
+        else {
+            "snapshot": collection.snapshot,
+            "bindings": collection.bindings,
+        }
+    )
+    payload: dict[str, object] = {"scope": scope, "collection": collection}
+    payload[field] = hybrid
+
+    with pytest.raises(ValidationError, match="exactly typed in Python input"):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(payload)
+
+
+class _AttributeBackedScope:
+    def __init__(self, scope: RepositorySnapshotDeclaredPathScope) -> None:
+        self.snapshot = scope.snapshot
+        self.declared_paths = scope.declared_paths
+
+
+class _AttributeBackedCollection:
+    def __init__(self, collection: RepositorySnapshotPathBindingCollection) -> None:
+        self.snapshot = collection.snapshot
+        self.bindings = collection.bindings
+
+
+@pytest.mark.parametrize("field", ("scope", "collection"))
+def test_coverage_rejects_attribute_backed_children_under_from_attributes(
+    field: str,
+) -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+    payload: dict[str, object] = {"scope": scope, "collection": collection}
+    payload[field] = (
+        _AttributeBackedScope(scope)
+        if field == "scope"
+        else _AttributeBackedCollection(collection)
+    )
+
+    with pytest.raises(ValidationError, match="exactly typed in Python input"):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(
+            payload, from_attributes=True
+        )
+
+
+class _ModelScopeLookalike(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    snapshot: object
+    declared_paths: object
+
+
+class _ModelCollectionLookalike(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    snapshot: object
+    bindings: object
+
+
+@pytest.mark.parametrize("field", ("scope", "collection"))
+def test_coverage_rejects_foreign_model_children_under_from_attributes(
+    field: str,
+) -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+    payload: dict[str, object] = {"scope": scope, "collection": collection}
+    payload[field] = (
+        _ModelScopeLookalike(
+            snapshot=scope.snapshot, declared_paths=scope.declared_paths
+        )
+        if field == "scope"
+        else _ModelCollectionLookalike(
+            snapshot=collection.snapshot, bindings=collection.bindings
+        )
+    )
+
+    with pytest.raises(ValidationError, match="exactly typed in Python input"):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(
+            payload, from_attributes=True
+        )
+
+
+def test_coverage_rejects_swapped_children_under_from_attributes() -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+
+    with pytest.raises(ValidationError, match="exactly typed in Python input"):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(
+            {"scope": collection, "collection": scope}, from_attributes=True
+        )
+
+
+def test_coverage_json_input_still_accepts_nested_arrays() -> None:
+    original = _coverage(
+        _canonical_nine_scope_paths(),
+        _canonical_blob_bindings() + _canonical_tree_bindings(),
+    )
+    payload = json.loads(original.model_dump_json())
+
+    assert isinstance(payload["collection"]["bindings"], list)
+    assert isinstance(payload["scope"]["declared_paths"], list)
+
+    restored = RepositorySnapshotDeclaredPathScopeCoverage.model_validate_json(
+        json.dumps(payload)
+    )
+
+    assert restored == original
+    assert restored.collection.bindings == original.collection.bindings
+
+
+def test_coverage_extra_fields_fail_closed() -> None:
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(
+            {
+                "scope": _scope(
+                    _canonical_blob_scope_paths(), snapshot=_canonical_snapshot()
+                ),
+                "collection": _collection(
+                    _canonical_blob_bindings(), snapshot=_canonical_snapshot()
+                ),
+                "verified": True,
+            }
+        )
+
+
+def test_coverage_revalidates_nested_children() -> None:
+    invalid_scope = RepositorySnapshotDeclaredPathScope.model_construct(
+        snapshot=_canonical_snapshot(),
+        declared_paths=(GitRepositoryPath.model_construct(root="/LICENSE"),),
+    )
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScopeCoverage(
+            scope=invalid_scope,
+            collection=_collection(
+                _canonical_blob_bindings(), snapshot=_canonical_snapshot()
+            ),
+        )
+
+
+def test_constructed_coverage_is_revalidated() -> None:
+    invalid = RepositorySnapshotDeclaredPathScopeCoverage.model_construct(
+        scope=_scope((_path("never/bound.txt"),), snapshot=_canonical_snapshot()),
+        collection=_collection(
+            _canonical_blob_bindings(), snapshot=_canonical_snapshot()
+        ),
+    )
+
+    with pytest.raises(ValidationError, match="must have a supplied binding"):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(invalid)
+
+
+def test_an_uncovered_pair_produces_no_domain_value_at_all() -> None:
+    scope = _scope(
+        _canonical_blob_scope_paths() + (_path("never/bound.txt"),),
+        snapshot=_canonical_snapshot(),
+    )
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+
+    with pytest.raises(ValidationError) as error:
+        RepositorySnapshotDeclaredPathScopeCoverage(scope=scope, collection=collection)
+
+    assert tuple(RepositorySnapshotDeclaredPathScopeCoverage.model_fields) == (
+        "scope",
+        "collection",
+    )
+    message = str(error.value)
+    for forbidden in (
+        "absent",
+        "missing from",
+        "unknown",
+        "unavailable",
+        "inaccessible",
+        "omitted",
+        "deleted",
+        "not found",
+        "unresolved",
+        "uncovered",
+        "unmatched",
+    ):
+        assert forbidden not in message
+    assert scope.declared_paths[4] == _path("never/bound.txt")
+    assert len(collection.bindings) == 4
+
+
 def test_model_and_module_surfaces_are_exact_and_local() -> None:
     assert tuple(RepositorySnapshotIdentity.model_fields) == (
         "repository",
@@ -1956,12 +2502,37 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "revalidate_instances": "always",
         "validate_default": True,
     }
+    assert tuple(RepositorySnapshotDeclaredPathScopeCoverage.model_fields) == (
+        "scope",
+        "collection",
+    )
+    assert RepositorySnapshotDeclaredPathScopeCoverage.model_fields[
+        "scope"
+    ].annotation is (RepositorySnapshotDeclaredPathScope)
+    assert RepositorySnapshotDeclaredPathScopeCoverage.model_fields[
+        "collection"
+    ].annotation is (RepositorySnapshotPathBindingCollection)
+    assert (
+        RepositorySnapshotDeclaredPathScopeCoverage.model_fields["scope"].metadata == []
+    )
+    assert (
+        RepositorySnapshotDeclaredPathScopeCoverage.model_fields["collection"].metadata
+        == []
+    )
+    assert RepositorySnapshotDeclaredPathScopeCoverage.model_config == {
+        "frozen": True,
+        "extra": "forbid",
+        "strict": True,
+        "revalidate_instances": "always",
+        "validate_default": True,
+    }
     assert snapshot_module.__all__ == [
         "RepositorySnapshotIdentity",
         "RepositorySnapshotRootTreeBinding",
         "RepositorySnapshotPathBinding",
         "RepositorySnapshotPathBindingCollection",
         "RepositorySnapshotDeclaredPathScope",
+        "RepositorySnapshotDeclaredPathScopeCoverage",
     ]
     assert RepositorySnapshotIdentity.__module__ == "faultatlas.domain.snapshot"
     assert RepositorySnapshotRootTreeBinding.__module__ == "faultatlas.domain.snapshot"
@@ -1973,6 +2544,10 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
     assert (
         RepositorySnapshotDeclaredPathScope.__module__ == "faultatlas.domain.snapshot"
     )
+    assert (
+        RepositorySnapshotDeclaredPathScopeCoverage.__module__
+        == "faultatlas.domain.snapshot"
+    )
 
 
 def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() -> None:
@@ -1983,7 +2558,9 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ast.ImportFrom,
         ast.ImportFrom,
         ast.ImportFrom,
+        ast.ImportFrom,
         ast.Assign,
+        ast.ClassDef,
         ast.ClassDef,
         ast.ClassDef,
         ast.ClassDef,
@@ -1997,6 +2574,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         if isinstance(node, ast.ImportFrom)
     ]
     assert imports == [
+        ("collections.abc", ("Mapping",)),
         ("typing", ("Annotated", "Self", "cast")),
         (
             "pydantic",
@@ -2005,6 +2583,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
                 "ConfigDict",
                 "Field",
                 "ValidationInfo",
+                "ValidatorFunctionWrapHandler",
                 "field_validator",
                 "model_validator",
             ),
@@ -2027,6 +2606,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "RepositorySnapshotPathBinding",
         "RepositorySnapshotPathBindingCollection",
         "RepositorySnapshotDeclaredPathScope",
+        "RepositorySnapshotDeclaredPathScopeCoverage",
     ]
     assert [type(node) for node in classes[0].body] == [
         ast.Expr,
@@ -2073,6 +2653,14 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ast.FunctionDef,
         ast.FunctionDef,
     ]
+    assert [type(node) for node in classes[5].body] == [
+        ast.Expr,
+        ast.Assign,
+        ast.AnnAssign,
+        ast.AnnAssign,
+        ast.FunctionDef,
+        ast.FunctionDef,
+    ]
     assert not [
         node
         for node in tree.body
@@ -2100,6 +2688,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ["model_config"],
         ["model_config"],
         ["model_config"],
+        ["model_config"],
     ]
     assert [
         [
@@ -2114,6 +2703,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ["snapshot", "path", "git_object"],
         ["snapshot", "bindings"],
         ["snapshot", "declared_paths"],
+        ["scope", "collection"],
     ]
     assert [
         [
@@ -2146,6 +2736,10 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
             "_require_typed_python_scope_snapshot",
             "_require_typed_python_declared_paths",
             "_require_unique_declared_paths",
+        ],
+        [
+            "_require_typed_python_children",
+            "_require_covered_declared_paths",
         ],
     ]
     for class_index, expected_left in (
@@ -2209,6 +2803,25 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "len(frozenset(self.declared_paths))",
         "len(self.declared_paths)",
     ]
+    coverage_validator = classes[5].body[-1]
+    assert isinstance(coverage_validator, ast.FunctionDef)
+    coverage_comparisons = [
+        node for node in ast.walk(coverage_validator) if isinstance(node, ast.Compare)
+    ]
+    assert len(coverage_comparisons) == 2
+    assert [
+        (
+            [type(operator) for operator in comparison.ops],
+            [
+                ast.unparse(comparison.left),
+                *(ast.unparse(other) for other in comparison.comparators),
+            ],
+        )
+        for comparison in coverage_comparisons
+    ] == [
+        ([ast.NotEq], ["self.scope.snapshot", "self.collection.snapshot"]),
+        ([ast.NotIn], ["path", "bound"]),
+    ]
     calls = {
         node.func.id
         for node in ast.walk(tree)
@@ -2222,6 +2835,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "cast",
         "field_validator",
         "frozenset",
+        "handler",
         "isinstance",
         "len",
         "model_validator",
@@ -2245,28 +2859,39 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "GitCommitIdentity",
         "GitRepositoryPath",
         "GitTreeIdentity",
+        "Mapping",
         "RepositoryIdentity",
+        "RepositorySnapshotDeclaredPathScope",
         "RepositorySnapshotIdentity",
         "RepositorySnapshotPathBinding",
+        "RepositorySnapshotPathBindingCollection",
         "Self",
         "ValidationInfo",
+        "ValidatorFunctionWrapHandler",
         "ValueError",
         "any",
         "binding",
+        "bound",
         "cast",
         "classmethod",
         "declared",
+        "expected",
         "field_validator",
         "frozenset",
+        "handler",
         "info",
         "isinstance",
+        "key",
         "len",
         "list",
         "model_validator",
         "object",
         "path",
         "self",
+        "str",
+        "supplied",
         "tuple",
+        "type",
         "value",
     }
     assert [
@@ -2274,6 +2899,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
     ] == [
+        ("info", "mode"),
         ("info", "mode"),
         ("info", "mode"),
         ("info", "mode"),
@@ -2289,12 +2915,20 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ("info", "mode"),
         ("info", "mode"),
         ("self", "declared_paths"),
+        ("info", "mode"),
+        ("self", "scope"),
+        ("self", "scope"),
+        ("self", "collection"),
+        ("binding", "path"),
         ("self", "snapshot"),
         ("self", "snapshot"),
         ("binding", "snapshot"),
         ("self", "snapshot"),
         ("self", "bindings"),
         ("self", "declared_paths"),
+        ("info", "field_name"),
         ("binding", "path"),
+        ("self", "collection"),
+        ("self", "scope"),
         ("self", "bindings"),
     ]
