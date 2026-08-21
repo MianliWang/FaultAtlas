@@ -431,9 +431,16 @@ after S07, and confidence, review, and interpretation provenance remain owned by
 Repository membership aggregation; snapshot and whole-repository completeness;
 dispositional outcomes for a declared path lacking a binding; entry kind, mode,
 symlink, and gitlink semantics; prefix, ancestry, and tree topology
-consistency; absence; evidence linkage; Git or filesystem I/O; and persistence
-or durable serialization remain deferred. `S1.P05` through `S1.P10` remain not
-started; S01 through S07 do not make S1.P05 eligible to begin.
+consistency; absence; Git or filesystem I/O; and persistence or durable
+serialization remain deferred. Evidence linkage is delivered only at the S07
+level: one caller-supplied association between one published S02 or S03 fact
+and one durable evidence record, taken as a whole. Everything stronger remains
+deferred — semantic location of a fact inside a record, fact-level support,
+verification, corroboration, derivation, proposition-specific exact-byte
+relations, support role and strength, multi-record support collections,
+collection-level and coverage-level provenance, and the confidence and review
+provenance owned by `S1.P09`. `S1.P05` through `S1.P10` remain not started;
+S01 through S07 do not make S1.P05 eligible to begin.
 
 The remaining `S1.P04` sequence below is PROVISIONAL planning only. It is not
 a commitment, it authorizes no work, and it establishes, reserves, or implies
@@ -528,7 +535,9 @@ incomplete, `S1.P04.S01`, `S1.P04.S02`, `S1.P04.S03`, `S1.P04.S04`,
 `S1.P04.S05`, `S1.P04.S06`, and `S1.P04.S07` are complete, and `S1.P04.S08`
 is next and not started. The path binding, its collection, the declared path
 scope, and the coverage witness perform no Git or filesystem I/O and claim no
-repository membership, snapshot completeness, absence, or evidence linkage.
+repository membership, snapshot completeness, or absence; they carry no
+evidence linkage of their own, which is why the association lives in the
+bridge rather than in `faultatlas.domain.snapshot`.
 The bridge performs no I/O either, never inspects the record it references,
 and asserts only caller-supplied record-level association: no fact locator,
 support role, strength, confidence, review, verification, membership,
