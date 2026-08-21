@@ -215,6 +215,7 @@ CURRENT_PRODUCTION_FILES = {
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/snapshot.py",
+    "src/faultatlas/domain/snapshot_evidence_link.py",
 }
 EVIDENCE_MODULE = "src/faultatlas/domain/evidence.py"
 SNAPSHOT_MODULE = "src/faultatlas/domain/snapshot.py"
@@ -1984,7 +1985,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P04.S04` is complete" in roadmap
     assert "`S1.P04.S05` is complete" in roadmap
     assert "`S1.P04.S06` is complete" in roadmap
-    assert "`S1.P04.S07` is next and not started" in roadmap
+    assert "`S1.P04.S07` is complete" in roadmap
+    assert "`S1.P04.S08` is next and not started" in roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in roadmap
 
 

@@ -186,6 +186,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/snapshot.py",
+    "src/faultatlas/domain/snapshot_evidence_link.py",
     "src/faultatlas/domain/source.py",
 }
 
