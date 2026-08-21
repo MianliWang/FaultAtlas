@@ -1874,7 +1874,8 @@ def test_group_m_historical_p03_readiness_and_current_s05_are_scope_guarded() ->
     assert "`S1.P04.S03` is complete" in roadmap
     assert "`S1.P04.S04` is complete" in roadmap
     assert "`S1.P04.S05` is complete" in roadmap
-    assert "`S1.P04.S06` is next and not started" in roadmap
+    assert "`S1.P04.S06` is complete" in roadmap
+    assert "`S1.P04.S07` is next and not started" in roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in roadmap
 
 

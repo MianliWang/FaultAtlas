@@ -24,10 +24,21 @@ membership, resolution, reachability, binding coverage, or availability. An
 empty scope declares zero paths rather than asserting completeness or that any
 path is absent, and undeclared paths are simply undeclared.
 
+A scope-coverage witness relates one non-empty declared scope to one binding
+collection over the same snapshot subject. It exists only when every exact
+declared path also appears as the exact path of a supplied binding, matched by
+path alone: no object kind, digest, or normalization participates, and bindings
+outside the declared scope neither help nor hinder. Validity does not depend on
+either supplied order, while the witness preserves both supplied values
+unchanged, so ordinary value equality still distinguishes supplied orders.
+Successful construction is the whole assertion; the witness stores no status,
+count, or path subset. A declared path lacking a supplied binding is given no
+name and no state here, and the absence of a witness asserts nothing at all.
+
 The module does not resolve refs, inspect Git objects or files, establish path
-prefix, ancestry, or tree topology, compare a scope against any binding
-collection, assess completeness or coverage, attach evidence, or define
-durable bytes.
+prefix, ancestry, or tree topology, assert repository membership, path
+existence, or root-tree reachability, assess snapshot or whole-repository
+completeness, represent absence, attach evidence, or define durable bytes.
 """
 
 from typing import Annotated, Self, cast
@@ -55,6 +66,7 @@ __all__ = [
     "RepositorySnapshotPathBinding",
     "RepositorySnapshotPathBindingCollection",
     "RepositorySnapshotDeclaredPathScope",
+    "RepositorySnapshotDeclaredPathScopeCoverage",
 ]
 
 
@@ -315,4 +327,30 @@ class RepositorySnapshotDeclaredPathScope(BaseModel):
     def _require_unique_declared_paths(self) -> Self:
         if len(frozenset(self.declared_paths)) != len(self.declared_paths):
             raise ValueError("declared paths must not repeat a repository path")
+        return self
+
+
+class RepositorySnapshotDeclaredPathScopeCoverage(BaseModel):
+    """Supplied witness that a declared path scope is covered by bindings."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    scope: RepositorySnapshotDeclaredPathScope
+    collection: RepositorySnapshotPathBindingCollection
+
+    @model_validator(mode="after")
+    def _require_covered_declared_paths(self) -> Self:
+        if not self.scope.declared_paths:
+            raise ValueError("a covered scope must declare at least one path")
+        if self.scope.snapshot != self.collection.snapshot:
+            raise ValueError("scope and collection must share the snapshot subject")
+        bound = frozenset(binding.path for binding in self.collection.bindings)
+        if any(path not in bound for path in self.scope.declared_paths):
+            raise ValueError("every declared path must have a supplied binding")
         return self
