@@ -2229,6 +2229,37 @@ def test_coverage_rejects_hybrid_mappings_with_typed_nested_values(
         RepositorySnapshotDeclaredPathScopeCoverage.model_validate(payload)
 
 
+class _AttributeBackedScope:
+    def __init__(self, scope: RepositorySnapshotDeclaredPathScope) -> None:
+        self.snapshot = scope.snapshot
+        self.declared_paths = scope.declared_paths
+
+
+class _AttributeBackedCollection:
+    def __init__(self, collection: RepositorySnapshotPathBindingCollection) -> None:
+        self.snapshot = collection.snapshot
+        self.bindings = collection.bindings
+
+
+@pytest.mark.parametrize("field", ("scope", "collection"))
+def test_coverage_rejects_attribute_backed_children_under_from_attributes(
+    field: str,
+) -> None:
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=_canonical_snapshot())
+    collection = _collection(_canonical_blob_bindings(), snapshot=_canonical_snapshot())
+    payload: dict[str, object] = {"scope": scope, "collection": collection}
+    payload[field] = (
+        _AttributeBackedScope(scope)
+        if field == "scope"
+        else _AttributeBackedCollection(collection)
+    )
+
+    with pytest.raises(ValidationError, match="typed values in Python input"):
+        RepositorySnapshotDeclaredPathScopeCoverage.model_validate(
+            payload, from_attributes=True
+        )
+
+
 def test_coverage_json_input_still_accepts_nested_arrays() -> None:
     original = _coverage(
         _canonical_nine_scope_paths(),
