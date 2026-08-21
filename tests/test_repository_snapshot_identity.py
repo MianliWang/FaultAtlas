@@ -35,6 +35,7 @@ from faultatlas.domain.revision import (
     TextEncoding,
 )
 from faultatlas.domain.snapshot import (
+    RepositorySnapshotDeclaredPathScope,
     RepositorySnapshotIdentity,
     RepositorySnapshotPathBinding,
     RepositorySnapshotPathBindingCollection,
@@ -1495,6 +1496,364 @@ def test_constructed_collection_is_revalidated() -> None:
         RepositorySnapshotPathBindingCollection.model_validate(invalid)
 
 
+def _scope(
+    paths: tuple[GitRepositoryPath, ...] = (),
+    snapshot: RepositorySnapshotIdentity | None = None,
+) -> RepositorySnapshotDeclaredPathScope:
+    return RepositorySnapshotDeclaredPathScope(
+        snapshot=snapshot if snapshot is not None else _snapshot(),
+        declared_paths=paths,
+    )
+
+
+def _canonical_blob_scope_paths() -> tuple[GitRepositoryPath, ...]:
+    return tuple(_path(path) for path, _ in CANONICAL_BLOB_PATH_BINDINGS)
+
+
+def _canonical_nine_scope_paths() -> tuple[GitRepositoryPath, ...]:
+    return _canonical_blob_scope_paths() + tuple(
+        _path(path) for path, _ in CANONICAL_TREE_PATH_BINDINGS
+    )
+
+
+def test_empty_declared_scope_declares_zero_paths() -> None:
+    snapshot = _snapshot()
+
+    scope = _scope(snapshot=snapshot)
+
+    assert scope.snapshot == snapshot
+    assert scope.declared_paths == ()
+    assert len(scope.declared_paths) == 0
+
+
+def test_empty_and_nonempty_scopes_over_one_snapshot_are_both_valid() -> None:
+    snapshot = _snapshot()
+
+    empty = _scope(snapshot=snapshot)
+    populated = _scope((_path("LICENSE"),), snapshot=snapshot)
+
+    assert empty.snapshot == populated.snapshot
+    assert empty != populated
+    assert empty.declared_paths == ()
+    assert populated.declared_paths == (_path("LICENSE"),)
+
+
+def test_single_path_scope_is_representable() -> None:
+    scope = _scope((_path("LICENSE"),))
+
+    assert scope.declared_paths == (_path("LICENSE"),)
+
+
+def test_supplied_canonical_four_path_scope_is_representable() -> None:
+    paths = _canonical_blob_scope_paths()
+
+    scope = _scope(paths, snapshot=_canonical_snapshot())
+
+    assert len(scope.declared_paths) == 4
+    assert tuple(path.root for path in scope.declared_paths) == tuple(
+        path for path, _ in CANONICAL_BLOB_PATH_BINDINGS
+    )
+
+
+def test_supplied_canonical_nine_path_scope_is_representable() -> None:
+    paths = _canonical_nine_scope_paths()
+
+    scope = _scope(paths, snapshot=_canonical_snapshot())
+
+    assert len(scope.declared_paths) == 9
+    assert len(frozenset(scope.declared_paths)) == 9
+    declared = tuple(path.root for path in scope.declared_paths)
+    for ancestor in ("src", "src/_pytest", "src/_pytest/assertion"):
+        assert ancestor in declared
+    assert "src/_pytest/assertion/rewrite.py" in declared
+
+
+def test_scope_accepts_the_maximum_supported_cardinality() -> None:
+    paths = tuple(_path(f"generated/{index}.txt") for index in range(4096))
+
+    scope = _scope(paths)
+
+    assert len(scope.declared_paths) == 4096
+
+
+def test_scope_rejects_more_than_the_maximum_supported_cardinality() -> None:
+    paths = tuple(_path(f"generated/{index}.txt") for index in range(4097))
+
+    with pytest.raises(ValidationError) as error:
+        _scope(paths)
+
+    assert error.value.errors()[0]["type"] == "too_long"
+
+
+def test_supplied_declaration_order_is_preserved_without_sorting() -> None:
+    paths = _canonical_blob_scope_paths()
+
+    scope = _scope(paths, snapshot=_canonical_snapshot())
+
+    assert scope.declared_paths == paths
+    assert tuple(path.root for path in scope.declared_paths) != tuple(
+        sorted(path.root for path in paths)
+    )
+
+
+def test_reversed_declaration_is_a_distinct_value_without_structural_meaning() -> None:
+    snapshot = _canonical_snapshot()
+    paths = _canonical_blob_scope_paths()
+
+    forward = _scope(paths, snapshot=snapshot)
+    reverse = _scope(tuple(reversed(paths)), snapshot=snapshot)
+
+    assert forward != reverse
+    assert forward.declared_paths == tuple(reversed(reverse.declared_paths))
+    assert forward.snapshot == reverse.snapshot
+    assert frozenset(forward.declared_paths) == frozenset(reverse.declared_paths)
+
+
+def test_one_path_may_be_declared_in_two_independent_scopes() -> None:
+    snapshot = _snapshot()
+
+    first = _scope((_path("LICENSE"),), snapshot=snapshot)
+    second = _scope(
+        (_path("LICENSE"), _path("README.md")),
+        snapshot=snapshot,
+    )
+
+    assert first != second
+    assert first.declared_paths[0] == second.declared_paths[0]
+
+
+def test_scope_paths_may_prefix_one_another() -> None:
+    scope = _scope(
+        (
+            _path("src"),
+            _path("src/_pytest"),
+            _path("src/_pytest/assertion/rewrite.py"),
+        )
+    )
+
+    assert len(scope.declared_paths) == 3
+
+
+def test_case_distinct_scope_paths_remain_distinct() -> None:
+    lower = _scope((_path("license"),))
+    upper = _scope((_path("LICENSE"),))
+
+    assert lower != upper
+    assert lower.declared_paths[0].root == "license"
+    assert upper.declared_paths[0].root == "LICENSE"
+
+
+def test_nfc_and_nfd_scope_paths_remain_distinct() -> None:
+    composed = _scope((_path(SYNTHETIC_NFC_PATH),))
+    decomposed = _scope((_path(SYNTHETIC_NFD_PATH),))
+
+    assert SYNTHETIC_NFC_PATH != SYNTHETIC_NFD_PATH
+    assert composed != decomposed
+
+    both = _scope((_path(SYNTHETIC_NFC_PATH), _path(SYNTHETIC_NFD_PATH)))
+
+    assert len(both.declared_paths) == 2
+
+
+def test_scope_is_frozen() -> None:
+    scope = _scope((_path("LICENSE"),))
+
+    with pytest.raises(ValidationError):
+        scope.declared_paths = ()
+
+
+def test_scope_semantic_json_round_trip_preserves_exact_value() -> None:
+    original = _scope(_canonical_nine_scope_paths(), snapshot=_canonical_snapshot())
+
+    encoded = original.model_dump_json()
+    restored = RepositorySnapshotDeclaredPathScope.model_validate_json(encoded)
+
+    assert restored == original
+    assert restored.declared_paths == original.declared_paths
+    assert type(restored.snapshot) is RepositorySnapshotIdentity
+    assert all(type(path) is GitRepositoryPath for path in restored.declared_paths)
+    assert json.loads(encoded) == original.model_dump(mode="json")
+    assert set(json.loads(encoded)) == {"snapshot", "declared_paths"}
+
+
+def test_scope_accepts_tuple_python_input_and_rejects_other_containers() -> None:
+    snapshot = _snapshot()
+    path = _path("LICENSE")
+
+    assert _scope((path,), snapshot=snapshot).declared_paths == (path,)
+
+    containers: tuple[object, ...] = (
+        [path],
+        set((path,)),
+        frozenset((path,)),
+        (item for item in (path,)),
+    )
+    for container in containers:
+        with pytest.raises(ValidationError) as error:
+            RepositorySnapshotDeclaredPathScope.model_validate(
+                {"snapshot": snapshot, "declared_paths": container}
+            )
+        assert error.value.errors()[0]["type"] == "tuple_type"
+
+
+@pytest.mark.parametrize("missing", ("snapshot", "declared_paths"))
+def test_scope_required_fields_cannot_be_omitted(missing: str) -> None:
+    payload: dict[str, object] = {"snapshot": _snapshot(), "declared_paths": ()}
+    del payload[missing]
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScope.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "bindings",
+        "collection",
+        "status",
+        "outcome",
+        "assessment",
+        "complete",
+        "completeness",
+        "coverage",
+        "satisfied",
+        "partial",
+        "unknown",
+        "unavailable",
+        "absent",
+        "missing_paths",
+        "resolved_count",
+        "declared_path_count",
+        "members",
+        "membership",
+        "root_tree",
+        "evidence",
+        "prefix",
+        "recursive",
+    ),
+)
+def test_scope_rejects_accounting_membership_and_evidence_fields(field: str) -> None:
+    payload: dict[str, object] = {
+        "snapshot": _snapshot(),
+        "declared_paths": (),
+        field: 0,
+    }
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScope.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    (_repository(), _commit(), _tree(), _blob(), _qualified_path(), "github/37489525"),
+)
+def test_scope_rejects_non_snapshot_subjects(snapshot: object) -> None:
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScope.model_validate(
+            {"snapshot": snapshot, "declared_paths": ()}
+        )
+
+
+@pytest.mark.parametrize(
+    "declared",
+    ("LICENSE", b"LICENSE", 37489525, None, _qualified_path(), _blob()),
+)
+def test_scope_rejects_untyped_python_path_values(declared: object) -> None:
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScope.model_validate(
+            {"snapshot": _snapshot(), "declared_paths": (declared,)}
+        )
+
+
+@pytest.mark.parametrize(
+    "path",
+    ("", ".", "..", "/LICENSE", "LICENSE/", "a//b", "a\\b", "C:/a", "a/./b"),
+)
+def test_scope_inherits_exact_repository_path_rejections(path: str) -> None:
+    payload = {
+        "snapshot": json.loads(_snapshot().model_dump_json()),
+        "declared_paths": [path],
+    }
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScope.model_validate_json(json.dumps(payload))
+
+
+def test_scope_rejects_a_duplicate_declared_path_without_deduplication() -> None:
+    path = _path("LICENSE")
+
+    with pytest.raises(ValidationError, match="must not repeat a repository path"):
+        _scope((path, path))
+
+
+def test_scope_rejects_a_duplicate_declared_path_in_json_input() -> None:
+    payload = {
+        "snapshot": json.loads(_snapshot().model_dump_json()),
+        "declared_paths": ["LICENSE", "README.md", "LICENSE"],
+    }
+
+    with pytest.raises(ValidationError, match="must not repeat a repository path"):
+        RepositorySnapshotDeclaredPathScope.model_validate_json(json.dumps(payload))
+
+
+def test_scope_extra_fields_fail_closed() -> None:
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScope.model_validate(
+            {"snapshot": _snapshot(), "declared_paths": (), "verified": True}
+        )
+
+
+def test_scope_revalidates_nested_snapshot() -> None:
+    invalid_snapshot = RepositorySnapshotIdentity.model_construct(
+        repository=_repository(),
+        revision=GitCommitIdentity.model_construct(
+            schema_version=1,
+            kind=GitObjectKind.COMMIT,
+            algorithm=GitHashAlgorithm.SHA1,
+            full_digest="0" * 40,
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        _scope((_path("LICENSE"),), snapshot=invalid_snapshot)
+
+
+def test_scope_revalidates_nested_declared_paths() -> None:
+    invalid_path = GitRepositoryPath.model_construct(root="/LICENSE")
+
+    with pytest.raises(ValidationError):
+        _scope((invalid_path,))
+
+
+def test_constructed_scope_is_revalidated() -> None:
+    path = _path("LICENSE")
+    invalid = RepositorySnapshotDeclaredPathScope.model_construct(
+        snapshot=_snapshot(),
+        declared_paths=(path, path),
+    )
+
+    with pytest.raises(ValidationError):
+        RepositorySnapshotDeclaredPathScope.model_validate(invalid)
+
+
+def test_declared_scope_is_independent_of_any_binding_collection() -> None:
+    snapshot = _canonical_snapshot()
+    scope = _scope(_canonical_blob_scope_paths(), snapshot=snapshot)
+    collection = _collection(_canonical_blob_bindings(), snapshot=snapshot)
+
+    assert tuple(RepositorySnapshotDeclaredPathScope.model_fields) == (
+        "snapshot",
+        "declared_paths",
+    )
+    assert scope.snapshot == collection.snapshot
+    assert set(json.loads(scope.model_dump_json())) == {"snapshot", "declared_paths"}
+
+    unbound = _scope((_path("never/bound.txt"),), snapshot=snapshot)
+
+    assert unbound.declared_paths == (_path("never/bound.txt"),)
+    assert len(collection.bindings) == 4
+
+
 def test_model_and_module_surfaces_are_exact_and_local() -> None:
     assert tuple(RepositorySnapshotIdentity.model_fields) == (
         "repository",
@@ -1576,11 +1935,33 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "revalidate_instances": "always",
         "validate_default": True,
     }
+    assert tuple(RepositorySnapshotDeclaredPathScope.model_fields) == (
+        "snapshot",
+        "declared_paths",
+    )
+    assert RepositorySnapshotDeclaredPathScope.model_fields["snapshot"].annotation is (
+        RepositorySnapshotIdentity
+    )
+    assert (
+        RepositorySnapshotDeclaredPathScope.model_fields["declared_paths"].annotation
+        == (tuple[GitRepositoryPath, ...])
+    )
+    assert RepositorySnapshotDeclaredPathScope.model_fields[
+        "declared_paths"
+    ].metadata == [MaxLen(max_length=4096)]
+    assert RepositorySnapshotDeclaredPathScope.model_config == {
+        "frozen": True,
+        "extra": "forbid",
+        "strict": True,
+        "revalidate_instances": "always",
+        "validate_default": True,
+    }
     assert snapshot_module.__all__ == [
         "RepositorySnapshotIdentity",
         "RepositorySnapshotRootTreeBinding",
         "RepositorySnapshotPathBinding",
         "RepositorySnapshotPathBindingCollection",
+        "RepositorySnapshotDeclaredPathScope",
     ]
     assert RepositorySnapshotIdentity.__module__ == "faultatlas.domain.snapshot"
     assert RepositorySnapshotRootTreeBinding.__module__ == "faultatlas.domain.snapshot"
@@ -1588,6 +1969,9 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
     assert (
         RepositorySnapshotPathBindingCollection.__module__
         == "faultatlas.domain.snapshot"
+    )
+    assert (
+        RepositorySnapshotDeclaredPathScope.__module__ == "faultatlas.domain.snapshot"
     )
 
 
@@ -1604,6 +1988,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ast.ClassDef,
         ast.ClassDef,
         ast.ClassDef,
+        ast.ClassDef,
     ]
     assert not [node for node in tree.body if isinstance(node, ast.Import)]
     imports = [
@@ -1612,7 +1997,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         if isinstance(node, ast.ImportFrom)
     ]
     assert imports == [
-        ("typing", ("Annotated", "Self")),
+        ("typing", ("Annotated", "Self", "cast")),
         (
             "pydantic",
             (
@@ -1641,6 +2026,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "RepositorySnapshotRootTreeBinding",
         "RepositorySnapshotPathBinding",
         "RepositorySnapshotPathBindingCollection",
+        "RepositorySnapshotDeclaredPathScope",
     ]
     assert [type(node) for node in classes[0].body] == [
         ast.Expr,
@@ -1678,6 +2064,15 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ast.FunctionDef,
         ast.FunctionDef,
     ]
+    assert [type(node) for node in classes[4].body] == [
+        ast.Expr,
+        ast.Assign,
+        ast.AnnAssign,
+        ast.AnnAssign,
+        ast.FunctionDef,
+        ast.FunctionDef,
+        ast.FunctionDef,
+    ]
     assert not [
         node
         for node in tree.body
@@ -1704,6 +2099,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ["model_config"],
         ["model_config"],
         ["model_config"],
+        ["model_config"],
     ]
     assert [
         [
@@ -1717,6 +2113,7 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ["snapshot", "root_tree"],
         ["snapshot", "path", "git_object"],
         ["snapshot", "bindings"],
+        ["snapshot", "declared_paths"],
     ]
     assert [
         [
@@ -1744,6 +2141,11 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         [
             "_require_typed_python_collection_snapshot",
             "_require_shared_snapshot_and_unique_paths",
+        ],
+        [
+            "_require_typed_python_scope_snapshot",
+            "_require_typed_python_declared_paths",
+            "_require_unique_declared_paths",
         ],
     ]
     for class_index, expected_left in (
@@ -1792,6 +2194,21 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ),
         ([ast.NotEq], ["binding.snapshot", "self.snapshot"]),
     ]
+    scope_validator = classes[4].body[-1]
+    assert isinstance(scope_validator, ast.FunctionDef)
+    scope_comparisons = [
+        node for node in ast.walk(scope_validator) if isinstance(node, ast.Compare)
+    ]
+    assert len(scope_comparisons) == 1
+    scope_comparison = scope_comparisons[0]
+    assert [type(operator) for operator in scope_comparison.ops] == [ast.NotEq]
+    assert [
+        ast.unparse(scope_comparison.left),
+        *(ast.unparse(other) for other in scope_comparison.comparators),
+    ] == [
+        "len(frozenset(self.declared_paths))",
+        "len(self.declared_paths)",
+    ]
     calls = {
         node.func.id
         for node in ast.walk(tree)
@@ -1802,11 +2219,13 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "Field",
         "ValueError",
         "any",
+        "cast",
         "field_validator",
         "frozenset",
         "isinstance",
         "len",
         "model_validator",
+        "tuple",
     }
     assert not [
         node
@@ -1834,14 +2253,18 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         "ValueError",
         "any",
         "binding",
+        "cast",
         "classmethod",
+        "declared",
         "field_validator",
         "frozenset",
         "info",
         "isinstance",
         "len",
+        "list",
         "model_validator",
         "object",
+        "path",
         "self",
         "tuple",
         "value",
@@ -1862,11 +2285,16 @@ def test_snapshot_module_has_only_the_bounded_models_and_no_io_call_surface() ->
         ("self", "git_object"),
         ("info", "mode"),
         ("self", "bindings"),
+        ("info", "mode"),
+        ("info", "mode"),
+        ("info", "mode"),
+        ("self", "declared_paths"),
         ("self", "snapshot"),
         ("self", "snapshot"),
         ("binding", "snapshot"),
         ("self", "snapshot"),
         ("self", "bindings"),
+        ("self", "declared_paths"),
         ("binding", "path"),
         ("self", "bindings"),
     ]

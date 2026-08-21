@@ -15,12 +15,22 @@ meaning. An empty collection aggregates zero supplied bindings rather than
 asserting that any path is absent, and aggregation is not repository
 membership.
 
+A declared path scope records which exact repository paths a supplier declared
+to be in scope for one snapshot subject. The scope is supplied by its caller
+and is never derived from acquisition, binding, traversal, or root-tree
+material. It covers exact paths only, never a prefix, subtree, or whole
+repository. Declaring a path asserts nothing about that path: not existence,
+membership, resolution, reachability, binding coverage, or availability. An
+empty scope declares zero paths rather than asserting completeness or that any
+path is absent, and undeclared paths are simply undeclared.
+
 The module does not resolve refs, inspect Git objects or files, establish path
-prefix, ancestry, or tree topology, assess completeness, attach evidence, or
-define durable bytes.
+prefix, ancestry, or tree topology, compare a scope against any binding
+collection, assess completeness or coverage, attach evidence, or define
+durable bytes.
 """
 
-from typing import Annotated, Self
+from typing import Annotated, Self, cast
 
 from pydantic import (
     BaseModel,
@@ -44,6 +54,7 @@ __all__ = [
     "RepositorySnapshotRootTreeBinding",
     "RepositorySnapshotPathBinding",
     "RepositorySnapshotPathBindingCollection",
+    "RepositorySnapshotDeclaredPathScope",
 ]
 
 
@@ -246,4 +257,62 @@ class RepositorySnapshotPathBindingCollection(BaseModel):
             self.bindings
         ):
             raise ValueError("bindings must not repeat a repository path")
+        return self
+
+
+class RepositorySnapshotDeclaredPathScope(BaseModel):
+    """Supplied declaration of exact repository paths scoped to one snapshot."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    snapshot: RepositorySnapshotIdentity
+    declared_paths: Annotated[
+        tuple[GitRepositoryPath, ...],
+        Field(max_length=4096),
+    ]
+
+    @field_validator("snapshot", mode="before")
+    @classmethod
+    def _require_typed_python_scope_snapshot(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value,
+            RepositorySnapshotIdentity,
+        ):
+            raise ValueError(
+                "snapshot must be a RepositorySnapshotIdentity in Python input"
+            )
+        return value
+
+    @field_validator("declared_paths", mode="before")
+    @classmethod
+    def _require_typed_python_declared_paths(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json" and isinstance(value, list):
+            return tuple(cast(list[object], value))
+        if info.mode == "python" and isinstance(value, tuple):
+            declared = cast(tuple[object, ...], value)
+            if any(not isinstance(path, GitRepositoryPath) for path in declared):
+                raise ValueError(
+                    "declared_paths must contain GitRepositoryPath values in "
+                    "Python input"
+                )
+        return cast(object, value)
+
+    @model_validator(mode="after")
+    def _require_unique_declared_paths(self) -> Self:
+        if len(frozenset(self.declared_paths)) != len(self.declared_paths):
+            raise ValueError("declared paths must not repeat a repository path")
         return self
