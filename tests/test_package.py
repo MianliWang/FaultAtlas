@@ -44,6 +44,8 @@ FORBIDDEN_CORPUS_PATH_COMPONENTS = frozenset(
         "s06-current-contract-gap-matrix",
         "s07-identity-revision-provenance",
         "s08-snapshot-boundary-compatibility",
+        "s08-deferred-subject-disposition",
+        "repository-snapshot",
     }
 )
 CORPUS_DIRECTORY_NAMES = frozenset(
