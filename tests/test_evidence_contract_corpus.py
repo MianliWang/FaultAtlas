@@ -299,6 +299,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/snapshot.py",
+    "src/faultatlas/domain/snapshot_evidence_link.py",
     "src/faultatlas/domain/source.py",
 }
 EXPECTED_PRODUCTION_LOCKS = {
@@ -3749,7 +3750,8 @@ def test_roadmap_records_p03_complete_and_p04_s02_complete() -> None:
     assert "`S1.P04.S04` is complete" in roadmap
     assert "`S1.P04.S05` is complete" in roadmap
     assert "`S1.P04.S06` is complete" in roadmap
-    assert "`S1.P04.S07` is next and not started" in roadmap
+    assert "`S1.P04.S07` is complete" in roadmap
+    assert "`S1.P04.S08` is next and not started" in roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap
     reference_case = (

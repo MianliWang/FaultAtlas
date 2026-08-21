@@ -33,8 +33,9 @@ aspirational Slice as scheduled work.
   `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09` are complete. `S1.P04` is
   active and incomplete; `S1.P04.S01` is complete, `S1.P04.S02` is complete,
   `S1.P04.S03` is complete, `S1.P04.S04` is complete,
-  `S1.P04.S05` is complete, and `S1.P04.S06` is complete.
-  `S1.P04.S07` is next and not started.
+  `S1.P04.S05` is complete, `S1.P04.S06` is complete, and
+  `S1.P04.S07` is complete.
+  `S1.P04.S08` is next and not started.
   `S1.P05` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -74,8 +75,9 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09`
 are complete. `S1.P04` is active and incomplete; `S1.P04.S01` is complete,
 `S1.P04.S02` is complete, `S1.P04.S03` is complete, `S1.P04.S04` is
-complete, `S1.P04.S05` is complete, and `S1.P04.S06` is complete.
-`S1.P04.S07` is next and not started.
+complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete, and
+`S1.P04.S07` is complete.
+`S1.P04.S08` is next and not started.
 `S1.P05` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -236,8 +238,9 @@ eligible to begin and its implementation state was `not_started`.
 
 `S1.P04` is active and incomplete. `S1.P04.S01` is complete, `S1.P04.S02` is
 complete, `S1.P04.S03` is complete, `S1.P04.S04` is complete,
-`S1.P04.S05` is complete, and `S1.P04.S06` is complete.
-`S1.P04.S07` is next and not started.
+`S1.P04.S05` is complete, `S1.P04.S06` is complete, and `S1.P04.S07` is
+complete.
+`S1.P04.S08` is next and not started.
 S01 defines the immutable snapshot subject identity as stable
 `RepositoryIdentity` plus immutable `GitCommitIdentity`; mutable refs remain
 observations and are not snapshot identity. S02 adds the separate strict,
@@ -362,12 +365,75 @@ status, outcome, assessment, coverage, or count field, reuses no S1.P03
 completeness type, and creates no `snapshot` to `evidence` dependency. Scoped
 accounting over a declared scope and a binding collection is deferred.
 
+S07 adds the first cross-domain relation, `RepositorySnapshotFactEvidenceLink`,
+in the separate bridge module `faultatlas.domain.snapshot_evidence_link`. It has
+exactly two semantic fields: one supplied `fact` and one supplied
+`evidence_record`. The bridge exists because neither published side may own the
+edge: `faultatlas.domain.snapshot` stays evidence-neutral and
+`faultatlas.domain.evidence` stays predecessor-locked, and both remain
+byte-identical. The new module imports both and neither imports it, so the only
+`snapshot` to `evidence` edge in production is the bridge's own.
+
+The claim is LEVEL 1 association and nothing more: the caller associates this
+supplied published snapshot fact with this supplied durable evidence-record
+reference. It does not assert that the record was read, parsed, or inspected,
+that the record contains, supports, corroborates, derives, verifies, or proves
+the fact, or that the fact is correct or authoritative. S07 introduces no
+support role, strength, status, confidence, reviewer, review state, or
+verification outcome, and every association carries the same deliberately weak,
+uniform meaning.
+
+The `fact` position is a closed union of exactly `RepositorySnapshotRootTreeBinding`
+and `RepositorySnapshotPathBinding`, each of which corresponds directly to a
+retained normalized observation. `RepositorySnapshotIdentity`,
+`RepositorySnapshotPathBindingCollection`,
+`RepositorySnapshotDeclaredPathScope`, and
+`RepositorySnapshotDeclaredPathScopeCoverage` are rejected as `fact`. The
+reason is provenance, not type-surface minimization: no retained record
+declares the exact S04 aggregate or its supplied order, the S05 scope is
+entirely caller supplied and absent from the retained acquisition, and S06 is a
+deterministic relation over a caller scope and a supplied collection. A flat
+record-level association to any of those would manufacture provenance, and
+linking every child of a collection still does not make the collection itself
+evidence-linked, so collection-level and coverage-level provenance stay
+unmodelled.
+
+The referenced record is exactly one `DurableEvidenceRecordReference`,
+identified as a whole. S07 defines no JSON pointer, semantic path, field
+locator, byte span, request, artifact, or envelope that would locate a fact
+inside that record, and byte offsets are not a substitute for one:
+`ArtifactByteLocator` addresses exact bytes rather than semantic JSON fields.
+JSON-pointer usage elsewhere remains corpus and closure assurance metadata, not
+a production surface. Each link carries exactly one record, so associating one
+fact with two records is two independent link values; no `evidence_records`
+tuple, ordering, duplicate, or bound semantics for multi-source support exists,
+and the same fact or the same record recurring across independent links is
+never rejected. The canonical witnesses are the S02 root-tree fact and all nine
+S03 path bindings for pytest-dev/pytest at revision
+`690a63b9218f72662cd3a67c6c200b758c88ce12`, each associated independently with
+the retained canonical acquisition record.
+
+The stronger evidence available for `LICENSE` — a normalized acquisition
+relation, exact retained bytes, and a verified Git-blob digest — is deliberately
+not modelled here. Widening the first association to carry it would require
+separate proposition-specific semantics that S07 does not define. The target
+fact is embedded by value, so S07 requires no durable snapshot bytes, record
+digest, registry, identifier, persistence, or serialization, and introduces no
+P10 dependency. It performs no I/O, resolves nothing, and never inspects the
+record it references. Evidence association is not membership proof, path
+existence, root-tree reachability, or snapshot completeness, and it licenses no
+absent, unknown, unavailable, inaccessible, omitted, missing, or not-found path
+state; the canonical evidence contains no negative repository-path observation.
+Snapshot completeness and repository membership aggregation both remain open
+after S07, and confidence, review, and interpretation provenance remain owned by
+`S1.P09`.
+
 Repository membership aggregation; snapshot and whole-repository completeness;
 dispositional outcomes for a declared path lacking a binding; entry kind, mode,
 symlink, and gitlink semantics; prefix, ancestry, and tree topology
 consistency; absence; evidence linkage; Git or filesystem I/O; and persistence
 or durable serialization remain deferred. `S1.P05` through `S1.P10` remain not
-started; S01 through S06 do not make S1.P05 eligible to begin.
+started; S01 through S07 do not make S1.P05 eligible to begin.
 
 The remaining `S1.P04` sequence below is PROVISIONAL planning only. It is not
 a commitment, it authorizes no work, and it establishes, reserves, or implies
@@ -376,9 +442,20 @@ subject to its own Gate and may be renumbered, merged, split, or dropped; the
 slice count is fixed retrospectively at Phase closure, as `S1.P03` (nine) and
 `S1.P02` (seven) demonstrate:
 
-1. `S1.P04.S07` — evidence-linked offline snapshot vertical
-2. `S1.P04.S08` — repository snapshot contract corpus
-3. `S1.P04.S09` — integration and Phase closure
+1. `S1.P04.S08` — deferred-subject disposition
+2. `S1.P04.S09` — repository snapshot contract corpus
+3. `S1.P04.S10` — integration and Phase closure
+
+The previously listed production offline-composition object is removed from
+the scheduled sequence. The evidence-linked offline vertical may instead be
+demonstrated in the corpus or in replay assurance without adding a large
+production aggregate, and nothing here authorizes such an aggregate. S08 must
+decide the disposition of snapshot completeness, repository membership
+aggregation, and the historical default branch; it does not decide them here,
+and this Slice decides none of them. `S1.P04` closure is not presumed
+reachable before those three subjects are resolved or explicitly
+redispositioned. This sequence authorizes no future implementation and may
+still be renumbered, merged, split, or dropped after its own orientation.
 
 Git mode, executable, symbolic-link, gitlink, prefix and topology consistency,
 and known-absence semantics remain evidence-gated and unscheduled; no future
@@ -442,12 +519,22 @@ S01-S09 are complete. The current live surface adds the pure
 `RepositorySnapshotPathBindingCollection`,
 `RepositorySnapshotDeclaredPathScope`, and
 `RepositorySnapshotDeclaredPathScopeCoverage` values in
-`faultatlas.domain.snapshot`; `S1.P04` is active and incomplete,
-`S1.P04.S01`, `S1.P04.S02`, `S1.P04.S03`, `S1.P04.S04`, `S1.P04.S05`, and
-`S1.P04.S06` are complete, and `S1.P04.S07` is next and not started. The path
-binding, its collection, the declared path scope, and the coverage witness
-perform no Git or filesystem I/O and claim no repository membership, snapshot
-completeness, absence, or evidence linkage.
+`faultatlas.domain.snapshot`, and the separate bridge module
+`faultatlas.domain.snapshot_evidence_link`, whose sole
+`RepositorySnapshotFactEvidenceLink` associates one supplied
+`RepositorySnapshotRootTreeBinding` or `RepositorySnapshotPathBinding` with
+one supplied `DurableEvidenceRecordReference`. `S1.P04` is active and
+incomplete, `S1.P04.S01`, `S1.P04.S02`, `S1.P04.S03`, `S1.P04.S04`,
+`S1.P04.S05`, `S1.P04.S06`, and `S1.P04.S07` are complete, and `S1.P04.S08`
+is next and not started. The path binding, its collection, the declared path
+scope, and the coverage witness perform no Git or filesystem I/O and claim no
+repository membership, snapshot completeness, absence, or evidence linkage.
+The bridge performs no I/O either, never inspects the record it references,
+and asserts only caller-supplied record-level association: no fact locator,
+support role, strength, confidence, review, verification, membership,
+completeness, or absence. `faultatlas.domain.snapshot` and
+`faultatlas.domain.evidence` are unchanged by `S1.P04.S07` and neither
+imports the bridge.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and
