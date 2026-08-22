@@ -658,13 +658,18 @@ canonical path-resolution evidence records no Git file mode for any leaf or
 traversal, and it contains no negative path observation from which absence
 could be derived.
 
-Each remaining Slice must receive its own read-only orientation before
-implementation. Whether a later Slice ever explains why a declared path lacks a
-binding, and what vocabulary such an explanation would require, is undecided,
-and nothing here decides it.
+Every `S1.P04` Slice received its own read-only orientation before
+implementation, and no `S1.P04` Slice remains. Whether a later Slice ever
+explains why a declared path lacks a binding, and what vocabulary such an
+explanation would require, is undecided, and nothing here decides it.
 
-`S1.P04` closure cannot be presumed reachable while the S1.P02-deferred
-repository-membership subject remains unresolved or undispositioned.
+The `S1.P04` closure gate required the S1.P02-deferred repository-membership
+subject to be dispositioned, not resolved. `S1.P04.S08` dispositioned it as
+`evidence_insufficient` with immediate owner `S2` and preserved long-term
+owner `S5`, and `S1.P04.S10` records that disposition with
+`self_owned_open == 0`. The gate is satisfied by explicit transferred
+ownership; the subject itself remains unresolved and is not claimed
+otherwise.
 
 ## Preserved later Stage 1 phases
 
