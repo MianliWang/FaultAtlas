@@ -1253,13 +1253,15 @@ def test_contract_markdown_is_derived_and_not_an_authority() -> None:
 # --- roadmap ---------------------------------------------------------------
 
 
-def test_roadmap_records_the_s09_transition_without_p05_eligibility() -> None:
+def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     roadmap = " ".join((REPOSITORY_ROOT / "docs/roadmap.md").read_text("utf-8").split())
     assert "`S1.P04.S09` is complete" in roadmap
-    assert "`S1.P04.S10` is next and not started" in roadmap
-    assert "`S1.P04` is active and incomplete" in roadmap
-    assert "`S1.P05` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P04.S10` is complete" in roadmap
+    assert "`S1.P04` is complete" in roadmap
+    assert "`S1.P05` is `eligible_to_begin` and not started" in roadmap
+    assert "`S1.P06` through `S1.P10` remain not started" in roadmap
     assert CORPUS_RELATIVE in roadmap
-    assert "`S1.P04` is complete" not in roadmap
-    assert "S1.P05 is eligible" not in roadmap
-    assert "eligible_to_begin" not in roadmap
+    assert "`S1.P04` is complete" in roadmap
+    # S1.P04.S10 closure makes S1.P05 eligible; S09 itself did not.
+    assert "`S1.P05` is `eligible_to_begin` and not started" in roadmap
+    assert "S1.P05 implementation has begun" not in roadmap

@@ -2062,7 +2062,7 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
         "`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and "
         "`S1.P03.S09` are complete" in normalized_roadmap
     )
-    assert "`S1.P04` is active and incomplete" in normalized_roadmap
+    assert "`S1.P04` is complete" in normalized_roadmap
     assert "`S1.P04.S01` is complete" in normalized_roadmap
     assert "`S1.P04.S02` is complete" in normalized_roadmap
     assert "`S1.P04.S03` is complete" in normalized_roadmap
@@ -2072,8 +2072,9 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P04.S07` is complete" in normalized_roadmap
     assert "`S1.P04.S08` is complete" in normalized_roadmap
     assert "`S1.P04.S09` is complete" in normalized_roadmap
-    assert "`S1.P04.S10` is next and not started" in normalized_roadmap
-    assert "`S1.P05` through `S1.P10` remain not started" in normalized_roadmap
+    assert "`S1.P04.S10` is complete" in normalized_roadmap
+    assert "`S1.P05` is `eligible_to_begin` and not started" in normalized_roadmap
+    assert "`S1.P06` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:
         assert f"`{slice_id}` — {title} ({state})" in normalized_roadmap
