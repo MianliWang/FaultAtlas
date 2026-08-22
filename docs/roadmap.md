@@ -33,9 +33,9 @@ aspirational Slice as scheduled work.
   `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09` are complete. `S1.P04` is
   active and incomplete; `S1.P04.S01` is complete, `S1.P04.S02` is complete,
   `S1.P04.S03` is complete, `S1.P04.S04` is complete,
-  `S1.P04.S05` is complete, `S1.P04.S06` is complete, and
-  `S1.P04.S07` is complete.
-  `S1.P04.S08` is next and not started.
+  `S1.P04.S05` is complete, `S1.P04.S06` is complete,
+  `S1.P04.S07` is complete, and `S1.P04.S08` is complete.
+  `S1.P04.S09` is next and not started.
   `S1.P05` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -75,9 +75,9 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09`
 are complete. `S1.P04` is active and incomplete; `S1.P04.S01` is complete,
 `S1.P04.S02` is complete, `S1.P04.S03` is complete, `S1.P04.S04` is
-complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete, and
-`S1.P04.S07` is complete.
-`S1.P04.S08` is next and not started.
+complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
+`S1.P04.S07` is complete, and `S1.P04.S08` is complete.
+`S1.P04.S09` is next and not started.
 `S1.P05` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -238,9 +238,9 @@ eligible to begin and its implementation state was `not_started`.
 
 `S1.P04` is active and incomplete. `S1.P04.S01` is complete, `S1.P04.S02` is
 complete, `S1.P04.S03` is complete, `S1.P04.S04` is complete,
-`S1.P04.S05` is complete, `S1.P04.S06` is complete, and `S1.P04.S07` is
-complete.
-`S1.P04.S08` is next and not started.
+`S1.P04.S05` is complete, `S1.P04.S06` is complete, `S1.P04.S07` is
+complete, and `S1.P04.S08` is complete.
+`S1.P04.S09` is next and not started.
 S01 defines the immutable snapshot subject identity as stable
 `RepositoryIdentity` plus immutable `GitCommitIdentity`; mutable refs remain
 observations and are not snapshot identity. S02 adds the separate strict,
@@ -320,14 +320,24 @@ existence, root-tree reachability, snapshot completeness, whole-repository
 completeness, or evidence verification, reuses no S1.P03 completeness type, and
 creates no `snapshot` to `evidence` dependency.
 
-Of the three S1.P02-deferred subjects owned by `S1.P04`, S04 addresses
-repository snapshot aggregation. Snapshot completeness remains open: S05
-supplies only a declared denominator, and S06 proves scope-relative structural
-coverage of supplied values rather than snapshot or whole-repository
-completeness. Repository membership aggregation also remains open, because
-neither aggregating supplied bindings, declaring a path scope, nor witnessing
-that a declared scope is covered is a membership, existence, or reachability
-claim.
+`S1.P02` assigns `S1.P04` exactly four deferred subjects, not three:
+`deferred:17` repository snapshot aggregation, `deferred:18` snapshot
+completeness, `deferred:19` default-branch observation, and `deferred:20`
+repository membership aggregation. An earlier revision of this document
+said three and omitted `deferred:19`; that count was wrong and is corrected
+here. The sealed `S1.P02` closure register was always correct and is
+unchanged. S04 addresses `deferred:17`. Snapshot completeness is broader
+than what S05 and S06 establish: S05 supplies only a declared denominator,
+and S06 proves scope-relative structural coverage of supplied values rather
+than snapshot or whole-repository completeness. Repository membership
+aggregation is not established at all, because neither aggregating supplied
+bindings, declaring a path scope, witnessing that a declared scope is
+covered, nor associating a fact with a retained record is a membership,
+existence, or reachability claim. `deferred:19` is likewise unaddressed:
+S01 through S07 required no default-branch designation and published none,
+because mutable refs are not snapshot identity. S08 dispositions all four,
+together with the `S1.P00`, `S1.P01`, and `S1.P03` subjects that `S1.P04`
+also inherited.
 Prefix, ancestry, descendant, blob-at-prefix, file/directory collision, and
 tree topology consistency are deliberately absent, so canonical prefix chains
 such as `src`, `src/_pytest`, `src/_pytest/assertion`, and
@@ -428,6 +438,54 @@ Snapshot completeness and repository membership aggregation both remain open
 after S07, and confidence, review, and interpretation provenance remain owned by
 `S1.P09`.
 
+S08 is governance-only. It changes no production source, adds no production
+module, and implements no deferred product semantics; the production Python
+source count remains 11. It publishes one append-only decision artifact,
+`reference_corpus/contracts/repository-snapshot/decisions/s08-deferred-subject-disposition/decision.json`,
+with derived Markdown and a SHA-256 sidecar, and it dispositions every deferred
+subject `S1.P04` inherited.
+
+`S1.P04` inherited exactly seven such subjects, not three: one from `S1.P00`
+(`gap:s05-known:historical-default-branch-unknown`), one from `S1.P01`
+(`deferred:p01:p04-repository-snapshot-aggregation`), four from `S1.P02`
+(`deferred:17` through `deferred:20`), and one from `S1.P03` (`deferred:01`
+repository snapshot model). Each is dispositioned exactly once, and each cites
+its predecessor by exact path, JSON pointer, and SHA-256.
+
+Three are addressed by published work. `deferred:p01:p04-repository-snapshot-aggregation`
+and `deferred:17` are satisfied by S04, whose bounded ordered collection is the
+aggregation those items reserved. `deferred:01` is satisfied, boundedly, by S01
+through S07: the repository snapshot model now exists, while every published
+non-generalization is preserved.
+
+`deferred:18` snapshot completeness is split. Its bounded portion — a declared
+exact-path scope and scope-relative positive structural coverage of supplied
+bindings — is satisfied by S05 and S06. Its stronger remainder,
+whole-repository snapshot completeness, is not implemented and is not claimed:
+it is carried forward as `evidence_insufficient` with immediate owner `S2` and
+preserved long-term semantic owner `S5`, because the retained canonical
+acquisition records six non-recursive traversals and retains no tree-entry list
+for any of them, so no authoritative enumeration of repository content exists.
+
+`deferred:20` repository membership aggregation is carried forward whole as
+`evidence_insufficient` to `S2` and `S5`, for the same evidentiary reason
+together with the absence of verified root-tree reachability. `deferred:19`
+default-branch observation is carried forward as `unsupported_current_scope` to
+`S1.P05`, because a default-branch designation is a mutable-ref and history
+fact rather than snapshot identity. The `S1.P00` historical default branch
+keeps its state exactly — `unknown_pending_additional_evidence` — and only its
+ownership moves, to `S2`; `S1.P04` never relied on historical default-branch
+identity, no production source references a default branch, and the unknown is
+never replaced by the repository's current default branch, which the retained
+acquisition observed only at its own observation time.
+
+The result is `self_owned_open == 0`: no unresolved subject remains owned by
+`S1.P04`, and every carried-forward subject names a valid later owner. S08
+closes inherited ownership, not the Phase. It is redisposition, not correction:
+the `S1.P00`, `S1.P01`, `S1.P02`, and `S1.P03` closures were correct at
+publication, remain byte-identical, and their original ownership and state
+statements remain historically true.
+
 Repository membership aggregation; snapshot and whole-repository completeness;
 dispositional outcomes for a declared path lacking a binding; entry kind, mode,
 symlink, and gitlink semantics; prefix, ancestry, and tree topology
@@ -440,7 +498,9 @@ verification, corroboration, derivation, proposition-specific exact-byte
 relations, support role and strength, multi-record support collections,
 collection-level and coverage-level provenance, and the confidence and review
 provenance owned by `S1.P09`. `S1.P05` through `S1.P10` remain not started;
-S01 through S07 do not make S1.P05 eligible to begin.
+S01 through S08 do not make S1.P05 eligible to begin; the subjects S08
+transferred to `S2`, `S5`, and `S1.P05` establish ownership only, and
+confer no eligibility on any receiving phase.
 
 The remaining `S1.P04` sequence below is PROVISIONAL planning only. It is not
 a commitment, it authorizes no work, and it establishes, reserves, or implies
@@ -449,17 +509,17 @@ subject to its own Gate and may be renumbered, merged, split, or dropped; the
 slice count is fixed retrospectively at Phase closure, as `S1.P03` (nine) and
 `S1.P02` (seven) demonstrate:
 
-1. `S1.P04.S08` — deferred-subject disposition
-2. `S1.P04.S09` — repository snapshot contract corpus
-3. `S1.P04.S10` — integration and Phase closure
+1. `S1.P04.S09` — repository snapshot contract corpus
+2. `S1.P04.S10` — integration and Phase closure
 
 The previously listed production offline-composition object is removed from
 the scheduled sequence. The evidence-linked offline vertical may instead be
 demonstrated in the corpus or in replay assurance without adding a large
-production aggregate, and nothing here authorizes such an aggregate. S08 must
-decide the disposition of snapshot completeness, repository membership
-aggregation, and the historical default branch; it does not decide them here,
-and this Slice decides none of them. `S1.P04` closure is not presumed
+production aggregate, and nothing here authorizes such an aggregate. S08 has
+now decided the disposition of all seven inherited subjects, including
+snapshot completeness, repository membership aggregation, `deferred:19`, and
+the historical default branch, reaching `self_owned_open == 0`. `S1.P04`
+closure is not presumed
 reachable before those three subjects are resolved or explicitly
 redispositioned. This sequence authorizes no future implementation and may
 still be renumbered, merged, split, or dropped after its own orientation.
@@ -532,8 +592,13 @@ S01-S09 are complete. The current live surface adds the pure
 `RepositorySnapshotRootTreeBinding` or `RepositorySnapshotPathBinding` with
 one supplied `DurableEvidenceRecordReference`. `S1.P04` is active and
 incomplete, `S1.P04.S01`, `S1.P04.S02`, `S1.P04.S03`, `S1.P04.S04`,
-`S1.P04.S05`, `S1.P04.S06`, and `S1.P04.S07` are complete, and `S1.P04.S08`
-is next and not started. The path binding, its collection, the declared path
+`S1.P04.S05`, `S1.P04.S06`, `S1.P04.S07`, and `S1.P04.S08` are complete,
+and `S1.P04.S09` is next and not started. `S1.P04.S08` changed no
+production source: it published the governance-only deferred-subject
+disposition under
+`reference_corpus/contracts/repository-snapshot/decisions/s08-deferred-subject-disposition`,
+dispositioning all seven inherited subjects exactly once and reaching
+`self_owned_open == 0`. The path binding, its collection, the declared path
 scope, and the coverage witness perform no Git or filesystem I/O and claim no
 repository membership, snapshot completeness, or absence; they carry no
 evidence linkage of their own, which is why the association lives in the
