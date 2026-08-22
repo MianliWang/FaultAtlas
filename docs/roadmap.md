@@ -37,7 +37,8 @@ aspirational Slice as scheduled work.
   `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
   `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
   `S1.P04` is complete.
-  `S1.P05` is `eligible_to_begin` and not started.
+  `S1.P05` is active and incomplete; `S1.P05.S01` is complete, and
+  `S1.P05.S02` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -81,7 +82,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
 `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
 `S1.P04` is complete.
-`S1.P05` is `eligible_to_begin` and not started.
+`S1.P05` is active and incomplete; `S1.P05.S01` is complete, and
+`S1.P05.S02` is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -671,9 +673,75 @@ owner `S5`, and `S1.P04.S10` records that disposition with
 ownership; the subject itself remains unresolved and is not claimed
 otherwise.
 
+## S1.P05 — Development History Model
+
+`S1.P05` is active and incomplete. `S1.P05.S01` is complete and
+`S1.P05.S02` is next and not started.
+
+`S1.P05.S01` publishes one new production module,
+`faultatlas.domain.history`, exporting exactly `DevelopmentSubjectKind` and
+`DevelopmentSubjectIdentity`. The subject kind is closed to exactly `issue`
+and `pull_request`; an unknown kind fails closed. The identity carries exactly
+four supplied semantic fields — `repository` as the published
+`RepositoryIdentity`, `kind`, `number` as the published
+`RepositoryScopedNumber`, and `provider_global_id` as the published
+`ProviderGlobalId` — and reuses those `S1.P01` primitives rather than
+restating their scalar constraints. The canonical witnesses are
+pytest-dev/pytest Issue `#4412` with provider global id `381866787` and
+Pull Request `#4414` with provider global id `231744068`, both under
+repository global id `37489525`.
+
+The positive claim is exactly that a caller identifies one repository-scoped
+Issue or Pull Request using the published repository identity, the
+repository-scoped number, the provider-global identity, and the closed subject
+kind. Repository identity and subject kind are both part of the subject, so
+the same number under a different repository, and the same number under a
+different kind, are different values. `RepositoryScopedNumber` and
+`ProviderGlobalId` carry no repository or provider information of their own,
+so no coherence between a supplied number and a supplied global identifier is
+checked or implied, and a supplied pair is never treated as an authoritative
+provider match.
+
+`S1.P05.S01` asserts nothing further. It does not claim that the subject
+exists, that a provider lookup would succeed, or anything about visibility,
+state, title, body, author, labels, timestamps, comments, or discussion
+content. It defines no development-history identity or aggregate, no snapshot
+transition or ancestry, no chronology or occurrence time, no change set, no
+relationship between an Issue and a Pull Request, no relationship to a commit,
+revision, or repository snapshot, no repair or fix semantics, and no review or
+merge relation. It is evidence-neutral: no evidence field, no durable
+evidence-record reference, and no claim that the retained canonical
+acquisition supports or verifies a supplied identity. Following the `S1.P04`
+early-slice discipline, evidence association is deferred until the history
+fact types stabilize. The Slice performs no Git or GitHub I/O and adds no
+reader, writer, persistence, or corpus capability.
+
+`S1.P02` `deferred:19` default-branch observation is owned by `S1.P05` but is
+not implemented by `S1.P05.S01`; the historical default branch remains
+unknown and owned by `S2`. The six `S1.P04` handoff constraints are inherited
+unchanged, and the published `S1.P04` contracts, the repository-snapshot v1
+corpus, and all `S1.P00`-`S1.P03` artifacts remain frozen.
+
+The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
+implementation and may split, merge, renumber, or drop after later read-only
+orientations:
+
+1. `S1.P05.S01` — Development Subject Identity (complete)
+2. `S1.P05.S02` — Subject Revision Relation (provisional; next, not started)
+3. `S1.P05.S03` — Development Chronology (provisional)
+4. `S1.P05.S04` — Supplied Change Set (provisional)
+5. `S1.P05.S05` — Review and Merge Relations (provisional)
+6. `S1.P05.S06` — Mutable-ref / Default-branch Observation (provisional)
+7. `S1.P05.S07` — History-Evidence Association (provisional)
+8. `S1.P05.S08` — Deferred-subject Disposition (provisional)
+9. `S1.P05.S09` — Contract Corpus (provisional)
+10. `S1.P05.S10` — Integration and Phase Closure (provisional)
+
+`S1.P06` is not eligible to begin. `S1.P05` is incomplete, and no `S1.P06`
+readiness is claimed here.
+
 ## Preserved later Stage 1 phases
 
-- **S1.P05 — Development History Model**
 - **S1.P06 — Fault Instance Model**
 - **S1.P07 — Pattern & Invariant Model**
 - **S1.P08 — Transfer & Applicability Model**

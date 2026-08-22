@@ -88,6 +88,9 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/source.py",
 }
 
+HISTORY_MODULE = "src/faultatlas/domain/history.py"
+CURRENT_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, HISTORY_MODULE}
+
 EXPECTED_OWNED_SYMBOLS = (
     ("faultatlas.domain.snapshot", "S1.P04.S01", "RepositorySnapshotIdentity"),
     ("faultatlas.domain.snapshot", "S1.P04.S02", "RepositorySnapshotRootTreeBinding"),
@@ -873,13 +876,16 @@ def test_predecessor_and_governance_bytes_are_unchanged(relative: str) -> None:
     assert _digest(REPOSITORY_ROOT / relative) == PREDECESSOR_DIGESTS[relative]
 
 
-def test_production_surface_is_unchanged_by_this_slice() -> None:
+def test_production_surface_adds_only_history_after_this_closure() -> None:
     observed = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
-    assert observed == EXPECTED_PRODUCTION_FILES
-    assert len(observed) == 11
+    assert observed == CURRENT_PRODUCTION_FILES
+    assert len(observed) == 12
+    assert observed - EXPECTED_PRODUCTION_FILES == {HISTORY_MODULE}
+    assert EXPECTED_PRODUCTION_FILES - observed == set()
+    assert len(EXPECTED_PRODUCTION_FILES) == 11
 
 
 def test_owned_symbols_match_the_live_published_modules() -> None:
@@ -967,7 +973,9 @@ def test_roadmap_records_phase_completion_and_p05_readiness() -> None:
     )
     assert "`S1.P04` is complete" in roadmap
     assert "`S1.P04.S10` is complete" in roadmap
-    assert "`S1.P05` is `eligible_to_begin`" in roadmap
+    assert "`S1.P05` is active and incomplete" in roadmap
+    assert "`S1.P05.S01` is complete" in roadmap
+    assert "`S1.P05.S02` is next and not started" in roadmap
     assert "`S1.P06` through `S1.P10` remain not started" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P04` is active and incomplete" not in roadmap
