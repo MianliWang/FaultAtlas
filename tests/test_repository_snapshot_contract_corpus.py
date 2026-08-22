@@ -712,24 +712,42 @@ def _resolve_pointer(document: Any, pointer: str) -> Any:
 def test_every_replay_source_pointer_resolves_into_its_replayed_value(
     vector: dict[str, Any],
 ) -> None:
-    dump = json.dumps(
-        cast(dict[str, Any], vector["expected"])["semantic_dump"], sort_keys=True
-    )
-    for pointer in cast(list[dict[str, str]], vector["source_pointers"]):
-        assert set(pointer) == {"document_path", "json_pointer"}
-        path = REPOSITORY_ROOT / pointer["document_path"]
+    dump = cast(dict[str, Any], vector["expected"])["semantic_dump"]
+    for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
+        assert set(pointer) == {"document_path", "json_pointer", "source_fields"}
+        path = REPOSITORY_ROOT / cast(str, pointer["document_path"])
         assert path.is_file(), f"{vector['id']}: {pointer['document_path']}"
         document = json.loads(path.read_text("utf-8"))
         # A cited pointer must resolve; a dangling pointer is a false
         # provenance claim even when the vector itself still constructs.
-        resolved = _resolve_pointer(document, pointer["json_pointer"])
-        # A scalar the vector cites as its source must actually appear in the
-        # value that vector replays.
-        if isinstance(resolved, (str, int)) and not isinstance(resolved, bool):
-            assert str(resolved) in dump, (
-                f"{vector['id']}: {pointer['json_pointer']} resolves to "
-                f"{resolved!r}, which is absent from the replayed value"
+        resolved = _resolve_pointer(document, cast(str, pointer["json_pointer"]))
+
+        # Resolvability alone proves nothing: an object-valued pointer could be
+        # swapped for any other existing object. Each cited source field is
+        # therefore mapped onto the exact replayed field and compared by value,
+        # so a vector cannot claim retained provenance it does not have.
+        fields = cast(dict[str, str], pointer["source_fields"])
+        assert fields, f"{vector['id']}: a cited pointer must map at least one field"
+        for source_field, replayed_field in fields.items():
+            observed = _resolve_pointer(resolved, source_field)
+            replayed = _resolve_pointer(dump, replayed_field)
+            assert observed == replayed, (
+                f"{vector['id']}: {pointer['json_pointer']}{source_field} is "
+                f"{observed!r} but the replayed {replayed_field} is {replayed!r}"
             )
+
+
+def test_only_retained_observations_cite_retained_evidence() -> None:
+    for vector in _vectors("replay-vectors"):
+        classification = cast(str, vector["evidence_classification"])
+        pointers = cast(list[dict[str, Any]], vector["source_pointers"])
+        if classification == "retained_normalized_observation":
+            assert pointers, f"{vector['id']} claims retained provenance with no source"
+        else:
+            # Caller-supplied selections, deterministic derivations, and
+            # associations are not declared by any retained record, so they
+            # must cite no retained location at all.
+            assert pointers == [], f"{vector['id']} must cite no retained source"
 
 
 def test_replay_preserves_heterogeneous_provenance() -> None:
@@ -803,6 +821,19 @@ def test_replay_locks_the_retained_artifact_and_ten_evidence_links() -> None:
         if vector["target_symbol"] == "RepositorySnapshotFactEvidenceLink"
     ]
     assert len(links) == 10
+    # An association references the retained record as whole bytes rather than
+    # a location inside it, so the artifact lock is its citation and the
+    # referenced digest and length must match that artifact exactly.
+    for vector in links:
+        assert vector["source_pointers"] == []
+        record = cast(
+            dict[str, Any],
+            cast(dict[str, Any], vector["expected"])["semantic_dump"][
+                "evidence_record"
+            ],
+        )
+        assert record["sha256"] == lock["sha256"]
+        assert record["byte_length"] == lock["byte_length"]
     facts = [
         json.dumps(cast(dict[str, Any], vector["expected"])["semantic_dump"]["fact"])
         for vector in links

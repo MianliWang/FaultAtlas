@@ -8,10 +8,10 @@ This internal, source-repository-only `S1.P04.S09` corpus is not a production sc
 
 | File | SHA-256 |
 | --- | --- |
-| `manifest.json` | `60381766870b84db296f1c1f224a0938a66f69fba2e35b7eeeaac862eb1a3827` |
+| `manifest.json` | `790dc0a31c3bc561563d0fd86565b3e7022ff949cec220d3676bf0f982b05779` |
 | `valid-vectors.json` | `f26cc45cf2b5a13ee099dbda8f890743fe233ca7db3c855a4547784a405ea56f` |
 | `invalid-vectors.json` | `e5179a1a424057a62a04e3321f6f4330cc8cb2f46f32609863579e5fcab624f0` |
-| `replay-vectors.json` | `a1bf07b1be323b18ce0d16c0aba2963331eab4ba4c4659e38275cf5951146095` |
+| `replay-vectors.json` | `a4945c9e0bcc3e85f8f1f26a66992ec8618df4e4ad719a40fad61fca7dac0226` |
 
 `contract.md` carries no sidecar, matching the published identity, revision-locator, and evidence-envelope corpora.
 
