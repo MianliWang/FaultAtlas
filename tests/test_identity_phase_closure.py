@@ -1988,7 +1988,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P04.S06` is complete" in roadmap
     assert "`S1.P04.S07` is complete" in roadmap
     assert "`S1.P04.S08` is complete" in roadmap
-    assert "`S1.P04.S09` is next and not started" in roadmap
+    assert "`S1.P04.S09` is complete" in roadmap
+    assert "`S1.P04.S10` is next and not started" in roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in roadmap
 
 
