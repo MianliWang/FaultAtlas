@@ -6,7 +6,7 @@ import hashlib
 import json
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -51,6 +51,48 @@ EXPECTED_CORPUS_FILES = {
     "valid-vectors.sha256",
 }
 SEALED_JSON = ("manifest", "valid-vectors", "invalid-vectors", "replay-vectors")
+
+
+class LockedFile(NamedTuple):
+    byte_length: int
+    sha256: str
+
+
+# Fixed, independently recorded oracles for every published corpus byte. These
+# are literals rather than values recomputed from the files under test, so a
+# coordinated edit of a JSON file, its sidecar, and its manifest entry fails
+# here instead of silently re-deriving its own expectation. This is what makes
+# the manifest's append-only correction policy and immutable_after_publication
+# claim enforceable.
+LOCKED_CORPUS_FILES = {
+    "contract.md": LockedFile(
+        6643, "b58ee4ed71d12d348799a305ea669216958fb6df722f970cab2d9d63ca66e32d"
+    ),
+    "invalid-vectors.json": LockedFile(
+        96244, "e5179a1a424057a62a04e3321f6f4330cc8cb2f46f32609863579e5fcab624f0"
+    ),
+    "invalid-vectors.sha256": LockedFile(
+        87, "db0a33e813b8f85e329c4a163676043ac6e1975f0abd98651678b104de2b52b6"
+    ),
+    "manifest.json": LockedFile(
+        9022, "790dc0a31c3bc561563d0fd86565b3e7022ff949cec220d3676bf0f982b05779"
+    ),
+    "manifest.sha256": LockedFile(
+        80, "fcd56b0d2a4a3f5321a87931e2522c994fcbf38683ff8838fa0d40626e21e840"
+    ),
+    "replay-vectors.json": LockedFile(
+        70034, "a4945c9e0bcc3e85f8f1f26a66992ec8618df4e4ad719a40fad61fca7dac0226"
+    ),
+    "replay-vectors.sha256": LockedFile(
+        86, "8e459bc8a5c46dbe5dbb3c2f6ce8a07015667beac571985987918fbea6cbb576"
+    ),
+    "valid-vectors.json": LockedFile(
+        136727, "f26cc45cf2b5a13ee099dbda8f890743fe233ca7db3c855a4547784a405ea56f"
+    ),
+    "valid-vectors.sha256": LockedFile(
+        85, "bd20b3ec0c4fce34d795fd6de0e758dba8580b4b810379d7251a929dcc9fa021"
+    ),
+}
 
 S08_DECISION = (
     "reference_corpus/contracts/repository-snapshot/decisions/"
@@ -331,6 +373,23 @@ def test_corpus_json_is_exactly_canonical(name: str) -> None:
                 walk(item)
 
     walk(document)
+
+
+@pytest.mark.parametrize("filename", tuple(sorted(LOCKED_CORPUS_FILES)))
+def test_corpus_bytes_match_their_independent_locks(filename: str) -> None:
+    locked = LOCKED_CORPUS_FILES[filename]
+    path = CORPUS_ROOT / filename
+    raw = path.read_bytes()
+    assert len(raw) == locked.byte_length, filename
+    assert hashlib.sha256(raw).hexdigest() == locked.sha256, filename
+
+
+def test_locked_inventory_covers_every_published_corpus_file() -> None:
+    assert set(LOCKED_CORPUS_FILES) == EXPECTED_CORPUS_FILES
+    for name in SEALED_JSON:
+        sidecar = LOCKED_CORPUS_FILES[f"{name}.sha256"]
+        expected = f"{LOCKED_CORPUS_FILES[f'{name}.json'].sha256}  {name}.json\n"
+        assert sidecar.byte_length == len(expected.encode())
 
 
 @pytest.mark.parametrize("name", SEALED_JSON)
@@ -748,6 +807,59 @@ def test_only_retained_observations_cite_retained_evidence() -> None:
             # associations are not declared by any retained record, so they
             # must cite no retained location at all.
             assert pointers == [], f"{vector['id']} must cite no retained source"
+
+
+def test_replay_layers_are_actually_chained() -> None:
+    dumps = {
+        cast(str, vector["id"]): cast(dict[str, Any], vector["expected"])[
+            "semantic_dump"
+        ]
+        for vector in _vectors("replay-vectors")
+    }
+
+    # The replayed subject must be the subject carried by every replayed fact,
+    # so a corrected subject cannot leave stale copies behind.
+    subject = dumps["snapshot.replay.subject.canonical"]
+    fact_ids = ["snapshot.replay.root-tree.canonical"]
+    fact_ids += [f"snapshot.replay.path-binding.blob-{index}" for index in range(4)]
+    fact_ids += [f"snapshot.replay.path-binding.tree-{index}" for index in range(5)]
+    for fact_id in fact_ids:
+        assert dumps[fact_id]["snapshot"] == subject, fact_id
+
+    # The replayed S04 aggregate must contain exactly the nine replayed S03
+    # facts, in the replayed order.
+    nine_facts = [dumps[fact_id] for fact_id in fact_ids[1:]]
+    collection = dumps["snapshot.replay.collection.canonical-nine"]
+    assert collection["bindings"] == nine_facts
+    assert collection["snapshot"] == subject
+
+    # The replayed S06 witnesses must embed the replayed S05 scope and the
+    # replayed S04 collection, not independently authored copies of them.
+    four_scope = dumps["snapshot.replay.scope.canonical-four"]
+    nine_scope = dumps["snapshot.replay.scope.canonical-nine"]
+    assert four_scope["snapshot"] == subject
+    assert nine_scope["snapshot"] == subject
+    assert dumps["snapshot.replay.coverage.four-over-nine"] == {
+        "collection": collection,
+        "scope": four_scope,
+    }
+    assert dumps["snapshot.replay.coverage.nine-over-nine"] == {
+        "collection": collection,
+        "scope": nine_scope,
+    }
+
+    # The declared scopes must be drawn from the replayed facts themselves.
+    bound_paths = [cast(dict[str, Any], fact)["path"] for fact in nine_facts]
+    assert cast(list[str], four_scope["declared_paths"]) == bound_paths[:4]
+    assert cast(list[str], nine_scope["declared_paths"]) == bound_paths
+
+    # Each replayed association must carry one of the replayed facts exactly.
+    link_ids = ["snapshot.replay.link.root-tree"]
+    link_ids += [f"snapshot.replay.link.blob-{index}" for index in range(4)]
+    link_ids += [f"snapshot.replay.link.tree-{index}" for index in range(5)]
+    assert [dumps[link_id]["fact"] for link_id in link_ids] == [
+        dumps[fact_id] for fact_id in fact_ids
+    ]
 
 
 def test_replay_preserves_heterogeneous_provenance() -> None:
