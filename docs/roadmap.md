@@ -506,13 +506,15 @@ own. Its seven target symbols are exactly the seven published models;
 `DurableEvidenceRecordReference` and the identity and revision types are support
 targets, never `S1.P04` product symbols.
 
-The inventory is 50 valid, 68 invalid, and 26 replay vectors — 144 in total over
+The inventory is 50 valid, 82 invalid, and 26 replay vectors — 158 in total over
 16 fixtures. Every vector declares a distinct semantic partition, so no vector
 restates another. The valid and invalid families cover all seven symbols,
 including the strict/frozen surface, nested revalidation, the 4096 cardinality
 bound and its rejection at 4097, path uniqueness, shared-subject agreement,
 algorithm consistency, the closed blob-or-tree union with commit-at-path failing
-closed in both Python and JSON input, and the published Python and JSON input
+closed in both Python and JSON input, frozen assignment and nested
+revalidation of validation-bypassing children for every one of the seven
+models, and the published Python and JSON input
 boundary per model: typed Python input accepted, dumped mappings rejected, JSON
 reconstruction accepted, strict tuple-versus-list behavior, and swapped or
 foreign children rejected. Rejection vectors lock only structured information —
@@ -660,7 +662,7 @@ incomplete, `S1.P04.S01`, `S1.P04.S02`, `S1.P04.S03`, `S1.P04.S04`,
 are complete, and `S1.P04.S10` is next and not started. `S1.P04.S09`
 changed no production source: it published the deterministic contract
 corpus under `reference_corpus/contracts/repository-snapshot/v1`, freezing
-the seven published models across 144 vectors with a chained,
+the seven published models across 158 vectors with a chained,
 provenance-heterogeneous replay. `S1.P04.S08` changed no
 production source: it published the governance-only deferred-subject
 disposition under

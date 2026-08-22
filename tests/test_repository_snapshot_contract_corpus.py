@@ -66,19 +66,19 @@ class LockedFile(NamedTuple):
 # claim enforceable.
 LOCKED_CORPUS_FILES = {
     "contract.md": LockedFile(
-        6643, "b58ee4ed71d12d348799a305ea669216958fb6df722f970cab2d9d63ca66e32d"
+        6643, "9002d89007da5627662787ed05045ad100dae0bdcf49a70d6832cf4a9e0e32f7"
     ),
     "invalid-vectors.json": LockedFile(
-        96244, "e5179a1a424057a62a04e3321f6f4330cc8cb2f46f32609863579e5fcab624f0"
+        116565, "9377845c4e6735dadc8e079f637fe78a8a09fb05967824322cbec034c8f26cc4"
     ),
     "invalid-vectors.sha256": LockedFile(
-        87, "db0a33e813b8f85e329c4a163676043ac6e1975f0abd98651678b104de2b52b6"
+        87, "3fcbbce5514f222bd87927a1c4ad65abaaa90517bad0a483a3a62eea6ffa605a"
     ),
     "manifest.json": LockedFile(
-        9022, "790dc0a31c3bc561563d0fd86565b3e7022ff949cec220d3676bf0f982b05779"
+        9133, "ca53f751b2e276e100b6da0fb1795eeed5414e94f17f6ec88e68980bbfeb8b13"
     ),
     "manifest.sha256": LockedFile(
-        80, "fcd56b0d2a4a3f5321a87931e2522c994fcbf38683ff8838fa0d40626e21e840"
+        80, "2ad75cbd954bfd03d0e842efc188b8d9d774516db7bbaf340bad6ed188f69a57"
     ),
     "replay-vectors.json": LockedFile(
         70034, "a4945c9e0bcc3e85f8f1f26a66992ec8618df4e4ad719a40fad61fca7dac0226"
@@ -173,8 +173,12 @@ SUPPORT_ENUMS: dict[str, type[StrEnum]] = {
 }
 ALL_TARGETS: dict[str, type[BaseModel]] = {**OWNED_TARGETS, **SUPPORT_TARGETS}
 
-KNOWN_OPERATIONS = frozenset({"construct", "reject", "replay_construct"})
-KNOWN_MARKERS = frozenset({"enum_value", "indexed_value", "tuple_value", "typed_value"})
+KNOWN_OPERATIONS = frozenset(
+    {"construct", "mutate_reject", "reject", "replay_construct"}
+)
+KNOWN_MARKERS = frozenset(
+    {"constructed_value", "enum_value", "indexed_value", "tuple_value", "typed_value"}
+)
 KNOWN_INPUT_MODES = frozenset({"json", "python", "replay"})
 KNOWN_CLASSIFICATIONS = frozenset(
     {
@@ -204,6 +208,7 @@ VECTOR_KEYS = frozenset(
     }
 )
 REPLAY_EXTRA_KEYS = frozenset({"evidence_classification", "source_pointers"})
+MUTATION_EXTRA_KEYS = frozenset({"mutated_field"})
 
 
 def _digest(path: Path) -> str:
@@ -264,6 +269,17 @@ def _materialize(node: Any, fixtures: dict[str, Any], depth: int = 0) -> Any:
             assert target_name in ALL_TARGETS, f"unknown target: {target_name}"
             resolved = _materialize(descriptor["input"], fixtures, depth + 1)
             return ALL_TARGETS[target_name].model_validate_json(json.dumps(resolved))
+        if keys == {"constructed_value"}:
+            descriptor = cast(dict[str, Any], mapping["constructed_value"])
+            assert set(descriptor) == {"input", "target"}
+            target_name = cast(str, descriptor["target"])
+            assert target_name in ALL_TARGETS, f"unknown target: {target_name}"
+            fields = cast(
+                dict[str, Any], _materialize(descriptor["input"], fixtures, depth + 1)
+            )
+            # Deliberately bypasses validation so the parent's
+            # revalidate_instances="always" contract has something to catch.
+            return ALL_TARGETS[target_name].model_construct(**fields)
         if keys == {"enum_value"}:
             descriptor = cast(dict[str, Any], mapping["enum_value"])
             assert set(descriptor) == {"target", "value"}
@@ -303,6 +319,14 @@ def _execute(vector: dict[str, Any], fixtures: dict[str, Any]) -> tuple[str, Any
     target = ALL_TARGETS[cast(str, vector["target_symbol"])]
     payload = _materialize(vector["input"], fixtures)
     mode = cast(str, vector["input_mode"])
+    if vector["operation"] == "mutate_reject":
+        model = target.model_validate_json(json.dumps(payload))
+        field = cast(str, vector["mutated_field"])
+        try:
+            setattr(model, field, getattr(model, field))
+        except ValidationError as error:
+            return "rejected", error.errors()
+        return "accepted", model
     try:
         if mode in ("json", "replay"):
             return "accepted", target.model_validate_json(json.dumps(payload))
@@ -538,7 +562,16 @@ def test_vector_schema_is_exact(name: str) -> None:
     replay = name == "replay-vectors"
     for vector in _vectors(name):
         keys = set(vector)
-        assert keys == (VECTOR_KEYS | REPLAY_EXTRA_KEYS if replay else VECTOR_KEYS)
+        if replay:
+            assert keys == VECTOR_KEYS | REPLAY_EXTRA_KEYS
+        elif vector["operation"] == "mutate_reject":
+            assert keys == VECTOR_KEYS | MUTATION_EXTRA_KEYS
+            assert (
+                cast(str, vector["mutated_field"])
+                in ALL_TARGETS[cast(str, vector["target_symbol"])].model_fields
+            )
+        else:
+            assert keys == VECTOR_KEYS
         assert vector["status"] == "locked"
         assert cast(str, vector["input_mode"]) in KNOWN_INPUT_MODES
         assert cast(str, vector["operation"]) in KNOWN_OPERATIONS
@@ -552,7 +585,9 @@ def test_vector_schema_is_exact(name: str) -> None:
             assert vector["operation"] == "replay_construct"
         else:
             assert vector["operation"] == (
-                "construct" if name == "valid-vectors" else "reject"
+                "construct"
+                if name == "valid-vectors"
+                else ("reject", "mutate_reject")[vector["operation"] == "mutate_reject"]
             )
 
 
@@ -566,7 +601,7 @@ def test_vector_ids_and_semantic_partitions_are_globally_unique() -> None:
     partitions = [cast(str, vector["semantic_partition"]) for vector in vectors]
     assert len(identifiers) == len(set(identifiers))
     assert len(partitions) == len(set(partitions)), "a vector duplicates a partition"
-    assert len(vectors) == 144
+    assert len(vectors) == 158
 
 
 def test_vector_counts_match_the_manifest_summary() -> None:
@@ -576,9 +611,9 @@ def test_vector_counts_match_the_manifest_summary() -> None:
     replay = _vectors("replay-vectors")
 
     assert cast(dict[str, Any], summary["valid"])["count"] == len(valid) == 50
-    assert cast(dict[str, Any], summary["invalid"])["count"] == len(invalid) == 68
+    assert cast(dict[str, Any], summary["invalid"])["count"] == len(invalid) == 82
     assert cast(dict[str, Any], summary["replay"])["count"] == len(replay) == 26
-    assert summary["total_vectors"] == len(valid) + len(invalid) + len(replay) == 144
+    assert summary["total_vectors"] == len(valid) + len(invalid) + len(replay) == 158
     assert summary["fixtures"] == len(_fixtures("valid-vectors")) == 16
 
     for key, vectors in (("valid", valid), ("invalid", invalid), ("replay", replay)):
@@ -1117,6 +1152,18 @@ def test_python_json_input_boundary_is_covered_per_model() -> None:
         "boundary:python-swapped",
     ):
         assert required in partitions
+    frozen_targets = {
+        cast(str, v["target_symbol"])
+        for v in _vectors("invalid-vectors")
+        if cast(str, v["semantic_partition"]).startswith("frozen:")
+    }
+    revalidation_targets = {
+        cast(str, v["target_symbol"])
+        for v in _vectors("invalid-vectors")
+        if cast(str, v["semantic_partition"]).startswith("revalidation:")
+    }
+    assert frozen_targets == set(OWNED_TARGETS)
+    assert revalidation_targets == set(OWNED_TARGETS)
     typed_targets = {
         cast(str, v["target_symbol"])
         for v in _vectors("valid-vectors")
