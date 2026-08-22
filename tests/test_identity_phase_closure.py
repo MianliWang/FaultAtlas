@@ -1979,7 +1979,7 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
         "`S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and "
         "`S1.P03.S09` are complete" in roadmap
     )
-    assert "`S1.P04` is active and incomplete" in roadmap
+    assert "`S1.P04` is complete" in roadmap
     assert "`S1.P04.S01` is complete" in roadmap
     assert "`S1.P04.S02` is complete" in roadmap
     assert "`S1.P04.S03` is complete" in roadmap
@@ -1989,8 +1989,9 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P04.S07` is complete" in roadmap
     assert "`S1.P04.S08` is complete" in roadmap
     assert "`S1.P04.S09` is complete" in roadmap
-    assert "`S1.P04.S10` is next and not started" in roadmap
-    assert "`S1.P05` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P04.S10` is complete" in roadmap
+    assert "`S1.P05` is `eligible_to_begin` and not started" in roadmap
+    assert "`S1.P06` through `S1.P10` remain not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:

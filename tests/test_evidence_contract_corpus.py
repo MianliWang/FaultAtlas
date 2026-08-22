@@ -3743,7 +3743,7 @@ def test_roadmap_records_p03_complete_and_p04_s02_complete() -> None:
         in roadmap
     )
     assert "`S1.P03` is complete" in roadmap
-    assert "`S1.P04` is active and incomplete" in roadmap
+    assert "`S1.P04` is complete" in roadmap
     assert "`S1.P04.S01` is complete" in roadmap
     assert "`S1.P04.S02` is complete" in roadmap
     assert "`S1.P04.S03` is complete" in roadmap
@@ -3753,8 +3753,9 @@ def test_roadmap_records_p03_complete_and_p04_s02_complete() -> None:
     assert "`S1.P04.S07` is complete" in roadmap
     assert "`S1.P04.S08` is complete" in roadmap
     assert "`S1.P04.S09` is complete" in roadmap
-    assert "`S1.P04.S10` is next and not started" in roadmap
-    assert "`S1.P05` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P04.S10` is complete" in roadmap
+    assert "`S1.P05` is `eligible_to_begin` and not started" in roadmap
+    assert "`S1.P06` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap
     reference_case = (
         REPOSITORY_ROOT / "docs/reference_cases/pytest-4412.md"

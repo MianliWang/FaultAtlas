@@ -31,13 +31,14 @@ aspirational Slice as scheduled work.
   `S1.P03.S01` is complete, `S1.P03.S02` is complete, `S1.P03.S03` is
   complete, `S1.P03.S04` is complete, and `S1.P03.S05`, `S1.P03.S06`,
   `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09` are complete. `S1.P04` is
-  active and incomplete; `S1.P04.S01` is complete, `S1.P04.S02` is complete,
+  complete; `S1.P04.S01` is complete, `S1.P04.S02` is complete,
   `S1.P04.S03` is complete, `S1.P04.S04` is complete,
   `S1.P04.S05` is complete, `S1.P04.S06` is complete,
   `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
-  `S1.P04.S09` is complete.
-  `S1.P04.S10` is next and not started.
-  `S1.P05` through `S1.P10` remain not started.
+  `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
+  `S1.P04` is complete.
+  `S1.P05` is `eligible_to_begin` and not started.
+  `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -74,13 +75,14 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 `S1.P02.S07` is complete. `S1.P03` is complete; `S1.P03.S01` is complete,
 `S1.P03.S02` is complete, `S1.P03.S03` is complete, `S1.P03.S04` is complete,
 `S1.P03.S05`, `S1.P03.S06`, `S1.P03.S07`, `S1.P03.S08`, and `S1.P03.S09`
-are complete. `S1.P04` is active and incomplete; `S1.P04.S01` is complete,
+are complete. `S1.P04` is complete; `S1.P04.S01` is complete,
 `S1.P04.S02` is complete, `S1.P04.S03` is complete, `S1.P04.S04` is
 complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
-`S1.P04.S09` is complete.
-`S1.P04.S10` is next and not started.
-`S1.P05` through `S1.P10` remain not started, and `S2-S9`
+`S1.P04.S09` is complete, and `S1.P04.S10` is complete.
+`S1.P04` is complete.
+`S1.P05` is `eligible_to_begin` and not started.
+`S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
@@ -238,11 +240,21 @@ eligible to begin and its implementation state was `not_started`.
 
 ## S1.P04 — Repository Snapshot Model
 
-`S1.P04` is active and incomplete. `S1.P04.S01` is complete, `S1.P04.S02` is
-complete, `S1.P04.S03` is complete, `S1.P04.S04` is complete,
-`S1.P04.S05` is complete, `S1.P04.S06` is complete, `S1.P04.S07` is
-complete, `S1.P04.S08` is complete, and `S1.P04.S09` is complete.
-`S1.P04.S10` is next and not started.
+`S1.P04` is complete. The complete Phase sequence is:
+
+1. `S1.P04.S01` — Immutable Repository Snapshot Subject Identity (complete)
+2. `S1.P04.S02` — Repository Snapshot Root-Tree Binding (complete)
+3. `S1.P04.S03` — Repository Snapshot Path-Object Binding (complete)
+4. `S1.P04.S04` — Repository Snapshot Path-Binding Collection (complete)
+5. `S1.P04.S05` — Repository Snapshot Declared Path Scope (complete)
+6. `S1.P04.S06` — Declared Path Scope Coverage Witness (complete)
+7. `S1.P04.S07` — Repository Snapshot Fact Evidence Association (complete)
+8. `S1.P04.S08` — Deferred-Subject Disposition (complete)
+9. `S1.P04.S09` — Repository Snapshot Contract Corpus (complete)
+10. `S1.P04.S10` — Repository Snapshot Model Phase Closure (complete;
+    closes `S1.P04`)
+
+`S1.P04.S01` through `S1.P04.S10` are complete.
 S01 defines the immutable snapshot subject identity as stable
 `RepositoryIdentity` plus immutable `GitCommitIdentity`; mutable refs remain
 observations and are not snapshot identity. S02 adds the separate strict,
@@ -553,6 +565,67 @@ non-goals. `S1.P04.S08` remains governance authority: it is referenced through
 `source_decisions` alongside the `S1.P03` closure and the retained acquisition
 record, and it is never vectorized as product behavior.
 
+S10 closes `S1.P04`. It is closure and governance only: it changed no production
+source, added no production module, and introduced no product semantics; the
+production Python source count remains 11. It publishes one sealed closure
+candidate at
+`reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
+whose `closure.json` is the sole durable semantic authority, with a derived
+non-authoritative `closure.md` and a sidecar locking the JSON alone.
+
+The closure references rather than duplicates its authorities. It records 77
+locks: 11 closure-baseline observations of the current production surface, which
+are observations and not ownership claims, and 66 immutable inputs covering the
+S09 corpus, the S08 decision triple, and every `S1.P00` through `S1.P03` closure,
+corpus, correction, decision, and retained artifact. It locks neither `uv.lock`
+nor this roadmap, following the same boundary its predecessors used.
+
+`S1.P04` owns exactly seven product symbols across `faultatlas.domain.snapshot`
+and `faultatlas.domain.snapshot_evidence_link`. `faultatlas.domain.evidence`,
+`faultatlas.domain.identity`, and `faultatlas.domain.revision` remain supporting
+authorities that `S1.P04` does not own, and the closure does not re-own them.
+
+The closure register finalizes the S08 disposition as seven `S1.P04`-local
+entries citing their S08 records by path, JSON pointer, and digest: three
+addressed, one split, and three carried forward, reaching `self_owned_open == 0`
+with owners `S2` three times immediate, `S5` twice long-term, and `S1.P05` once.
+No subject remains owned by `S1.P04`. The historical default branch is still
+unknown and still owned by `S2`, and no current observation was substituted for
+it.
+
+Contract-corpus assurance records the sealed S09 values: nine files, 50 valid,
+82 invalid, and 26 replay vectors totalling 158 over 16 fixtures, seven-of-seven
+symbol coverage, a test-only executor, package exclusion, no production
+capability, and unknown target, operation, and marker all rejected. The
+canonical vertical is summarized without composing any product object and keeps
+its four provenance classes distinct — retained normalized observation, caller
+supplied selection, deterministic derivation, and caller supplied association —
+with `flattened_evidence_derived_snapshot_claimed` false and the retained
+evidence limits preserved: four normalized leaves, six non-recursive traversals,
+and no tree-entry manifest.
+
+Twenty-three non-generalizations are recorded, projected from the published S08
+and S09 boundaries rather than invented, and twenty-four exit criteria are
+satisfied with none unsatisfied. The closure is a sealed publication candidate:
+it records no pull request, reviewed head, squash SHA, or natural-main run of its
+own, because none exists when its bytes are sealed, and it states so explicitly.
+Its own publication evidence lives in Git history, GitHub, and the final
+execution report.
+
+`S1.P05` is `eligible_to_begin` with implementation state `not_started` and zero
+unresolved blockers across nine satisfied prerequisites. Eligibility is not
+commencement. The closure publishes six handoff constraints `S1.P05` inherits:
+mutable refs remain observations and never snapshot identity; the snapshot
+subject remains a stable `RepositoryIdentity` plus an immutable
+`GitCommitIdentity` that history may reference but must not redefine;
+`deferred:19` default-branch observation is owned by `S1.P05` while the
+historical default branch stays unknown and owned by `S2`; whole-repository
+completeness and repository membership remain transferred to `S2` and `S5` and
+cannot be derived from `S1.P04` values; the S07 evidence association is LEVEL 1
+only and must not be implicitly upgraded; and the published `S1.P04` contracts
+and the repository-snapshot v1 corpus are frozen, so semantic change requires
+the append-only correction or versioning mechanism rather than silent mutation.
+
 Repository membership aggregation; snapshot and whole-repository completeness;
 dispositional outcomes for a declared path lacking a binding; entry kind, mode,
 symlink, and gitlink semantics; prefix, ancestry, and tree topology
@@ -565,30 +638,18 @@ verification, corroboration, derivation, proposition-specific exact-byte
 relations, support role and strength, multi-record support collections,
 collection-level and coverage-level provenance, and the confidence and review
 provenance owned by `S1.P09`. `S1.P05` through `S1.P10` remain not started;
-S01 through S09 do not make S1.P05 eligible to begin; the subjects S08
-transferred to `S2`, `S5`, and `S1.P05` establish ownership only, and
-confer no eligibility on any receiving phase.
+`S1.P04.S10` closure makes `S1.P05` `eligible_to_begin` while its
+implementation state remains `not_started`. The subjects S08 transferred to
+`S2`, `S5`, and `S1.P05` establish ownership only and confer no eligibility
+on any receiving phase.
 
-The remaining `S1.P04` sequence below is PROVISIONAL planning only. It is not
-a commitment, it authorizes no work, and it establishes, reserves, or implies
-no product surface, module, model, field, export, or test. Each entry remains
-subject to its own Gate and may be renumbered, merged, split, or dropped; the
-slice count is fixed retrospectively at Phase closure, as `S1.P03` (nine) and
-`S1.P02` (seven) demonstrate:
-
-1. `S1.P04.S10` — integration and Phase closure
-
-The previously listed production offline-composition object is removed from
-the scheduled sequence. The evidence-linked offline vertical may instead be
-demonstrated in the corpus or in replay assurance without adding a large
-production aggregate, and nothing here authorizes such an aggregate. S08 has
-now decided the disposition of all seven inherited subjects, including
-snapshot completeness, repository membership aggregation, `deferred:19`, and
-the historical default branch, reaching `self_owned_open == 0`. `S1.P04`
-closure is not presumed
-reachable before those three subjects are resolved or explicitly
-redispositioned. This sequence authorizes no future implementation and may
-still be renumbered, merged, split, or dropped after its own orientation.
+No provisional `S1.P04` sequence remains. The Slice count was fixed
+retrospectively at Phase closure at ten, as `S1.P03` (nine) and `S1.P02`
+(seven) did before it. The production offline-composition object once listed
+in that provisional sequence was never authorized and was never built; the
+evidence-linked offline vertical is demonstrated in the S09 corpus and its
+chained replay instead, and `S1.P04` publishes no production aggregate
+composing it.
 
 Git mode, executable, symbolic-link, gitlink, prefix and topology consistency,
 and known-absence semantics remain evidence-gated and unscheduled; no future
@@ -656,10 +717,14 @@ S01-S09 are complete. The current live surface adds the pure
 `faultatlas.domain.snapshot_evidence_link`, whose sole
 `RepositorySnapshotFactEvidenceLink` associates one supplied
 `RepositorySnapshotRootTreeBinding` or `RepositorySnapshotPathBinding` with
-one supplied `DurableEvidenceRecordReference`. `S1.P04` is active and
-incomplete, `S1.P04.S01`, `S1.P04.S02`, `S1.P04.S03`, `S1.P04.S04`,
-`S1.P04.S05`, `S1.P04.S06`, `S1.P04.S07`, `S1.P04.S08`, and `S1.P04.S09`
-are complete, and `S1.P04.S10` is next and not started. `S1.P04.S09`
+one supplied `DurableEvidenceRecordReference`. `S1.P04` is complete;
+`S1.P04.S01` through `S1.P04.S10` are complete, and `S1.P05` is
+`eligible_to_begin` with implementation state `not_started`. `S1.P04.S10`
+changed no production source: it published the sealed Phase closure under
+`reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
+recording 77 locks, seven finalized deferred entries with
+`self_owned_open == 0`, 23 non-generalizations, 24 satisfied exit criteria,
+and six `S1.P05` handoff constraints. `S1.P04.S09`
 changed no production source: it published the deterministic contract
 corpus under `reference_corpus/contracts/repository-snapshot/v1`, freezing
 the seven published models across 158 vectors with a chained,
