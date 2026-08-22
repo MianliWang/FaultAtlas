@@ -34,8 +34,9 @@ aspirational Slice as scheduled work.
   active and incomplete; `S1.P04.S01` is complete, `S1.P04.S02` is complete,
   `S1.P04.S03` is complete, `S1.P04.S04` is complete,
   `S1.P04.S05` is complete, `S1.P04.S06` is complete,
-  `S1.P04.S07` is complete, and `S1.P04.S08` is complete.
-  `S1.P04.S09` is next and not started.
+  `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
+  `S1.P04.S09` is complete.
+  `S1.P04.S10` is next and not started.
   `S1.P05` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -76,8 +77,9 @@ correction. `S1.P02` is complete. `S1.P02.S01` is complete,
 are complete. `S1.P04` is active and incomplete; `S1.P04.S01` is complete,
 `S1.P04.S02` is complete, `S1.P04.S03` is complete, `S1.P04.S04` is
 complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
-`S1.P04.S07` is complete, and `S1.P04.S08` is complete.
-`S1.P04.S09` is next and not started.
+`S1.P04.S07` is complete, `S1.P04.S08` is complete, and
+`S1.P04.S09` is complete.
+`S1.P04.S10` is next and not started.
 `S1.P05` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -239,8 +241,8 @@ eligible to begin and its implementation state was `not_started`.
 `S1.P04` is active and incomplete. `S1.P04.S01` is complete, `S1.P04.S02` is
 complete, `S1.P04.S03` is complete, `S1.P04.S04` is complete,
 `S1.P04.S05` is complete, `S1.P04.S06` is complete, `S1.P04.S07` is
-complete, and `S1.P04.S08` is complete.
-`S1.P04.S09` is next and not started.
+complete, `S1.P04.S08` is complete, and `S1.P04.S09` is complete.
+`S1.P04.S10` is next and not started.
 S01 defines the immutable snapshot subject identity as stable
 `RepositoryIdentity` plus immutable `GitCommitIdentity`; mutable refs remain
 observations and are not snapshot identity. S02 adds the separate strict,
@@ -486,6 +488,69 @@ the `S1.P00`, `S1.P01`, `S1.P02`, and `S1.P03` closures were correct at
 publication, remain byte-identical, and their original ownership and state
 statements remain historically true.
 
+S09 publishes the deterministic repository-snapshot contract corpus under
+`reference_corpus/contracts/repository-snapshot/v1`, freezing the published
+S01 through S07 product surface and the non-generalizations S08 finalized. It
+adds no product semantics, changes no production source, and adds no production
+module; the production Python source count remains 11. The corpus is
+source-repository-only and is excluded from both the wheel and the sdist.
+
+The corpus is one unified nine-file set — `manifest.json`, `valid-vectors.json`,
+`invalid-vectors.json`, and `replay-vectors.json`, each with a SHA-256 sidecar,
+plus a derived `contract.md` that carries no sidecar and is never an independent
+authority. It spans exactly the two `S1.P04`-owned production modules,
+`faultatlas.domain.snapshot` and `faultatlas.domain.snapshot_evidence_link`, and
+records `faultatlas.domain.evidence`, `faultatlas.domain.identity`, and
+`faultatlas.domain.revision` as supporting authorities that `S1.P04` does not
+own. Its seven target symbols are exactly the seven published models;
+`DurableEvidenceRecordReference` and the identity and revision types are support
+targets, never `S1.P04` product symbols.
+
+The inventory is 47 valid, 64 invalid, and 26 replay vectors — 137 in total over
+16 fixtures. Every vector declares a distinct semantic partition, so no vector
+restates another. The valid and invalid families cover all seven symbols,
+including the strict/frozen surface, nested revalidation, the 4096 cardinality
+bound and its rejection at 4097, path uniqueness, shared-subject agreement,
+algorithm consistency, the closed blob-or-tree union with commit-at-path failing
+closed in both Python and JSON input, and the published Python and JSON input
+boundary per model: typed Python input accepted, dumped mappings rejected, JSON
+reconstruction accepted, strict tuple-versus-list behavior, and swapped or
+foreign children rejected. Rejection vectors lock only structured information —
+failure category, error location, error location mode, and error type — never
+error prose, and where a discriminatorless union reports one error per branch
+the location is matched as a stable prefix so that no pydantic-internal branch
+label becomes contract.
+
+Three semantic families are locked deliberately. The empty-inventory triple
+records that an empty S04 collection and an empty S05 scope are both valid while
+an S06 witness over an empty scope is not. The ordering family records that S04
+and S05 preserve supplied order as part of value equality while S06 validity is
+order-insensitive and the witness still preserves both supplied children
+exactly. The superset family records that a four-path scope over the
+nine-binding collection and a nine-path scope over the same collection are both
+valid, while a nine-path scope over the four-binding collection is rejected —
+and that rejection stores no absent, missing, unknown, or uncovered path, because
+production assigns no such state.
+
+Replay is chained rather than flattened, and each vector declares the provenance
+of its own layer: the S01 subject and the S02 and S03 facts as
+`retained_normalized_observation`, the S04 aggregate and S05 scopes as
+`caller_supplied_selection`, S06 coverage as `deterministic_derivation`, and the
+ten S07 associations as `caller_supplied_association`. These classifications are
+corpus and test metadata and create no production vocabulary. The retained
+canonical acquisition holds four normalized leaves and six non-recursive
+traversals and no tree-entry manifest, so replay reconstructs the published
+supplied values only and asserts no whole-repository enumeration, no verified
+membership, and no root-tree reachability. The corpus never claims an
+evidence-derived repository snapshot.
+
+S07 remains LEVEL-1 association only, established positively by the exact
+two-field shape, by rejection of a support role, a fact-level JSON pointer, a
+verification flag, and a multi-record support collection, and by the manifest
+non-goals. `S1.P04.S08` remains governance authority: it is referenced through
+`source_decisions` alongside the `S1.P03` closure and the retained acquisition
+record, and it is never vectorized as product behavior.
+
 Repository membership aggregation; snapshot and whole-repository completeness;
 dispositional outcomes for a declared path lacking a binding; entry kind, mode,
 symlink, and gitlink semantics; prefix, ancestry, and tree topology
@@ -498,7 +563,7 @@ verification, corroboration, derivation, proposition-specific exact-byte
 relations, support role and strength, multi-record support collections,
 collection-level and coverage-level provenance, and the confidence and review
 provenance owned by `S1.P09`. `S1.P05` through `S1.P10` remain not started;
-S01 through S08 do not make S1.P05 eligible to begin; the subjects S08
+S01 through S09 do not make S1.P05 eligible to begin; the subjects S08
 transferred to `S2`, `S5`, and `S1.P05` establish ownership only, and
 confer no eligibility on any receiving phase.
 
@@ -509,8 +574,7 @@ subject to its own Gate and may be renumbered, merged, split, or dropped; the
 slice count is fixed retrospectively at Phase closure, as `S1.P03` (nine) and
 `S1.P02` (seven) demonstrate:
 
-1. `S1.P04.S09` — repository snapshot contract corpus
-2. `S1.P04.S10` — integration and Phase closure
+1. `S1.P04.S10` — integration and Phase closure
 
 The previously listed production offline-composition object is removed from
 the scheduled sequence. The evidence-linked offline vertical may instead be
@@ -592,8 +656,12 @@ S01-S09 are complete. The current live surface adds the pure
 `RepositorySnapshotRootTreeBinding` or `RepositorySnapshotPathBinding` with
 one supplied `DurableEvidenceRecordReference`. `S1.P04` is active and
 incomplete, `S1.P04.S01`, `S1.P04.S02`, `S1.P04.S03`, `S1.P04.S04`,
-`S1.P04.S05`, `S1.P04.S06`, `S1.P04.S07`, and `S1.P04.S08` are complete,
-and `S1.P04.S09` is next and not started. `S1.P04.S08` changed no
+`S1.P04.S05`, `S1.P04.S06`, `S1.P04.S07`, `S1.P04.S08`, and `S1.P04.S09`
+are complete, and `S1.P04.S10` is next and not started. `S1.P04.S09`
+changed no production source: it published the deterministic contract
+corpus under `reference_corpus/contracts/repository-snapshot/v1`, freezing
+the seven published models across 137 vectors with a chained,
+provenance-heterogeneous replay. `S1.P04.S08` changed no
 production source: it published the governance-only deferred-subject
 disposition under
 `reference_corpus/contracts/repository-snapshot/decisions/s08-deferred-subject-disposition`,

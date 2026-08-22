@@ -2071,7 +2071,8 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P04.S06` is complete" in normalized_roadmap
     assert "`S1.P04.S07` is complete" in normalized_roadmap
     assert "`S1.P04.S08` is complete" in normalized_roadmap
-    assert "`S1.P04.S09` is next and not started" in normalized_roadmap
+    assert "`S1.P04.S09` is complete" in normalized_roadmap
+    assert "`S1.P04.S10` is next and not started" in normalized_roadmap
     assert "`S1.P05` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:
