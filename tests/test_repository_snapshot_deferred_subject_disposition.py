@@ -67,7 +67,6 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/__init__.py",
     "src/faultatlas/domain/compatibility.py",
     "src/faultatlas/domain/evidence.py",
-    "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/identity.py",
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/snapshot.py",
@@ -76,7 +75,7 @@ EXPECTED_PRODUCTION_FILES = {
 }
 
 HISTORY_MODULE = "src/faultatlas/domain/history.py"
-DECISION_TIME_PRODUCTION_FILES = EXPECTED_PRODUCTION_FILES - {HISTORY_MODULE}
+CURRENT_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, HISTORY_MODULE}
 
 # Every deferred-subject state published by S1.P00 through S1.P03. S08 may not
 # introduce a state outside this closed vocabulary.
@@ -716,10 +715,11 @@ def test_production_surface_adds_only_history_after_this_decision() -> None:
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
-    assert observed == EXPECTED_PRODUCTION_FILES
+    assert observed == CURRENT_PRODUCTION_FILES
     assert len(observed) == 12
-    assert observed - DECISION_TIME_PRODUCTION_FILES == {HISTORY_MODULE}
-    assert DECISION_TIME_PRODUCTION_FILES - observed == set()
+    assert observed - EXPECTED_PRODUCTION_FILES == {HISTORY_MODULE}
+    assert EXPECTED_PRODUCTION_FILES - observed == set()
+    assert len(EXPECTED_PRODUCTION_FILES) == 11
 
     governance = cast(
         dict[str, Any],
