@@ -100,6 +100,7 @@ EXPECTED_SUBJECTS: tuple[dict[str, Any], ...] = (
         "path": P01_CLOSURE,
         "pointer": "/deferred_register/items/17",
         "subject_id": "deferred:p01:p04-repository-snapshot-aggregation",
+        "owner_fields": ("immediate_next_owner", "preserved_long_term_phase_owner"),
         "source_state": "provisional_design",
         "id_field": "deferred_item_id",
     },
@@ -111,6 +112,7 @@ EXPECTED_SUBJECTS: tuple[dict[str, Any], ...] = (
         "path": P02_CLOSURE,
         "pointer": "/deferred_register/items/16",
         "subject_id": "deferred:17",
+        "owner_fields": ("immediate_owner", "preserved_long_term_owner"),
         "source_state": "provisional_design",
         "id_field": "deferred_item_id",
     },
@@ -124,6 +126,7 @@ EXPECTED_SUBJECTS: tuple[dict[str, Any], ...] = (
         "path": P02_CLOSURE,
         "pointer": "/deferred_register/items/17",
         "subject_id": "deferred:18",
+        "owner_fields": ("immediate_owner", "preserved_long_term_owner"),
         "source_state": "provisional_design",
         "id_field": "deferred_item_id",
     },
@@ -136,6 +139,7 @@ EXPECTED_SUBJECTS: tuple[dict[str, Any], ...] = (
         "path": P02_CLOSURE,
         "pointer": "/deferred_register/items/18",
         "subject_id": "deferred:19",
+        "owner_fields": ("immediate_owner", "preserved_long_term_owner"),
         "source_state": "provisional_design",
         "id_field": "deferred_item_id",
     },
@@ -148,6 +152,7 @@ EXPECTED_SUBJECTS: tuple[dict[str, Any], ...] = (
         "path": P02_CLOSURE,
         "pointer": "/deferred_register/items/19",
         "subject_id": "deferred:20",
+        "owner_fields": ("immediate_owner", "preserved_long_term_owner"),
         "source_state": "provisional_design",
         "id_field": "deferred_item_id",
     },
@@ -167,6 +172,7 @@ EXPECTED_SUBJECTS: tuple[dict[str, Any], ...] = (
         "path": P03_CLOSURE,
         "pointer": "/deferred_register/entries/0",
         "subject_id": "deferred:01",
+        "owner_fields": ("owner", None),
         "source_state": "not_implemented",
         "id_field": "deferred_id",
     },
@@ -179,6 +185,7 @@ EXPECTED_SUBJECTS: tuple[dict[str, Any], ...] = (
         "path": P00_CLOSURE,
         "pointer": "/deferred_register/items/5",
         "subject_id": "gap:s05-known:historical-default-branch-unknown",
+        "owner_fields": ("immediate_next_owner", "preserved_long_term_phase_owner"),
         "source_state": "unknown_pending_additional_evidence",
         "id_field": "deferred_item_id",
     },
@@ -426,10 +433,6 @@ def test_each_subject_carries_the_exact_approved_disposition(index: int) -> None
     assert source["json_pointer"] == expected["pointer"]
     assert source["sha256"] == PREDECESSOR_DIGESTS[cast(str, expected["path"])]
     assert source["source_state"] == expected["source_state"]
-    assert source["source_immediate_owner"] in {
-        "S1.P04",
-        "intentionally_unowned_until_more_evidence",
-    }
     assert item["rationale"]
 
     if expected["disposition"] == "addressed":
@@ -461,7 +464,7 @@ def test_each_subject_carries_the_exact_approved_disposition(index: int) -> None
 
 def test_every_source_reference_resolves_with_a_matching_digest() -> None:
     references = _source_references(_decision())
-    assert len(references) == 21
+    assert len(references) == 22
 
     for reference in references:
         path = REPOSITORY_ROOT / cast(str, reference["path"])
@@ -485,6 +488,18 @@ def test_each_subject_pointer_resolves_to_its_recorded_predecessor_record() -> N
         assert record[state_field] == expected["source_state"]
         assert record[state_field] == source["source_state"]
         assert "S1.P04" in json.dumps(record)
+
+        # Every owner field the decision attributes to this pointer must equal
+        # the value actually stored at that pointer. A value taken from any
+        # other artifact must never be recorded here.
+        immediate_field, long_term_field = cast(
+            tuple[str, str | None], expected["owner_fields"]
+        )
+        assert source["source_immediate_owner"] == record[immediate_field]
+        if long_term_field is None:
+            assert "source_preserved_long_term_owner" not in source
+        else:
+            assert source["source_preserved_long_term_owner"] == record[long_term_field]
 
 
 def test_no_disposition_state_outside_the_published_vocabulary() -> None:
@@ -554,6 +569,35 @@ def test_historical_default_branch_state_is_preserved_and_never_substituted() ->
     )
     assert "default_branch" not in production
     assert "default branch" not in production
+
+
+def test_gap_matrix_routing_is_attributed_to_its_own_artifact() -> None:
+    item = _items()[6]
+    note = cast(dict[str, Any], item["routing_note"])
+    reference = cast(dict[str, Any], note["reference"])
+
+    # The gap matrix and the S1.P00 closure state this item's immediate owner
+    # differently. Each statement must be attributed to the artifact that
+    # actually makes it, and neither may be recorded under the other's pointer.
+    assert reference["path"] == GAP_MATRIX
+    assert reference["json_pointer"] == "/gap_register/5"
+    gap_record = cast(dict[str, Any], _resolve(GAP_MATRIX, "/gap_register/5"))
+    assert gap_record["immediate_owner"] == "intentionally_unowned_until_more_evidence"
+    assert gap_record["preserved_phase_owner"] == "S1.P04"
+    assert gap_record["gap_id"] == cast(dict[str, Any], item["source"])["subject_id"]
+
+    closure_record = cast(
+        dict[str, Any], _resolve(P00_CLOSURE, "/deferred_register/items/5")
+    )
+    assert closure_record["immediate_next_owner"] == "S1.P04"
+    assert gap_record["immediate_owner"] != closure_record["immediate_next_owner"]
+
+    statement = cast(str, note["statement"])
+    assert (
+        "S1.P00 closure records this item's immediate next owner as S1.P04" in statement
+    )
+    assert "gap matrix" in statement
+    assert "neither is attributed to the other" in statement
 
 
 def test_downstream_handoffs_cover_every_carried_forward_subject() -> None:

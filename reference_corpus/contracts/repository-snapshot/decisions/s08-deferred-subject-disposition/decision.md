@@ -6,7 +6,7 @@ This internal, case-calibrated `S1.P04.S08` decision is not a production schema,
 
 ## 2. Exact `decision.json` SHA-256
 
-`7b8c15365c52a235f3350fba884ad00dae14521a5ddd3272cf1dfa9fe044c5f4`
+`7361582b749eeb986319b0cce87155671b3b25904346be06e6004fb0e53ac1da`
 
 ## 3. Result
 
@@ -74,7 +74,7 @@ S1.P04.S01 through S1.P04.S07 published the repository snapshot model: immutable
 
 ### 5.7 historical default branch unknown — `gap:s05-known:historical-default-branch-unknown`
 
-Source: `reference_corpus/pytest-4412/closures/s1-p00-phase-closure/closure.json` at `/deferred_register/items/5`, SHA-256 `8c02d79c4a5a1d52b9fc2a3718e1b47888da6195588e62ab927388dbe972189e`. Predecessor wording: "Historical default branch unknown". Predecessor state: `unknown_pending_additional_evidence`. Predecessor immediate owner: `intentionally_unowned_until_more_evidence`.
+Source: `reference_corpus/pytest-4412/closures/s1-p00-phase-closure/closure.json` at `/deferred_register/items/5`, SHA-256 `8c02d79c4a5a1d52b9fc2a3718e1b47888da6195588e62ab927388dbe972189e`. Predecessor wording: "Historical default branch unknown". Predecessor state: `unknown_pending_additional_evidence`. Predecessor immediate owner: `S1.P04`.
 
 The state is preserved exactly: the historical default branch remains unknown and is not fabricated. Only ownership moves. S1.P00 routed this item to S1.P04 conditionally, at the latest decision point before S1.P04 relies on historical default-branch identity and only after new evidence. S1.P04.S01 through S1.P04.S07 never relied on it: no production source references a default branch and no domain module exports a branch or default designation, so the condition never triggered. the retained canonical acquisition observes only the current default branch value at its own observation time and retains no historical default-branch evidence, and current provider retrieval could only re-observe current state. Acquiring separately authorized historical ref evidence, if it is ever obtainable, is source ingestion work owned by S2.
 
