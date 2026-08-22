@@ -506,7 +506,7 @@ own. Its seven target symbols are exactly the seven published models;
 `DurableEvidenceRecordReference` and the identity and revision types are support
 targets, never `S1.P04` product symbols.
 
-The inventory is 47 valid, 64 invalid, and 26 replay vectors — 137 in total over
+The inventory is 50 valid, 68 invalid, and 26 replay vectors — 144 in total over
 16 fixtures. Every vector declares a distinct semantic partition, so no vector
 restates another. The valid and invalid families cover all seven symbols,
 including the strict/frozen surface, nested revalidation, the 4096 cardinality
@@ -660,7 +660,7 @@ incomplete, `S1.P04.S01`, `S1.P04.S02`, `S1.P04.S03`, `S1.P04.S04`,
 are complete, and `S1.P04.S10` is next and not started. `S1.P04.S09`
 changed no production source: it published the deterministic contract
 corpus under `reference_corpus/contracts/repository-snapshot/v1`, freezing
-the seven published models across 137 vectors with a chained,
+the seven published models across 144 vectors with a chained,
 provenance-heterogeneous replay. `S1.P04.S08` changed no
 production source: it published the governance-only deferred-subject
 disposition under

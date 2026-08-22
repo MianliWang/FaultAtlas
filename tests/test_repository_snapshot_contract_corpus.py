@@ -507,7 +507,7 @@ def test_vector_ids_and_semantic_partitions_are_globally_unique() -> None:
     partitions = [cast(str, vector["semantic_partition"]) for vector in vectors]
     assert len(identifiers) == len(set(identifiers))
     assert len(partitions) == len(set(partitions)), "a vector duplicates a partition"
-    assert len(vectors) == 137
+    assert len(vectors) == 144
 
 
 def test_vector_counts_match_the_manifest_summary() -> None:
@@ -516,10 +516,10 @@ def test_vector_counts_match_the_manifest_summary() -> None:
     invalid = _vectors("invalid-vectors")
     replay = _vectors("replay-vectors")
 
-    assert cast(dict[str, Any], summary["valid"])["count"] == len(valid) == 47
-    assert cast(dict[str, Any], summary["invalid"])["count"] == len(invalid) == 64
+    assert cast(dict[str, Any], summary["valid"])["count"] == len(valid) == 50
+    assert cast(dict[str, Any], summary["invalid"])["count"] == len(invalid) == 68
     assert cast(dict[str, Any], summary["replay"])["count"] == len(replay) == 26
-    assert summary["total_vectors"] == len(valid) + len(invalid) + len(replay) == 137
+    assert summary["total_vectors"] == len(valid) + len(invalid) + len(replay) == 144
     assert summary["fixtures"] == len(_fixtures("valid-vectors")) == 16
 
     for key, vectors in (("valid", valid), ("invalid", invalid), ("replay", replay)):
@@ -690,6 +690,46 @@ def test_replay_vector_reconstructs_its_published_value(
     assert json.loads(model.model_dump_json()) == _materialize(
         expected["semantic_dump"], fixtures
     )
+
+
+def _resolve_pointer(document: Any, pointer: str) -> Any:
+    node = document
+    for token in [part for part in pointer.split("/") if part]:
+        if isinstance(node, list):
+            node = cast(list[Any], node)[int(token)]
+        else:
+            node = cast(dict[str, Any], node)[token]
+    return node
+
+
+@pytest.mark.parametrize(
+    "vector",
+    [v for v in _vectors("replay-vectors") if v["source_pointers"]],
+    ids=[
+        cast(str, v["id"]) for v in _vectors("replay-vectors") if v["source_pointers"]
+    ],
+)
+def test_every_replay_source_pointer_resolves_into_its_replayed_value(
+    vector: dict[str, Any],
+) -> None:
+    dump = json.dumps(
+        cast(dict[str, Any], vector["expected"])["semantic_dump"], sort_keys=True
+    )
+    for pointer in cast(list[dict[str, str]], vector["source_pointers"]):
+        assert set(pointer) == {"document_path", "json_pointer"}
+        path = REPOSITORY_ROOT / pointer["document_path"]
+        assert path.is_file(), f"{vector['id']}: {pointer['document_path']}"
+        document = json.loads(path.read_text("utf-8"))
+        # A cited pointer must resolve; a dangling pointer is a false
+        # provenance claim even when the vector itself still constructs.
+        resolved = _resolve_pointer(document, pointer["json_pointer"])
+        # A scalar the vector cites as its source must actually appear in the
+        # value that vector replays.
+        if isinstance(resolved, (str, int)) and not isinstance(resolved, bool):
+            assert str(resolved) in dump, (
+                f"{vector['id']}: {pointer['json_pointer']} resolves to "
+                f"{resolved!r}, which is absent from the replayed value"
+            )
 
 
 def test_replay_preserves_heterogeneous_provenance() -> None:
@@ -922,20 +962,32 @@ def test_python_json_input_boundary_is_covered_per_model() -> None:
         for name in ("valid-vectors", "invalid-vectors")
         for vector in _vectors(name)
     }
+    # Typed-positive and dumped-mapping rejection must both be frozen for every
+    # one of the seven models, not only for the ones that happened to be easy.
+    for index in range(1, 8):
+        assert f"boundary:python-typed:S0{index}" in partitions
+        assert f"boundary:python-mapping-rejected:S0{index}" in partitions
     for required in (
-        "boundary:python-typed:S01",
-        "boundary:python-typed:S02",
-        "boundary:python-typed:S03",
-        "boundary:python-typed:S07",
-        "boundary:python-mapping-rejected:S01",
-        "boundary:python-mapping-rejected:S02",
-        "boundary:python-mapping-rejected:S06",
         "boundary:python-tuple-strict:S04",
         "boundary:python-tuple-strict:S05",
         "boundary:python-scalar-rejected",
         "boundary:python-swapped",
     ):
         assert required in partitions
+    typed_targets = {
+        cast(str, v["target_symbol"])
+        for v in _vectors("valid-vectors")
+        if cast(str, v["semantic_partition"]).startswith("boundary:python-typed:")
+    }
+    rejected_targets = {
+        cast(str, v["target_symbol"])
+        for v in _vectors("invalid-vectors")
+        if cast(str, v["semantic_partition"]).startswith(
+            "boundary:python-mapping-rejected:"
+        )
+    }
+    assert typed_targets == set(OWNED_TARGETS)
+    assert rejected_targets == set(OWNED_TARGETS)
     json_targets = {
         cast(str, vector["target_symbol"])
         for vector in _vectors("valid-vectors")

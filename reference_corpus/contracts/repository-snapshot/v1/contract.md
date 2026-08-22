@@ -8,10 +8,10 @@ This internal, source-repository-only `S1.P04.S09` corpus is not a production sc
 
 | File | SHA-256 |
 | --- | --- |
-| `manifest.json` | `99e3533cde42a302aad1094f2c9c4215b4b5cc4ddcd6f88481f9702bd50b72a1` |
-| `valid-vectors.json` | `8b0c05dcd1421da056ae5dc32a13924ce69474ec6d71a124b911d05f4aadcc6b` |
-| `invalid-vectors.json` | `f846086acba3bae3f5ac7d1695b83ec7c8dd4bb880eb7b32fd595ae38aa39ea8` |
-| `replay-vectors.json` | `dfb925dbf47282b9d158468be26e943802a72e39110674edee2c4eee662c95f5` |
+| `manifest.json` | `60381766870b84db296f1c1f224a0938a66f69fba2e35b7eeeaac862eb1a3827` |
+| `valid-vectors.json` | `f26cc45cf2b5a13ee099dbda8f890743fe233ca7db3c855a4547784a405ea56f` |
+| `invalid-vectors.json` | `e5179a1a424057a62a04e3321f6f4330cc8cb2f46f32609863579e5fcab624f0` |
+| `replay-vectors.json` | `a1bf07b1be323b18ce0d16c0aba2963331eab4ba4c4659e38275cf5951146095` |
 
 `contract.md` carries no sidecar, matching the published identity, revision-locator, and evidence-envelope corpora.
 
@@ -44,10 +44,10 @@ All seven share `frozen`, `extra=forbid`, `strict`, `revalidate_instances=always
 
 ## 5. Vector Inventory
 
-- valid: **47**
-- invalid: **64**
+- valid: **50**
+- invalid: **68**
 - replay: **26**
-- total: **137**
+- total: **144**
 - fixtures: **16**
 
 Every vector declares a `semantic_partition`, and the partitions are unique across the corpus, so no vector is a re-parameterization of another.
