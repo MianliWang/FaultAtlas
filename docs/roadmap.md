@@ -37,7 +37,8 @@ aspirational Slice as scheduled work.
   `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
   `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
   `S1.P04` is complete.
-  `S1.P05` is `eligible_to_begin` and not started.
+  `S1.P05` is active and incomplete; `S1.P05.S01` is complete, and
+  `S1.P05.S02` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -81,7 +82,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
 `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
 `S1.P04` is complete.
-`S1.P05` is `eligible_to_begin` and not started.
+`S1.P05` is active and incomplete; `S1.P05.S01` is complete, and
+`S1.P05.S02` is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -671,9 +673,85 @@ owner `S5`, and `S1.P04.S10` records that disposition with
 ownership; the subject itself remains unresolved and is not claimed
 otherwise.
 
+## S1.P05 — Development History Model
+
+`S1.P05` is active and incomplete. `S1.P05.S01` is complete and
+`S1.P05.S02` is next and not started.
+
+`S1.P05.S01` publishes one new production module,
+`faultatlas.domain.history`, exporting exactly
+`PullRequestRevisionRoleBinding`. The binding supplies the context that the
+published `S1.P02` `RevisionRoleAssignment` deliberately leaves open: a role is
+context-relative, and the binding names the pull request the role holds with
+respect to. Its two fields embed published predecessor values whole —
+`pull_request` is the `S1.P01` `NumberedSourceObjectIdentity` and
+`role_assignment` is the `S1.P02` `RevisionRoleAssignment` — so neither the
+subject identity nor the role-to-revision pairing is restated. The binding
+carries no schema version of its own; each embedded value keeps the version it
+publishes.
+
+No development-subject identity is defined here. `NumberedSourceObjectIdentity`
+already is the canonical identity of one repository-scoped Issue or Pull
+Request under the locked `S1.P00.S07` decision, which records the
+repository-scoped number as the primary identity component and the provider
+global REST ID as an alternate typed identifier rather than part of the
+identity key. `S1.P05` reuses that published identity directly and defines no
+subject alias, subclass, wrapper, duplicate triple, or renamed kind enum.
+
+The subject position accepts a pull request only. An Issue is a valid numbered
+source object but records no base or head revision, so admitting one would make
+an unwitnessable state constructible. The role is narrowed to `base` and
+`head`, the two roles a pull request itself records; merge and merge-first-parent
+are reached through merge and topology semantics and are not bound here.
+
+The canonical witnesses are pytest-dev/pytest Pull Request `#4414` under
+repository global id `37489525` bound to base revision `4c9cde74` and to head
+revision `690a63b9`.
+
+`S1.P05.S01` asserts nothing further. It does not claim that the pull request
+or the revision exists, is visible, or is reachable. It does not claim that the
+revision resides in the pull request's own repository: a head revision may be
+authored in a fork whose repository is separately observed, absent, or no
+longer known, so the two positions share no repository coherence check. It
+records no ref name, branch, or default-branch designation; no ancestry,
+descendance, parent topology, or reachability; no comparison, diff, or change
+set; no merge, review, approval, or CI or test-run semantics; no timestamp or
+chronology; and no relation between an Issue and a Pull Request. Completeness
+is not claimed, and an absent binding asserts nothing. The Slice is
+evidence-neutral, leaves the `S1.P04` record-level evidence association exactly
+where it stands, and performs no Git or GitHub I/O.
+
+`S1.P02` `deferred:19` default-branch observation is owned by `S1.P05` but is
+not implemented by `S1.P05.S01`; the historical default branch remains unknown
+and owned by `S2`. The six `S1.P04` handoff constraints are inherited
+unchanged, and the published `S1.P04` contracts, the repository-snapshot v1
+corpus, and all `S1.P00`-`S1.P03` artifacts remain frozen.
+
+The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
+implementation and may split, merge, renumber, or drop after later read-only
+orientations. It is evidence-driven rather than fixed at ten Slices:
+
+1. `S1.P05.S01` — Pull Request Revision Role Binding (complete)
+2. `S1.P05.S02` — Pull Request Comparison Boundary (provisional; next, not
+   started)
+3. `S1.P05.S03` — Supplied Change Set (provisional)
+4. `S1.P05.S04` — Review Approval Relation (provisional)
+5. `S1.P05.S05` — Merge Outcome and Ordered Merge Parents (provisional)
+6. `S1.P05.S06` — Mutable Head-Ref Observation and Deletion (provisional)
+7. `S1.P05.S07` — Bounded Development Chronology (provisional)
+8. `S1.P05.S08` — History-Evidence Association (provisional)
+9. `S1.P05.S09` — Contract Corpus (provisional)
+10. `S1.P05.S10` — Integration and Phase Closure (provisional)
+
+The Issue-to-Pull-Request pairing is retained case material classified as a
+reviewed derived interpretation rather than a provider fact, and it is
+deliberately not scheduled as an `S1.P05` product relation.
+
+`S1.P06` is not eligible to begin. `S1.P05` is incomplete, and no `S1.P06`
+readiness is claimed here.
+
 ## Preserved later Stage 1 phases
 
-- **S1.P05 — Development History Model**
 - **S1.P06 — Fault Instance Model**
 - **S1.P07 — Pattern & Invariant Model**
 - **S1.P08 — Transfer & Applicability Model**
@@ -723,8 +801,17 @@ S01-S09 are complete. The current live surface adds the pure
 `RepositorySnapshotFactEvidenceLink` associates one supplied
 `RepositorySnapshotRootTreeBinding` or `RepositorySnapshotPathBinding` with
 one supplied `DurableEvidenceRecordReference`. `S1.P04` is complete;
-`S1.P04.S01` through `S1.P04.S10` are complete, and `S1.P05` is
-`eligible_to_begin` with implementation state `not_started`. `S1.P04.S10`
+`S1.P04.S01` through `S1.P04.S10` are complete. The current live surface also
+adds the module `faultatlas.domain.history`, whose sole
+`PullRequestRevisionRoleBinding` binds one supplied
+`NumberedSourceObjectIdentity` identifying a pull request to one supplied
+`RevisionRoleAssignment` in the `base` or `head` role. It reuses those
+published `S1.P01` and `S1.P02` values whole, defines no development-subject
+identity, carries no schema version of its own, performs no I/O, and claims no
+repository containment, ancestry, comparison, change set, review, merge, ref
+or default-branch designation, timestamp, evidence linkage, or completeness.
+`S1.P05` is active and incomplete: `S1.P05.S01` is complete and `S1.P05.S02`
+is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with
