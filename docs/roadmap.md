@@ -38,8 +38,8 @@ aspirational Slice as scheduled work.
   `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
   `S1.P04` is complete.
   `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
-  `S1.P05.S02.C01` correction, and `S1.P05.S03` are complete, and
-  `S1.P05.S04` is next and not started.
+  `S1.P05.S02.C01` correction, `S1.P05.S03`, and `S1.P05.S04` are complete,
+  and `S1.P05.S05` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -84,8 +84,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
 `S1.P04` is complete.
 `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, and `S1.P05.S03` are complete, and `S1.P05.S04`
-is next and not started.
+`S1.P05.S02.C01` correction, `S1.P05.S03`, and `S1.P05.S04` are complete, and
+`S1.P05.S05` is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -678,8 +678,8 @@ otherwise.
 ## S1.P05 — Development History Model
 
 `S1.P05` is active and incomplete. `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, and `S1.P05.S03` are complete, and `S1.P05.S04`
-is next and not started.
+`S1.P05.S02.C01` correction, `S1.P05.S03`, and `S1.P05.S04` are complete, and
+`S1.P05.S05` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -822,6 +822,37 @@ evidence-neutral.
 The canonical witness is pytest-dev/pytest review `176071572` under Pull
 Request `#4414`, approving revision `690a63b9`.
 
+`S1.P05.S04` extends `faultatlas.domain.history` with
+`PullRequestMergeRevisionOutcome`, naming the immutable revision one pull
+request merged as. Its two fields are the published `S1.P01`
+`NumberedSourceObjectIdentity` and the published `S1.P02` `GitCommitIdentity`,
+and the revision is bound directly: no revision role, role assignment, or
+parent sequence is restated. A commit and its exact ordered parents are already
+a published revision fact, so a caller needing the merge revision's parents
+uses `GitCommitParentTopology` directly rather than a copy carried here.
+
+The outcome is a historical occurrence rather than a present state. The
+retained pull request supplies `state` as `closed` and no merge commit
+identifier at all; the merge revision is established by the retained merged
+timeline event. Nothing here reports whether a pull request is currently
+merged, open, or closed, and there is no merged flag, disposition, or state
+vocabulary. Only positive outcomes are expressible: an absent outcome is not a
+statement that a pull request did not merge, and no vocabulary for that exists.
+
+An outcome asserts nothing about parent count, merge strategy, or which parent
+holds which position, and nothing about the revisions the pull request records
+in its base or head roles. The recorded base need not be a parent of the merge
+revision, nor its ancestor, nor equal to any parent: the retained canonical
+material is exactly such a case, where the integration branch advanced between
+the recorded base `4c9cde74` and the merge first parent `5fab0ca3`. No merge
+base, ahead or behind count, ancestry, descendance, or reachability is
+expressed. No merge time, merge actor, or relationship to a review is recorded,
+and merging is not correctness, test or CI outcome, causation, or proof of
+repair.
+
+The canonical witness is pytest-dev/pytest Pull Request `#4414` merging as
+revision `10cdae8e`.
+
 The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
 implementation and may split, merge, renumber, or drop after later read-only
 orientations. It is evidence-driven rather than fixed at ten Slices:
@@ -830,9 +861,9 @@ orientations. It is evidence-driven rather than fixed at ten Slices:
 2. `S1.P05.S02` — Pull Request Supplied Change Set (complete)
 - `S1.P05.S02.C01` — Positive Change-Set Boundary Correction (complete)
 3. `S1.P05.S03` — Pull Request Review Revision Approval (complete)
-4. `S1.P05.S04` — Merge Outcome and Ordered Merge Parents (provisional; next,
+4. `S1.P05.S04` — Pull Request Merge Revision Outcome (complete)
+5. `S1.P05.S05` — Mutable Head-Ref Observation and Deletion (provisional; next,
    not started)
-5. `S1.P05.S05` — Mutable Head-Ref Observation and Deletion (provisional)
 6. `S1.P05.S06` — Bounded Development Chronology (provisional)
 7. `S1.P05.S07` — History-Evidence Association (provisional)
 8. `S1.P05.S08` — Contract Corpus (provisional)
@@ -915,10 +946,12 @@ between one and 4096 changed paths and requires its base and head revisions to
 differ. `PullRequestReviewRevisionApproval` joins them, binding one published
 pull-request review identity to the immutable revision it approved, with no
 review state, timestamp, body, reviewer, revision role, evidence, or confidence
-claim.
+claim. `PullRequestMergeRevisionOutcome` completes the current set, naming the
+immutable revision a pull request merged as, with no parent sequence, revision
+role, merge state, strategy, timestamp, ancestry, or base and head coupling.
 `S1.P05` is active and incomplete: `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, and `S1.P05.S03` are complete, and `S1.P05.S04`
-is next and not started. `S1.P04.S10`
+`S1.P05.S02.C01` correction, `S1.P05.S03`, and `S1.P05.S04` are complete, and
+`S1.P05.S05` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with

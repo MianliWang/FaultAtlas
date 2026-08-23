@@ -1,4 +1,4 @@
-"""Supplied pull request revision bindings, change sets, and review approvals.
+"""Supplied pull request revision bindings, change sets, approvals, and merges.
 
 This module supplies the context that the published revision-role assignment
 deliberately leaves open. `RevisionRoleAssignment` names a role that is
@@ -130,9 +130,41 @@ Approval here is a provider-observed disposition and never FaultAtlas
 confidence, claim acceptance, reviewed interpretation, technical correctness,
 test or CI outcome, merge readiness, causation, or proof of repair.
 
+A merge revision outcome names the immutable revision one pull request merged
+as. Its caller states that the pull request merged and that this revision is
+the result; the revision is bound directly, so no revision role, role
+assignment, or parent sequence is restated here.
+
+The outcome is a historical occurrence rather than a present state. Nothing
+here reports whether the pull request is currently merged, open, or closed, and
+the relation carries no merged flag, disposition, or state vocabulary of any
+kind. Only a positive outcome is expressible: an absent outcome is not a
+statement that a pull request did not merge, was abandoned, or was closed
+without merging, and no vocabulary for those exists.
+
+The merge revision's own parents are not carried. A commit and its exact
+ordered parents are already a published revision fact, and restating them here
+would duplicate that contract; a caller needing them uses the published
+topology value directly. Nothing in an outcome asserts how many parents the
+merge revision has, which parent holds which position, or that any particular
+revision appears among them.
+
+In particular an outcome asserts no relationship between the merge revision and
+the revisions the pull request records in its base or head roles. The recorded
+base need not be a parent of the merge revision, nor its ancestor, nor equal to
+any parent: an integration branch may advance between the two, and the retained
+canonical material is exactly such a case. No merge base, ahead or behind
+count, ancestry, descendance, or reachability is expressed or implied, and no
+merge strategy is assumed.
+
+An outcome records no merge time, no merge actor, and no relationship to a
+review: occurrence time belongs to bounded chronology, and an approval neither
+causes nor precedes a merge by anything this relation states. Merging is not
+correctness, test or CI outcome, causation, or proof of repair.
+
 The module is evidence-neutral. No evidence record is referenced, and no claim
 is made that any retained acquisition supports, corroborates, or verifies a
-binding, a change set, or an approval; record-level evidence association
+binding, a change set, an approval, or a merge outcome; record-level evidence association
 remains exactly where `S1.P04` placed it, and exact retained comparison bytes
 belong to a later association rather than to these values. The module performs no I/O: it
 resolves nothing, reads nothing, contacts no provider, and defines no durable
@@ -170,6 +202,7 @@ __all__ = [
     "PullRequestChangedPath",
     "PullRequestChangeSet",
     "PullRequestReviewRevisionApproval",
+    "PullRequestMergeRevisionOutcome",
 ]
 
 _MIN_CHANGED_PATHS = 1
@@ -418,4 +451,54 @@ class PullRequestReviewRevisionApproval(BaseModel):
     def _require_pull_request_review_subject(self) -> Self:
         if self.review.kind is not SourceObjectKind.PULL_REQUEST_REVIEW:
             raise ValueError("review must identify a pull_request_review object")
+        return self
+
+
+class PullRequestMergeRevisionOutcome(BaseModel):
+    """Supplied immutable revision that one pull request merged as."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    pull_request: NumberedSourceObjectIdentity
+    merge_revision: GitCommitIdentity
+
+    @field_validator("pull_request", mode="before")
+    @classmethod
+    def _require_typed_python_merged_pull_request(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value,
+            NumberedSourceObjectIdentity,
+        ):
+            raise ValueError(
+                "pull_request must be a NumberedSourceObjectIdentity in Python input"
+            )
+        return value
+
+    @field_validator("merge_revision", mode="before")
+    @classmethod
+    def _require_typed_python_merge_revision(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitCommitIdentity):
+            raise ValueError(
+                "merge_revision must be a GitCommitIdentity in Python input"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _require_merged_pull_request_subject(self) -> Self:
+        if self.pull_request.kind is not SourceObjectKind.PULL_REQUEST:
+            raise ValueError("pull_request must identify a pull_request source object")
         return self
