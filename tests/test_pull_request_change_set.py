@@ -543,13 +543,52 @@ def test_two_distinct_paths_sharing_one_object_are_allowed() -> None:
 
 def test_the_changed_path_collection_is_bounded() -> None:
     field = PullRequestChangeSet.model_fields["changed_paths"]
-    bounds = [
+
+    assert [
+        getattr(item, "min_length", None)
+        for item in field.metadata
+        if getattr(item, "min_length", None) is not None
+    ] == [1]
+    assert [
         getattr(item, "max_length", None)
         for item in field.metadata
         if getattr(item, "max_length", None) is not None
-    ]
+    ] == [4096]
 
-    assert bounds == [4096]
+
+def _distinct_changed_paths(count: int) -> tuple[PullRequestChangedPath, ...]:
+    """`count` entries differing only by path, so only the bound is exercised."""
+    return tuple(
+        PullRequestChangedPath(
+            path=GitRepositoryPath(f"generated/{index}"),
+            head_object=_blob(SYNTHETIC_BLOB),
+            status=ChangedPathStatus.MODIFIED,
+        )
+        for index in range(count)
+    )
+
+
+def test_the_maximum_changed_path_count_is_accepted() -> None:
+    change_set = _change_set(changed_paths=_distinct_changed_paths(4096))
+
+    assert len(change_set.changed_paths) == 4096
+
+
+def test_exceeding_the_maximum_changed_path_count_is_rejected() -> None:
+    with pytest.raises(ValidationError) as error:
+        _change_set(changed_paths=_distinct_changed_paths(4097))
+
+    assert error.value.errors()[0]["type"] == "too_long"
+
+
+def test_the_changed_path_count_boundary_is_exact() -> None:
+    for count, expected in ((0, False), (1, True), (4096, True), (4097, False)):
+        try:
+            _change_set(changed_paths=_distinct_changed_paths(count))
+            accepted = True
+        except ValidationError:
+            accepted = False
+        assert accepted is expected, f"{count} changed paths"
 
 
 # --- semantic JSON ---------------------------------------------------------
@@ -980,6 +1019,14 @@ def test_an_unrelated_base_and_head_pair_still_constructs() -> None:
 def test_equal_base_and_head_revisions_are_rejected() -> None:
     with pytest.raises(ValidationError, match="must be distinct revisions"):
         _change_set(base=_binding(RevisionRole.BASE, CANONICAL_HEAD_REVISION))
+
+
+def test_equal_base_and_head_revisions_are_rejected_with_one_changed_path() -> None:
+    with pytest.raises(ValidationError, match="must be distinct revisions"):
+        _change_set(
+            base=_binding(RevisionRole.BASE, CANONICAL_HEAD_REVISION),
+            changed_paths=_one_changed_path(),
+        )
 
 
 def test_equal_base_and_head_revisions_are_rejected_in_json() -> None:
