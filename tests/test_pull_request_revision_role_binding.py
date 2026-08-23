@@ -997,6 +997,7 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "PullRequestChangedPath",
         "PullRequestChangeSet",
         "PullRequestReviewRevisionApproval",
+        "PullRequestMergeRevisionOutcome",
     ]
     assert history_module.__all__[0] == "PullRequestRevisionRoleBinding"
     assert sorted(
@@ -1014,6 +1015,7 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "ProviderScopedSourceObjectIdentity",
         "PullRequestChangeSet",
         "PullRequestChangedPath",
+        "PullRequestMergeRevisionOutcome",
         "PullRequestReviewRevisionApproval",
         "PullRequestRevisionRoleBinding",
         "RevisionRole",
@@ -1068,6 +1070,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         ast.Assign,
         ast.Assign,
         ast.AnnAssign,
+        ast.ClassDef,
         ast.ClassDef,
         ast.ClassDef,
         ast.ClassDef,
@@ -1144,6 +1147,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         "PullRequestChangedPath",
         "PullRequestChangeSet",
         "PullRequestReviewRevisionApproval",
+        "PullRequestMergeRevisionOutcome",
     ]
     # This oracle owns only the S01 binding; the S02 values own their own.
     classes = classes[:1]

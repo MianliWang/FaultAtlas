@@ -904,7 +904,7 @@ def test_the_approval_module_adds_no_evidence_surface() -> None:
 
 
 def test_approval_model_surface_is_exact() -> None:
-    assert history_module.__all__[-1] == "PullRequestReviewRevisionApproval"
+    assert history_module.__all__[-2] == "PullRequestReviewRevisionApproval"
     assert tuple(PullRequestReviewRevisionApproval.model_fields) == (
         "review",
         "approved_revision",
@@ -1036,7 +1036,7 @@ def test_the_roadmap_records_the_s03_transition() -> None:
     assert "PullRequestReviewRevisionApproval" in roadmap
     assert "PullRequestReviewRevisionApproval" in current
     assert "`S1.P05.S03` — Pull Request Review Revision Approval (complete)" in roadmap
-    assert "`S1.P05.S04` is next and not started" in roadmap
+    assert "`S1.P05.S05` is next and not started" in roadmap
     # The superseded provisional title and status must not survive.
     assert "Review Approval Relation" not in roadmap
     assert "`S1.P05.S03` is next and not started" not in roadmap
