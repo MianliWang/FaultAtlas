@@ -53,6 +53,12 @@ the ordered pair is already exactly what those two bindings express, so no
 additional subject is introduced to hold them. Both bindings must name the
 same pull request, and each must carry its own role.
 
+One Git object format governs a whole change set: the base revision, the head
+revision, and every supplied head object share one hash algorithm, as the
+published snapshot path binding and commit parent topology already require of
+their own related identities. A change set mixing formats would be internally
+contradictory rather than merely unusual.
+
 A changed path names one repository path, one supplied blob identity for that
 path on the head side, and one supplied status. The status vocabulary is closed
 to `added` and `modified`, the two statuses the retained material supplies. A
@@ -290,6 +296,19 @@ class PullRequestChangeSet(BaseModel):
             raise ValueError("base must carry the base revision role")
         if self.head.role_assignment.role is not RevisionRole.HEAD:
             raise ValueError("head must carry the head revision role")
+        return self
+
+    @model_validator(mode="after")
+    def _require_one_hash_algorithm(self) -> Self:
+        algorithm = self.head.role_assignment.revision.algorithm
+        if self.base.role_assignment.revision.algorithm is not algorithm:
+            raise ValueError("base and head revision algorithms must match")
+        if any(
+            entry.head_object.algorithm is not algorithm for entry in self.changed_paths
+        ):
+            raise ValueError(
+                "head object algorithms must match the head revision algorithm"
+            )
         return self
 
     @model_validator(mode="after")

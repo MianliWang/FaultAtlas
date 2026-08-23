@@ -388,6 +388,103 @@ def test_a_changed_path_carries_no_content_diff_or_hunk() -> None:
         assert absent not in PullRequestChangedPath.model_fields
 
 
+# --- one Git object format --------------------------------------------------
+
+
+def _sha256_commit(full_digest: str = "a" * 64) -> GitCommitIdentity:
+    return GitCommitIdentity(
+        kind=GitObjectKind.COMMIT,
+        algorithm=GitHashAlgorithm.SHA256,
+        full_digest=full_digest,
+    )
+
+
+def _sha256_blob(full_digest: str = "b" * 64) -> GitBlobIdentity:
+    return GitBlobIdentity(
+        kind=GitObjectKind.BLOB,
+        algorithm=GitHashAlgorithm.SHA256,
+        full_digest=full_digest,
+    )
+
+
+def _sha256_binding(role: RevisionRole) -> PullRequestRevisionRoleBinding:
+    return PullRequestRevisionRoleBinding(
+        pull_request=_pull_request(),
+        role_assignment=RevisionRoleAssignment(
+            role=role,
+            revision=_sha256_commit(
+                "a" * 64 if role is RevisionRole.BASE else "c" * 64
+            ),
+        ),
+    )
+
+
+def test_a_head_object_must_share_the_head_revision_algorithm() -> None:
+    with pytest.raises(ValidationError, match="head object algorithms must match"):
+        _change_set(
+            changed_paths=(
+                PullRequestChangedPath(
+                    path=GitRepositoryPath("a"),
+                    head_object=_sha256_blob(),
+                    status=ChangedPathStatus.ADDED,
+                ),
+            )
+        )
+
+
+def test_the_base_and_head_revisions_must_share_one_algorithm() -> None:
+    with pytest.raises(
+        ValidationError, match="base and head revision algorithms must match"
+    ):
+        _change_set(head=_sha256_binding(RevisionRole.HEAD), changed_paths=())
+
+
+def test_a_wholly_sha256_change_set_is_accepted() -> None:
+    change_set = PullRequestChangeSet(
+        base=_sha256_binding(RevisionRole.BASE),
+        head=_sha256_binding(RevisionRole.HEAD),
+        changed_paths=(
+            PullRequestChangedPath(
+                path=GitRepositoryPath("a"),
+                head_object=_sha256_blob(),
+                status=ChangedPathStatus.MODIFIED,
+            ),
+        ),
+    )
+
+    assert change_set.head.role_assignment.revision.algorithm is (
+        GitHashAlgorithm.SHA256
+    )
+    assert change_set.changed_paths[0].head_object.algorithm is (
+        GitHashAlgorithm.SHA256
+    )
+
+
+def test_one_mismatched_entry_among_many_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="head object algorithms must match"):
+        _change_set(
+            changed_paths=(
+                *_canonical_changed_paths(),
+                PullRequestChangedPath(
+                    path=GitRepositoryPath("later"),
+                    head_object=_sha256_blob(),
+                    status=ChangedPathStatus.ADDED,
+                ),
+            )
+        )
+
+
+def test_the_canonical_change_set_uses_one_algorithm_throughout() -> None:
+    change_set = _change_set()
+    algorithms = (
+        {change_set.base.role_assignment.revision.algorithm}
+        | {change_set.head.role_assignment.revision.algorithm}
+        | {entry.head_object.algorithm for entry in change_set.changed_paths}
+    )
+
+    assert algorithms == {GitHashAlgorithm.SHA1}
+
+
 # --- duplicate and bound rules ---------------------------------------------
 
 
@@ -941,6 +1038,7 @@ def test_the_change_set_models_declare_the_expected_validators() -> None:
         "_require_typed_python_binding",
         "_require_strict_changed_paths",
         "_require_one_pull_request_and_its_two_roles",
+        "_require_one_hash_algorithm",
         "_require_unique_changed_paths",
     ]
     assert [
