@@ -625,12 +625,47 @@ class _ForeignReview(BaseModel):
     parent: object
 
 
+class _AttributeBackedRevision:
+    def __init__(self, revision: GitCommitIdentity) -> None:
+        self.schema_version = revision.schema_version
+        self.kind = revision.kind
+        self.algorithm = revision.algorithm
+        self.full_digest = revision.full_digest
+
+
+class _ForeignRevision(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    schema_version: object
+    kind: object
+    algorithm: object
+    full_digest: object
+
+
+def _foreign_revision() -> _ForeignRevision:
+    revision = _commit()
+    return _ForeignRevision(
+        schema_version=revision.schema_version,
+        kind=revision.kind,
+        algorithm=revision.algorithm,
+        full_digest=revision.full_digest,
+    )
+
+
 def test_approval_rejects_attribute_backed_children_under_from_attributes() -> None:
     with pytest.raises(ValidationError, match="in Python input"):
         PullRequestReviewRevisionApproval.model_validate(
             {
                 "review": _AttributeBackedReview(_review()),
                 "approved_revision": _commit(),
+            },
+            from_attributes=True,
+        )
+    with pytest.raises(ValidationError, match="in Python input"):
+        PullRequestReviewRevisionApproval.model_validate(
+            {
+                "review": _review(),
+                "approved_revision": _AttributeBackedRevision(_commit()),
             },
             from_attributes=True,
         )
@@ -652,6 +687,48 @@ def test_approval_rejects_foreign_model_children_under_from_attributes() -> None
             },
             from_attributes=True,
         )
+
+
+def test_approval_rejects_a_foreign_revision_model_in_plain_python_input() -> None:
+    with pytest.raises(
+        ValidationError, match="approved_revision must be a GitCommitIdentity"
+    ):
+        PullRequestReviewRevisionApproval(
+            review=_review(),
+            approved_revision=_foreign_revision(),  # type: ignore[arg-type]
+        )
+
+
+def test_approval_rejects_a_foreign_revision_model_under_from_attributes() -> None:
+    with pytest.raises(
+        ValidationError, match="approved_revision must be a GitCommitIdentity"
+    ):
+        PullRequestReviewRevisionApproval.model_validate(
+            {"review": _review(), "approved_revision": _foreign_revision()},
+            from_attributes=True,
+        )
+
+
+def test_both_child_positions_reject_foreign_models_symmetrically() -> None:
+    review = _review()
+    foreign_review = _ForeignReview(
+        schema_version=review.schema_version,
+        kind=review.kind,
+        provider_global_id=review.provider_global_id,
+        parent=review.parent,
+    )
+
+    for supplied, expected in (
+        ({"review": foreign_review, "approved_revision": _commit()}, "review must be"),
+        (
+            {"review": review, "approved_revision": _foreign_revision()},
+            "approved_revision must be",
+        ),
+    ):
+        with pytest.raises(ValidationError, match=expected):
+            PullRequestReviewRevisionApproval.model_validate(
+                supplied, from_attributes=True
+            )
 
 
 # --- malformed review JSON -------------------------------------------------
