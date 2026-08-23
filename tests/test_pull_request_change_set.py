@@ -161,6 +161,11 @@ def _canonical_changed_paths() -> tuple[PullRequestChangedPath, ...]:
     return tuple(_changed_path(*entry) for entry in CANONICAL_CHANGED_PATHS)
 
 
+def _one_changed_path() -> tuple[PullRequestChangedPath, ...]:
+    """Smallest valid collection, for cases that do not depend on contents."""
+    return (_changed_path(*CANONICAL_CHANGED_PATHS[0]),)
+
+
 def _change_set(
     *,
     base: PullRequestRevisionRoleBinding | None = None,
@@ -246,10 +251,25 @@ def test_the_supplied_order_is_preserved_exactly_and_is_not_sorted() -> None:
     )
 
 
-def test_an_empty_change_set_supplies_no_changed_path() -> None:
-    change_set = _change_set(changed_paths=())
+def test_an_empty_change_set_is_rejected() -> None:
+    with pytest.raises(ValidationError) as error:
+        _change_set(changed_paths=())
 
-    assert change_set.changed_paths == ()
+    assert error.value.errors()[0]["type"] == "too_short"
+
+
+def test_an_empty_changed_path_array_is_rejected_in_json() -> None:
+    payload = _payload()
+    payload["changed_paths"] = []
+
+    with pytest.raises(ValidationError):
+        PullRequestChangeSet.model_validate_json(json.dumps(payload))
+
+
+def test_one_changed_path_is_enough() -> None:
+    change_set = _change_set(changed_paths=_one_changed_path())
+
+    assert len(change_set.changed_paths) == 1
     assert change_set != _change_set()
 
 
@@ -436,7 +456,10 @@ def test_the_base_and_head_revisions_must_share_one_algorithm() -> None:
     with pytest.raises(
         ValidationError, match="base and head revision algorithms must match"
     ):
-        _change_set(head=_sha256_binding(RevisionRole.HEAD), changed_paths=())
+        _change_set(
+            head=_sha256_binding(RevisionRole.HEAD),
+            changed_paths=_one_changed_path(),
+        )
 
 
 def test_a_wholly_sha256_change_set_is_accepted() -> None:
@@ -717,7 +740,7 @@ def test_change_set_rejects_untyped_python_bindings(field: str) -> None:
         PullRequestChangeSet(
             base=supplied["base"],  # type: ignore[arg-type]
             head=supplied["head"],  # type: ignore[arg-type]
-            changed_paths=(),
+            changed_paths=_one_changed_path(),
         )
 
 
@@ -948,10 +971,34 @@ def test_the_change_set_expresses_no_ancestry_between_base_and_head() -> None:
 def test_an_unrelated_base_and_head_pair_still_constructs() -> None:
     unrelated = _change_set(
         base=_binding(RevisionRole.BASE, SYNTHETIC_BLOB),
-        changed_paths=(),
+        changed_paths=_one_changed_path(),
     )
 
     assert unrelated.base.role_assignment.revision.full_digest == SYNTHETIC_BLOB
+
+
+def test_equal_base_and_head_revisions_are_rejected() -> None:
+    with pytest.raises(ValidationError, match="must be distinct revisions"):
+        _change_set(base=_binding(RevisionRole.BASE, CANONICAL_HEAD_REVISION))
+
+
+def test_equal_base_and_head_revisions_are_rejected_in_json() -> None:
+    payload = _payload()
+    base = payload["base"]
+    head = payload["head"]
+    assert isinstance(base, dict) and isinstance(head, dict)
+    base["role_assignment"]["revision"] = head["role_assignment"]["revision"]
+
+    with pytest.raises(ValidationError, match="must be distinct revisions"):
+        PullRequestChangeSet.model_validate_json(json.dumps(payload))
+
+
+def test_the_canonical_base_and_head_revisions_differ() -> None:
+    change_set = _change_set()
+
+    assert change_set.base.role_assignment.revision != (
+        change_set.head.role_assignment.revision
+    )
 
 
 def test_no_forbidden_identifier_appears_in_the_change_set_surface() -> None:
@@ -1104,6 +1151,30 @@ def test_the_roadmap_current_code_mapping_names_the_change_set() -> None:
         assert symbol in current
     assert "`S1.P05.S01` and `S1.P05.S02` are complete" in current
     assert "`S1.P05.S02` is next and not started" not in current
+
+
+def test_the_roadmap_records_the_c01_boundary_correction() -> None:
+    roadmap = " ".join(
+        (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
+    )
+
+    assert "`S1.P05.S02.C01`" in roadmap
+    assert "Positive Change-Set Boundary Correction (complete)" in roadmap
+    assert "between one and 4096 changed paths" in roadmap
+    # The corrected claim must not survive anywhere in the current roadmap.
+    assert "may be empty without asserting that nothing changed" not in roadmap
+    # The S02 publication history is acknowledged, not rewritten.
+    assert "`S1.P05.S02` — Pull Request Supplied Change Set (complete)" in roadmap
+    assert "publication history stands unrewritten" in roadmap
+
+
+def test_the_module_documents_both_corrected_boundaries() -> None:
+    source = HISTORY_SOURCE.read_text(encoding="utf-8")
+    docstring = ast.get_docstring(ast.parse(source)) or ""
+
+    assert "At least one changed path is required" in docstring
+    assert "base and head revisions must differ" in docstring
+    assert "An empty change set supplies zero changed paths" not in docstring
 
 
 def test_canonical_change_set_literals_remain_locked() -> None:

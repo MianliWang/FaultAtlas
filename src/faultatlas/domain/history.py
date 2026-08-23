@@ -75,8 +75,18 @@ patch, a hunk, or a line.
 A change set is bounded and preserves its caller's supplied order exactly. That
 order is the supplied order alone and carries no provider, chronological,
 lexical, or structural meaning. A repeated path is rejected without sorting,
-merging, or deduplication. An empty change set supplies zero changed paths
-rather than asserting that nothing changed.
+merging, or deduplication.
+
+At least one changed path is required. An empty collection cannot state that
+nothing changed, because this value never expresses completeness, so an empty
+change set would say nothing at all while still appearing to be a change
+record. Supplying no changed path is therefore not a change set rather than an
+empty one.
+
+The base and head revisions must differ. A change set names what its caller
+supplies as changed between two revisions, and one revision compared with
+itself has no between: such a value could only carry changed paths that
+contradict its own endpoints.
 
 Nothing here is completeness. A change set is exactly the paths its caller
 supplied, never the paths of a comparison, a commit, or a repository, and a
@@ -123,6 +133,7 @@ __all__ = [
     "PullRequestChangeSet",
 ]
 
+_MIN_CHANGED_PATHS = 1
 _MAX_CHANGED_PATHS = 4096
 
 _PULL_REQUEST_RECORDED_ROLES: frozenset[RevisionRole] = frozenset(
@@ -249,7 +260,7 @@ class PullRequestChangeSet(BaseModel):
     head: PullRequestRevisionRoleBinding
     changed_paths: Annotated[
         tuple[PullRequestChangedPath, ...],
-        Field(max_length=_MAX_CHANGED_PATHS),
+        Field(min_length=_MIN_CHANGED_PATHS, max_length=_MAX_CHANGED_PATHS),
     ]
 
     @field_validator("base", "head", mode="before")
@@ -296,6 +307,8 @@ class PullRequestChangeSet(BaseModel):
             raise ValueError("base must carry the base revision role")
         if self.head.role_assignment.role is not RevisionRole.HEAD:
             raise ValueError("head must carry the head revision role")
+        if self.base.role_assignment.revision == self.head.role_assignment.revision:
+            raise ValueError("base and head must be distinct revisions")
         return self
 
     @model_validator(mode="after")

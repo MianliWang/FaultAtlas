@@ -1044,6 +1044,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         ast.ImportFrom,
         ast.Assign,
         ast.Assign,
+        ast.Assign,
         ast.AnnAssign,
         ast.ClassDef,
         ast.ClassDef,
@@ -1101,7 +1102,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         if isinstance(node, ast.Assign)
         for target in node.targets
         if isinstance(target, ast.Name)
-    ] == ["__all__", "_MAX_CHANGED_PATHS"]
+    ] == ["__all__", "_MIN_CHANGED_PATHS", "_MAX_CHANGED_PATHS"]
     assert [
         (node.target.id, ast.unparse(node.annotation))
         for node in tree.body
@@ -1173,7 +1174,8 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         and not (
             isinstance(node, ast.Assign)
             and any(
-                isinstance(target, ast.Name) and target.id == "_MAX_CHANGED_PATHS"
+                isinstance(target, ast.Name)
+                and target.id in {"_MIN_CHANGED_PATHS", "_MAX_CHANGED_PATHS"}
                 for target in node.targets
             )
         )

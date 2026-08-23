@@ -38,7 +38,8 @@ aspirational Slice as scheduled work.
   `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
   `S1.P04` is complete.
   `S1.P05` is active and incomplete; `S1.P05.S01` and `S1.P05.S02` are
-  complete, and `S1.P05.S03` is next and not started.
+  complete, including the `S1.P05.S02.C01` correction, and `S1.P05.S03` is
+  next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -83,7 +84,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
 `S1.P04` is complete.
 `S1.P05` is active and incomplete; `S1.P05.S01` and `S1.P05.S02` are
-complete, and `S1.P05.S03` is next and not started.
+complete, including the `S1.P05.S02.C01` correction, and `S1.P05.S03` is next
+and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -676,7 +678,8 @@ otherwise.
 ## S1.P05 — Development History Model
 
 `S1.P05` is active and incomplete. `S1.P05.S01` and `S1.P05.S02` are
-complete and `S1.P05.S03` is next and not started.
+complete, including the `S1.P05.S02.C01` correction, and `S1.P05.S03` is next
+and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -744,14 +747,28 @@ carried, so a change set names what a path is said to hold afterwards and says
 nothing about what it held before. No content, diff, patch, hunk, or line is
 present in any form.
 
-A change set is bounded, preserves its caller's supplied order exactly without
-attaching meaning to it, rejects a repeated path without deduplication, and may
-be empty without asserting that nothing changed. It claims no completeness: it
-is exactly the paths its caller supplied, never those of a comparison, a
-commit, or a repository. It expresses no merge base, no ahead or behind count,
-no ancestry, descendance, reachability, or parent topology, and no
-repository-snapshot membership or path existence. It remains evidence-neutral,
-and exact retained comparison bytes belong to a later association.
+A change set is bounded to between one and 4096 changed paths, preserves its
+caller's supplied order exactly without attaching meaning to it, and rejects a
+repeated path without deduplication. Its base and head revisions must differ.
+It claims no completeness: it is exactly the paths its caller supplied, never
+those of a comparison, a commit, or a repository. It expresses no merge base,
+no ahead or behind count, no ancestry, descendance, reachability, or parent
+topology, and no repository-snapshot membership or path existence. It remains
+evidence-neutral, and exact retained comparison bytes belong to a later
+association.
+
+`S1.P05.S02.C01` corrects two boundaries that the published `S1.P05.S02`
+contract left open. `S1.P05.S02` admitted an empty change set and described it
+as supplying zero changed paths rather than asserting that nothing changed.
+Because the value never expresses completeness, an empty collection could not
+state that nothing changed either, so it said nothing at all while still
+appearing to be a change record; at least one changed path is now required, and
+supplying none is not a change set rather than an empty one. `S1.P05.S02` also
+admitted a change set whose base and head named the same revision, which has no
+between for changed paths to describe; the two revisions must now differ. Both
+corrections narrow the accepted inputs only. No published symbol, field,
+status value, or claim is added, removed, or restated, and the `S1.P05.S02`
+publication history stands unrewritten.
 
 The canonical witness is pytest-dev/pytest Pull Request `#4414` from base
 `4c9cde74` to head `690a63b9` with exactly three supplied changed paths:
@@ -772,6 +789,7 @@ orientations. It is evidence-driven rather than fixed at ten Slices:
 
 1. `S1.P05.S01` — Pull Request Revision Role Binding (complete)
 2. `S1.P05.S02` — Pull Request Supplied Change Set (complete)
+- `S1.P05.S02.C01` — Positive Change-Set Boundary Correction (complete)
 3. `S1.P05.S03` — Review Approval Relation (provisional; next, not started)
 4. `S1.P05.S04` — Merge Outcome and Ordered Merge Parents (provisional)
 5. `S1.P05.S05` — Mutable Head-Ref Observation and Deletion (provisional)
@@ -852,7 +870,9 @@ It is joined there by `ChangedPathStatus`, `PullRequestChangedPath`, and
 together with the paths its caller supplies as changed between them, each
 naming a repository path, a head-side blob identity, and a supplied `added` or
 `modified` status, with no content, comparison metric, ancestry, completeness,
-or evidence claim.
+or evidence claim. As corrected by `S1.P05.S02.C01`, a change set carries
+between one and 4096 changed paths and requires its base and head revisions to
+differ.
 `S1.P05` is active and incomplete: `S1.P05.S01` and `S1.P05.S02` are complete
 and `S1.P05.S03` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
