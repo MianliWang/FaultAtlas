@@ -37,9 +37,9 @@ aspirational Slice as scheduled work.
   `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
   `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
   `S1.P04` is complete.
-  `S1.P05` is active and incomplete; `S1.P05.S01` and `S1.P05.S02` are
-  complete, including the `S1.P05.S02.C01` correction, and `S1.P05.S03` is
-  next and not started.
+  `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
+  `S1.P05.S02.C01` correction, and `S1.P05.S03` are complete, and
+  `S1.P05.S04` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -83,9 +83,9 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
 `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
 `S1.P04` is complete.
-`S1.P05` is active and incomplete; `S1.P05.S01` and `S1.P05.S02` are
-complete, including the `S1.P05.S02.C01` correction, and `S1.P05.S03` is next
-and not started.
+`S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
+`S1.P05.S02.C01` correction, and `S1.P05.S03` are complete, and `S1.P05.S04`
+is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -677,9 +677,9 @@ otherwise.
 
 ## S1.P05 — Development History Model
 
-`S1.P05` is active and incomplete. `S1.P05.S01` and `S1.P05.S02` are
-complete, including the `S1.P05.S02.C01` correction, and `S1.P05.S03` is next
-and not started.
+`S1.P05` is active and incomplete. `S1.P05.S01`, `S1.P05.S02` including the
+`S1.P05.S02.C01` correction, and `S1.P05.S03` are complete, and `S1.P05.S04`
+is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -783,6 +783,45 @@ Its remaining fields are either the change facts now carried here or the
 deterministic ahead, behind, and merge-base derivations that remain deferred
 with `S1.P02` `deferred:22` ancestry and reachability.
 
+`S1.P05.S03` extends `faultatlas.domain.history` with
+`PullRequestReviewRevisionApproval`, supplying the edge the published review
+identity leaves open. The `S1.P00.S07` decision links a pull-request review to
+its stable repository, its parent pull request, and the revision it reviewed;
+the published `S1.P01` `ProviderScopedSourceObjectIdentity` carries the first
+two inside its parent and carries no revision at all. It is the only
+provider-scoped kind whose `S1.P00.S07` linkage exceeds what `S1.P01`
+implements, so the missing edge is a `S1.P05` responsibility. An approval names
+that revision, and no second review identity is defined.
+
+Its two fields are the published `S1.P01` review identity and the published
+`S1.P02` `GitCommitIdentity`. The review position accepts a pull-request review
+only; the parent pull request is not restated, because the published identity
+already carries it and already requires it to be a pull request. The revision is
+bound directly rather than through a `S1.P05.S01` binding: the canonical review
+approved the revision that is also the recorded pull-request head, but that
+coincidence is a deterministic derivation about one case rather than a property
+of reviews, and a review of an intermediate revision would be unrepresentable
+if the head role were required.
+
+Approval is carried by the relation itself rather than by a state field. The
+retained material supplies exactly one approval disposition, so a vocabulary of
+one member would add nothing, and naming dispositions that nothing supplies
+would invent them. An approval is a historical occurrence, not a current state:
+its caller states that this review approved this revision, and nothing states
+that the approval still stands or was never dismissed. Complete historical
+review state is not established by any retained material.
+
+An approval records no submission time, no review body or rationale, and no
+reviewer. A body observed to be exactly empty is not an absence of reason, and
+occurrence time belongs to bounded chronology. Approval here is a
+provider-observed disposition and never FaultAtlas confidence, claim
+acceptance, reviewed interpretation, technical correctness, test or CI outcome,
+merge readiness, causation, or proof of repair. The Slice remains
+evidence-neutral.
+
+The canonical witness is pytest-dev/pytest review `176071572` under Pull
+Request `#4414`, approving revision `690a63b9`.
+
 The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
 implementation and may split, merge, renumber, or drop after later read-only
 orientations. It is evidence-driven rather than fixed at ten Slices:
@@ -790,8 +829,9 @@ orientations. It is evidence-driven rather than fixed at ten Slices:
 1. `S1.P05.S01` — Pull Request Revision Role Binding (complete)
 2. `S1.P05.S02` — Pull Request Supplied Change Set (complete)
 - `S1.P05.S02.C01` — Positive Change-Set Boundary Correction (complete)
-3. `S1.P05.S03` — Review Approval Relation (provisional; next, not started)
-4. `S1.P05.S04` — Merge Outcome and Ordered Merge Parents (provisional)
+3. `S1.P05.S03` — Pull Request Review Revision Approval (complete)
+4. `S1.P05.S04` — Merge Outcome and Ordered Merge Parents (provisional; next,
+   not started)
 5. `S1.P05.S05` — Mutable Head-Ref Observation and Deletion (provisional)
 6. `S1.P05.S06` — Bounded Development Chronology (provisional)
 7. `S1.P05.S07` — History-Evidence Association (provisional)
@@ -872,9 +912,13 @@ naming a repository path, a head-side blob identity, and a supplied `added` or
 `modified` status, with no content, comparison metric, ancestry, completeness,
 or evidence claim. As corrected by `S1.P05.S02.C01`, a change set carries
 between one and 4096 changed paths and requires its base and head revisions to
-differ.
-`S1.P05` is active and incomplete: `S1.P05.S01` and `S1.P05.S02` are complete
-and `S1.P05.S03` is next and not started. `S1.P04.S10`
+differ. `PullRequestReviewRevisionApproval` joins them, binding one published
+pull-request review identity to the immutable revision it approved, with no
+review state, timestamp, body, reviewer, revision role, evidence, or confidence
+claim.
+`S1.P05` is active and incomplete: `S1.P05.S01`, `S1.P05.S02` including the
+`S1.P05.S02.C01` correction, and `S1.P05.S03` are complete, and `S1.P05.S04`
+is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with

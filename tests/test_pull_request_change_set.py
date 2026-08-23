@@ -1196,8 +1196,8 @@ def test_the_roadmap_current_code_mapping_names_the_change_set() -> None:
 
     for symbol in history_module.__all__:
         assert symbol in current
-    assert "`S1.P05.S01` and `S1.P05.S02` are complete" in current
-    assert "`S1.P05.S02` is next and not started" not in current
+    assert "`S1.P05.S03` are complete" in current
+    assert "`S1.P05.S03` is next and not started" not in current
 
 
 def test_the_roadmap_records_the_c01_boundary_correction() -> None:
