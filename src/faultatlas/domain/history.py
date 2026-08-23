@@ -1,4 +1,4 @@
-"""Binding from one pull request to one revision it records in a given role.
+"""Supplied pull request revision-role bindings and supplied change sets.
 
 This module supplies the context that the published revision-role assignment
 deliberately leaves open. `RevisionRoleAssignment` names a role that is
@@ -46,19 +46,54 @@ an Issue and a Pull Request are defined. Completeness is not claimed: bindings
 carry no notion of how many roles a pull request has, and an absent binding
 asserts nothing.
 
+A change set carries the two bindings of one pull request together with the
+paths its caller supplies as changed between them. The base and head positions
+are the published bindings themselves rather than a separate boundary value:
+the ordered pair is already exactly what those two bindings express, so no
+additional subject is introduced to hold them. Both bindings must name the
+same pull request, and each must carry its own role.
+
+A changed path names one repository path, one supplied blob identity for that
+path on the head side, and one supplied status. The status vocabulary is closed
+to `added` and `modified`, the two statuses the retained material supplies. A
+removed, renamed, or copied status is absent rather than reserved: no supplied
+value describes one, and inventing one would manufacture an object state that
+nothing establishes.
+
+Only a head-side object is carried. No blob identity is supplied for the base
+side of a changed path, so a change set names what a path is said to hold
+afterwards and says nothing about what it held before. File content is not
+present in any form: a path entry carries an identity, never bytes, a diff, a
+patch, a hunk, or a line.
+
+A change set is bounded and preserves its caller's supplied order exactly. That
+order is the supplied order alone and carries no provider, chronological,
+lexical, or structural meaning. A repeated path is rejected without sorting,
+merging, or deduplication. An empty change set supplies zero changed paths
+rather than asserting that nothing changed.
+
+Nothing here is completeness. A change set is exactly the paths its caller
+supplied, never the paths of a comparison, a commit, or a repository, and a
+path that is absent from one is simply not supplied. The module expresses no
+merge base, no ahead or behind count, no ancestry, descendance, reachability,
+or parent topology, and no repository-snapshot membership or path existence.
+
 The module is evidence-neutral. No evidence record is referenced, and no claim
 is made that any retained acquisition supports, corroborates, or verifies a
-binding; record-level evidence association remains exactly where `S1.P04`
-placed it. The module performs no I/O: it resolves nothing, reads nothing,
-contacts no provider, and defines no durable bytes, reader, writer, or
-persistence.
+binding or a change set; record-level evidence association remains exactly
+where `S1.P04` placed it, and exact retained comparison bytes belong to a later
+association rather than to these values. The module performs no I/O: it
+resolves nothing, reads nothing, contacts no provider, and defines no durable
+bytes, reader, writer, or persistence.
 """
 
-from typing import Self
+from enum import StrEnum
+from typing import Annotated, Self, cast
 
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -68,11 +103,21 @@ from faultatlas.domain.identity import (
     NumberedSourceObjectIdentity,
     SourceObjectKind,
 )
-from faultatlas.domain.revision import RevisionRole, RevisionRoleAssignment
+from faultatlas.domain.revision import (
+    GitBlobIdentity,
+    GitRepositoryPath,
+    RevisionRole,
+    RevisionRoleAssignment,
+)
 
 __all__ = [
     "PullRequestRevisionRoleBinding",
+    "ChangedPathStatus",
+    "PullRequestChangedPath",
+    "PullRequestChangeSet",
 ]
+
+_MAX_CHANGED_PATHS = 4096
 
 _PULL_REQUEST_RECORDED_ROLES: frozenset[RevisionRole] = frozenset(
     {
@@ -135,4 +180,121 @@ class PullRequestRevisionRoleBinding(BaseModel):
     def _require_pull_request_recorded_role(self) -> Self:
         if self.role_assignment.role not in _PULL_REQUEST_RECORDED_ROLES:
             raise ValueError("bound revision role must be base or head")
+        return self
+
+
+class ChangedPathStatus(StrEnum):
+    """Closed vocabulary of supplied changed-path statuses."""
+
+    ADDED = "added"
+    MODIFIED = "modified"
+
+
+class PullRequestChangedPath(BaseModel):
+    """One supplied changed path with its head-side object and status."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    path: GitRepositoryPath
+    head_object: GitBlobIdentity
+    status: ChangedPathStatus
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def _require_typed_python_path(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitRepositoryPath):
+            raise ValueError("path must be a GitRepositoryPath in Python input")
+        return value
+
+    @field_validator("head_object", mode="before")
+    @classmethod
+    def _require_typed_python_head_object(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitBlobIdentity):
+            raise ValueError("head_object must be a GitBlobIdentity in Python input")
+        return value
+
+
+class PullRequestChangeSet(BaseModel):
+    """Supplied changed paths between one pull request's base and head."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    base: PullRequestRevisionRoleBinding
+    head: PullRequestRevisionRoleBinding
+    changed_paths: Annotated[
+        tuple[PullRequestChangedPath, ...],
+        Field(max_length=_MAX_CHANGED_PATHS),
+    ]
+
+    @field_validator("base", "head", mode="before")
+    @classmethod
+    def _require_typed_python_binding(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value,
+            PullRequestRevisionRoleBinding,
+        ):
+            raise ValueError(
+                f"{info.field_name} must be a PullRequestRevisionRoleBinding "
+                "in Python input"
+            )
+        return value
+
+    @field_validator("changed_paths", mode="before")
+    @classmethod
+    def _require_strict_changed_paths(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "json" and isinstance(value, list):
+            return tuple(cast(list[object], value))
+        if info.mode == "python":
+            if not isinstance(value, tuple):
+                raise ValueError("changed_paths must be a tuple in Python input")
+            entries = cast(tuple[object, ...], value)
+            if any(not isinstance(entry, PullRequestChangedPath) for entry in entries):
+                raise ValueError(
+                    "changed_paths must contain PullRequestChangedPath values"
+                )
+        return cast(object, value)
+
+    @model_validator(mode="after")
+    def _require_one_pull_request_and_its_two_roles(self) -> Self:
+        if self.base.pull_request != self.head.pull_request:
+            raise ValueError("base and head must bind the same pull request")
+        if self.base.role_assignment.role is not RevisionRole.BASE:
+            raise ValueError("base must carry the base revision role")
+        if self.head.role_assignment.role is not RevisionRole.HEAD:
+            raise ValueError("head must carry the head revision role")
+        return self
+
+    @model_validator(mode="after")
+    def _require_unique_changed_paths(self) -> Self:
+        paths = frozenset(entry.path for entry in self.changed_paths)
+        if len(paths) != len(self.changed_paths):
+            raise ValueError("changed paths must not repeat a repository path")
         return self
