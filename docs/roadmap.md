@@ -801,8 +801,17 @@ S01-S09 are complete. The current live surface adds the pure
 `RepositorySnapshotFactEvidenceLink` associates one supplied
 `RepositorySnapshotRootTreeBinding` or `RepositorySnapshotPathBinding` with
 one supplied `DurableEvidenceRecordReference`. `S1.P04` is complete;
-`S1.P04.S01` through `S1.P04.S10` are complete, and `S1.P05` is
-`eligible_to_begin` with implementation state `not_started`. `S1.P04.S10`
+`S1.P04.S01` through `S1.P04.S10` are complete. The current live surface also
+adds the module `faultatlas.domain.history`, whose sole
+`PullRequestRevisionRoleBinding` binds one supplied
+`NumberedSourceObjectIdentity` identifying a pull request to one supplied
+`RevisionRoleAssignment` in the `base` or `head` role. It reuses those
+published `S1.P01` and `S1.P02` values whole, defines no development-subject
+identity, carries no schema version of its own, performs no I/O, and claims no
+repository containment, ancestry, comparison, change set, review, merge, ref
+or default-branch designation, timestamp, evidence linkage, or completeness.
+`S1.P05` is active and incomplete: `S1.P05.S01` is complete and `S1.P05.S02`
+is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with

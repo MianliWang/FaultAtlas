@@ -1263,6 +1263,23 @@ def test_no_canonical_case_literal_is_embedded_in_production(literal: str) -> No
     assert literal not in HISTORY_SOURCE.read_text(encoding="utf-8")
 
 
+def test_the_roadmap_current_code_mapping_names_this_module() -> None:
+    roadmap = " ".join(
+        (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
+    )
+    mapping = roadmap.split("## Current-code mapping", 1)
+    assert len(mapping) == 2, "roadmap must retain a current-code mapping section"
+    current = mapping[1]
+
+    assert "faultatlas.domain.history" in current
+    assert "PullRequestRevisionRoleBinding" in current
+    assert "`S1.P05` is active and incomplete" in current
+    assert (
+        "`S1.P05` is `eligible_to_begin` with implementation state `not_started`"
+        not in current
+    )
+
+
 def test_canonical_case_literals_remain_locked() -> None:
     assert CANONICAL_PROVIDER == "github"
     assert CANONICAL_REPOSITORY_ID == "37489525"
