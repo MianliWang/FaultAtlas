@@ -1,4 +1,4 @@
-"""Supplied pull request revision-role bindings and supplied change sets.
+"""Supplied pull request revision bindings, change sets, and review approvals.
 
 This module supplies the context that the published revision-role assignment
 deliberately leaves open. `RevisionRoleAssignment` names a role that is
@@ -94,11 +94,47 @@ path that is absent from one is simply not supplied. The module expresses no
 merge base, no ahead or behind count, no ancestry, descendance, reachability,
 or parent topology, and no repository-snapshot membership or path existence.
 
+A review approval supplies the edge the published review identity leaves open.
+The `S1.P00.S07` decision links a pull-request review to its stable repository,
+its parent pull request, and the revision it reviewed, and the published
+`S1.P01` identity carries the first two inside its parent while carrying no
+revision at all. An approval names that missing revision, so the review keeps
+its published identity and gains no second one here.
+
+The review position accepts a pull-request review only. The published identity
+also spans comments, review comments, and timeline events, so the kind is
+restricted here; the parent pull request is not restated, because the published
+identity already carries it and already requires it to be a pull request.
+
+The revision is bound directly rather than through a published revision-role
+binding. The canonical review approved the revision that is also the recorded
+pull-request head, but that coincidence is a derived observation about one
+case, not a property of reviews, and a review of an intermediate revision would
+be unrepresentable if the head role were required.
+
+An approval is a historical occurrence, not a current state. Its caller states
+that this review approved this revision; nothing here states that the approval
+still stands, that it was never dismissed or edited, or that the review carries
+any present state at all. Complete historical review state is not established
+by any retained material, so neither an approval nor its absence describes one.
+
+Approval is the whole of the positive claim, carried by the relation itself
+rather than by a state field. The retained material supplies exactly one
+approval disposition, so a vocabulary of one member would add nothing, and
+naming dispositions that nothing supplies would invent them.
+
+An approval records no submission time, no review body or rationale, and no
+reviewer. A body observed to be exactly empty is not an absence of reason, and
+occurrence time belongs to bounded chronology rather than to this relation.
+Approval here is a provider-observed disposition and never FaultAtlas
+confidence, claim acceptance, reviewed interpretation, technical correctness,
+test or CI outcome, merge readiness, causation, or proof of repair.
+
 The module is evidence-neutral. No evidence record is referenced, and no claim
 is made that any retained acquisition supports, corroborates, or verifies a
-binding or a change set; record-level evidence association remains exactly
-where `S1.P04` placed it, and exact retained comparison bytes belong to a later
-association rather than to these values. The module performs no I/O: it
+binding, a change set, or an approval; record-level evidence association
+remains exactly where `S1.P04` placed it, and exact retained comparison bytes
+belong to a later association rather than to these values. The module performs no I/O: it
 resolves nothing, reads nothing, contacts no provider, and defines no durable
 bytes, reader, writer, or persistence.
 """
@@ -117,10 +153,12 @@ from pydantic import (
 
 from faultatlas.domain.identity import (
     NumberedSourceObjectIdentity,
+    ProviderScopedSourceObjectIdentity,
     SourceObjectKind,
 )
 from faultatlas.domain.revision import (
     GitBlobIdentity,
+    GitCommitIdentity,
     GitRepositoryPath,
     RevisionRole,
     RevisionRoleAssignment,
@@ -131,6 +169,7 @@ __all__ = [
     "ChangedPathStatus",
     "PullRequestChangedPath",
     "PullRequestChangeSet",
+    "PullRequestReviewRevisionApproval",
 ]
 
 _MIN_CHANGED_PATHS = 1
@@ -329,4 +368,54 @@ class PullRequestChangeSet(BaseModel):
         paths = frozenset(entry.path for entry in self.changed_paths)
         if len(paths) != len(self.changed_paths):
             raise ValueError("changed paths must not repeat a repository path")
+        return self
+
+
+class PullRequestReviewRevisionApproval(BaseModel):
+    """Supplied approval of one immutable revision by one pull request review."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    review: ProviderScopedSourceObjectIdentity
+    approved_revision: GitCommitIdentity
+
+    @field_validator("review", mode="before")
+    @classmethod
+    def _require_typed_python_review(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value,
+            ProviderScopedSourceObjectIdentity,
+        ):
+            raise ValueError(
+                "review must be a ProviderScopedSourceObjectIdentity in Python input"
+            )
+        return value
+
+    @field_validator("approved_revision", mode="before")
+    @classmethod
+    def _require_typed_python_approved_revision(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitCommitIdentity):
+            raise ValueError(
+                "approved_revision must be a GitCommitIdentity in Python input"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _require_pull_request_review_subject(self) -> Self:
+        if self.review.kind is not SourceObjectKind.PULL_REQUEST_REVIEW:
+            raise ValueError("review must identify a pull_request_review object")
         return self

@@ -940,7 +940,25 @@ def test_binding_makes_no_existence_or_completeness_claim() -> None:
 
 def test_no_forbidden_identifier_appears_in_the_binding_module_surface() -> None:
     tree = ast.parse(HISTORY_SOURCE.read_text(encoding="utf-8"))
-    body = [node for node in tree.body if not isinstance(node, ast.Expr)]
+    # Scoped to the S01 binding and the module-level nodes it declares; later
+    # relations in this module own their own forbidden-identifier assurance.
+    body = [
+        node
+        for node in tree.body
+        if not isinstance(node, ast.Expr)
+        and not (
+            isinstance(node, ast.ClassDef)
+            and node.name != "PullRequestRevisionRoleBinding"
+        )
+        and not (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id in {"_MIN_CHANGED_PATHS", "_MAX_CHANGED_PATHS"}
+                for target in node.targets
+            )
+        )
+    ]
     surface = "\n".join(ast.unparse(node) for node in body)
 
     for identifier in FORBIDDEN_BINDING_IDENTIFIERS:
@@ -978,6 +996,7 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "ChangedPathStatus",
         "PullRequestChangedPath",
         "PullRequestChangeSet",
+        "PullRequestReviewRevisionApproval",
     ]
     assert history_module.__all__[0] == "PullRequestRevisionRoleBinding"
     assert sorted(
@@ -989,10 +1008,13 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "ConfigDict",
         "Field",
         "GitBlobIdentity",
+        "GitCommitIdentity",
         "GitRepositoryPath",
         "NumberedSourceObjectIdentity",
+        "ProviderScopedSourceObjectIdentity",
         "PullRequestChangeSet",
         "PullRequestChangedPath",
+        "PullRequestReviewRevisionApproval",
         "PullRequestRevisionRoleBinding",
         "RevisionRole",
         "RevisionRoleAssignment",
@@ -1050,6 +1072,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         ast.ClassDef,
         ast.ClassDef,
         ast.ClassDef,
+        ast.ClassDef,
     ]
     assert not [node for node in tree.body if isinstance(node, ast.Import)]
     assert [
@@ -1072,12 +1095,17 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         ),
         (
             "faultatlas.domain.identity",
-            ("NumberedSourceObjectIdentity", "SourceObjectKind"),
+            (
+                "NumberedSourceObjectIdentity",
+                "ProviderScopedSourceObjectIdentity",
+                "SourceObjectKind",
+            ),
         ),
         (
             "faultatlas.domain.revision",
             (
                 "GitBlobIdentity",
+                "GitCommitIdentity",
                 "GitRepositoryPath",
                 "RevisionRole",
                 "RevisionRoleAssignment",
@@ -1115,6 +1143,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         "ChangedPathStatus",
         "PullRequestChangedPath",
         "PullRequestChangeSet",
+        "PullRequestReviewRevisionApproval",
     ]
     # This oracle owns only the S01 binding; the S02 values own their own.
     classes = classes[:1]
