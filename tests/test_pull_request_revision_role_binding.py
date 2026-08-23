@@ -973,19 +973,34 @@ def test_the_rejected_subject_identity_design_is_not_resurrected(
 
 
 def test_model_and_module_surfaces_are_exact_and_local() -> None:
-    assert history_module.__all__ == ["PullRequestRevisionRoleBinding"]
+    assert history_module.__all__ == [
+        "PullRequestRevisionRoleBinding",
+        "ChangedPathStatus",
+        "PullRequestChangedPath",
+        "PullRequestChangeSet",
+    ]
+    assert history_module.__all__[0] == "PullRequestRevisionRoleBinding"
     assert sorted(
         name for name in vars(history_module) if not name.startswith("_")
     ) == [
+        "Annotated",
         "BaseModel",
+        "ChangedPathStatus",
         "ConfigDict",
+        "Field",
+        "GitBlobIdentity",
+        "GitRepositoryPath",
         "NumberedSourceObjectIdentity",
+        "PullRequestChangeSet",
+        "PullRequestChangedPath",
         "PullRequestRevisionRoleBinding",
         "RevisionRole",
         "RevisionRoleAssignment",
         "Self",
         "SourceObjectKind",
+        "StrEnum",
         "ValidationInfo",
+        "cast",
         "field_validator",
         "model_validator",
     ]
@@ -1026,8 +1041,13 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         ast.ImportFrom,
         ast.ImportFrom,
         ast.ImportFrom,
+        ast.ImportFrom,
+        ast.Assign,
         ast.Assign,
         ast.AnnAssign,
+        ast.ClassDef,
+        ast.ClassDef,
+        ast.ClassDef,
         ast.ClassDef,
     ]
     assert not [node for node in tree.body if isinstance(node, ast.Import)]
@@ -1036,12 +1056,14 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         for node in tree.body
         if isinstance(node, ast.ImportFrom)
     ] == [
-        ("typing", ("Self",)),
+        ("enum", ("StrEnum",)),
+        ("typing", ("Annotated", "Self", "cast")),
         (
             "pydantic",
             (
                 "BaseModel",
                 "ConfigDict",
+                "Field",
                 "ValidationInfo",
                 "field_validator",
                 "model_validator",
@@ -1051,7 +1073,15 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
             "faultatlas.domain.identity",
             ("NumberedSourceObjectIdentity", "SourceObjectKind"),
         ),
-        ("faultatlas.domain.revision", ("RevisionRole", "RevisionRoleAssignment")),
+        (
+            "faultatlas.domain.revision",
+            (
+                "GitBlobIdentity",
+                "GitRepositoryPath",
+                "RevisionRole",
+                "RevisionRoleAssignment",
+            ),
+        ),
     ]
     assert not [
         alias
@@ -1071,7 +1101,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         if isinstance(node, ast.Assign)
         for target in node.targets
         if isinstance(target, ast.Name)
-    ] == ["__all__"]
+    ] == ["__all__", "_MAX_CHANGED_PATHS"]
     assert [
         (node.target.id, ast.unparse(node.annotation))
         for node in tree.body
@@ -1079,7 +1109,14 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
     ] == [("_PULL_REQUEST_RECORDED_ROLES", "frozenset[RevisionRole]")]
 
     classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
-    assert [node.name for node in classes] == ["PullRequestRevisionRoleBinding"]
+    assert [node.name for node in classes] == [
+        "PullRequestRevisionRoleBinding",
+        "ChangedPathStatus",
+        "PullRequestChangedPath",
+        "PullRequestChangeSet",
+    ]
+    # This oracle owns only the S01 binding; the S02 values own their own.
+    classes = classes[:1]
     assert [ast.unparse(base) for base in classes[0].bases] == ["BaseModel"]
     assert not classes[0].keywords
     assert not classes[0].decorator_list
@@ -1124,7 +1161,29 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         "_require_pull_request_recorded_role",
     ]
 
-    comparisons = [node for node in ast.walk(tree) if isinstance(node, ast.Compare)]
+    # This oracle owns the S01 binding and the module-level nodes it declares;
+    # the S02 values are covered by their own focused oracle.
+    owned = [
+        node
+        for node in tree.body
+        if not (
+            isinstance(node, ast.ClassDef)
+            and node.name != "PullRequestRevisionRoleBinding"
+        )
+        and not (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "_MAX_CHANGED_PATHS"
+                for target in node.targets
+            )
+        )
+    ]
+    comparisons = [
+        node
+        for entry in owned
+        for node in ast.walk(entry)
+        if isinstance(node, ast.Compare)
+    ]
     assert [
         (
             [type(operator) for operator in comparison.ops],
@@ -1148,7 +1207,8 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
     ]
     assert {
         node.func.id
-        for node in ast.walk(tree)
+        for entry in owned
+        for node in ast.walk(entry)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     } == {
         "ConfigDict",
@@ -1160,12 +1220,14 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
     }
     assert not [
         node
-        for node in ast.walk(tree)
+        for entry in owned
+        for node in ast.walk(entry)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     ]
     assert {
         node.id
-        for node in ast.walk(tree)
+        for entry in owned
+        for node in ast.walk(entry)
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
     } == {
         "BaseModel",
