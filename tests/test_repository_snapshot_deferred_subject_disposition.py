@@ -74,6 +74,9 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/source.py",
 }
 
+HISTORY_MODULE = "src/faultatlas/domain/history.py"
+CURRENT_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, HISTORY_MODULE}
+
 # Every deferred-subject state published by S1.P00 through S1.P03. S08 may not
 # introduce a state outside this closed vocabulary.
 PUBLISHED_STATE_VOCABULARY = frozenset(
@@ -707,13 +710,16 @@ def test_p02_still_assigns_exactly_four_subjects_to_p04() -> None:
 # --- governance-only boundary ----------------------------------------------
 
 
-def test_production_surface_is_unchanged_by_this_slice() -> None:
+def test_production_surface_adds_only_history_after_this_decision() -> None:
     observed = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
-    assert observed == EXPECTED_PRODUCTION_FILES
-    assert len(observed) == 11
+    assert observed == CURRENT_PRODUCTION_FILES
+    assert len(observed) == 12
+    assert observed - EXPECTED_PRODUCTION_FILES == {HISTORY_MODULE}
+    assert EXPECTED_PRODUCTION_FILES - observed == set()
+    assert len(EXPECTED_PRODUCTION_FILES) == 11
 
     governance = cast(
         dict[str, Any],
@@ -773,7 +779,9 @@ def test_roadmap_records_the_s08_disposition_and_transition() -> None:
     assert "`S1.P04.S09` is complete" in roadmap
     assert "`S1.P04.S10` is complete" in roadmap
     assert "`S1.P04` is complete" in roadmap
-    assert "`S1.P05` is `eligible_to_begin` and not started" in roadmap
+    assert "`S1.P05` is active and incomplete" in roadmap
+    assert "`S1.P05.S01` is complete" in roadmap
+    assert "`S1.P05.S02` is next and not started" in roadmap
     assert "`S1.P06` through `S1.P10` remain not started" in roadmap
     assert "inherited exactly seven such subjects" in roadmap
     assert "`self_owned_open == 0`" in roadmap
