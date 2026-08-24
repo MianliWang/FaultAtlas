@@ -1050,7 +1050,14 @@ def test_the_canonical_base_and_head_revisions_differ() -> None:
 
 def test_no_forbidden_identifier_appears_in_the_change_set_surface() -> None:
     tree = ast.parse(HISTORY_SOURCE.read_text(encoding="utf-8"))
-    body = [node for node in tree.body if not isinstance(node, ast.Expr)]
+    # Scoped to the classes this Slice owns; later relations in this module
+    # carry their own forbidden-identifier assurance.
+    owned = {"ChangedPathStatus", "PullRequestChangedPath", "PullRequestChangeSet"}
+    body = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name in owned
+    ]
     surface = "\n".join(ast.unparse(node) for node in body)
 
     for identifier in FORBIDDEN_CHANGE_SET_IDENTIFIERS:
@@ -1196,8 +1203,8 @@ def test_the_roadmap_current_code_mapping_names_the_change_set() -> None:
 
     for symbol in history_module.__all__:
         assert symbol in current
-    assert "`S1.P05.S04` are complete" in current
-    assert "`S1.P05.S04` is next and not started" not in current
+    assert "`S1.P05.S05` are complete" in current
+    assert "`S1.P05.S05` is next and not started" not in current
 
 
 def test_the_roadmap_records_the_c01_boundary_correction() -> None:

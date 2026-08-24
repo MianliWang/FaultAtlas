@@ -1,4 +1,4 @@
-"""Supplied pull request revision bindings, change sets, approvals, and merges.
+"""Supplied pull request revision, change, approval, merge, and ref-deletion facts.
 
 This module supplies the context that the published revision-role assignment
 deliberately leaves open. `RevisionRoleAssignment` names a role that is
@@ -162,9 +162,43 @@ review: occurrence time belongs to bounded chronology, and an approval neither
 causes nor precedes a merge by anything this relation states. Merging is not
 correctness, test or CI outcome, causation, or proof of repair.
 
+A head-ref deletion names the mutable ref that a pull request recorded for its
+head revision, and states that the ref was deleted. The head position is the
+published head binding itself, so the pull request and the revision the ref
+named are not restated, and the ref's former target needs no field of its own.
+
+The ref is named, not identified. Only its name is carried, and a name alone is
+not a Git ref identity: no repository and no namespace appear here. A pull
+request's head revision may be authored in a fork, and the retained canonical
+material is exactly such a case, where the head repository field is an observed
+null and the original repository is simply unknown. Supplying the pull
+request's own repository would manufacture a containment fact, and supplying a
+namespace would manufacture a segment nothing establishes, so the name stays
+relative to a namespace this module never states.
+
+Those are three separate unknowns and none implies another. A field observed as
+null is not a deleted ref; a representation that can no longer be retrieved is
+not an unknown identity; and neither is the immutable revision, which the head
+binding still carries unchanged.
+
+A deletion is a historical occurrence, not a present state. Its caller states
+that the named ref was deleted; nothing states that it is currently deleted,
+that the provider still exposes it in any form, or that its representation is
+or is not retrievable now. Deletion is the whole of the positive claim, carried
+by the relation itself rather than by a lifecycle state, and the absence of a
+deletion is not a statement that a ref still exists.
+
+A deletion records no time and no cause. Occurrence time belongs to bounded
+chronology, and the merge of a pull request preceding a deletion is a
+comparison between two observations rather than a reason for it. Nothing here
+is a complete ref history: one deletion is one supplied fact, never the
+sequence of everything that happened to a name, and rename, reuse, and
+recreation are outside it. No branch or default-branch meaning attaches to a
+recorded head-ref name.
+
 The module is evidence-neutral. No evidence record is referenced, and no claim
 is made that any retained acquisition supports, corroborates, or verifies a
-binding, a change set, an approval, or a merge outcome; record-level evidence association
+binding, a change set, an approval, a merge outcome, or a ref deletion; record-level evidence association
 remains exactly where `S1.P04` placed it, and exact retained comparison bytes
 belong to a later association rather than to these values. The module performs no I/O: it
 resolves nothing, reads nothing, contacts no provider, and defines no durable
@@ -191,6 +225,7 @@ from faultatlas.domain.identity import (
 from faultatlas.domain.revision import (
     GitBlobIdentity,
     GitCommitIdentity,
+    GitRefName,
     GitRepositoryPath,
     RevisionRole,
     RevisionRoleAssignment,
@@ -203,6 +238,7 @@ __all__ = [
     "PullRequestChangeSet",
     "PullRequestReviewRevisionApproval",
     "PullRequestMergeRevisionOutcome",
+    "PullRequestHeadRefDeletion",
 ]
 
 _MIN_CHANGED_PATHS = 1
@@ -501,4 +537,52 @@ class PullRequestMergeRevisionOutcome(BaseModel):
     def _require_merged_pull_request_subject(self) -> Self:
         if self.pull_request.kind is not SourceObjectKind.PULL_REQUEST:
             raise ValueError("pull_request must identify a pull_request source object")
+        return self
+
+
+class PullRequestHeadRefDeletion(BaseModel):
+    """Supplied deletion of the mutable ref one pull request recorded as head."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    head: PullRequestRevisionRoleBinding
+    head_ref_name: GitRefName
+
+    @field_validator("head", mode="before")
+    @classmethod
+    def _require_typed_python_deleted_head(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value,
+            PullRequestRevisionRoleBinding,
+        ):
+            raise ValueError(
+                "head must be a PullRequestRevisionRoleBinding in Python input"
+            )
+        return value
+
+    @field_validator("head_ref_name", mode="before")
+    @classmethod
+    def _require_typed_python_head_ref_name(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(value, GitRefName):
+            raise ValueError("head_ref_name must be a GitRefName in Python input")
+        return value
+
+    @model_validator(mode="after")
+    def _require_head_revision_role(self) -> Self:
+        if self.head.role_assignment.role is not RevisionRole.HEAD:
+            raise ValueError("head must carry the head revision role")
         return self

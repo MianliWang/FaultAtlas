@@ -998,6 +998,7 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "PullRequestChangeSet",
         "PullRequestReviewRevisionApproval",
         "PullRequestMergeRevisionOutcome",
+        "PullRequestHeadRefDeletion",
     ]
     assert history_module.__all__[0] == "PullRequestRevisionRoleBinding"
     assert sorted(
@@ -1010,11 +1011,13 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "Field",
         "GitBlobIdentity",
         "GitCommitIdentity",
+        "GitRefName",
         "GitRepositoryPath",
         "NumberedSourceObjectIdentity",
         "ProviderScopedSourceObjectIdentity",
         "PullRequestChangeSet",
         "PullRequestChangedPath",
+        "PullRequestHeadRefDeletion",
         "PullRequestMergeRevisionOutcome",
         "PullRequestReviewRevisionApproval",
         "PullRequestRevisionRoleBinding",
@@ -1076,6 +1079,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         ast.ClassDef,
         ast.ClassDef,
         ast.ClassDef,
+        ast.ClassDef,
     ]
     assert not [node for node in tree.body if isinstance(node, ast.Import)]
     assert [
@@ -1109,6 +1113,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
             (
                 "GitBlobIdentity",
                 "GitCommitIdentity",
+                "GitRefName",
                 "GitRepositoryPath",
                 "RevisionRole",
                 "RevisionRoleAssignment",
@@ -1148,6 +1153,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         "PullRequestChangeSet",
         "PullRequestReviewRevisionApproval",
         "PullRequestMergeRevisionOutcome",
+        "PullRequestHeadRefDeletion",
     ]
     # This oracle owns only the S01 binding; the S02 values own their own.
     classes = classes[:1]
