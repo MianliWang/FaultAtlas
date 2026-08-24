@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ from pydantic_core import PydanticUndefined
 
 import faultatlas.domain.history as history_module
 from faultatlas.domain.history import (
+    ChangedPathStatus,
     PullRequestChangedPath,
     PullRequestChangeSet,
     PullRequestHeadRefDeletion,
@@ -63,6 +65,33 @@ CANONICAL_DELETION_INSTANT = "2018-11-18T00:17:28Z"
 CANONICAL_TIED_ISSUE_CLOSE_INSTANT = "2018-11-18T00:17:25Z"
 # The merge commit is retained one second earlier than the merge outcome.
 CANONICAL_MERGE_COMMIT_INSTANT = "2018-11-18T00:17:24Z"
+
+# The seven published S01-S05 classes, frozen at the S06 publication tree
+# (squash 3253e804). S06 is append-only, so any drift in a predecessor body is
+# a semantic change to an already-published contract rather than a refactor.
+PUBLISHED_PREDECESSOR_AST_DIGESTS = {
+    "PullRequestRevisionRoleBinding": (
+        "16bc2a2a24b4c34c79e1773a117ffcabde05d432bff90e247b31d36890bae152"
+    ),
+    "ChangedPathStatus": (
+        "d783212e4824fe348951b0f8fba0bb5a034a96239b2aee196bec303337021824"
+    ),
+    "PullRequestChangedPath": (
+        "63420b37d5ec30022b237e5be4810e5da6ed13a7db611e378822b0c3f67a0c33"
+    ),
+    "PullRequestChangeSet": (
+        "8443503844919a8b9f7f4aeb35dfaa651cf9089013e0f16089d6cf88944ba59f"
+    ),
+    "PullRequestReviewRevisionApproval": (
+        "3bf6d0194b240c6707ea1416f435964982efc567e5fedd0c464a08144431f652"
+    ),
+    "PullRequestMergeRevisionOutcome": (
+        "234049302cc4e7f34eabdfaa3153dde29bc642a00e3c03c4eecd4a7fa66cc3d8"
+    ),
+    "PullRequestHeadRefDeletion": (
+        "99888f7003cd5c83962ae5e5adacdab3db9292e75894086f9cff970dd8deeb64"
+    ),
+}
 
 FORBIDDEN_OCCURRENCE_IDENTIFIERS = (
     "GitRefObservation",
@@ -196,6 +225,33 @@ def _occurrence_payload(payload: dict[str, Any]) -> dict[str, Any]:
     occurrence = payload["occurrence"]
     assert isinstance(occurrence, dict)
     return cast(dict[str, Any], occurrence)
+
+
+def _assert_tampered_child_refused(
+    occurrence: Any,
+    *,
+    field: str,
+    message: str,
+) -> None:
+    """Refusal must reach the tampered field of the embedded child.
+
+    Every union member is attempted, so two of the three errors are ordinary
+    member mismatches. Exactly one must be the tampered child's own guard,
+    located at that child's field. Pydantic's internal union-branch labels sit
+    between those two positions and are deliberately not asserted.
+    """
+    with pytest.raises(ValidationError) as caught:
+        _occurrence_time(occurrence=occurrence)
+
+    errors = caught.value.errors()
+    assert all(error["loc"][0] == "occurrence" for error in errors)
+    reached = [
+        error
+        for error in errors
+        if error["type"] == "value_error" and error["loc"][-1] == field
+    ]
+    assert len(reached) == 1, errors
+    assert message in reached[0]["msg"]
 
 
 def _occurrence_class() -> ast.ClassDef:
@@ -817,14 +873,17 @@ def test_constructed_occurrence_time_is_revalidated() -> None:
     )
 
 
-def test_occurrence_time_revalidates_a_tampered_occurrence() -> None:
+def test_occurrence_time_revalidates_a_tampered_review_approval() -> None:
     tampered = PullRequestReviewRevisionApproval.model_construct(
         review=cast(Any, "not-a-review"),
         approved_revision=_commit(),
     )
 
-    with pytest.raises(ValidationError):
-        _occurrence_time(occurrence=tampered)
+    _assert_tampered_child_refused(
+        tampered,
+        field="review",
+        message="review must be a ProviderScopedSourceObjectIdentity",
+    )
 
 
 def test_occurrence_time_revalidates_a_tampered_instant() -> None:
@@ -870,12 +929,16 @@ def test_required_fields_cannot_be_omitted(missing: str) -> None:
         "classification",
         "evidence",
         "event_kind",
+        "chronology",
         "observed_at",
         "occurrence_kind",
         "ordinal",
         "precedes",
         "schema_version",
         "sequence",
+        "source_index",
+        "source_order_scope",
+        "timeline",
         "timestamp_state",
     ),
 )
@@ -1264,3 +1327,233 @@ def test_canonical_occurrence_literals_remain_locked() -> None:
     assert CANONICAL_DELETION_INSTANT == "2018-11-18T00:17:28Z"
     assert CANONICAL_TIED_ISSUE_CLOSE_INSTANT == CANONICAL_MERGE_INSTANT
     assert CANONICAL_MERGE_COMMIT_INSTANT == "2018-11-18T00:17:24Z"
+
+
+# --- closed-world occurrence refusal -----------------------------------------
+
+
+def test_a_bare_commit_identity_cannot_occupy_the_occurrence_position() -> None:
+    # The retained merge commit is created one second before the retained merge
+    # outcome, but a commit identity is not a historical occurrence fact and no
+    # published relation names commit creation.
+    with pytest.raises(ValidationError, match="occurrence must be a"):
+        _occurrence_time(occurrence=_commit(CANONICAL_MERGE_REVISION))
+
+
+def test_a_bare_review_identity_cannot_occupy_the_occurrence_position() -> None:
+    with pytest.raises(ValidationError, match="occurrence must be a"):
+        _occurrence_time(occurrence=_review())
+
+
+def test_the_changed_path_status_vocabulary_is_not_an_occurrence() -> None:
+    with pytest.raises(ValidationError, match="occurrence must be a"):
+        _occurrence_time(occurrence=ChangedPathStatus.ADDED)
+
+
+def test_every_other_published_history_symbol_is_refused() -> None:
+    admitted = {
+        "PullRequestReviewRevisionApproval",
+        "PullRequestMergeRevisionOutcome",
+        "PullRequestHeadRefDeletion",
+        "PullRequestHistoricalOccurrenceTime",
+    }
+    others = [name for name in history_module.__all__ if name not in admitted]
+
+    assert others == [
+        "PullRequestRevisionRoleBinding",
+        "ChangedPathStatus",
+        "PullRequestChangedPath",
+        "PullRequestChangeSet",
+    ]
+
+    samples: dict[str, Any] = {
+        "PullRequestRevisionRoleBinding": _head_binding(),
+        "ChangedPathStatus": ChangedPathStatus.ADDED,
+        "PullRequestChangedPath": PullRequestChangedPath.model_construct(),
+        "PullRequestChangeSet": PullRequestChangeSet.model_construct(),
+    }
+    assert set(samples) == set(others)
+    for name in others:
+        with pytest.raises(ValidationError, match="occurrence must be a"):
+            _occurrence_time(occurrence=samples[name])
+
+
+# --- every admitted family revalidates its tampered child --------------------
+
+
+def test_occurrence_time_revalidates_a_tampered_merge_outcome() -> None:
+    tampered = PullRequestMergeRevisionOutcome.model_construct(
+        pull_request=cast(Any, "not-a-pull-request"),
+        merge_revision=_commit(CANONICAL_MERGE_REVISION),
+    )
+
+    _assert_tampered_child_refused(
+        tampered,
+        field="pull_request",
+        message="pull_request must be a NumberedSourceObjectIdentity",
+    )
+
+
+def test_occurrence_time_revalidates_a_tampered_head_ref_deletion() -> None:
+    tampered = PullRequestHeadRefDeletion.model_construct(
+        head=cast(Any, "not-a-head-binding"),
+        head_ref_name=GitRefName(CANONICAL_HEAD_REF_NAME),
+    )
+
+    _assert_tampered_child_refused(
+        tampered,
+        field="head",
+        message="head must be a PullRequestRevisionRoleBinding",
+    )
+
+
+def test_occurrence_time_revalidates_a_tampered_grandchild() -> None:
+    # Revalidation reaches through the admitted child into the published
+    # predecessor it embeds.
+    tampered = PullRequestHeadRefDeletion.model_construct(
+        head=PullRequestRevisionRoleBinding.model_construct(
+            pull_request=cast(Any, "not-an-identity"),
+            role_assignment=RevisionRoleAssignment(
+                role=RevisionRole.HEAD,
+                revision=_commit(),
+            ),
+        ),
+        head_ref_name=GitRefName(CANONICAL_HEAD_REF_NAME),
+    )
+
+    _assert_tampered_child_refused(
+        tampered,
+        field="pull_request",
+        message="pull_request must be a NumberedSourceObjectIdentity",
+    )
+
+
+# --- both asserted-UTC JSON forms, for every admitted family -----------------
+
+
+@pytest.mark.parametrize(
+    ("occurrence", "instant"),
+    (
+        (_approval(), CANONICAL_APPROVAL_INSTANT),
+        (_outcome(), CANONICAL_MERGE_INSTANT),
+        (_deletion(), CANONICAL_DELETION_INSTANT),
+    ),
+    ids=("approval", "merge_outcome", "head_ref_deletion"),
+)
+@pytest.mark.parametrize("form", ("z", "offset"))
+def test_every_family_accepts_both_asserted_utc_json_forms(
+    occurrence: Any,
+    instant: str,
+    form: str,
+) -> None:
+    payload = json.loads(
+        _occurrence_time(
+            occurrence=occurrence, occurred_at=_instant(instant)
+        ).model_dump_json()
+    )
+    payload["occurred_at"] = instant if form == "z" else f"{instant[:-1]}+00:00"
+
+    restored = PullRequestHistoricalOccurrenceTime.model_validate_json(
+        json.dumps(payload)
+    )
+
+    assert type(restored.occurrence) is type(occurrence)
+    assert restored.occurrence == occurrence
+    assert restored.occurred_at == _instant(instant)
+    assert restored.occurred_at.tzinfo is UTC
+
+
+@pytest.mark.parametrize(
+    ("occurrence", "instant"),
+    (
+        (_approval(), CANONICAL_APPROVAL_INSTANT),
+        (_outcome(), CANONICAL_MERGE_INSTANT),
+        (_deletion(), CANONICAL_DELETION_INSTANT),
+    ),
+    ids=("approval", "merge_outcome", "head_ref_deletion"),
+)
+def test_every_family_refuses_a_non_zero_offset_json_instant(
+    occurrence: Any,
+    instant: str,
+) -> None:
+    payload = json.loads(
+        _occurrence_time(
+            occurrence=occurrence, occurred_at=_instant(instant)
+        ).model_dump_json()
+    )
+    payload["occurred_at"] = f"{instant[:-1]}+01:00"
+
+    with pytest.raises(ValidationError, match="occurred_at must use a zero UTC offset"):
+        PullRequestHistoricalOccurrenceTime.model_validate_json(json.dumps(payload))
+
+
+# --- published predecessors are frozen ---------------------------------------
+
+
+def test_published_predecessor_classes_are_unchanged() -> None:
+    tree = ast.parse(HISTORY_SOURCE.read_text(encoding="utf-8"))
+    declared = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+
+    assert set(PUBLISHED_PREDECESSOR_AST_DIGESTS) <= set(declared)
+    for name, digest in PUBLISHED_PREDECESSOR_AST_DIGESTS.items():
+        dumped = ast.dump(
+            declared[name], annotate_fields=True, include_attributes=False
+        )
+        assert hashlib.sha256(dumped.encode("utf-8")).hexdigest() == digest, name
+
+
+def test_the_history_module_declares_exactly_the_published_classes_in_order() -> None:
+    tree = ast.parse(HISTORY_SOURCE.read_text(encoding="utf-8"))
+    declared = [node.name for node in tree.body if isinstance(node, ast.ClassDef)]
+
+    assert declared == [
+        *PUBLISHED_PREDECESSOR_AST_DIGESTS,
+        "PullRequestHistoricalOccurrenceTime",
+    ]
+    assert declared == history_module.__all__
+
+
+def test_s06_is_the_only_class_added_after_the_published_predecessors() -> None:
+    assert len(PUBLISHED_PREDECESSOR_AST_DIGESTS) == 7
+    assert len(history_module.__all__) == 8
+    assert history_module.__all__[-1] == "PullRequestHistoricalOccurrenceTime"
+    assert list(PUBLISHED_PREDECESSOR_AST_DIGESTS) == history_module.__all__[:-1]
+
+
+def test_no_pydantic_internal_union_branch_label_is_asserted() -> None:
+    """Refusal shape is asserted through field names and error types only.
+
+    The labels pydantic places in a union error path are implementation
+    detail. This check scans the oracle's own docstring-stripped code surface
+    with this function removed, so its own needles cannot satisfy it.
+    """
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    tree.body = [
+        node
+        for node in tree.body
+        if not (
+            isinstance(node, ast.FunctionDef)
+            and node.name == "test_no_pydantic_internal_union_branch_label_is_asserted"
+        )
+    ]
+
+    class _StripDocstrings(ast.NodeTransformer):
+        def _strip(self, node: Any) -> Any:
+            self.generic_visit(node)
+            first = node.body[0] if node.body else None
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                node.body = node.body[1:] or [ast.Pass()]
+            return node
+
+        visit_Module = _strip
+        visit_ClassDef = _strip
+        visit_FunctionDef = _strip
+
+    surface = ast.unparse(ast.fix_missing_locations(_StripDocstrings().visit(tree)))
+
+    for label in ("function-after[", "function-before[", "tagged-union", "union_tag"):
+        assert label not in surface, label
