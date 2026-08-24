@@ -999,12 +999,14 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "PullRequestReviewRevisionApproval",
         "PullRequestMergeRevisionOutcome",
         "PullRequestHeadRefDeletion",
+        "PullRequestHistoricalOccurrenceTime",
     ]
     assert history_module.__all__[0] == "PullRequestRevisionRoleBinding"
     assert sorted(
         name for name in vars(history_module) if not name.startswith("_")
     ) == [
         "Annotated",
+        "AwareDatetime",
         "BaseModel",
         "ChangedPathStatus",
         "ConfigDict",
@@ -1018,6 +1020,7 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "PullRequestChangeSet",
         "PullRequestChangedPath",
         "PullRequestHeadRefDeletion",
+        "PullRequestHistoricalOccurrenceTime",
         "PullRequestMergeRevisionOutcome",
         "PullRequestReviewRevisionApproval",
         "PullRequestRevisionRoleBinding",
@@ -1026,10 +1029,13 @@ def test_model_and_module_surfaces_are_exact_and_local() -> None:
         "Self",
         "SourceObjectKind",
         "StrEnum",
+        "UTC",
         "ValidationInfo",
         "cast",
+        "datetime",
         "field_validator",
         "model_validator",
+        "timedelta",
     ]
     assert PullRequestRevisionRoleBinding.__module__ == "faultatlas.domain.history"
 
@@ -1069,6 +1075,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         ast.ImportFrom,
         ast.ImportFrom,
         ast.ImportFrom,
+        ast.ImportFrom,
         ast.Assign,
         ast.Assign,
         ast.Assign,
@@ -1080,6 +1087,8 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         ast.ClassDef,
         ast.ClassDef,
         ast.ClassDef,
+        ast.AnnAssign,
+        ast.ClassDef,
     ]
     assert not [node for node in tree.body if isinstance(node, ast.Import)]
     assert [
@@ -1087,11 +1096,13 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         for node in tree.body
         if isinstance(node, ast.ImportFrom)
     ] == [
+        ("datetime", ("UTC", "datetime", "timedelta")),
         ("enum", ("StrEnum",)),
         ("typing", ("Annotated", "Self", "cast")),
         (
             "pydantic",
             (
+                "AwareDatetime",
                 "BaseModel",
                 "ConfigDict",
                 "Field",
@@ -1143,7 +1154,10 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         (node.target.id, ast.unparse(node.annotation))
         for node in tree.body
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
-    ] == [("_PULL_REQUEST_RECORDED_ROLES", "frozenset[RevisionRole]")]
+    ] == [
+        ("_PULL_REQUEST_RECORDED_ROLES", "frozenset[RevisionRole]"),
+        ("_PULL_REQUEST_HISTORICAL_OCCURRENCES", "tuple[type[BaseModel], ...]"),
+    ]
 
     classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
     assert [node.name for node in classes] == [
@@ -1154,6 +1168,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
         "PullRequestReviewRevisionApproval",
         "PullRequestMergeRevisionOutcome",
         "PullRequestHeadRefDeletion",
+        "PullRequestHistoricalOccurrenceTime",
     ]
     # This oracle owns only the S01 binding; the S02 values own their own.
     classes = classes[:1]
@@ -1202,7 +1217,7 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
     ]
 
     # This oracle owns the S01 binding and the module-level nodes it declares;
-    # the S02 values are covered by their own focused oracle.
+    # the S02 and S06 values are covered by their own focused oracles.
     owned = [
         node
         for node in tree.body
@@ -1217,6 +1232,11 @@ def test_history_module_has_only_the_bounded_relation_and_no_io_calls() -> None:
                 and target.id in {"_MIN_CHANGED_PATHS", "_MAX_CHANGED_PATHS"}
                 for target in node.targets
             )
+        )
+        and not (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "_PULL_REQUEST_HISTORICAL_OCCURRENCES"
         )
     ]
     comparisons = [
@@ -1302,13 +1322,14 @@ def test_history_module_declares_no_reflection_or_capability_surface() -> None:
     for capability in (
         "Path",
         "__import__",
-        "datetime",
+        "fromtimestamp",
         "getattr",
         "hashlib",
         "httpx",
         "importlib",
         "json",
         "loads",
+        "now",
         "open",
         "os",
         "read_bytes",
@@ -1316,7 +1337,9 @@ def test_history_module_declares_no_reflection_or_capability_surface() -> None:
         "requests",
         "setattr",
         "subprocess",
+        "today",
         "urlopen",
+        "utcnow",
         "write_bytes",
         "write_text",
     ):

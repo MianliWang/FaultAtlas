@@ -757,7 +757,7 @@ def test_deletion_rejects_a_json_payload_that_is_not_an_object() -> None:
 
 
 def test_deletion_model_surface_is_exact() -> None:
-    assert history_module.__all__[-1] == "PullRequestHeadRefDeletion"
+    assert history_module.__all__[6] == "PullRequestHeadRefDeletion"
     assert tuple(PullRequestHeadRefDeletion.model_fields) == (
         "head",
         "head_ref_name",
@@ -839,12 +839,13 @@ def test_history_module_still_performs_no_io() -> None:
     for capability in (
         "Path",
         "__import__",
-        "datetime",
+        "fromtimestamp",
         "getattr",
         "hashlib",
         "httpx",
         "importlib",
         "json",
+        "now",
         "open",
         "os",
         "read_bytes",
@@ -852,7 +853,9 @@ def test_history_module_still_performs_no_io() -> None:
         "requests",
         "setattr",
         "subprocess",
+        "today",
         "urlopen",
+        "utcnow",
         "write_text",
     ):
         assert capability not in referenced
@@ -905,7 +908,7 @@ def test_the_roadmap_records_the_s05_transition() -> None:
 
     assert "PullRequestHeadRefDeletion" in current
     assert "`S1.P05.S05` — Pull Request Head-Ref Deletion (complete)" in roadmap
-    assert "`S1.P05.S06` is next and not started" in roadmap
+    assert "`S1.P05.S07` is next and not started" in roadmap
     # The superseded provisional title and status must not survive.
     assert "Mutable Head-Ref Observation and Deletion" not in roadmap
     assert "`S1.P05.S05` is next and not started" not in roadmap
