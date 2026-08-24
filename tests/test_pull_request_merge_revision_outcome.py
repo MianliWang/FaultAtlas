@@ -334,6 +334,57 @@ def test_the_published_topology_value_remains_the_separate_parent_carrier() -> N
     assert not hasattr(outcome, "ordered_parents")
 
 
+def _topology_of(count: int) -> GitCommitParentTopology:
+    """A published P02 topology over the canonical merge commit, `count` parents.
+
+    The parents differ only in digest, so only the parent count varies.
+    """
+    parents = (
+        _commit(CANONICAL_MERGE_FIRST_PARENT),
+        _commit(CANONICAL_HEAD_REVISION),
+        _commit(SYNTHETIC_REVISION),
+    )
+    assert count <= len(parents)
+    return GitCommitParentTopology(commit=_commit(), ordered_parents=parents[:count])
+
+
+@pytest.mark.parametrize("count", (0, 1, 2, 3))
+def test_any_parent_count_composes_with_one_unchanged_outcome(count: int) -> None:
+    # The outcome is built identically regardless of the topology beside it. If
+    # S04 ever gained a topology or parent input, this construction would fail.
+    outcome = _outcome()
+    topology = _topology_of(count)
+
+    assert len(topology.ordered_parents) == count
+    assert topology.commit == outcome.merge_revision
+    assert outcome == _outcome()
+    assert outcome.model_dump_json() == _outcome().model_dump_json()
+    assert tuple(PullRequestMergeRevisionOutcome.model_fields) == (
+        "pull_request",
+        "merge_revision",
+    )
+
+
+def test_the_outcome_is_identical_across_every_parent_count() -> None:
+    outcomes: list[str] = []
+    for count in (0, 1, 2, 3):
+        topology = _topology_of(count)
+        outcome = _outcome()
+        assert topology.commit == outcome.merge_revision
+        outcomes.append(outcome.model_dump_json())
+
+    assert len(set(outcomes)) == 1, "parent count must not reach the outcome"
+
+
+def test_a_parentless_topology_is_a_valid_published_p02_fact() -> None:
+    # P02 imposes no parent-count rule, so a root-like commit is representable
+    # there; S04 neither requires nor forbids it.
+    topology = _topology_of(0)
+
+    assert topology.ordered_parents == ()
+    assert topology.commit == _outcome().merge_revision
+
+
 def test_an_outcome_asserts_nothing_about_parent_count_or_strategy() -> None:
     # A single-parent result, as a squash or rebase merge would produce, is a
     # perfectly ordinary outcome value.
