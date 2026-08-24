@@ -66,30 +66,58 @@ CANONICAL_TIED_ISSUE_CLOSE_INSTANT = "2018-11-18T00:17:25Z"
 # The merge commit is retained one second earlier than the merge outcome.
 CANONICAL_MERGE_COMMIT_INSTANT = "2018-11-18T00:17:24Z"
 
-# The seven published S01-S05 classes, frozen at the S06 publication tree
-# (squash 3253e804). S06 is append-only, so any drift in a predecessor body is
-# a semantic change to an already-published contract rather than a refactor.
-PUBLISHED_PREDECESSOR_AST_DIGESTS = {
+# The seven published S01-S05 classes, in published order. S06 is append-only,
+# so this oracle locks that the module still declares exactly these, in this
+# order, ahead of the single S06 addition.
+PUBLISHED_PREDECESSOR_CLASSES = (
+    "PullRequestRevisionRoleBinding",
+    "ChangedPathStatus",
+    "PullRequestChangedPath",
+    "PullRequestChangeSet",
+    "PullRequestReviewRevisionApproval",
+    "PullRequestMergeRevisionOutcome",
+    "PullRequestHeadRefDeletion",
+)
+
+# SHA-256 of the exact source text of each published predecessor, first
+# decorator line through final body line, recorded at the S06 publication tree
+# (squash 3253e804). Any edit to an already-published body fails here instead
+# of passing silently.
+#
+# The digest is taken over source text rather than over `ast.dump` output. An
+# `ast.dump` digest is interpreter-sensitive: 3.13 omits AST fields equal to
+# their default while 3.12 emits `keywords=[]`, `decorator_list=[]`, and
+# `type_params=[]`, so all seven digests differ across a single minor version
+# with no predecessor edit whatsoever. `requires-python` is `>=3.13` while CI
+# pins 3.13 exactly, so a freeze of that shape is green today and would fail
+# wholesale on the first interpreter bump -- and the obvious repair for a
+# wholesale failure is to re-baseline the constants, which is exactly the act
+# that would hide a genuine predecessor change.
+#
+# A source-text digest moves only when the source moves. Every failure here is
+# a real edit to a published body, so re-baselining is a deliberate reviewed
+# act rather than routine maintenance.
+PUBLISHED_PREDECESSOR_SOURCE_DIGESTS = {
     "PullRequestRevisionRoleBinding": (
-        "16bc2a2a24b4c34c79e1773a117ffcabde05d432bff90e247b31d36890bae152"
+        "eab0c3f8d6f1497807cdc683a32fbfd9127b044b51fb295ba03d3a686fcd766b"
     ),
     "ChangedPathStatus": (
-        "d783212e4824fe348951b0f8fba0bb5a034a96239b2aee196bec303337021824"
+        "7b76d0e9ed9e4dd97d04acb1022a5906eeccbb0429604cce26eb3b20cc307b52"
     ),
     "PullRequestChangedPath": (
-        "63420b37d5ec30022b237e5be4810e5da6ed13a7db611e378822b0c3f67a0c33"
+        "12fad0fd932c83417f12dde574891f9a70b34444254aee7bc49e22ade8d2ec24"
     ),
     "PullRequestChangeSet": (
-        "8443503844919a8b9f7f4aeb35dfaa651cf9089013e0f16089d6cf88944ba59f"
+        "36eab7a3bd0f82e697fb25112669d6e67ee4acd17a57a1217e20e67a357db5ff"
     ),
     "PullRequestReviewRevisionApproval": (
-        "3bf6d0194b240c6707ea1416f435964982efc567e5fedd0c464a08144431f652"
+        "c6153f7eade5dc1ec5ee4f6309ec0fd694a1fb9fc69187f55b281cdc670a4e86"
     ),
     "PullRequestMergeRevisionOutcome": (
-        "234049302cc4e7f34eabdfaa3153dde29bc642a00e3c03c4eecd4a7fa66cc3d8"
+        "f8367c028ee39016c58650898b590a8a311776c8dce1cf5486447c843377654b"
     ),
     "PullRequestHeadRefDeletion": (
-        "99888f7003cd5c83962ae5e5adacdab3db9292e75894086f9cff970dd8deeb64"
+        "22c362b512a6c844578e7cd9fb5bab854b6bdf925296d53537c95853f422e99c"
     ),
 }
 
@@ -1490,16 +1518,29 @@ def test_every_family_refuses_a_non_zero_offset_json_instant(
 # --- published predecessors are frozen ---------------------------------------
 
 
-def test_published_predecessor_classes_are_unchanged() -> None:
-    tree = ast.parse(HISTORY_SOURCE.read_text(encoding="utf-8"))
-    declared = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+def _published_class_source(node: ast.ClassDef, lines: list[str]) -> str:
+    """Exact source text of one class, first decorator line through last body line."""
+    start = min([node.lineno, *(node_.lineno for node_ in node.decorator_list)])
+    return "\n".join(lines[start - 1 : node.end_lineno])
 
-    assert set(PUBLISHED_PREDECESSOR_AST_DIGESTS) <= set(declared)
-    for name, digest in PUBLISHED_PREDECESSOR_AST_DIGESTS.items():
-        dumped = ast.dump(
-            declared[name], annotate_fields=True, include_attributes=False
-        )
-        assert hashlib.sha256(dumped.encode("utf-8")).hexdigest() == digest, name
+
+def test_published_predecessor_bodies_are_unchanged() -> None:
+    source = HISTORY_SOURCE.read_text(encoding="utf-8")
+    lines = source.splitlines()
+    declared = {
+        node.name: node
+        for node in ast.parse(source).body
+        if isinstance(node, ast.ClassDef)
+    }
+
+    frozen = tuple(PUBLISHED_PREDECESSOR_SOURCE_DIGESTS)
+    assert frozen == PUBLISHED_PREDECESSOR_CLASSES
+    for name, digest in PUBLISHED_PREDECESSOR_SOURCE_DIGESTS.items():
+        text = _published_class_source(declared[name], lines)
+        assert hashlib.sha256(text.encode("utf-8")).hexdigest() == digest, name
+
+
+# --- the published class manifest is append-only -----------------------------
 
 
 def test_the_history_module_declares_exactly_the_published_classes_in_order() -> None:
@@ -1507,17 +1548,17 @@ def test_the_history_module_declares_exactly_the_published_classes_in_order() ->
     declared = [node.name for node in tree.body if isinstance(node, ast.ClassDef)]
 
     assert declared == [
-        *PUBLISHED_PREDECESSOR_AST_DIGESTS,
+        *PUBLISHED_PREDECESSOR_CLASSES,
         "PullRequestHistoricalOccurrenceTime",
     ]
     assert declared == history_module.__all__
 
 
 def test_s06_is_the_only_class_added_after_the_published_predecessors() -> None:
-    assert len(PUBLISHED_PREDECESSOR_AST_DIGESTS) == 7
+    assert len(PUBLISHED_PREDECESSOR_CLASSES) == 7
     assert len(history_module.__all__) == 8
     assert history_module.__all__[-1] == "PullRequestHistoricalOccurrenceTime"
-    assert list(PUBLISHED_PREDECESSOR_AST_DIGESTS) == history_module.__all__[:-1]
+    assert list(PUBLISHED_PREDECESSOR_CLASSES) == history_module.__all__[:-1]
 
 
 def test_no_pydantic_internal_union_branch_label_is_asserted() -> None:
