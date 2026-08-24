@@ -919,7 +919,7 @@ def test_the_outcome_module_adds_no_evidence_or_confidence_surface() -> None:
 
 
 def test_outcome_model_surface_is_exact() -> None:
-    assert history_module.__all__[-1] == "PullRequestMergeRevisionOutcome"
+    assert history_module.__all__[5] == "PullRequestMergeRevisionOutcome"
     assert tuple(PullRequestMergeRevisionOutcome.model_fields) == (
         "pull_request",
         "merge_revision",
@@ -1057,7 +1057,7 @@ def test_the_roadmap_records_the_s04_transition() -> None:
 
     assert "PullRequestMergeRevisionOutcome" in current
     assert "`S1.P05.S04` — Pull Request Merge Revision Outcome (complete)" in roadmap
-    assert "`S1.P05.S05` is next and not started" in roadmap
+    assert "`S1.P05.S06` is next and not started" in roadmap
     # The superseded provisional title and status must not survive.
     assert "Merge Outcome and Ordered Merge Parents" not in roadmap
     assert "`S1.P05.S04` is next and not started" not in roadmap

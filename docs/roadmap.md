@@ -38,8 +38,8 @@ aspirational Slice as scheduled work.
   `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
   `S1.P04` is complete.
   `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
-  `S1.P05.S02.C01` correction, `S1.P05.S03`, and `S1.P05.S04` are complete,
-  and `S1.P05.S05` is next and not started.
+  `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, and `S1.P05.S05`
+  are complete, and `S1.P05.S06` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -84,8 +84,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
 `S1.P04` is complete.
 `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, `S1.P05.S03`, and `S1.P05.S04` are complete, and
-`S1.P05.S05` is next and not started.
+`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, and `S1.P05.S05` are
+complete, and `S1.P05.S06` is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -678,8 +678,8 @@ otherwise.
 ## S1.P05 — Development History Model
 
 `S1.P05` is active and incomplete. `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, `S1.P05.S03`, and `S1.P05.S04` are complete, and
-`S1.P05.S05` is next and not started.
+`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`,
+and `S1.P05.S05` are complete, and `S1.P05.S06` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -853,6 +853,40 @@ repair.
 The canonical witness is pytest-dev/pytest Pull Request `#4414` merging as
 revision `10cdae8e`.
 
+`S1.P05.S05` extends `faultatlas.domain.history` with
+`PullRequestHeadRefDeletion`, naming the mutable ref a pull request recorded
+for its head revision and stating that the ref was deleted. Its two fields are
+the published `S1.P05.S01` head binding and the published `S1.P02` `GitRefName`,
+so the pull request, the revision the ref named, and the ref's former target
+are not restated.
+
+The published `S1.P02` `GitRefObservation` is deliberately not reused. That
+contract requires a repository identity, a namespace, an observing authority,
+and a FaultAtlas observation time, and the retained canonical material supplies
+none of the four: the head repository field is an observed null, the original
+repository is unknown, no namespace is recorded, and only a provider event time
+exists. Instantiating it would have required fabricating all four, so the ref
+is named rather than identified.
+
+Those unknowns stay separate, exactly as the retained material records them. A
+field observed as null is not a deleted ref, a representation that can no
+longer be retrieved is not an unknown identity, and neither is the immutable
+revision the head binding still carries. `GitRefName` is namespace-relative by
+contract and refuses a `refs/` prefix, so it contributes only name validation
+and states no namespace or repository.
+
+A deletion is a historical occurrence rather than a present state: nothing says
+the ref is currently deleted or that any representation is retrievable now, and
+the absence of a deletion is not a statement that a ref still exists. There is
+no lifecycle state, no availability field, and no time. One deletion is one
+supplied fact, never a complete ref history, and rename, reuse, and recreation
+are outside it. No branch or default-branch meaning attaches to a recorded
+head-ref name, and a merge preceding a deletion is a comparison between two
+observations rather than a reason for it.
+
+The canonical witness is pytest-dev/pytest Pull Request `#4414` at head
+`690a63b9` with the deleted head-ref name `starred_with_side_effect`.
+
 The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
 implementation and may split, merge, renumber, or drop after later read-only
 orientations. It is evidence-driven rather than fixed at ten Slices:
@@ -862,9 +896,9 @@ orientations. It is evidence-driven rather than fixed at ten Slices:
 - `S1.P05.S02.C01` — Positive Change-Set Boundary Correction (complete)
 3. `S1.P05.S03` — Pull Request Review Revision Approval (complete)
 4. `S1.P05.S04` — Pull Request Merge Revision Outcome (complete)
-5. `S1.P05.S05` — Mutable Head-Ref Observation and Deletion (provisional; next,
-   not started)
-6. `S1.P05.S06` — Bounded Development Chronology (provisional)
+5. `S1.P05.S05` — Pull Request Head-Ref Deletion (complete)
+6. `S1.P05.S06` — Bounded Development Chronology (provisional; next, not
+   started)
 7. `S1.P05.S07` — History-Evidence Association (provisional)
 8. `S1.P05.S08` — Contract Corpus (provisional)
 9. `S1.P05.S09` — Integration and Phase Closure (provisional)
@@ -949,9 +983,12 @@ review state, timestamp, body, reviewer, revision role, evidence, or confidence
 claim. `PullRequestMergeRevisionOutcome` completes the current set, naming the
 immutable revision a pull request merged as, with no parent sequence, revision
 role, merge state, strategy, timestamp, ancestry, or base and head coupling.
+`PullRequestHeadRefDeletion` names the mutable head ref a pull request recorded
+and states that it was deleted, carrying no repository, namespace, lifecycle
+state, availability, or time.
 `S1.P05` is active and incomplete: `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, `S1.P05.S03`, and `S1.P05.S04` are complete, and
-`S1.P05.S05` is next and not started. `S1.P04.S10`
+`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, and `S1.P05.S05` are
+complete, and `S1.P05.S06` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with
