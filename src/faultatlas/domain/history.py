@@ -196,19 +196,57 @@ sequence of everything that happened to a name, and rename, reuse, and
 recreation are outside it. No branch or default-branch meaning attaches to a
 recorded head-ref name.
 
+An occurrence time names the source instant at which one already published
+historical fact occurred. Its subject is exactly one of the three published
+occurrence facts — an approval, a merge outcome, or a head ref deletion —
+embedded whole, and its object is one required instant that the source
+records. The subject position carries the meaning: no occurrence kind, type
+tag, or discriminating field is added, because the embedded relation already
+is the kind, and naming it again would define a second vocabulary for a
+distinction the type already makes.
+
+The instant is a source occurrence time and never a FaultAtlas observation
+time. When something happened at its source and when FaultAtlas looked are
+different facts under different authorities, so an occurrence time neither
+supplies nor overwrites an observation, acquisition, retrieval, or publication
+time, and none of those is expressible here.
+
+The instant is required and carries no condition of its own. Every occurrence
+the retained material supplies carries its time, so an optional instant, an
+availability field, and a vocabulary for a missing time would each name an
+absence that nothing supplies. That an alternate surface omits its copy of a
+time is a statement about which record supplies a fact rather than about the
+fact, and it belongs to evidence association rather than here.
+
+One occurrence time is one point and never a sequence. No order, position,
+ordinal, precedence, or comparison is expressed or implied. Two occurrence
+times naming the same instant say nothing about each other, and equal times
+across separate source surfaces carry no causal order. Nothing here is a
+chronology, a timeline, or a collection: an absent occurrence time is not a
+statement that nothing occurred, and completeness is not claimed.
+
+An occurrence time asserts nothing about duration, interval, currency, or
+clock behaviour. No accuracy, skew, monotonicity, or source clock authority is
+claimed, and nothing states that what occurred still stands. The instant must
+carry a zero UTC offset and is normalized to UTC; no local, source-local, or
+offset-bearing civil time is expressed.
+
 The module is evidence-neutral. No evidence record is referenced, and no claim
 is made that any retained acquisition supports, corroborates, or verifies a
-binding, a change set, an approval, a merge outcome, or a ref deletion; record-level evidence association
+binding, a change set, an approval, a merge outcome, a ref deletion, or an
+occurrence time; record-level evidence association
 remains exactly where `S1.P04` placed it, and exact retained comparison bytes
 belong to a later association rather than to these values. The module performs no I/O: it
 resolves nothing, reads nothing, contacts no provider, and defines no durable
 bytes, reader, writer, or persistence.
 """
 
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Self, cast
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -239,6 +277,7 @@ __all__ = [
     "PullRequestReviewRevisionApproval",
     "PullRequestMergeRevisionOutcome",
     "PullRequestHeadRefDeletion",
+    "PullRequestHistoricalOccurrenceTime",
 ]
 
 _MIN_CHANGED_PATHS = 1
@@ -586,3 +625,54 @@ class PullRequestHeadRefDeletion(BaseModel):
         if self.head.role_assignment.role is not RevisionRole.HEAD:
             raise ValueError("head must carry the head revision role")
         return self
+
+
+_PULL_REQUEST_HISTORICAL_OCCURRENCES: tuple[type[BaseModel], ...] = (
+    PullRequestReviewRevisionApproval,
+    PullRequestMergeRevisionOutcome,
+    PullRequestHeadRefDeletion,
+)
+
+
+class PullRequestHistoricalOccurrenceTime(BaseModel):
+    """Supplied source instant at which one published historical fact occurred."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    occurrence: (
+        PullRequestReviewRevisionApproval
+        | PullRequestMergeRevisionOutcome
+        | PullRequestHeadRefDeletion
+    )
+    occurred_at: AwareDatetime
+
+    @field_validator("occurrence", mode="before")
+    @classmethod
+    def _require_typed_python_occurrence(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if info.mode == "python" and not isinstance(
+            value,
+            _PULL_REQUEST_HISTORICAL_OCCURRENCES,
+        ):
+            raise ValueError(
+                "occurrence must be a PullRequestReviewRevisionApproval, "
+                "PullRequestMergeRevisionOutcome, or PullRequestHeadRefDeletion "
+                "in Python input"
+            )
+        return value
+
+    @field_validator("occurred_at")
+    @classmethod
+    def _normalize_occurred_at(cls, value: datetime) -> datetime:
+        if value.utcoffset() != timedelta(0):
+            raise ValueError("occurred_at must use a zero UTC offset")
+        return value.astimezone(UTC)

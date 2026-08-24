@@ -38,8 +38,8 @@ aspirational Slice as scheduled work.
   `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
   `S1.P04` is complete.
   `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
-  `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, and `S1.P05.S05`
-  are complete, and `S1.P05.S06` is next and not started.
+  `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, and
+  `S1.P05.S06` are complete, and `S1.P05.S07` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -84,8 +84,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
 `S1.P04` is complete.
 `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, and `S1.P05.S05` are
-complete, and `S1.P05.S06` is next and not started.
+`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, and
+`S1.P05.S06` are complete, and `S1.P05.S07` is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -678,8 +678,8 @@ otherwise.
 ## S1.P05 — Development History Model
 
 `S1.P05` is active and incomplete. `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`,
-and `S1.P05.S05` are complete, and `S1.P05.S06` is next and not started.
+`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
+and `S1.P05.S06` are complete, and `S1.P05.S07` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -887,6 +887,40 @@ observations rather than a reason for it.
 The canonical witness is pytest-dev/pytest Pull Request `#4414` at head
 `690a63b9` with the deleted head-ref name `starred_with_side_effect`.
 
+`S1.P05.S06` extends `faultatlas.domain.history` with
+`PullRequestHistoricalOccurrenceTime`, naming the source instant at which one
+already published historical fact occurred. Its two fields are exactly one of
+the three published occurrence facts — a `PullRequestReviewRevisionApproval`,
+a `PullRequestMergeRevisionOutcome`, or a `PullRequestHeadRefDeletion`,
+embedded whole — and one required aware instant. The subject position carries
+the meaning, so no occurrence kind, event type, or discriminating field is
+added: the embedded relation already is the kind.
+
+The instant is a source occurrence time and never a FaultAtlas observation
+time. `observed_at`, which the published `S1.P01` and `S1.P02` observation
+values carry, records when FaultAtlas looked; the two live under different
+authorities and neither supplies nor overwrites the other. No acquisition,
+retrieval, or publication time is expressible here. The instant is required
+and carries no condition of its own: every occurrence the retained material
+supplies carries its time, so an optional instant, an availability field, and
+a vocabulary for a missing time would each name an absence that nothing
+supplies. That an alternate surface omits its copy of a time — as the retained
+pull request timeline does for the review event — is a statement about which
+record supplies a fact rather than about the fact.
+
+One occurrence time is one point and never a sequence. No order, position,
+ordinal, precedence, or comparison is expressed or implied, and equal times
+across separate source surfaces carry no causal order: the retained material
+records three such equal-second pairs and states for each that no cross-surface
+causal order is asserted. Nothing here is a chronology, a timeline, or a
+collection; an absent occurrence time is not a statement that nothing occurred;
+and no occurrence or semantic-role classification vocabulary appears, both
+being uniform across every retained occurrence this Slice can reach. Duration,
+interval, currency, clock accuracy, skew, and monotonicity are all outside it.
+
+The canonical witness is the pytest-dev/pytest review `176071572` approval of
+revision `690a63b9`, occurring at `2018-11-17T23:54:20Z`.
+
 The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
 implementation and may split, merge, renumber, or drop after later read-only
 orientations. It is evidence-driven rather than fixed at ten Slices:
@@ -897,9 +931,9 @@ orientations. It is evidence-driven rather than fixed at ten Slices:
 3. `S1.P05.S03` — Pull Request Review Revision Approval (complete)
 4. `S1.P05.S04` — Pull Request Merge Revision Outcome (complete)
 5. `S1.P05.S05` — Pull Request Head-Ref Deletion (complete)
-6. `S1.P05.S06` — Bounded Development Chronology (provisional; next, not
+6. `S1.P05.S06` — Pull Request Historical Occurrence Time (complete)
+7. `S1.P05.S07` — History-Evidence Association (provisional; next, not
    started)
-7. `S1.P05.S07` — History-Evidence Association (provisional)
 8. `S1.P05.S08` — Contract Corpus (provisional)
 9. `S1.P05.S09` — Integration and Phase Closure (provisional)
 
@@ -985,10 +1019,14 @@ immutable revision a pull request merged as, with no parent sequence, revision
 role, merge state, strategy, timestamp, ancestry, or base and head coupling.
 `PullRequestHeadRefDeletion` names the mutable head ref a pull request recorded
 and states that it was deleted, carrying no repository, namespace, lifecycle
-state, availability, or time.
+state, availability, or time. `PullRequestHistoricalOccurrenceTime` closes the
+current set, naming the source instant at which exactly one of the published
+approval, merge-outcome, or head-ref-deletion facts occurred, with no
+occurrence kind, order, sequence, classification, FaultAtlas observation time,
+missing-time vocabulary, or evidence linkage.
 `S1.P05` is active and incomplete: `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, and `S1.P05.S05` are
-complete, and `S1.P05.S06` is next and not started. `S1.P04.S10`
+`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, and
+`S1.P05.S06` are complete, and `S1.P05.S07` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with

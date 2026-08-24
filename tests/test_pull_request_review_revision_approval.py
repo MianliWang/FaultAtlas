@@ -974,12 +974,13 @@ def test_history_module_still_performs_no_io() -> None:
     for capability in (
         "Path",
         "__import__",
-        "datetime",
+        "fromtimestamp",
         "getattr",
         "hashlib",
         "httpx",
         "importlib",
         "json",
+        "now",
         "open",
         "os",
         "read_bytes",
@@ -987,7 +988,9 @@ def test_history_module_still_performs_no_io() -> None:
         "requests",
         "setattr",
         "subprocess",
+        "today",
         "urlopen",
+        "utcnow",
         "write_text",
     ):
         assert capability not in referenced
@@ -1036,7 +1039,7 @@ def test_the_roadmap_records_the_s03_transition() -> None:
     assert "PullRequestReviewRevisionApproval" in roadmap
     assert "PullRequestReviewRevisionApproval" in current
     assert "`S1.P05.S03` — Pull Request Review Revision Approval (complete)" in roadmap
-    assert "`S1.P05.S06` is next and not started" in roadmap
+    assert "`S1.P05.S07` is next and not started" in roadmap
     # The superseded provisional title and status must not survive.
     assert "Review Approval Relation" not in roadmap
     assert "`S1.P05.S03` is next and not started" not in roadmap

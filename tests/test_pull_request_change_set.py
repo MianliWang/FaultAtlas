@@ -1160,12 +1160,13 @@ def test_history_module_still_performs_no_io() -> None:
     for capability in (
         "Path",
         "__import__",
-        "datetime",
+        "fromtimestamp",
         "getattr",
         "hashlib",
         "httpx",
         "importlib",
         "json",
+        "now",
         "open",
         "os",
         "read_bytes",
@@ -1173,7 +1174,9 @@ def test_history_module_still_performs_no_io() -> None:
         "requests",
         "setattr",
         "subprocess",
+        "today",
         "urlopen",
+        "utcnow",
         "write_text",
     ):
         assert capability not in referenced
@@ -1203,7 +1206,7 @@ def test_the_roadmap_current_code_mapping_names_the_change_set() -> None:
 
     for symbol in history_module.__all__:
         assert symbol in current
-    assert "`S1.P05.S05` are complete" in current
+    assert "`S1.P05.S06` are complete" in current
     assert "`S1.P05.S05` is next and not started" not in current
 
 
