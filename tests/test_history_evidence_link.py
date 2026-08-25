@@ -10,6 +10,7 @@ from typing import Any, cast, get_args
 import pytest
 from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError
 
+import faultatlas.domain.history as history_module
 import faultatlas.domain.history_evidence_link as link_module
 from faultatlas.domain.evidence import (
     ArtifactByteLength,
@@ -126,9 +127,41 @@ FORBIDDEN_LINK_IDENTIFIERS = (
     "superseded",
     "support_role",
     "verified",
+    "verification",
+    "evidence_locator",
+    "record_locator",
+    "source_pointer",
+    "primary_evidence",
+    "secondary_evidence",
+    "supports",
+    "proves",
+    "corroborates",
 )
 
-EXCLUDED_PUBLISHED_SYMBOLS = ("PullRequestChangeSet", "ChangedPathStatus")
+# Every key the link must refuse as extra input. `schema_version` is listed
+# here and not above because the embedded children legitimately carry it: its
+# absence is meaningful at the link level only.
+REFUSED_EXTRA_KEYS = (*FORBIDDEN_LINK_IDENTIFIERS, "schema_version")
+
+# The six families the link admits. The excluded set is derived from
+# `history.__all__` against these rather than hand-listed, so a later published
+# history symbol cannot become silently admissible or silently unpinned.
+ADMITTED_FACT_TYPES = (
+    PullRequestRevisionRoleBinding,
+    PullRequestChangedPath,
+    PullRequestReviewRevisionApproval,
+    PullRequestMergeRevisionOutcome,
+    PullRequestHeadRefDeletion,
+    PullRequestHistoricalOccurrenceTime,
+)
+
+
+def _non_admitted_history_symbols() -> tuple[str, ...]:
+    admitted = {fact_type.__name__ for fact_type in ADMITTED_FACT_TYPES}
+    return tuple(name for name in history_module.__all__ if name not in admitted)
+
+
+EXCLUDED_PUBLISHED_SYMBOLS = _non_admitted_history_symbols()
 
 
 def _repository() -> RepositoryIdentity:
@@ -407,6 +440,30 @@ def test_every_admitted_family_associates_with_a_synthetic_record(fact: Any) -> 
     assert link.evidence_record.format_name.root == "synthetic-history-record"
 
 
+def test_a_published_subclass_is_accepted_as_fact() -> None:
+    """Subclass acceptance follows the published child semantics.
+
+    Nothing in the predecessor contracts forbids a caller from supplying a
+    subclass of a published fact, and the guard is an isinstance boundary
+    rather than an exact-type one, so the subclass is admitted and its value
+    is preserved.
+    """
+
+    class DerivedApproval(PullRequestReviewRevisionApproval):
+        pass
+
+    approval = _approval()
+    derived = DerivedApproval(
+        review=approval.review,
+        approved_revision=approval.approved_revision,
+    )
+    link = _link(derived)
+
+    assert isinstance(link.fact, PullRequestReviewRevisionApproval)
+    assert link.fact.review == approval.review
+    assert link.fact.approved_revision == approval.approved_revision
+
+
 # --- one record per link ------------------------------------------------------
 
 
@@ -537,7 +594,7 @@ def test_link_required_fields_cannot_be_omitted(missing: str) -> None:
         PullRequestHistoryFactEvidenceLink.model_validate(supplied)
 
 
-@pytest.mark.parametrize("extra", FORBIDDEN_LINK_IDENTIFIERS)
+@pytest.mark.parametrize("extra", REFUSED_EXTRA_KEYS)
 def test_link_extra_fields_fail_closed(extra: str) -> None:
     supplied: dict[str, Any] = {
         "fact": _approval(),
@@ -787,6 +844,39 @@ def test_change_set_children_remain_individually_linkable() -> None:
         _link(change_set)
 
 
+def _non_admitted_values() -> dict[str, Any]:
+    """One supplied value per published history symbol the link excludes."""
+    return {
+        "ChangedPathStatus": ChangedPathStatus.ADDED,
+        "PullRequestChangeSet": _change_set(),
+    }
+
+
+def test_the_excluded_set_is_derived_from_the_published_history_manifest() -> None:
+    """A later published history symbol cannot slip past this oracle.
+
+    The excluded set is `history.__all__` minus the six admitted families, so a
+    seventh published symbol appears here automatically and must be given a
+    supplied value below before this file can pass.
+    """
+    assert len(ADMITTED_FACT_TYPES) == 6
+    assert set(history_module.__all__) == {
+        *(fact_type.__name__ for fact_type in ADMITTED_FACT_TYPES),
+        *EXCLUDED_PUBLISHED_SYMBOLS,
+    }
+    assert sorted(_non_admitted_values()) == sorted(EXCLUDED_PUBLISHED_SYMBOLS)
+
+
+@pytest.mark.parametrize("name", EXCLUDED_PUBLISHED_SYMBOLS)
+def test_every_non_admitted_published_history_symbol_is_refused(name: str) -> None:
+    supplied = _non_admitted_values()[name]
+
+    with pytest.raises(ValidationError):
+        PullRequestHistoryFactEvidenceLink.model_validate(
+            {"fact": supplied, "evidence_record": _record()}
+        )
+
+
 @pytest.mark.parametrize("name", EXCLUDED_PUBLISHED_SYMBOLS)
 def test_every_excluded_published_symbol_is_absent_from_the_fact_annotation(
     name: str,
@@ -899,6 +989,49 @@ def test_link_rejects_attribute_backed_children() -> None:
             {"fact": AttributeFact(), "evidence_record": _record()},
             from_attributes=True,
         )
+
+
+def test_link_rejects_a_foreign_evidence_record_shaped_model() -> None:
+    class ForeignRecord(BaseModel):
+        model_config = ConfigDict(frozen=True)
+
+        schema_version: int = 1
+        format_name: str = CANONICAL_RECORD_FORMAT
+        format_version: str = CANONICAL_RECORD_VERSION
+        canonicalization: str = CANONICAL_RECORD_CANONICALIZATION
+        sha256: str = CANONICAL_RECORD_SHA256
+        byte_length: int = CANONICAL_RECORD_LENGTH
+
+    with pytest.raises(ValidationError, match="in Python input"):
+        PullRequestHistoryFactEvidenceLink.model_validate(
+            {"fact": _approval(), "evidence_record": ForeignRecord()}
+        )
+
+
+def test_link_rejects_an_attribute_backed_evidence_record() -> None:
+    class AttributeRecord:
+        schema_version = 1
+        format_name = CANONICAL_RECORD_FORMAT
+        format_version = CANONICAL_RECORD_VERSION
+        canonicalization = CANONICAL_RECORD_CANONICALIZATION
+        sha256 = CANONICAL_RECORD_SHA256
+        byte_length = CANONICAL_RECORD_LENGTH
+
+    with pytest.raises(ValidationError, match="in Python input"):
+        PullRequestHistoryFactEvidenceLink.model_validate(
+            {"fact": _approval(), "evidence_record": AttributeRecord()},
+            from_attributes=True,
+        )
+
+
+@pytest.mark.parametrize("field", ("fact", "evidence_record"))
+def test_link_rejects_attribute_deletion(field: str) -> None:
+    link = _link(_approval())
+
+    with pytest.raises(ValidationError):
+        delattr(link, field)
+
+    assert getattr(link, field) is not None
 
 
 # --- strength and locator boundary --------------------------------------------
