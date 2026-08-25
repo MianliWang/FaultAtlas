@@ -999,9 +999,12 @@ cites its source by exact path, JSON pointer, and SHA-256.
 The disposition and state vocabulary is exactly the one `S1.P04.S08` published
 — `addressed`, `split`, and `carried_forward` over `evidence_insufficient`,
 `unknown_pending_additional_evidence`, and `unsupported_current_scope` — and no
-new enum is introduced. Six remainders go to `S2` for acquisition, four of
-those preserving `S5` as the long-term semantic owner, and six go to `S1.P06`
-as FaultInstance-consuming semantics.
+new enum is introduced. Five remainders go to `S2` for acquisition, four of
+those preserving `S5` as the long-term semantic owner, one goes to `S5` for
+repository-graph semantics over evidence that is already retained, and six go
+to `S1.P06` as FaultInstance-consuming semantics. Immediate owners are
+therefore `S1.P06` six, `S2` five, and `S5` one; long-term owners are
+`S1.P06` six, `S5` five, and `S2` one.
 
 The default-branch subject is the clearest case, and it is two subjects rather
 than one. `deferred:19` assigns the default-branch designation to `S1.P05`,

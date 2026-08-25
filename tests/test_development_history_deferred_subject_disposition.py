@@ -560,6 +560,46 @@ def test_the_decision_asserts_package_exclusion() -> None:
     assert exclusion["excluded_from_sdist"] is True
 
 
+# --- the roadmap agrees with the authority ------------------------------------
+
+
+ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
+
+
+def test_the_roadmap_owner_totals_agree_with_the_decision() -> None:
+    """The roadmap is derived narrative; `decision.json` is the authority.
+
+    The counts are stated in prose, so they can drift silently when a
+    disposition is corrected. This binds them to the register.
+    """
+    register = _register()
+    text = " ".join(ROADMAP.read_text(encoding="utf-8").split())
+    immediate = register["immediate_owner_totals"]
+    long_term = register["long_term_owner_totals"]
+    words = {1: "one", 2: "two", 4: "four", 5: "five", 6: "six", 8: "eight"}
+
+    assert (
+        f"Immediate owners are therefore `S1.P06` {words[immediate['S1.P06']]}, "
+        f"`S2` {words[immediate['S2']]}, and `S5` {words[immediate['S5']]}" in text
+    )
+    assert (
+        f"long-term owners are `S1.P06` {words[long_term['S1.P06']]}, "
+        f"`S5` {words[long_term['S5']]}, and `S2` {words[long_term['S2']]}" in text
+    )
+    lowered = text.lower()
+    assert f"{words[register['split_count']]} are split" in lowered
+    assert f"{words[register['carried_forward_count']]} are carried forward" in lowered
+
+
+def test_the_roadmap_records_the_s08_disposition_and_transition() -> None:
+    text = " ".join(ROADMAP.read_text(encoding="utf-8").split())
+
+    assert "`S1.P05.S08` — Deferred-Subject Disposition (complete)" in text
+    assert "`S1.P05.S09` is next and not started" in text
+    assert "`self_owned_open == 0`" in text
+    assert "reference_corpus/contracts/development-history/decisions" in text
+
+
 # --- derived sidecar ----------------------------------------------------------
 
 
