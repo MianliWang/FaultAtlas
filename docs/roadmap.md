@@ -1024,6 +1024,40 @@ the retained material does not supply them, and inventing a model would
 manufacture source facts. `S1.P05.S08` closes no subject by assertion and
 publishes no product semantics.
 
+`S1.P05.S08.C01` corrects the owner topology of that disposition without
+editing it. The published `S1.P05.S08` decision is immutable historical
+provenance: its bytes are unchanged, its digest is unchanged, and it is not
+regenerated. The correction publishes a separate sealed artifact under
+`reference_corpus/contracts/development-history/corrections/s08-c01-deferred-subject-owner-topology`
+and supersedes exactly six of the twelve disposition records by citation.
+
+Four of the six move a generic-graph remainder from `S1.P06` to `S5`: the
+development-history event model, the development-history relationship model,
+`deferred:22` ancestry and reachability, and the `deferred:02`
+development-history model. A generic development, relationship, or Git ancestry
+graph is repository and evolution graph semantics owned by `S5`; `S1.P06`
+consumes bounded facts for FaultInstance modelling and does not own a generic
+Git graph. The relationship-model record is additionally promoted from
+`carried_forward` to `split`, because `S1.P05.S01`, `S1.P05.S03`, `S1.P05.S04`,
+and `S1.P05.S05` do publish bounded typed relations and the published record
+understated that. `deferred:24` moves to `S2` immediate and `S5` long-term with
+its state corrected to `evidence_insufficient`, since the blocker is retained
+evidence rather than scope, and the discussion edit and deletion subject keeps
+`S2` as immediate owner while its preserved long-term owner becomes `S5`.
+
+The `deferred:p04:04` default-branch record is deliberately not corrected and
+is recorded as such. Its published `S5` ownership is retained because the
+retained repository observation already supplies a current designation, so the
+subject is not blocked on acquisition, while the separate historical
+default-branch unknown remains owned by `S2` through its own inherited subject.
+
+The effective projection keeps all twelve inherited subjects dispositioned
+exactly once with no self-introduced subject and `self_owned_open == 0`, under
+`S1.P05.S08` for six subjects and `S1.P05.S08.C01` for six. Immediate owners
+are `S2` six, `S5` five, and `S1.P06` one; long-term owners are `S5` eleven and
+`S1.P06` one. No product semantics change, no production source changes, and
+`S1.P05.S09` remains next and not started.
+
 The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
 implementation and may split, merge, renumber, or drop after later read-only
 orientations. It is evidence-driven rather than fixed at ten Slices:
@@ -1037,6 +1071,7 @@ orientations. It is evidence-driven rather than fixed at ten Slices:
 6. `S1.P05.S06` — Pull Request Historical Occurrence Time (complete)
 7. `S1.P05.S07` — Pull Request History Fact Evidence Association (complete)
 8. `S1.P05.S08` — Deferred-Subject Disposition (complete)
+- `S1.P05.S08.C01` — Deferred-Subject Owner-Topology Correction (complete)
 9. `S1.P05.S09` — Contract Corpus (provisional; next, not started)
 10. `S1.P05.S10` — Integration and Phase Closure (provisional)
 
