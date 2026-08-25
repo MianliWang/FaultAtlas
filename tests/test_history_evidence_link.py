@@ -133,9 +133,6 @@ FORBIDDEN_LINK_IDENTIFIERS = (
     "source_pointer",
     "primary_evidence",
     "secondary_evidence",
-    "supports",
-    "proves",
-    "corroborates",
 )
 
 # Every key the link must refuse as extra input. `schema_version` is listed
@@ -440,28 +437,89 @@ def test_every_admitted_family_associates_with_a_synthetic_record(fact: Any) -> 
     assert link.evidence_record.format_name.root == "synthetic-history-record"
 
 
-def test_a_published_subclass_is_accepted_as_fact() -> None:
-    """Subclass acceptance follows the published child semantics.
-
-    Nothing in the predecessor contracts forbids a caller from supplying a
-    subclass of a published fact, and the guard is an isinstance boundary
-    rather than an exact-type one, so the subclass is admitted and its value
-    is preserved.
-    """
-
-    class DerivedApproval(PullRequestReviewRevisionApproval):
-        pass
-
-    approval = _approval()
-    derived = DerivedApproval(
-        review=approval.review,
-        approved_revision=approval.approved_revision,
+def _derived(published: type[BaseModel], supplied: BaseModel) -> BaseModel:
+    """A minimal subclass of one published type, carrying the same values."""
+    subclass = type(f"Derived{published.__name__}", (published,), {})
+    return subclass(
+        **{name: getattr(supplied, name) for name in published.model_fields}
     )
+
+
+@pytest.mark.parametrize(
+    ("published", "supplied"),
+    (
+        (PullRequestRevisionRoleBinding, _binding()),
+        (PullRequestChangedPath, _changed_path()),
+        (PullRequestReviewRevisionApproval, _approval()),
+        (PullRequestMergeRevisionOutcome, _outcome()),
+        (PullRequestHeadRefDeletion, _deletion()),
+        (
+            PullRequestHistoricalOccurrenceTime,
+            _occurrence_time(_approval(), CANONICAL_APPROVAL_INSTANT),
+        ),
+    ),
+)
+def test_a_published_subclass_is_accepted_in_the_fact_position(
+    published: type[BaseModel],
+    supplied: BaseModel,
+) -> None:
+    """The fact guard is an isinstance boundary, not an exact-type one.
+
+    Nothing in the predecessor contracts forbids supplying a subclass of a
+    published fact, and every admitted family accepts one today. Locking all
+    six prevents a future silent tightening to exact-type equality.
+    """
+    link = _link(_derived(published, supplied))
+
+    assert isinstance(link.fact, published)
+    assert link.fact == supplied
+
+
+@pytest.mark.parametrize(
+    ("published", "supplied"),
+    (
+        (PullRequestRevisionRoleBinding, _binding()),
+        (PullRequestChangedPath, _changed_path()),
+        (PullRequestReviewRevisionApproval, _approval()),
+        (PullRequestMergeRevisionOutcome, _outcome()),
+        (PullRequestHeadRefDeletion, _deletion()),
+        (
+            PullRequestHistoricalOccurrenceTime,
+            _occurrence_time(_approval(), CANONICAL_APPROVAL_INSTANT),
+        ),
+    ),
+)
+def test_a_supplied_subclass_is_narrowed_to_its_published_type(
+    published: type[BaseModel],
+    supplied: BaseModel,
+) -> None:
+    """Revalidation returns the published type, not the caller's subclass.
+
+    This records the behaviour observed on the published contract rather than
+    imposing a new one: the link admits the subclass and stores the published
+    value, so no subclass identity survives into the association.
+    """
+    derived = _derived(published, supplied)
     link = _link(derived)
 
-    assert isinstance(link.fact, PullRequestReviewRevisionApproval)
-    assert link.fact.review == approval.review
-    assert link.fact.approved_revision == approval.approved_revision
+    assert type(derived) is not published
+    assert type(link.fact) is published
+
+
+def test_a_published_evidence_record_subclass_is_accepted() -> None:
+    record = _record()
+    derived = cast(
+        DurableEvidenceRecordReference,
+        _derived(DurableEvidenceRecordReference, record),
+    )
+    link = PullRequestHistoryFactEvidenceLink(
+        fact=_approval(),
+        evidence_record=derived,
+    )
+
+    assert isinstance(link.evidence_record, DurableEvidenceRecordReference)
+    assert link.evidence_record == record
+    assert type(link.evidence_record) is DurableEvidenceRecordReference
 
 
 # --- one record per link ------------------------------------------------------
@@ -991,37 +1049,68 @@ def test_link_rejects_attribute_backed_children() -> None:
         )
 
 
-def test_link_rejects_a_foreign_evidence_record_shaped_model() -> None:
-    class ForeignRecord(BaseModel):
-        model_config = ConfigDict(frozen=True)
+class _ForeignRecord(BaseModel):
+    """A record-shaped foreign model carrying every published field value."""
 
-        schema_version: int = 1
-        format_name: str = CANONICAL_RECORD_FORMAT
-        format_version: str = CANONICAL_RECORD_VERSION
-        canonicalization: str = CANONICAL_RECORD_CANONICALIZATION
-        sha256: str = CANONICAL_RECORD_SHA256
-        byte_length: int = CANONICAL_RECORD_LENGTH
+    model_config = ConfigDict(frozen=True)
 
-    with pytest.raises(ValidationError, match="in Python input"):
+    schema_version: int = 1
+    format_name: str = CANONICAL_RECORD_FORMAT
+    format_version: str = CANONICAL_RECORD_VERSION
+    canonicalization: str = CANONICAL_RECORD_CANONICALIZATION
+    sha256: str = CANONICAL_RECORD_SHA256
+    byte_length: int = CANONICAL_RECORD_LENGTH
+
+
+class _AttributeRecord:
+    """A record-shaped plain object carrying every published field value."""
+
+    schema_version = 1
+    format_name = CANONICAL_RECORD_FORMAT
+    format_version = CANONICAL_RECORD_VERSION
+    canonicalization = CANONICAL_RECORD_CANONICALIZATION
+    sha256 = CANONICAL_RECORD_SHA256
+    byte_length = CANONICAL_RECORD_LENGTH
+
+
+def _assert_evidence_record_guard_refused(
+    supplied: object,
+    *,
+    from_attributes: bool = False,
+) -> None:
+    """Refusal must reach the link's own evidence-record guard.
+
+    A record-shaped value would also fail somewhere inside a nested published
+    child, so asserting only that some error occurred would be vacuous. Exactly
+    one error must arrive, at the `evidence_record` field, carrying this
+    relation's own guard message.
+    """
+    with pytest.raises(ValidationError) as caught:
         PullRequestHistoryFactEvidenceLink.model_validate(
-            {"fact": _approval(), "evidence_record": ForeignRecord()}
+            {"fact": _approval(), "evidence_record": supplied},
+            from_attributes=from_attributes,
         )
+
+    errors = caught.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["loc"] == ("evidence_record",)
+    assert errors[0]["type"] == "value_error"
+    assert (
+        "evidence_record must be a DurableEvidenceRecordReference" in errors[0]["msg"]
+    )
+
+
+def test_link_rejects_a_foreign_evidence_record_shaped_model() -> None:
+    _assert_evidence_record_guard_refused(_ForeignRecord())
 
 
 def test_link_rejects_an_attribute_backed_evidence_record() -> None:
-    class AttributeRecord:
-        schema_version = 1
-        format_name = CANONICAL_RECORD_FORMAT
-        format_version = CANONICAL_RECORD_VERSION
-        canonicalization = CANONICAL_RECORD_CANONICALIZATION
-        sha256 = CANONICAL_RECORD_SHA256
-        byte_length = CANONICAL_RECORD_LENGTH
+    _assert_evidence_record_guard_refused(_AttributeRecord(), from_attributes=True)
 
-    with pytest.raises(ValidationError, match="in Python input"):
-        PullRequestHistoryFactEvidenceLink.model_validate(
-            {"fact": _approval(), "evidence_record": AttributeRecord()},
-            from_attributes=True,
-        )
+
+def test_link_rejects_a_foreign_evidence_record_under_from_attributes() -> None:
+    """`from_attributes` is a distinct entry path and must not open the guard."""
+    _assert_evidence_record_guard_refused(_ForeignRecord(), from_attributes=True)
 
 
 @pytest.mark.parametrize("field", ("fact", "evidence_record"))
