@@ -39,8 +39,8 @@ aspirational Slice as scheduled work.
   `S1.P04` is complete.
   `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
   `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-  `S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, and
-  `S1.P05.S09` is next and not started.
+  `S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, including the
+  `S1.P05.S08.C01` correction, and `S1.P05.S09` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -86,8 +86,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04` is complete.
 `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, and
-`S1.P05.S09` is next and not started.
+`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, including the
+`S1.P05.S08.C01` correction, and `S1.P05.S09` is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -681,8 +681,8 @@ otherwise.
 
 `S1.P05` is active and incomplete. `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, and
-`S1.P05.S09` is next and not started.
+`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, including the
+`S1.P05.S08.C01` correction, and `S1.P05.S09` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1176,8 +1176,9 @@ unchanged by `S1.P05.S07` and neither imports the bridge. Production Python
 sources are 13.
 `S1.P05` is active and incomplete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, and
-`S1.P05.S09` is next and not started. `S1.P04.S10`
+`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, including the
+`S1.P05.S08.C01` correction, and `S1.P05.S09` is next and not started.
+`S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with

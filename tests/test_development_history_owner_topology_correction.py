@@ -502,6 +502,45 @@ def test_the_markdown_is_derived_and_agrees_with_the_correction() -> None:
         assert artifact["sha256"] in text
 
 
+def test_every_phase_status_summary_records_the_correction() -> None:
+    """The roadmap repeats its phase state in several places.
+
+    Recording the correction only in the provisional sequence would leave the
+    repeated summaries stale, so every summary that calls `S1.P05.S08` complete
+    must also name the correction.
+    """
+    text = " ".join(
+        (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
+    )
+    complete = text.count("`S1.P05.S08` are complete")
+    recorded = text.count("including the `S1.P05.S08.C01` correction")
+
+    assert complete >= 4
+    assert recorded == complete
+    assert text.count("`S1.P05.S09` is next and not started") == complete
+
+
+def test_the_derived_summary_preserves_whole_rationale_sentences() -> None:
+    """The summary column must not cut a sentence inside a Slice identifier.
+
+    Splitting on a bare period truncates `S1.P06` to `S1`, which would make the
+    Markdown an unfaithful rendering of the JSON authority.
+    """
+    text = CORRECTION_MD.read_text(encoding="utf-8")
+    rows = [
+        line
+        for line in text.splitlines()
+        if line.startswith("| ") and line.count("|") >= 6 and line[2].isdigit()
+    ]
+
+    assert len(rows) == 6
+    for row, item in zip(rows, _superseded(), strict=True):
+        summary = row.split("|")[-2].strip()
+        assert summary
+        assert not summary.endswith("S1.")
+        assert item["rationale"].startswith(summary.rstrip("."))
+
+
 def test_the_roadmap_records_the_correction_and_holds_the_phase_state() -> None:
     text = " ".join(
         (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()

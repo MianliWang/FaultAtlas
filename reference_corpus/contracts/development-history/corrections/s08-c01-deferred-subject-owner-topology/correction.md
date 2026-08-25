@@ -27,11 +27,11 @@ Effective authority: `S1.P05.S08` for 6 subjects and `S1.P05.S08.C01` for 6.
 | # | Subject | Published | Corrected | Reason in brief |
 | --- | --- | --- | --- | --- |
 | 1 | discussion edit and deletion history unknown (`gap:s05-known:discussion-edit-and-deletion-history-unknown`) | `carried_forward` S2 / S2 | `carried_forward` S2 / S5 | The published record kept S2 as both immediate and preserved long-term owner. |
-| 2 | development history event model (`deferred:p01:p05-development-history-event-model`) | `split` S1.P06 / S1.P06 | `split` S5 / S5 | The published record routed the generic event framework to S1. |
-| 3 | development history relationship model (`deferred:p01:p05-development-history-relationship-model`) | `carried_forward` S1.P06 / S1.P06 | `split` S5 / S5 | The published record carried the whole subject forward to S1. |
-| 4 | ancestry and reachability (`deferred:22`) | `carried_forward` S1.P06 / S1.P06 | `carried_forward` S5 / S5 | The published record routed ancestry and reachability to S1. |
-| 5 | complete discussion and history relationships (`deferred:24`) | `split` S1.P06 / S1.P06 · unsupported_current_scope | `split` S2 / S5 · evidence_insufficient | The published record recorded the remainder as unsupported_current_scope owned by S1. |
-| 6 | development_history_model (`deferred:02`) | `split` S1.P06 / S1.P06 | `split` S5 / S5 | The published record routed the complete provider development-history graph to S1. |
+| 2 | development history event model (`deferred:p01:p05-development-history-event-model`) | `split` S1.P06 / S1.P06 | `split` S5 / S5 | The published record routed the generic event framework to S1.P06. |
+| 3 | development history relationship model (`deferred:p01:p05-development-history-relationship-model`) | `carried_forward` S1.P06 / S1.P06 | `split` S5 / S5 | The published record carried the whole subject forward to S1.P06 and recorded no addressed portion. |
+| 4 | ancestry and reachability (`deferred:22`) | `carried_forward` S1.P06 / S1.P06 | `carried_forward` S5 / S5 | The published record routed ancestry and reachability to S1.P06. |
+| 5 | complete discussion and history relationships (`deferred:24`) | `split` S1.P06 / S1.P06 · unsupported_current_scope | `split` S2 / S5 · evidence_insufficient | The published record recorded the remainder as unsupported_current_scope owned by S1.P06. |
+| 6 | development_history_model (`deferred:02`) | `split` S1.P06 / S1.P06 | `split` S5 / S5 | The published record routed the complete provider development-history graph to S1.P06. |
 
 ## 6. Per-Record Rationale
 
