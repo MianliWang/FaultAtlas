@@ -6,11 +6,11 @@ This internal, case-calibrated `S1.P05.S08.C01` correction is not a production s
 
 ## 2. Exact `correction.json` SHA-256
 
-`46e60fe7193532fad71a428fa752e8b931ba4f1f9fe157500da4572a5bdd838e`
+`7fc1d55bf37a0f5d724e8f8dc1411239aae73cbc477f844dec086fa4ed057354`
 
 ## 3. Append-Only Relationship to `S1.P05.S08`
 
-The correction cites each superseded disposition by exact path, json pointer, and sha-256 of the sealed s1.p05.s08 decision and restates its ownership under s1.p05.s08.c01 correction identifiers; no predecessor byte is edited and the predecessor digest is unchanged.
+The correction cites each superseded disposition and each superseded downstream handoff by exact path, json pointer, and sha-256 of the sealed s1.p05.s08 decision and restates them under s1.p05.s08.c01 identifiers; the three predecessor handoffs are superseded in full so a replay has one deterministic effective set; no predecessor byte is edited and the predecessor digest is unchanged.
 
 The published `S1.P05.S08` decision remains immutable historical provenance. Its bytes are unmodified, its digest is unchanged, and it is not regenerated. This correction supersedes selected disposition records by citation.
 
@@ -100,33 +100,61 @@ An earlier orientation table proposed S2 immediate and S5 long-term for this sub
 
 Dispositions {"carried_forward": 7, "split": 5}; immediate owners {"S1.P06": 1, "S2": 6, "S5": 5}; long-term owners {"S1.P06": 1, "S5": 11}; states {"evidence_insufficient": 5, "unknown_pending_additional_evidence": 1, "unsupported_current_scope": 6}.
 
-## 9. Downstream Handoffs
+## 9. Superseded Predecessor Handoffs
 
-### 9.1 `S2` — `handoff:s1-p05-s08-c01:s2`
+The s1.p05.s08 handoff records are superseded in full by the three records below; a replay must use these and only these.
+
+| Published handoff | Replaced by | Target | Pointer |
+| --- | --- | --- | --- |
+| `handoff:s1-p05-s08:s2` | `handoff:s1-p05-s08-c01:s2` | `S2` | `/downstream_handoff/handoffs/0` |
+| `handoff:s1-p05-s08:s5` | `handoff:s1-p05-s08-c01:s5` | `S5` | `/downstream_handoff/handoffs/1` |
+| `handoff:s1-p05-s08:s1-p06` | `handoff:s1-p05-s08-c01:s1-p06` | `S1.P06` | `/downstream_handoff/handoffs/2` |
+
+## 10. Effective Downstream Handoffs
+
+### 10.1 `S2` — `handoff:s1-p05-s08-c01:s2`
+
+Supersedes `handoff:s1-p05-s08:s2`.
 
 Received subjects: complete discussion and history relationships, discussion edit and deletion history unknown, evidence historical source completeness, evidence original head repository, path rename and copy history, revision ref and path event history.
 
-Requirements: `acquire_and_retain_ref_path_rename_and_discussion_evidence_under_a_separately_authorized_evidence_gate`.
+Requirements, each naming the subjects it covers:
+
+- `acquire_and_retain_ref_and_path_event_history_under_a_separately_authorized_evidence_gate` — covers revision ref and path event history.
+- `acquire_and_retain_rename_and_copy_evidence_rather_than_inferring_it` — covers path rename and copy history.
+- `acquire_and_retain_discussion_edit_and_deletion_evidence_and_the_complete_discussion_relationship_record` — covers complete discussion and history relationships, discussion edit and deletion history unknown.
+- `acquire_and_retain_head_repository_evidence_where_it_still_exists_and_preserve_unknown_identity_and_unavailable_representation_as_distinct_conditions` — covers evidence original head repository.
+- `acquire_and_retain_broader_historical_source_evidence_and_never_treat_a_bounded_retained_chronology_as_complete_provider_history` — covers evidence historical source completeness.
 
 Prohibited: `substitute_a_current_observation_for_a_historical_unknown`, `treat_absence_of_retained_edit_evidence_as_absence_of_edits`, `treat_this_correction_as_a_production_schema`.
 
-### 9.2 `S5` — `handoff:s1-p05-s08-c01:s5`
+### 10.2 `S5` — `handoff:s1-p05-s08-c01:s5`
+
+Supersedes `handoff:s1-p05-s08:s5`.
 
 Received subjects: ancestry and reachability, complete discussion and history relationships, default-branch observation, development history event model, development history relationship model, development_history_model, discussion edit and deletion history unknown, evidence historical source completeness, evidence original head repository, path rename and copy history, revision ref and path event history.
 
-Requirements: `own_repository_and_evolution_graph_semantics_including_generic_event_relationship_and_ancestry_models`, `own_default_branch_designation_semantics_over_retained_mutable_ref_observations`.
+Requirements, each naming the subjects it covers:
+
+- `own_repository_and_evolution_graph_semantics_including_generic_event_relationship_and_ancestry_models` — covers ancestry and reachability, development history event model, development history relationship model, development_history_model.
+- `own_default_branch_designation_semantics_over_retained_mutable_ref_observations` — covers default-branch observation.
+- `own_the_semantics_over_ref_path_rename_discussion_head_repository_and_historical_source_evidence_once_S2_has_acquired_it` — covers complete discussion and history relationships, discussion edit and deletion history unknown, evidence historical source completeness, evidence original head repository, path rename and copy history, revision ref and path event history.
 
 Prohibited: `derive_completeness_or_reachability_from_caller_supplied_S1_P05_values`, `infer_ancestry_from_timestamps_ordering_parent_count_or_comparison_values`, `merge_the_separately_owned_historical_default_branch_unknown_into_the_designation_subject`.
 
-### 9.3 `S1.P06` — `handoff:s1-p05-s08-c01:s1-p06`
+### 10.3 `S1.P06` — `handoff:s1-p05-s08-c01:s1-p06`
+
+Supersedes `handoff:s1-p05-s08:s1-p06`.
 
 Received subjects: case relationship vocabulary provisional.
 
-Requirements: `own_the_bounded_domain_relationship_vocabulary_needed_by_FaultInstance`.
+Requirements, each naming the subjects it covers:
+
+- `own_the_bounded_domain_relationship_vocabulary_needed_by_FaultInstance` — covers case relationship vocabulary provisional.
 
 Prohibited: `own_a_generic_git_ancestry_or_reachability_graph`, `read_the_bounded_S1_P05_surface_as_a_complete_development_history`, `upgrade_the_LEVEL_1_evidence_association_implicitly`.
 
-## 10. Preserved Non-Generalizations
+## 11. Preserved Non-Generalizations
 
 - no S1.P05 product semantics are added or removed by this correction
 - S1.P06 does not own a generic Git ancestry or reachability graph
@@ -137,7 +165,7 @@ Prohibited: `own_a_generic_git_ancestry_or_reachability_graph`, `read_the_bounde
 - S1.P05.S07 evidence association remains LEVEL 1 record-level only
 - intentional evidence-gated deferral is not implementation failure
 
-## 11. Locked Source Artifacts
+## 12. Locked Source Artifacts
 
 | Lock | Path | Bytes | SHA-256 |
 | --- | --- | --- | --- |

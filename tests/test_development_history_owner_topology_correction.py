@@ -444,6 +444,100 @@ def test_every_projection_owner_receives_a_handoff() -> None:
         assert entry["prohibited"]
 
 
+def test_every_predecessor_handoff_is_superseded_exactly_once() -> None:
+    """Two sealed artifacts must not leave two live handoff sets.
+
+    The correction moves subjects between owners, so the predecessor handoff
+    membership no longer describes the effective projection. Without an explicit
+    supersession a replay has no deterministic rule for which set is effective.
+    """
+    correction = _correction()
+    decision_handoffs = _decision()["downstream_handoff"]["handoffs"]
+    superseded = correction["superseded_handoffs"]["items"]
+
+    assert correction["superseded_handoffs"]["count"] == len(decision_handoffs) == 3
+    assert len(superseded) == 3
+
+    published_ids = [entry["handoff_id"] for entry in decision_handoffs]
+    assert [entry["published_handoff_id"] for entry in superseded] == published_ids
+    assert len({entry["published_handoff_id"] for entry in superseded}) == 3
+
+    effective_ids = {
+        entry["handoff_id"] for entry in correction["downstream_handoff"]["handoffs"]
+    }
+    for entry in superseded:
+        assert entry["effective_status"] == "superseded_by_append_only_correction"
+        assert entry["historical_record_bytes_remain_valid"] is True
+        assert entry["replaced_by_handoff_id"] in effective_ids
+        source = entry["source"]
+        raw = (REPOSITORY_ROOT / source["path"]).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == source["sha256"]
+        resolved = cast(
+            dict[str, Any], _resolve(json.loads(raw), source["json_pointer"])
+        )
+        assert resolved["handoff_id"] == entry["published_handoff_id"]
+        assert resolved["target"] == entry["target"]
+
+
+def test_every_effective_handoff_names_the_predecessor_it_replaces() -> None:
+    superseded = {
+        entry["replaced_by_handoff_id"]: entry["published_handoff_id"]
+        for entry in _correction()["superseded_handoffs"]["items"]
+    }
+
+    for entry in _correction()["downstream_handoff"]["handoffs"]:
+        assert entry["supersedes_handoff_id"] == superseded[entry["handoff_id"]]
+    assert _correction()["downstream_handoff"]["authority"]
+
+
+@pytest.mark.parametrize("target", ("S2", "S5", "S1.P06"))
+def test_every_received_subject_is_covered_by_a_requirement(target: str) -> None:
+    """A reassigned subject must not silently lose its obligation.
+
+    The predecessor stated acquisition obligations per owner. When subjects move
+    between owners, a single broad requirement can quietly drop one, so every
+    requirement names the subjects it covers and the union must be total.
+    """
+    handoff = next(
+        entry
+        for entry in _correction()["downstream_handoff"]["handoffs"]
+        if entry["target"] == target
+    )
+    received = set(handoff["received_subjects"])
+    covered: set[str] = set()
+    for requirement in handoff["requirements"]:
+        assert requirement["requirement_id"].startswith("requirement:s1-p05-s08-c01:")
+        assert requirement["statement"]
+        assert requirement["covers_subjects"]
+        covered |= set(requirement["covers_subjects"])
+
+    assert covered == received
+    assert (
+        _correction()["assurance"]["coverage"][
+            "every_received_subject_is_covered_by_a_requirement"
+        ]
+        is True
+    )
+
+
+def test_the_subjects_each_owner_receives_match_the_projection() -> None:
+    projection = _projection()["items"]
+    expected = {
+        "S2": sorted(
+            {e["subject"] for e in projection if e["immediate_owner"] == "S2"}
+        ),
+        "S5": sorted(
+            {e["subject"] for e in projection if e["preserved_long_term_owner"] == "S5"}
+        ),
+        "S1.P06": sorted(
+            {e["subject"] for e in projection if e["immediate_owner"] == "S1.P06"}
+        ),
+    }
+
+    for entry in _correction()["downstream_handoff"]["handoffs"]:
+        assert entry["received_subjects"] == expected[entry["target"]]
+
+
 # --- anti-fabrication ---------------------------------------------------------
 
 
@@ -500,6 +594,8 @@ def test_the_markdown_is_derived_and_agrees_with_the_correction() -> None:
         assert f"`{subject_id}`" in text
     for artifact in _correction()["source_locks"]["cited_artifacts"]:
         assert artifact["sha256"] in text
+    for entry in _correction()["superseded_handoffs"]["items"]:
+        assert f"`{entry['published_handoff_id']}`" in text
 
 
 def test_every_phase_status_summary_records_the_correction() -> None:
