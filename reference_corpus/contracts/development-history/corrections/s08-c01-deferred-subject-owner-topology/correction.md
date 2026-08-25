@@ -6,7 +6,7 @@ This internal, case-calibrated `S1.P05.S08.C01` correction is not a production s
 
 ## 2. Exact `correction.json` SHA-256
 
-`7fc1d55bf37a0f5d724e8f8dc1411239aae73cbc477f844dec086fa4ed057354`
+`e41818f7116278a2efe0d5203082ec8fa7db80666697dd102d47cbeb70be437d`
 
 ## 3. Append-Only Relationship to `S1.P05.S08`
 
@@ -83,20 +83,22 @@ An earlier orientation table proposed S2 immediate and S5 long-term for this sub
 
 ## 8. Effective Disposition Projection
 
-| Subject | Disposition | State | Immediate | Long-term | Authority |
-| --- | --- | --- | --- | --- | --- |
-| discussion edit and deletion history unknown (`gap:s05-known:discussion-edit-and-deletion-history-unknown`) | `carried_forward` | `unknown_pending_additional_evidence` | `S2` | `S5` | `S1.P05.S08.C01` |
-| case relationship vocabulary provisional (`gap:s05-known:case-relationship-vocabulary-provisional`) | `carried_forward` | `unsupported_current_scope` | `S1.P06` | `S1.P06` | `S1.P05.S08` |
-| development history event model (`deferred:p01:p05-development-history-event-model`) | `split` | `unsupported_current_scope` | `S5` | `S5` | `S1.P05.S08.C01` |
-| development history relationship model (`deferred:p01:p05-development-history-relationship-model`) | `split` | `unsupported_current_scope` | `S5` | `S5` | `S1.P05.S08.C01` |
-| evidence original head repository (`deferred:p01:evidence-original-head-repository`) | `carried_forward` | `evidence_insufficient` | `S2` | `S5` | `S1.P05.S08` |
-| evidence historical source completeness (`deferred:p01:evidence-historical-source-completeness`) | `carried_forward` | `evidence_insufficient` | `S2` | `S5` | `S1.P05.S08` |
-| revision ref and path event history (`deferred:21`) | `split` | `evidence_insufficient` | `S2` | `S5` | `S1.P05.S08` |
-| ancestry and reachability (`deferred:22`) | `carried_forward` | `unsupported_current_scope` | `S5` | `S5` | `S1.P05.S08.C01` |
-| path rename and copy history (`deferred:23`) | `carried_forward` | `evidence_insufficient` | `S2` | `S5` | `S1.P05.S08` |
-| complete discussion and history relationships (`deferred:24`) | `split` | `evidence_insufficient` | `S2` | `S5` | `S1.P05.S08.C01` |
-| development_history_model (`deferred:02`) | `split` | `unsupported_current_scope` | `S5` | `S5` | `S1.P05.S08.C01` |
-| default-branch observation (`deferred:p04:04`) | `carried_forward` | `unsupported_current_scope` | `S5` | `S5` | `S1.P05.S08` |
+The unresolved remainder is what any later owner receives; an addressed portion is already published by `S1.P05` and is never handed off.
+
+| Subject | Unresolved remainder | Disposition | State | Immediate | Long-term | Authority |
+| --- | --- | --- | --- | --- | --- | --- |
+| discussion edit and deletion history unknown (`gap:s05-known:discussion-edit-and-deletion-history-unknown`) | discussion edit and deletion history | `carried_forward` | `unknown_pending_additional_evidence` | `S2` | `S5` | `S1.P05.S08.C01` |
+| case relationship vocabulary provisional (`gap:s05-known:case-relationship-vocabulary-provisional`) | universal relationship vocabulary | `carried_forward` | `unsupported_current_scope` | `S1.P06` | `S1.P06` | `S1.P05.S08` |
+| development history event model (`deferred:p01:p05-development-history-event-model`) | generic development-history event framework | `split` | `unsupported_current_scope` | `S5` | `S5` | `S1.P05.S08.C01` |
+| development history relationship model (`deferred:p01:p05-development-history-relationship-model`) | generic development-history relationship model | `split` | `unsupported_current_scope` | `S5` | `S5` | `S1.P05.S08.C01` |
+| evidence original head repository (`deferred:p01:evidence-original-head-repository`) | original head repository identity | `carried_forward` | `evidence_insufficient` | `S2` | `S5` | `S1.P05.S08` |
+| evidence historical source completeness (`deferred:p01:evidence-historical-source-completeness`) | historical source completeness | `carried_forward` | `evidence_insufficient` | `S2` | `S5` | `S1.P05.S08` |
+| revision ref and path event history (`deferred:21`) | complete mutable-ref history and all path event history | `split` | `evidence_insufficient` | `S2` | `S5` | `S1.P05.S08` |
+| ancestry and reachability (`deferred:22`) | ancestry and reachability | `carried_forward` | `unsupported_current_scope` | `S5` | `S5` | `S1.P05.S08.C01` |
+| path rename and copy history (`deferred:23`) | path rename and copy history | `carried_forward` | `evidence_insufficient` | `S2` | `S5` | `S1.P05.S08` |
+| complete discussion and history relationships (`deferred:24`) | complete discussion and history relationship graph | `split` | `evidence_insufficient` | `S2` | `S5` | `S1.P05.S08.C01` |
+| development_history_model (`deferred:02`) | complete provider development-history graph | `split` | `unsupported_current_scope` | `S5` | `S5` | `S1.P05.S08.C01` |
+| default-branch observation (`deferred:p04:04`) | default-branch designation semantics | `carried_forward` | `unsupported_current_scope` | `S5` | `S5` | `S1.P05.S08` |
 
 Dispositions {"carried_forward": 7, "split": 5}; immediate owners {"S1.P06": 1, "S2": 6, "S5": 5}; long-term owners {"S1.P06": 1, "S5": 11}; states {"evidence_insufficient": 5, "unknown_pending_additional_evidence": 1, "unsupported_current_scope": 6}.
 
@@ -116,15 +118,15 @@ The s1.p05.s08 handoff records are superseded in full by the three records below
 
 Supersedes `handoff:s1-p05-s08:s2`.
 
-Received subjects: complete discussion and history relationships, discussion edit and deletion history unknown, evidence historical source completeness, evidence original head repository, path rename and copy history, revision ref and path event history.
+Received unresolved remainders: complete discussion and history relationship graph, complete mutable-ref history and all path event history, discussion edit and deletion history, historical source completeness, original head repository identity, path rename and copy history.
 
 Requirements, each naming the subjects it covers:
 
-- `acquire_and_retain_ref_and_path_event_history_under_a_separately_authorized_evidence_gate` — covers revision ref and path event history.
+- `acquire_and_retain_ref_and_path_event_history_under_a_separately_authorized_evidence_gate` — covers complete mutable-ref history and all path event history.
 - `acquire_and_retain_rename_and_copy_evidence_rather_than_inferring_it` — covers path rename and copy history.
-- `acquire_and_retain_discussion_edit_and_deletion_evidence_and_the_complete_discussion_relationship_record` — covers complete discussion and history relationships, discussion edit and deletion history unknown.
-- `acquire_and_retain_head_repository_evidence_where_it_still_exists_and_preserve_unknown_identity_and_unavailable_representation_as_distinct_conditions` — covers evidence original head repository.
-- `acquire_and_retain_broader_historical_source_evidence_and_never_treat_a_bounded_retained_chronology_as_complete_provider_history` — covers evidence historical source completeness.
+- `acquire_and_retain_discussion_edit_and_deletion_evidence_and_the_complete_discussion_relationship_record` — covers complete discussion and history relationship graph, discussion edit and deletion history.
+- `acquire_and_retain_head_repository_evidence_where_it_still_exists_and_preserve_unknown_identity_and_unavailable_representation_as_distinct_conditions` — covers original head repository identity.
+- `acquire_and_retain_broader_historical_source_evidence_and_never_treat_a_bounded_retained_chronology_as_complete_provider_history` — covers historical source completeness.
 
 Prohibited: `substitute_a_current_observation_for_a_historical_unknown`, `treat_absence_of_retained_edit_evidence_as_absence_of_edits`, `treat_this_correction_as_a_production_schema`.
 
@@ -132,13 +134,13 @@ Prohibited: `substitute_a_current_observation_for_a_historical_unknown`, `treat_
 
 Supersedes `handoff:s1-p05-s08:s5`.
 
-Received subjects: ancestry and reachability, complete discussion and history relationships, default-branch observation, development history event model, development history relationship model, development_history_model, discussion edit and deletion history unknown, evidence historical source completeness, evidence original head repository, path rename and copy history, revision ref and path event history.
+Received unresolved remainders: ancestry and reachability, complete discussion and history relationship graph, complete mutable-ref history and all path event history, complete provider development-history graph, default-branch designation semantics, discussion edit and deletion history, generic development-history event framework, generic development-history relationship model, historical source completeness, original head repository identity, path rename and copy history.
 
 Requirements, each naming the subjects it covers:
 
-- `own_repository_and_evolution_graph_semantics_including_generic_event_relationship_and_ancestry_models` — covers ancestry and reachability, development history event model, development history relationship model, development_history_model.
-- `own_default_branch_designation_semantics_over_retained_mutable_ref_observations` — covers default-branch observation.
-- `own_the_semantics_over_ref_path_rename_discussion_head_repository_and_historical_source_evidence_once_S2_has_acquired_it` — covers complete discussion and history relationships, discussion edit and deletion history unknown, evidence historical source completeness, evidence original head repository, path rename and copy history, revision ref and path event history.
+- `own_repository_and_evolution_graph_semantics_including_generic_event_relationship_and_ancestry_models` — covers ancestry and reachability, complete provider development-history graph, generic development-history event framework, generic development-history relationship model.
+- `own_default_branch_designation_semantics_over_retained_mutable_ref_observations` — covers default-branch designation semantics.
+- `own_the_semantics_over_ref_path_rename_discussion_head_repository_and_historical_source_evidence_once_S2_has_acquired_it` — covers complete discussion and history relationship graph, complete mutable-ref history and all path event history, discussion edit and deletion history, historical source completeness, original head repository identity, path rename and copy history.
 
 Prohibited: `derive_completeness_or_reachability_from_caller_supplied_S1_P05_values`, `infer_ancestry_from_timestamps_ordering_parent_count_or_comparison_values`, `merge_the_separately_owned_historical_default_branch_unknown_into_the_designation_subject`.
 
@@ -146,11 +148,11 @@ Prohibited: `derive_completeness_or_reachability_from_caller_supplied_S1_P05_val
 
 Supersedes `handoff:s1-p05-s08:s1-p06`.
 
-Received subjects: case relationship vocabulary provisional.
+Received unresolved remainders: universal relationship vocabulary.
 
 Requirements, each naming the subjects it covers:
 
-- `own_the_bounded_domain_relationship_vocabulary_needed_by_FaultInstance` — covers case relationship vocabulary provisional.
+- `own_the_bounded_domain_relationship_vocabulary_needed_by_FaultInstance` — covers universal relationship vocabulary.
 
 Prohibited: `own_a_generic_git_ancestry_or_reachability_graph`, `read_the_bounded_S1_P05_surface_as_a_complete_development_history`, `upgrade_the_LEVEL_1_evidence_association_implicitly`.
 

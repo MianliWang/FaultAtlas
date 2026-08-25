@@ -520,22 +520,79 @@ def test_every_received_subject_is_covered_by_a_requirement(target: str) -> None
     )
 
 
-def test_the_subjects_each_owner_receives_match_the_projection() -> None:
+def test_the_remainders_each_owner_receives_match_the_projection() -> None:
     projection = _projection()["items"]
     expected = {
         "S2": sorted(
-            {e["subject"] for e in projection if e["immediate_owner"] == "S2"}
+            {e["remainder_subject"] for e in projection if e["immediate_owner"] == "S2"}
         ),
         "S5": sorted(
-            {e["subject"] for e in projection if e["preserved_long_term_owner"] == "S5"}
+            {
+                e["remainder_subject"]
+                for e in projection
+                if e["preserved_long_term_owner"] == "S5"
+            }
         ),
         "S1.P06": sorted(
-            {e["subject"] for e in projection if e["immediate_owner"] == "S1.P06"}
+            {
+                e["remainder_subject"]
+                for e in projection
+                if e["immediate_owner"] == "S1.P06"
+            }
         ),
     }
 
     for entry in _correction()["downstream_handoff"]["handoffs"]:
         assert entry["received_subjects"] == expected[entry["target"]]
+
+
+def test_every_projection_entry_names_its_unresolved_remainder() -> None:
+    """The remainder is what remains open, and it comes from the authority.
+
+    For a split record the inherited subject overstates what is unresolved, so
+    the remainder is read from the sealed decision rather than reused from the
+    subject name.
+    """
+    remainders: dict[str, str] = {}
+    for entry in _decision()["inherited_subject_register"]["items"]:
+        part = (
+            entry.get("carried_forward") or entry["split"]["carried_forward_remainder"]
+        )
+        remainders[entry["source"]["subject_id"]] = part["subject"]
+
+    for entry in _projection()["items"]:
+        assert entry["remainder_subject"] == remainders[entry["subject_id"]]
+
+
+def test_no_addressed_portion_is_ever_handed_off() -> None:
+    """Handing off an addressed portion would invite a replay to reopen it.
+
+    Every portion `S1.P05` actually published is named in a split record. None
+    of those names may appear in any handoff or requirement.
+    """
+    addressed: set[str] = set()
+    for entry in _decision()["inherited_subject_register"]["items"]:
+        if entry["disposition"] == "split":
+            addressed.add(entry["split"]["addressed_portion"]["subject"])
+    for item in _superseded():
+        portion = item["corrected"].get("addressed_portion")
+        if portion is not None:
+            addressed.add(portion["subject"])
+
+    assert addressed
+    handed_off: set[str] = set()
+    for entry in _correction()["downstream_handoff"]["handoffs"]:
+        handed_off |= set(entry["received_subjects"])
+        for requirement in entry["requirements"]:
+            handed_off |= set(requirement["covers_subjects"])
+
+    assert handed_off.isdisjoint(addressed)
+    assert (
+        _correction()["assurance"]["coverage"][
+            "handoffs_transfer_unresolved_remainders_only"
+        ]
+        is True
+    )
 
 
 # --- anti-fabrication ---------------------------------------------------------
