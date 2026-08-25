@@ -2152,6 +2152,7 @@ def test_p02_revision_and_s06_s07_evidence_are_outside_the_immutable_p01_contrac
 def test_revision_locator_corpus_is_an_independent_contract_sibling() -> None:
     contracts_root = CORPUS_ROOT.parents[1]
     assert {path.name for path in contracts_root.iterdir()} == {
+        "development-history",
         "evidence-envelope",
         "identity",
         "repository-snapshot",
