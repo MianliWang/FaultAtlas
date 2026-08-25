@@ -6,7 +6,7 @@ This internal, case-calibrated `S1.P05.S08.C01` correction is not a production s
 
 ## 2. Exact `correction.json` SHA-256
 
-`e41818f7116278a2efe0d5203082ec8fa7db80666697dd102d47cbeb70be437d`
+`1ca0459edcc44951639c7b465f47eca43221d892a1621030267cb72fbcdd3bc3`
 
 ## 3. Append-Only Relationship to `S1.P05.S08`
 
@@ -112,6 +112,19 @@ The s1.p05.s08 handoff records are superseded in full by the three records below
 | `handoff:s1-p05-s08:s5` | `handoff:s1-p05-s08-c01:s5` | `S5` | `/downstream_handoff/handoffs/1` |
 | `handoff:s1-p05-s08:s1-p06` | `handoff:s1-p05-s08-c01:s1-p06` | `S1.P06` | `/downstream_handoff/handoffs/2` |
 
+Every predecessor requirement is accounted for as retained, subsumed, or retired, so full supersession cannot silently drop an obligation.
+
+| Target | Predecessor requirement | Status | Successor |
+| --- | --- | --- | --- |
+| `S2` | `acquire_and_retain_ref_and_path_event_history_under_a_separately_authorized_evidence_gate` | `retained` | `requirement:s1-p05-s08-c01:s2:01` |
+| `S2` | `acquire_and_retain_rename_and_copy_evidence_rather_than_inferring_it` | `retained` | `requirement:s1-p05-s08-c01:s2:02` |
+| `S2` | `preserve_the_historical_default_branch_as_unknown_until_genuine_historical_evidence_exists` | `retired` | — |
+| `S5` | `own_repository_graph_semantics_over_retained_ref_and_path_evidence` | `subsumed` | `requirement:s1-p05-s08-c01:s5:01`, `requirement:s1-p05-s08-c01:s5:03` |
+| `S5` | `own_historical_source_completeness_semantics` | `subsumed` | `requirement:s1-p05-s08-c01:s5:03` |
+| `S5` | `own_default_branch_designation_semantics_over_retained_mutable_ref_observations` | `retained` | `requirement:s1-p05-s08-c01:s5:02` |
+| `S1.P06` | `own_fault_instance_consuming_relationship_and_event_semantics` | `subsumed` | `requirement:s1-p05-s08-c01:s1-p06:01` |
+| `S1.P06` | `consume_the_bounded_S1_P05_history_facts_without_redefining_them` | `retained` | `requirement:s1-p05-s08-c01:s1-p06:02` |
+
 ## 10. Effective Downstream Handoffs
 
 ### 10.1 `S2` — `handoff:s1-p05-s08-c01:s2`
@@ -153,6 +166,7 @@ Received unresolved remainders: universal relationship vocabulary.
 Requirements, each naming the subjects it covers:
 
 - `own_the_bounded_domain_relationship_vocabulary_needed_by_FaultInstance` — covers universal relationship vocabulary.
+- `consume_the_bounded_S1_P05_history_facts_without_redefining_them` — covers universal relationship vocabulary.
 
 Prohibited: `own_a_generic_git_ancestry_or_reachability_graph`, `read_the_bounded_S1_P05_surface_as_a_complete_development_history`, `upgrade_the_LEVEL_1_evidence_association_implicitly`.
 

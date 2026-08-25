@@ -564,6 +564,70 @@ def test_every_projection_entry_names_its_unresolved_remainder() -> None:
         assert entry["remainder_subject"] == remainders[entry["subject_id"]]
 
 
+@pytest.mark.parametrize("target", ("S2", "S5", "S1.P06"))
+def test_every_predecessor_requirement_is_accounted_for(target: str) -> None:
+    """Full supersession must not silently drop an obligation.
+
+    The predecessor handoffs are superseded in full, so any requirement they
+    stated is either carried over verbatim, subsumed by a named successor, or
+    retired with a reason. Nothing may simply vanish.
+    """
+    superseded = next(
+        entry
+        for entry in _correction()["superseded_handoffs"]["items"]
+        if entry["target"] == target
+    )
+    replacement = next(
+        entry
+        for entry in _correction()["downstream_handoff"]["handoffs"]
+        if entry["target"] == target
+    )
+    predecessor = next(
+        entry
+        for entry in _decision()["downstream_handoff"]["handoffs"]
+        if entry["handoff_id"] == superseded["published_handoff_id"]
+    )
+
+    continuity = superseded["requirement_continuity"]
+    statements = [row["predecessor_statement"] for row in continuity]
+    assert sorted(statements) == sorted(predecessor["requirements"])
+    assert len(statements) == len(set(statements))
+
+    successor_ids = {r["requirement_id"] for r in replacement["requirements"]}
+    successor_statements = {r["statement"] for r in replacement["requirements"]}
+    for row in continuity:
+        assert row["status"] in {"retained", "subsumed", "retired"}
+        if row["status"] == "retained":
+            assert row["predecessor_statement"] in successor_statements
+            assert row["successor_requirement_ids"]
+        if row["status"] == "subsumed":
+            assert row["successor_requirement_ids"]
+        if row["status"] == "retired":
+            assert row["reason"]
+        for identifier in row["successor_requirement_ids"]:
+            assert identifier in successor_ids
+
+
+def test_p06_still_may_not_redefine_the_published_history_facts() -> None:
+    """The constraint the correction's own supersession rule nearly dropped."""
+    p06 = next(
+        entry
+        for entry in _correction()["downstream_handoff"]["handoffs"]
+        if entry["target"] == "S1.P06"
+    )
+    statements = {requirement["statement"] for requirement in p06["requirements"]}
+
+    assert (
+        "consume_the_bounded_S1_P05_history_facts_without_redefining_them" in statements
+    )
+    assert (
+        _correction()["assurance"]["coverage"][
+            "every_predecessor_requirement_is_retained_subsumed_or_retired"
+        ]
+        is True
+    )
+
+
 def test_no_addressed_portion_is_ever_handed_off() -> None:
     """Handing off an addressed portion would invite a replay to reopen it.
 
