@@ -181,6 +181,7 @@ CURRENT_PRODUCTION_SOURCES = (
     "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/snapshot_evidence_link.py",
     "src/faultatlas/domain/history.py",
+    "src/faultatlas/domain/history_evidence_link.py",
 )
 
 EXPECTED_SOURCE_LOCKS = {
@@ -1723,8 +1724,8 @@ def test_roadmap_advances_p04_while_case_preserves_p03_closure_state() -> None:
     assert "`S1.P04.S09` is complete" in roadmap
     assert "`S1.P04.S10` is complete" in roadmap
     assert "`S1.P05` is active and incomplete" in roadmap
-    assert "`S1.P05.S06` are complete" in roadmap
-    assert "`S1.P05.S07` is next and not started" in roadmap
+    assert "`S1.P05.S07` are complete" in roadmap
+    assert "`S1.P05.S08` is next and not started" in roadmap
     assert "`S1.P06` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented" in roadmap
     assert CLOSURE_RELATIVE in case

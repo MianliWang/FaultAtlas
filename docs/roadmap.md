@@ -38,8 +38,9 @@ aspirational Slice as scheduled work.
   `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
   `S1.P04` is complete.
   `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
-  `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, and
-  `S1.P05.S06` are complete, and `S1.P05.S07` is next and not started.
+  `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
+  `S1.P05.S06`, and `S1.P05.S07` are complete, and
+  `S1.P05.S08` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -84,8 +85,9 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
 `S1.P04` is complete.
 `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, and
-`S1.P05.S06` are complete, and `S1.P05.S07` is next and not started.
+`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
+`S1.P05.S06`, and `S1.P05.S07` are complete, and
+`S1.P05.S08` is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -679,7 +681,8 @@ otherwise.
 
 `S1.P05` is active and incomplete. `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-and `S1.P05.S06` are complete, and `S1.P05.S07` is next and not started.
+`S1.P05.S06`, and `S1.P05.S07` are complete, and
+`S1.P05.S08` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -921,6 +924,66 @@ interval, currency, clock accuracy, skew, and monotonicity are all outside it.
 The canonical witness is the pytest-dev/pytest review `176071572` approval of
 revision `690a63b9`, occurring at `2018-11-17T23:54:20Z`.
 
+`S1.P05.S07` adds the Phase's first cross-domain relation,
+`PullRequestHistoryFactEvidenceLink`, in the separate bridge module
+`faultatlas.domain.history_evidence_link`. It has exactly two semantic fields:
+one supplied `fact` and one supplied `evidence_record`. The bridge exists
+because neither published side may own the edge: `faultatlas.domain.history`
+stays evidence-neutral and `faultatlas.domain.evidence` stays
+predecessor-locked, and both remain byte-identical. The new module imports both
+and neither imports it, so the only `history` to `evidence` edge in production
+is the bridge's own. Production sources move from 12 to 13.
+
+The claim is LEVEL 1 association and nothing more: the caller associates this
+supplied published history fact with this supplied durable evidence-record
+reference. It does not assert that the record was read, parsed, or inspected,
+that the record contains, supports, corroborates, derives, verifies, or proves
+the fact, or that the fact is correct or authoritative. No support role,
+strength, status, confidence, reviewer, review state, or verification outcome
+is introduced, and every association carries the same deliberately weak,
+uniform meaning. The `S1.P04` closure constraint that this association is
+LEVEL 1 only and must not be implicitly upgraded is inherited and honoured.
+
+The `fact` position is a closed union of exactly
+`PullRequestRevisionRoleBinding`, `PullRequestChangedPath`,
+`PullRequestReviewRevisionApproval`, `PullRequestMergeRevisionOutcome`,
+`PullRequestHeadRefDeletion`, and `PullRequestHistoricalOccurrenceTime`, each
+of which corresponds directly to a retained normalized observation.
+`PullRequestChangeSet` and `ChangedPathStatus` are rejected as `fact`. The
+reason is provenance, not type-surface minimization: the retained collection
+declares a complete, source-ordered set of changed paths, while the published
+change set carries a caller-supplied, caller-ordered tuple that deliberately
+asserts no completeness, so associating one record with it would attribute a
+completeness the product disclaims; and a closed status vocabulary is not a
+fact. Excluding the aggregate strands nothing, because its base binding, head
+binding, and each changed path remain individually linkable.
+
+The referenced record is identified as a whole. There is no JSON pointer,
+semantic path, field locator, byte span, request, artifact, or envelope, and no
+`semantic_field` naming a field of the fact. That a fact's fields are drawn
+from several places inside one record, or that an alternate surface within it
+omits a duplicate field — as the retained pull request timeline does for the
+review timestamp, and the ordinary pull request object does for the merge
+revision — changes nothing here: the record is associated whole, and the
+retained record already carries its own field state under `S1.P01` and `S1.P03`
+authority. Each link carries exactly one record; associating one fact with two
+records is two independent link values, with no ordering, precedence, primary
+designation, or `evidence_records` aggregate. A correction or superseding
+record is associated only when a caller supplies it, and no supersession is
+followed.
+
+The traceability this publishes is exactly one level: semantic fact to exact
+immutable `DurableEvidenceRecordReference` to exact retained record bytes.
+Localizing a semantic field to a record field is not available here and is
+reserved for a later explicitly assigned owner.
+
+The canonical witnesses are the eleven retained `S1.P05` facts — the base and
+head bindings of pull request `4414`, its three changed paths, the review
+`176071572` approval, the merge outcome `10cdae8e`, the head-ref deletion, and
+the three occurrence times — each associated with the retained acquisition
+record `1c29093b` of `61283` bytes. The same fact associated with the retained
+additive correction `44491ee5` is a second, independent link.
+
 The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
 implementation and may split, merge, renumber, or drop after later read-only
 orientations. It is evidence-driven rather than fixed at ten Slices:
@@ -932,10 +995,11 @@ orientations. It is evidence-driven rather than fixed at ten Slices:
 4. `S1.P05.S04` — Pull Request Merge Revision Outcome (complete)
 5. `S1.P05.S05` — Pull Request Head-Ref Deletion (complete)
 6. `S1.P05.S06` — Pull Request Historical Occurrence Time (complete)
-7. `S1.P05.S07` — History-Evidence Association (provisional; next, not
+7. `S1.P05.S07` — Pull Request History Fact Evidence Association (complete)
+8. `S1.P05.S08` — Deferred-Subject Disposition (provisional; next, not
    started)
-8. `S1.P05.S08` — Contract Corpus (provisional)
-9. `S1.P05.S09` — Integration and Phase Closure (provisional)
+9. `S1.P05.S09` — Contract Corpus (provisional)
+10. `S1.P05.S10` — Integration and Phase Closure (provisional)
 
 The Issue-to-Pull-Request pairing is retained case material classified as a
 reviewed derived interpretation rather than a provider fact, and it is
@@ -1023,10 +1087,23 @@ state, availability, or time. `PullRequestHistoricalOccurrenceTime` closes the
 current set, naming the source instant at which exactly one of the published
 approval, merge-outcome, or head-ref-deletion facts occurred, with no
 occurrence kind, order, sequence, classification, FaultAtlas observation time,
-missing-time vocabulary, or evidence linkage.
+missing-time vocabulary, or evidence linkage. The live surface also adds the
+separate bridge module `faultatlas.domain.history_evidence_link`, whose sole
+`PullRequestHistoryFactEvidenceLink` associates one supplied
+`PullRequestRevisionRoleBinding`, `PullRequestChangedPath`,
+`PullRequestReviewRevisionApproval`, `PullRequestMergeRevisionOutcome`,
+`PullRequestHeadRefDeletion`, or `PullRequestHistoricalOccurrenceTime` with one
+supplied `DurableEvidenceRecordReference`. `PullRequestChangeSet` and
+`ChangedPathStatus` are not associable there, the record is named whole with no
+pointer, field path, locator, or byte span, and no support role, strength,
+verification, confidence, primary designation, or evidence-record aggregate
+exists. `faultatlas.domain.history` and `faultatlas.domain.evidence` are
+unchanged by `S1.P05.S07` and neither imports the bridge. Production Python
+sources are 13.
 `S1.P05` is active and incomplete: `S1.P05.S01`, `S1.P05.S02` including the
-`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, and
-`S1.P05.S06` are complete, and `S1.P05.S07` is next and not started. `S1.P04.S10`
+`S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
+`S1.P05.S06`, and `S1.P05.S07` are complete, and
+`S1.P05.S08` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with
