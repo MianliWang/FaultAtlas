@@ -1206,7 +1206,7 @@ def test_the_roadmap_current_code_mapping_names_the_change_set() -> None:
 
     for symbol in history_module.__all__:
         assert symbol in current
-    assert "`S1.P05.S07` are complete" in current
+    assert "`S1.P05.S08` are complete" in current
     assert "`S1.P05.S05` is next and not started" not in current
 
 

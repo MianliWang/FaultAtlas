@@ -1735,6 +1735,7 @@ def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
     identity_root = IDENTITY_V1_DIRECTORY.parent
     contracts_root = identity_root.parent
     assert {path.name for path in contracts_root.iterdir()} == {
+        "development-history",
         "evidence-envelope",
         "identity",
         "repository-snapshot",
@@ -2078,8 +2079,8 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P04.S09` is complete" in normalized_roadmap
     assert "`S1.P04.S10` is complete" in normalized_roadmap
     assert "`S1.P05` is active and incomplete" in normalized_roadmap
-    assert "`S1.P05.S07` are complete" in normalized_roadmap
-    assert "`S1.P05.S08` is next and not started" in normalized_roadmap
+    assert "`S1.P05.S08` are complete" in normalized_roadmap
+    assert "`S1.P05.S09` is next and not started" in normalized_roadmap
     assert "`S1.P06` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:

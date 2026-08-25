@@ -39,8 +39,8 @@ aspirational Slice as scheduled work.
   `S1.P04` is complete.
   `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
   `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-  `S1.P05.S06`, and `S1.P05.S07` are complete, and
-  `S1.P05.S08` is next and not started.
+  `S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, and
+  `S1.P05.S09` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -86,8 +86,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04` is complete.
 `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-`S1.P05.S06`, and `S1.P05.S07` are complete, and
-`S1.P05.S08` is next and not started.
+`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, and
+`S1.P05.S09` is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -681,8 +681,8 @@ otherwise.
 
 `S1.P05` is active and incomplete. `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-`S1.P05.S06`, and `S1.P05.S07` are complete, and
-`S1.P05.S08` is next and not started.
+`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, and
+`S1.P05.S09` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -984,6 +984,37 @@ the three occurrence times — each associated with the retained acquisition
 record `1c29093b` of `61283` bytes. The same fact associated with the retained
 additive correction `44491ee5` is a second, independent link.
 
+`S1.P05.S08` is governance-only and changed no production source. It publishes
+the sealed decision
+`reference_corpus/contracts/development-history/decisions/s08-deferred-subject-disposition`,
+whose `decision.json` is the sole semantic authority, with `decision.md`
+derived and `decision.sha256` locking the JSON bytes. It dispositions the
+twelve deferred subjects `S1.P05` inherited from `S1.P00`, `S1.P01`, `S1.P02`,
+`S1.P03`, and `S1.P04` exactly once each, and introduces none of its own,
+reaching `self_owned_open == 0`. Four are split into an addressed portion and a
+carried-forward remainder; eight are carried forward whole. No subject is
+claimed resolved that is not, and no predecessor byte is edited: each item
+cites its source by exact path, JSON pointer, and SHA-256.
+
+The disposition and state vocabulary is exactly the one `S1.P04.S08` published
+— `addressed`, `split`, and `carried_forward` over `evidence_insufficient`,
+`unknown_pending_additional_evidence`, and `unsupported_current_scope` — and no
+new enum is introduced. Six remainders go to `S2` for acquisition, four of
+those preserving `S5` as the long-term semantic owner, and six go to `S1.P06`
+as FaultInstance-consuming semantics.
+
+The default-branch subject is the clearest case. The retained repository
+observation records `main` observed in 2026 while the analysed pull request
+targeted a base ref named `master` in 2018, so a current observation cannot
+stand in for the historical designation, no retained evidence records the
+default branch at the canonical occurrence time, and the subject is carried
+forward to `S2` rather than modelled. Ancestry, rename and copy, complete
+mutable-ref and path event history, a generic event or relationship framework,
+and a complete discussion graph are each carried forward for the same reason:
+the retained material does not supply them, and inventing a model would
+manufacture source facts. `S1.P05.S08` closes no subject by assertion and
+publishes no product semantics.
+
 The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
 implementation and may split, merge, renumber, or drop after later read-only
 orientations. It is evidence-driven rather than fixed at ten Slices:
@@ -996,9 +1027,8 @@ orientations. It is evidence-driven rather than fixed at ten Slices:
 5. `S1.P05.S05` — Pull Request Head-Ref Deletion (complete)
 6. `S1.P05.S06` — Pull Request Historical Occurrence Time (complete)
 7. `S1.P05.S07` — Pull Request History Fact Evidence Association (complete)
-8. `S1.P05.S08` — Deferred-Subject Disposition (provisional; next, not
-   started)
-9. `S1.P05.S09` — Contract Corpus (provisional)
+8. `S1.P05.S08` — Deferred-Subject Disposition (complete)
+9. `S1.P05.S09` — Contract Corpus (provisional; next, not started)
 10. `S1.P05.S10` — Integration and Phase Closure (provisional)
 
 The Issue-to-Pull-Request pairing is retained case material classified as a
@@ -1102,8 +1132,8 @@ unchanged by `S1.P05.S07` and neither imports the bridge. Production Python
 sources are 13.
 `S1.P05` is active and incomplete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-`S1.P05.S06`, and `S1.P05.S07` are complete, and
-`S1.P05.S08` is next and not started. `S1.P04.S10`
+`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, and
+`S1.P05.S09` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with
