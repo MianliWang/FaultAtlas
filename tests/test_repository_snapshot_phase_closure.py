@@ -89,7 +89,12 @@ EXPECTED_PRODUCTION_FILES = {
 }
 
 HISTORY_MODULE = "src/faultatlas/domain/history.py"
-CURRENT_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, HISTORY_MODULE}
+HISTORY_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/history_evidence_link.py"
+CURRENT_PRODUCTION_FILES = {
+    *EXPECTED_PRODUCTION_FILES,
+    HISTORY_MODULE,
+    HISTORY_EVIDENCE_LINK_MODULE,
+}
 
 EXPECTED_OWNED_SYMBOLS = (
     ("faultatlas.domain.snapshot", "S1.P04.S01", "RepositorySnapshotIdentity"),
@@ -882,8 +887,11 @@ def test_production_surface_adds_only_history_after_this_closure() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert observed == CURRENT_PRODUCTION_FILES
-    assert len(observed) == 12
-    assert observed - EXPECTED_PRODUCTION_FILES == {HISTORY_MODULE}
+    assert len(observed) == 13
+    assert observed - EXPECTED_PRODUCTION_FILES == {
+        HISTORY_MODULE,
+        HISTORY_EVIDENCE_LINK_MODULE,
+    }
     assert EXPECTED_PRODUCTION_FILES - observed == set()
     assert len(EXPECTED_PRODUCTION_FILES) == 11
 
@@ -974,8 +982,8 @@ def test_roadmap_records_phase_completion_and_p05_readiness() -> None:
     assert "`S1.P04` is complete" in roadmap
     assert "`S1.P04.S10` is complete" in roadmap
     assert "`S1.P05` is active and incomplete" in roadmap
-    assert "`S1.P05.S06` are complete" in roadmap
-    assert "`S1.P05.S07` is next and not started" in roadmap
+    assert "`S1.P05.S07` are complete" in roadmap
+    assert "`S1.P05.S08` is next and not started" in roadmap
     assert "`S1.P06` through `S1.P10` remain not started" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P04` is active and incomplete" not in roadmap

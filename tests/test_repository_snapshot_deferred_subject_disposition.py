@@ -75,7 +75,12 @@ EXPECTED_PRODUCTION_FILES = {
 }
 
 HISTORY_MODULE = "src/faultatlas/domain/history.py"
-CURRENT_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, HISTORY_MODULE}
+HISTORY_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/history_evidence_link.py"
+CURRENT_PRODUCTION_FILES = {
+    *EXPECTED_PRODUCTION_FILES,
+    HISTORY_MODULE,
+    HISTORY_EVIDENCE_LINK_MODULE,
+}
 
 # Every deferred-subject state published by S1.P00 through S1.P03. S08 may not
 # introduce a state outside this closed vocabulary.
@@ -716,8 +721,11 @@ def test_production_surface_adds_only_history_after_this_decision() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert observed == CURRENT_PRODUCTION_FILES
-    assert len(observed) == 12
-    assert observed - EXPECTED_PRODUCTION_FILES == {HISTORY_MODULE}
+    assert len(observed) == 13
+    assert observed - EXPECTED_PRODUCTION_FILES == {
+        HISTORY_MODULE,
+        HISTORY_EVIDENCE_LINK_MODULE,
+    }
     assert EXPECTED_PRODUCTION_FILES - observed == set()
     assert len(EXPECTED_PRODUCTION_FILES) == 11
 
@@ -780,8 +788,8 @@ def test_roadmap_records_the_s08_disposition_and_transition() -> None:
     assert "`S1.P04.S10` is complete" in roadmap
     assert "`S1.P04` is complete" in roadmap
     assert "`S1.P05` is active and incomplete" in roadmap
-    assert "`S1.P05.S06` are complete" in roadmap
-    assert "`S1.P05.S07` is next and not started" in roadmap
+    assert "`S1.P05.S07` are complete" in roadmap
+    assert "`S1.P05.S08` is next and not started" in roadmap
     assert "`S1.P06` through `S1.P10` remain not started" in roadmap
     assert "inherited exactly seven such subjects" in roadmap
     assert "`self_owned_open == 0`" in roadmap
