@@ -409,7 +409,7 @@ def test_the_handoffs_forbid_the_named_fabrications() -> None:
 def test_the_preserved_non_generalizations_are_exact() -> None:
     non_generalizations = _decision()["non_generalizations"]
 
-    assert non_generalizations["count"] == len(non_generalizations["items"]) == 12
+    assert non_generalizations["count"] == len(non_generalizations["items"]) == 13
     assert non_generalizations["intentional_deferral_is_not_implementation_failure"]
     joined = " | ".join(non_generalizations["items"])
     for needle in (
@@ -420,6 +420,101 @@ def test_the_preserved_non_generalizations_are_exact() -> None:
         "LEVEL 1 record-level only",
     ):
         assert needle in joined
+
+
+# The historical default branch is a separate inherited subject, dispositioned to
+# S2 by S1.P04.S08. It is deliberately absent from this register.
+HISTORICAL_DEFAULT_BRANCH_SUBJECT = "gap:s05-known:historical-default-branch-unknown"
+DEFAULT_BRANCH_SUBJECT_ID = "deferred:p04:04"
+
+
+def _default_branch_item() -> dict[str, Any]:
+    return next(
+        item
+        for item in _items()
+        if item["source"]["subject_id"] == DEFAULT_BRANCH_SUBJECT_ID
+    )
+
+
+def test_the_default_branch_subject_does_not_absorb_the_historical_unknown() -> None:
+    """Two inherited subjects, two owners, kept apart.
+
+    `deferred:19` assigns the default-branch designation to S1.P05 while the
+    historical default branch is a separate subject already owned by S2. Folding
+    them together would let one disposition silently answer for both.
+    """
+    remainder = _remainder(_default_branch_item())
+    separated = remainder["separated_subjects"]
+
+    assert HISTORICAL_DEFAULT_BRANCH_SUBJECT not in EXPECTED_SUBJECT_IDS
+    assert len(separated) == 2
+    assert {entry["state"] for entry in separated} == {
+        "observed_current_designation",
+        "unknown_historical_designation",
+    }
+    assert {entry["owner"] for entry in separated} == {"S2", "S5"}
+    current = next(e for e in separated if e["state"] == "observed_current_designation")
+    historical = next(
+        e for e in separated if e["state"] == "unknown_historical_designation"
+    )
+    assert current["owner"] == "S5"
+    assert historical["owner"] == "S2"
+    assert HISTORICAL_DEFAULT_BRANCH_SUBJECT in remainder["rationale"]
+
+
+def test_the_default_branch_subject_is_not_routed_to_an_acquisition_owner() -> None:
+    """Its blocker is a missing semantic owner, not missing evidence.
+
+    The retained repository observation already supplies a current designation,
+    so routing this subject to the acquisition owner would misstate why it is
+    unresolved.
+    """
+    remainder = _remainder(_default_branch_item())
+
+    assert remainder["immediate_owner"] == "S5"
+    assert remainder["preserved_long_term_owner"] == "S5"
+    assert remainder["current_state"] == "unsupported_current_scope"
+
+    acquisition = next(
+        entry
+        for entry in _decision()["downstream_handoff"]["handoffs"]
+        if entry["target"] == "S2"
+    )
+    semantic = next(
+        entry
+        for entry in _decision()["downstream_handoff"]["handoffs"]
+        if entry["target"] == "S5"
+    )
+    assert (
+        "default-branch designation semantics" not in acquisition["received_subjects"]
+    )
+    assert "default-branch designation semantics" in semantic["received_subjects"]
+    assert (
+        "merge_the_separately_owned_historical_default_branch_unknown"
+        "_into_the_designation_subject" in semantic["prohibited"]
+    )
+    assert (
+        "substitute_a_current_observation_for_a_historical_unknown"
+        in (semantic["prohibited"])
+    )
+
+
+def test_the_current_default_branch_observation_is_cited_as_retained_evidence() -> None:
+    """The disposition rests on the observation actually existing."""
+    remainder = _remainder(_default_branch_item())
+    pointers = {entry["json_pointer"] for entry in remainder["evidence"]}
+
+    assert "/observations/repository/default_branch_observation" in pointers
+    acquisition = REPOSITORY_ROOT / CITED_ARTIFACTS["acquisition:pytest-4412-run-0001"]
+    observation = cast(
+        dict[str, Any],
+        _resolve(
+            json.loads(acquisition.read_text(encoding="utf-8")),
+            "/observations/repository/default_branch_observation",
+        ),
+    )
+    assert observation["value"]
+    assert observation["observed_at"]
 
 
 def test_predecessor_artifacts_are_unmodified_and_the_register_is_append_only() -> None:

@@ -6,7 +6,7 @@ This internal, case-calibrated `S1.P05.S08` decision is not a production schema,
 
 ## 2. Exact `decision.json` SHA-256
 
-`11ca5a940fdaf5a9010a455442a8c58bc309c6d63e64490ab218393c4a67b9ae`
+`8df7a989ef33fb5d6e70c8815d1b74748c8c2f98cfb7e581414548a403d65cfe`
 
 ## 3. Result
 
@@ -31,7 +31,7 @@ Nothing unsupported is claimed as implemented, no predecessor artifact is edited
 | 9 | path rename and copy history (`deferred:23`) | S1.P02_phase_closure | `/deferred_register/items/22` | `evidence_insufficient` to `S2` / `S5` |
 | 10 | complete discussion and history relationships (`deferred:24`) | S1.P02_phase_closure | `/deferred_register/items/23` | split: addressed by `S1.P05.S03`; remainder `unsupported_current_scope` to `S1.P06` / `S1.P06` |
 | 11 | development_history_model (`deferred:02`) | S1.P03_phase_closure | `/deferred_register/entries/1` | split: addressed by `S1.P05.S01`, `S1.P05.S02`, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, `S1.P05.S06`, `S1.P05.S07`; remainder `unsupported_current_scope` to `S1.P06` / `S1.P06` |
-| 12 | default-branch observation (`deferred:p04:04`) | S1.P04_phase_closure | `/deferred_register/items/3` | `unsupported_current_scope` to `S2` / `S2` |
+| 12 | default-branch observation (`deferred:p04:04`) | S1.P04_phase_closure | `/deferred_register/items/3` | `unsupported_current_scope` to `S5` / `S5` |
 
 ## 5. Per-Subject Rationale
 
@@ -121,13 +121,13 @@ The inherited subject reserved a development_history_model. A bounded history-fa
 
 Source: `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure/closure.json` at `/deferred_register/items/3`, SHA-256 `8605fdd7972f18c0e9c85f26cb0c366e71362630f25ea87a4cd6c22cc85aee74`. Predecessor wording: "P02 deferred:19 default-branch observation". Predecessor state: `unsupported_current_scope`. Predecessor immediate owner: `S1.P05`.
 
-**Carried forward** — default-branch designation and observation, state `unsupported_current_scope`, immediate owner `S2`, preserved long-term owner `S2`. S1.P05 published no default-branch designation model. The retained material makes the reason concrete: the repository default-branch observation records the value main observed at 2026-07-24, while the pull request under analysis targeted a base ref named master in 2018. The two disagree, so a current observation cannot stand in for the historical designation, and S1.P04 already prohibits that substitution. No retained evidence records the default branch at the canonical occurrence time, and the historical default branch is separately owned by S2. A designation model built on absent historical ref evidence would manufacture a source fact, so the subject is carried forward to the owner that can acquire that evidence.
+**Carried forward** — default-branch designation semantics, state `unsupported_current_scope`, immediate owner `S5`, preserved long-term owner `S5`. This subject is the default-branch designation model, and it is not the historical default branch. The two are separate inherited subjects and are kept separate here. The retained repository observation already supplies a current designation, recording the value main observed at 2026-07-24, so this subject is not blocked on acquisition and is not routed to an acquisition owner; what is missing is a semantic owner for designation over retained mutable-ref observations, which is repository-graph semantics owned by S5. S1.P05 published no such model and must not be read as having published one. The pull request under analysis targeted a base ref named master in 2018, which disagrees with the current observation and is in any case a base-ref lexeme rather than a designation, so neither may be substituted for the other. The historical default branch at the canonical occurrence time has no retained evidence at all and remains the separately owned subject gap:s05-known:historical-default-branch-unknown, dispositioned to S2 by S1.P04.S08 at /inherited_subject_register/items/6 and recorded at /deferred_register/items/6 of the S1.P04 phase closure; it is deliberately not merged into this subject and not re-dispositioned here.
 
 ## 6. Downstream Handoffs
 
 ### 6.1 `S2` — `handoff:s1-p05-s08:s2`
 
-Received subjects: discussion edit and deletion history, original head repository identity, historical source completeness, complete mutable-ref history and all path event history, path rename and copy history, default-branch designation and observation.
+Received subjects: discussion edit and deletion history, original head repository identity, historical source completeness, complete mutable-ref history and all path event history, path rename and copy history.
 
 Requirements: `acquire_and_retain_ref_and_path_event_history_under_a_separately_authorized_evidence_gate`, `acquire_and_retain_rename_and_copy_evidence_rather_than_inferring_it`, `preserve_the_historical_default_branch_as_unknown_until_genuine_historical_evidence_exists`.
 
@@ -137,11 +137,11 @@ Status: `not_started`.
 
 ### 6.2 `S5` — `handoff:s1-p05-s08:s5`
 
-Received subjects: original head repository identity, historical source completeness, complete mutable-ref history and all path event history, path rename and copy history.
+Received subjects: original head repository identity, historical source completeness, complete mutable-ref history and all path event history, path rename and copy history, default-branch designation semantics.
 
-Requirements: `own_repository_graph_semantics_over_retained_ref_and_path_evidence`, `own_historical_source_completeness_semantics`.
+Requirements: `own_repository_graph_semantics_over_retained_ref_and_path_evidence`, `own_historical_source_completeness_semantics`, `own_default_branch_designation_semantics_over_retained_mutable_ref_observations`.
 
-Prohibited: `derive_completeness_or_reachability_from_caller_supplied_S1_P05_values`.
+Prohibited: `derive_completeness_or_reachability_from_caller_supplied_S1_P05_values`, `merge_the_separately_owned_historical_default_branch_unknown_into_the_designation_subject`, `substitute_a_current_observation_for_a_historical_unknown`.
 
 Status: `not_started`.
 
@@ -158,6 +158,7 @@ Status: `not_started`.
 ## 7. Preserved Non-Generalizations
 
 - no historical default-branch substitution from a current observation
+- the default-branch designation subject and the historical default-branch unknown remain separate subjects with separate owners
 - no default-branch designation model in S1.P05
 - no ancestry, descendance, reachability, containment, merge-base, or integration-path semantics
 - no rename or copy inference from path similarity or from disappearance and addition

@@ -1003,12 +1003,18 @@ new enum is introduced. Six remainders go to `S2` for acquisition, four of
 those preserving `S5` as the long-term semantic owner, and six go to `S1.P06`
 as FaultInstance-consuming semantics.
 
-The default-branch subject is the clearest case. The retained repository
-observation records `main` observed in 2026 while the analysed pull request
-targeted a base ref named `master` in 2018, so a current observation cannot
-stand in for the historical designation, no retained evidence records the
-default branch at the canonical occurrence time, and the subject is carried
-forward to `S2` rather than modelled. Ancestry, rename and copy, complete
+The default-branch subject is the clearest case, and it is two subjects rather
+than one. `deferred:19` assigns the default-branch designation to `S1.P05`,
+while the historical default branch is a separate inherited subject already
+owned by `S2`, and the two are kept apart. The retained repository observation
+already records `main` observed in 2026, so the designation subject is not
+blocked on acquisition and is carried forward to `S5` for repository-graph
+semantics over retained mutable-ref observations rather than to an acquisition
+owner. The analysed pull request targeted a base ref named `master` in 2018,
+which disagrees with that observation and is a base-ref lexeme rather than a
+designation, so neither may be substituted for the other, and the historical
+default branch at the canonical occurrence time has no retained evidence and is
+not re-dispositioned here. Ancestry, rename and copy, complete
 mutable-ref and path event history, a generic event or relationship framework,
 and a complete discussion graph are each carried forward for the same reason:
 the retained material does not supply them, and inventing a model would
