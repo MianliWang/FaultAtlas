@@ -24,15 +24,21 @@ callers rather than by any retained record, and it deliberately asserts no
 completeness, so associating a record with it would manufacture provenance.
 `ChangedPathStatus` is excluded because a closed vocabulary is not a fact.
 
-The fact position is closed by strict typing rather than by a before-guard.
+Both positions are closed to untyped Python input. A caller must supply an
+already published value; a mapping, an attribute-backed object, or a foreign
+model is refused even when its own children are published values, because
+constructing a published fact is the history layer's responsibility and not
+this relation's. Strictness alone cannot express that: a strict constraint is
+not applicable to a union schema, and a strict union still admits a mapping
+whose children are typed.
+
 One admitted member carries an occurrence instant, whose only JSON form is a
-string, and any before or wrap validator standing above the fact union
-revalidates its result as Python input -- which would strip that instant of
-its JSON reading and make the occurrence-time family impossible to reconstruct
-from JSON. Strict mode already refuses an untyped mapping, a dumped fact, a
-foreign model, and every excluded published value in that position, so the
-guard would add a message and remove a capability. The evidence-record
-position stands above no such value and keeps its explicit typed guard.
+string. Any validator standing above a fact revalidates its result as Python
+input, so that member's guard decodes exactly that one leaf back to an aware
+instant before the published model reads it. The decoding is transport only:
+the published model still applies its own zero-offset rule, its own
+normalization, and every other guard it declares, and no other field of any
+admitted fact is read, rewritten, or interpreted here.
 
 The referenced record is identified as a whole. There is no JSON pointer,
 semantic path, field locator, byte span, request, artifact, or envelope that
@@ -53,7 +59,17 @@ references. Occurrence ordering, chronology, completeness, absence, confidence,
 review, and durable serialization all remain outside it.
 """
 
-from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
+from collections.abc import Callable, Mapping
+from datetime import datetime
+from typing import Annotated, Any, cast
+
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    ValidationInfo,
+    field_validator,
+)
 
 from faultatlas.domain.evidence import DurableEvidenceRecordReference
 from faultatlas.domain.history import (
@@ -69,6 +85,61 @@ __all__ = [
     "PullRequestHistoryFactEvidenceLink",
 ]
 
+_UNTYPED_FACT_MESSAGE = (
+    "fact must be a published pull request history fact in Python input"
+)
+
+
+def _require_published_fact(expected: type[BaseModel]) -> Callable[..., Any]:
+    def _require(value: object, info: ValidationInfo) -> object:
+        if info.mode == "python" and not isinstance(value, expected):
+            raise ValueError(_UNTYPED_FACT_MESSAGE)
+        return value
+
+    return _require
+
+
+def _require_published_occurrence_time(value: object, info: ValidationInfo) -> object:
+    if info.mode == "python":
+        if not isinstance(value, PullRequestHistoricalOccurrenceTime):
+            raise ValueError(_UNTYPED_FACT_MESSAGE)
+        return value
+    if not isinstance(value, Mapping):
+        return value
+    supplied = cast(Mapping[str, object], value)
+    instant = supplied.get("occurred_at")
+    if not isinstance(instant, str):
+        return supplied
+    decoded: dict[str, object] = dict(supplied)
+    decoded["occurred_at"] = datetime.fromisoformat(instant)
+    return decoded
+
+
+_PublishedRevisionRoleBinding = Annotated[
+    PullRequestRevisionRoleBinding,
+    BeforeValidator(_require_published_fact(PullRequestRevisionRoleBinding)),
+]
+_PublishedChangedPath = Annotated[
+    PullRequestChangedPath,
+    BeforeValidator(_require_published_fact(PullRequestChangedPath)),
+]
+_PublishedReviewRevisionApproval = Annotated[
+    PullRequestReviewRevisionApproval,
+    BeforeValidator(_require_published_fact(PullRequestReviewRevisionApproval)),
+]
+_PublishedMergeRevisionOutcome = Annotated[
+    PullRequestMergeRevisionOutcome,
+    BeforeValidator(_require_published_fact(PullRequestMergeRevisionOutcome)),
+]
+_PublishedHeadRefDeletion = Annotated[
+    PullRequestHeadRefDeletion,
+    BeforeValidator(_require_published_fact(PullRequestHeadRefDeletion)),
+]
+_PublishedHistoricalOccurrenceTime = Annotated[
+    PullRequestHistoricalOccurrenceTime,
+    BeforeValidator(_require_published_occurrence_time),
+]
+
 
 class PullRequestHistoryFactEvidenceLink(BaseModel):
     """Supplied association from one history fact to one durable record."""
@@ -82,12 +153,12 @@ class PullRequestHistoryFactEvidenceLink(BaseModel):
     )
 
     fact: (
-        PullRequestRevisionRoleBinding
-        | PullRequestChangedPath
-        | PullRequestReviewRevisionApproval
-        | PullRequestMergeRevisionOutcome
-        | PullRequestHeadRefDeletion
-        | PullRequestHistoricalOccurrenceTime
+        _PublishedRevisionRoleBinding
+        | _PublishedChangedPath
+        | _PublishedReviewRevisionApproval
+        | _PublishedMergeRevisionOutcome
+        | _PublishedHeadRefDeletion
+        | _PublishedHistoricalOccurrenceTime
     )
     evidence_record: DurableEvidenceRecordReference
 

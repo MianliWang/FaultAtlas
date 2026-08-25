@@ -4,10 +4,10 @@ import ast
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 import pytest
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError
 
 import faultatlas.domain.history_evidence_link as link_module
 from faultatlas.domain.evidence import (
@@ -576,6 +576,99 @@ def test_link_python_construction_rejects_a_dumped_fact_mapping() -> None:
         )
 
 
+def test_link_rejects_a_typed_children_python_mapping() -> None:
+    """A mapping whose children are already published values is still refused.
+
+    Constructing a published fact is the history layer's responsibility. A
+    strict union alone admits this input, so each admitted family carries its
+    own Python-mode guard.
+    """
+    approval = _approval()
+    occurrence = _occurrence_time(approval, CANONICAL_APPROVAL_INSTANT)
+
+    for supplied in (
+        {"review": approval.review, "approved_revision": approval.approved_revision},
+        {"occurrence": approval, "occurred_at": occurrence.occurred_at},
+        {
+            "pull_request": _outcome().pull_request,
+            "merge_revision": _outcome().merge_revision,
+        },
+        {"head": _deletion().head, "head_ref_name": _deletion().head_ref_name},
+        {
+            "path": _changed_path().path,
+            "head_object": _changed_path().head_object,
+            "status": _changed_path().status,
+        },
+        {
+            "pull_request": _binding().pull_request,
+            "role_assignment": _binding().role_assignment,
+        },
+    ):
+        with pytest.raises(ValidationError, match="in Python input"):
+            PullRequestHistoryFactEvidenceLink.model_validate(
+                {"fact": supplied, "evidence_record": _record()}
+            )
+
+
+def test_link_rejects_fully_populated_attribute_backed_facts() -> None:
+    approval = _approval()
+
+    class AttributeApproval:
+        review = approval.review
+        approved_revision = approval.approved_revision
+
+    class AttributeOccurrence:
+        occurrence = approval
+        occurred_at = _occurrence_time(approval, CANONICAL_APPROVAL_INSTANT).occurred_at
+
+    for supplied in (AttributeApproval(), AttributeOccurrence()):
+        with pytest.raises(ValidationError, match="in Python input"):
+            PullRequestHistoryFactEvidenceLink.model_validate(
+                {"fact": supplied, "evidence_record": _record()},
+                from_attributes=True,
+            )
+
+
+def _occurrence_json(instant: str) -> str:
+    link = _link(_occurrence_time(_approval(), CANONICAL_APPROVAL_INSTANT))
+    payload = _payload(link)
+    fact = cast(dict[str, Any], payload["fact"])
+    payload["fact"] = {**fact, "occurred_at": instant}
+    return json.dumps(payload)
+
+
+@pytest.mark.parametrize(
+    "instant", ("2018-11-17T23:54:20Z", "2018-11-17T23:54:20+00:00")
+)
+def test_both_asserted_utc_json_forms_reconstruct_the_occurrence(instant: str) -> None:
+    restored = PullRequestHistoryFactEvidenceLink.model_validate_json(
+        _occurrence_json(instant)
+    )
+
+    assert isinstance(restored.fact, PullRequestHistoricalOccurrenceTime)
+    assert restored.fact.occurred_at == _instant(CANONICAL_APPROVAL_INSTANT)
+
+
+@pytest.mark.parametrize(
+    "instant",
+    (
+        "2018-11-17T23:54:20+01:00",
+        "2018-11-17T22:54:20-01:00",
+        "2018-11-17T23:54:20",
+        "not-an-instant",
+        "",
+    ),
+)
+def test_the_instant_decode_is_transport_only_and_adds_no_tolerance(
+    instant: str,
+) -> None:
+    """Decoding the JSON leaf must not relax any published S06 guard."""
+    with pytest.raises(ValidationError):
+        PullRequestHistoryFactEvidenceLink.model_validate_json(
+            _occurrence_json(instant)
+        )
+
+
 def test_link_rejects_swapped_members() -> None:
     with pytest.raises(ValidationError):
         PullRequestHistoryFactEvidenceLink.model_validate(
@@ -649,21 +742,31 @@ def test_every_excluded_published_symbol_is_absent_from_the_fact_annotation(
 
 
 def test_the_fact_annotation_is_exactly_the_six_eligible_families() -> None:
-    tree = ast.parse(LINK_SOURCE.read_text(encoding="utf-8"))
-    annotation = next(
-        ast.unparse(node.annotation)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.AnnAssign) and ast.unparse(node.target) == "fact"
+    members = get_args(
+        PullRequestHistoryFactEvidenceLink.model_fields["fact"].annotation
+    )
+    resolved = [get_args(member)[0] for member in members]
+
+    assert resolved == [
+        PullRequestRevisionRoleBinding,
+        PullRequestChangedPath,
+        PullRequestReviewRevisionApproval,
+        PullRequestMergeRevisionOutcome,
+        PullRequestHeadRefDeletion,
+        PullRequestHistoricalOccurrenceTime,
+    ]
+
+
+def test_every_admitted_family_carries_a_python_typed_guard() -> None:
+    """No admitted family may be reachable from an untyped Python mapping."""
+    members = get_args(
+        PullRequestHistoryFactEvidenceLink.model_fields["fact"].annotation
     )
 
-    assert [member.strip() for member in annotation.split("|")] == [
-        "PullRequestRevisionRoleBinding",
-        "PullRequestChangedPath",
-        "PullRequestReviewRevisionApproval",
-        "PullRequestMergeRevisionOutcome",
-        "PullRequestHeadRefDeletion",
-        "PullRequestHistoricalOccurrenceTime",
-    ]
+    assert len(members) == 6
+    for member in members:
+        metadata = get_args(member)[1:]
+        assert any(isinstance(entry, BeforeValidator) for entry in metadata)
 
 
 # --- malformed and foreign children -------------------------------------------
@@ -791,7 +894,12 @@ def test_module_surface_is_exact_and_local() -> None:
     functions = [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
 
     assert classes == ["PullRequestHistoryFactEvidenceLink"]
-    assert functions == []
+    # The module-level helpers exist only to build the guarded fact union.
+    assert functions == [
+        "_require_published_fact",
+        "_require_published_occurrence_time",
+    ]
+    assert all(name.startswith("_") for name in functions)
 
 
 def test_bridge_module_has_no_io_or_capability_surface() -> None:
