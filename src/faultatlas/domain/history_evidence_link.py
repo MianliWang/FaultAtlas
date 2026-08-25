@@ -35,9 +35,15 @@ whose children are typed.
 One admitted member carries an occurrence instant, whose only JSON form is a
 string. Any validator standing above a fact revalidates its result as Python
 input, so that member's guard decodes exactly that one leaf back to an aware
-instant before the published model reads it. The decoding is transport only:
-the published model still applies its own zero-offset rule, its own
-normalization, and every other guard it declares, and no other field of any
+instant before the published model reads it.
+
+The decoding is transport only. It reads the instant through the same aware
+datetime grammar the published model applies to JSON, so the link accepts and
+refuses exactly the lexical forms the embedded fact does; a stdlib ISO parser
+would not, admitting week dates and basic-format instants the published model
+rejects while refusing a lowercase zone designator it accepts. Grammar is all
+this decides: the published model still applies its own zero-offset rule, its
+own normalization, and every other guard it declares, and no other field of any
 admitted fact is read, rewritten, or interpreted here.
 
 The referenced record is identified as a whole. There is no JSON pointer,
@@ -64,9 +70,11 @@ from datetime import datetime
 from typing import Annotated, Any, cast
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     BeforeValidator,
     ConfigDict,
+    TypeAdapter,
     ValidationInfo,
     field_validator,
 )
@@ -88,6 +96,10 @@ __all__ = [
 _UNTYPED_FACT_MESSAGE = (
     "fact must be a published pull request history fact in Python input"
 )
+
+# The published aware-instant grammar, read through the same adapter the
+# embedded fact applies to its own JSON form.
+_OCCURRED_AT: TypeAdapter[datetime] = TypeAdapter(AwareDatetime)
 
 
 def _require_published_fact(expected: type[BaseModel]) -> Callable[..., Any]:
@@ -111,7 +123,7 @@ def _require_published_occurrence_time(value: object, info: ValidationInfo) -> o
     if not isinstance(instant, str):
         return supplied
     decoded: dict[str, object] = dict(supplied)
-    decoded["occurred_at"] = datetime.fromisoformat(instant)
+    decoded["occurred_at"] = _OCCURRED_AT.validate_python(instant)
     return decoded
 
 

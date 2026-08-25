@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast, get_args
@@ -667,6 +668,66 @@ def test_the_instant_decode_is_transport_only_and_adds_no_tolerance(
         PullRequestHistoryFactEvidenceLink.model_validate_json(
             _occurrence_json(instant)
         )
+
+
+# Lexical forms spanning the published aware-instant grammar, the forms a
+# stdlib ISO parser would admit or refuse differently, and plain malformations.
+INSTANT_GRAMMAR_CASES = (
+    "2018-11-17T23:54:20Z",
+    "2018-11-17T23:54:20+00:00",
+    "2018-11-17T23:54:20.5Z",
+    "2018-11-17 23:54:20Z",
+    "2018-11-17t23:54:20Z",
+    "2018-11-17T23:54:20z",
+    "2018-W46-6T23:54:20Z",
+    "20181117T235420Z",
+    "2018-11-17T23:54:20",
+    "2018-11-17T23:54:20+01:00",
+    "2018-11-17T22:54:20-01:00",
+    "2018-11-17",
+    "23:54:20Z",
+    "",
+    "not-a-time",
+    "2018-13-01T00:00:00Z",
+    "2018-11-17T25:54:20Z",
+    "  2018-11-17T23:54:20Z  ",
+    "+2018-11-17T23:54:20Z",
+)
+
+
+def _accepts(validate: Callable[[], object]) -> bool:
+    try:
+        validate()
+    except ValidationError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize("instant", INSTANT_GRAMMAR_CASES)
+def test_the_link_and_the_fact_accept_the_same_instant_grammar(instant: str) -> None:
+    """Decoding must not widen or narrow the embedded fact's accepted forms.
+
+    A stdlib ISO parser diverges in both directions here -- it admits week
+    dates and basic-format instants the published model refuses, and refuses a
+    lowercase zone designator it accepts -- so the decode reads the instant
+    through the published grammar instead.
+    """
+    payload = _payload(_link(_occurrence_time(_approval(), CANONICAL_APPROVAL_INSTANT)))
+    fact = cast(dict[str, Any], payload["fact"])
+    supplied = {**fact, "occurred_at": instant}
+
+    by_fact = _accepts(
+        lambda: PullRequestHistoricalOccurrenceTime.model_validate_json(
+            json.dumps(supplied)
+        )
+    )
+    by_link = _accepts(
+        lambda: PullRequestHistoryFactEvidenceLink.model_validate_json(
+            json.dumps({**payload, "fact": supplied})
+        )
+    )
+
+    assert by_link == by_fact
 
 
 def test_link_rejects_swapped_members() -> None:
