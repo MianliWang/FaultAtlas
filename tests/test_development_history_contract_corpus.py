@@ -307,9 +307,9 @@ def test_the_declared_counts_match_the_vector_files() -> None:
     summary = MANIFEST["vector_summary"]
 
     assert summary["valid"]["count"] == len(VALID["vectors"]) == 48
-    assert summary["invalid"]["count"] == len(INVALID["vectors"]) == 95
+    assert summary["invalid"]["count"] == len(INVALID["vectors"]) == 96
     assert summary["replay"]["count"] == len(REPLAY["vectors"]) == 24
-    assert summary["total_vectors"] == 167
+    assert summary["total_vectors"] == 168
     assert summary["fixtures"] == len(VALID["fixtures"]) == 19
 
 
@@ -769,6 +769,15 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     assert "`S1.P05.S10` is next and not started" in text
     assert "`S1.P06` is not eligible to begin" in text
     assert "reference_corpus/contracts/development-history/v1" in text
+
+    # The roadmap is another projection of the counts and must not drift from
+    # the manifest the way the category inventories once did.
+    summary = MANIFEST["vector_summary"]
+    assert (
+        f"{summary['total_vectors']} vectors over {summary['fixtures']} declared "
+        f"fixtures -- {summary['valid']['count']} valid, "
+        f"{summary['invalid']['count']} invalid, and {summary['replay']['count']} replay"
+    ) in text
 
 
 # --- retained provenance is verified, not asserted ----------------------------
@@ -1270,8 +1279,8 @@ def test_every_vector_declares_a_globally_unique_semantic_partition() -> None:
         for vector in section["vectors"]
     ]
 
-    assert len(partitions) == 167
-    assert len(set(partitions)) == 167
+    assert len(partitions) == 168
+    assert len(set(partitions)) == 168
 
 
 def test_each_semantic_partition_is_distinct_from_its_vector_id() -> None:
@@ -1539,9 +1548,9 @@ def test_the_manifest_category_inventory_is_derived_from_the_vectors() -> None:
 
     summary = MANIFEST["vector_summary"]
     assert summary["valid"]["count"] == 48
-    assert summary["invalid"]["count"] == 95
+    assert summary["invalid"]["count"] == 96
     assert summary["replay"]["count"] == 24
-    assert summary["total_vectors"] == 167
+    assert summary["total_vectors"] == 168
 
 
 def test_the_contract_markdown_category_table_is_derived_from_the_vectors() -> None:
@@ -1572,7 +1581,7 @@ def test_a_category_move_breaks_the_derived_inventory() -> None:
         for entry in MANIFEST["corpus_files"]
         if entry["filename"] == "invalid-vectors.json"
     )
-    assert len(invalid["vectors"]) == 95, "the totals still balance"
+    assert len(invalid["vectors"]) == 96, "the totals still balance"
 
     sections = _sections(VALID, invalid, REPLAY)
     assert _manifest_histogram_failures(MANIFEST, sections) == [
@@ -1605,3 +1614,170 @@ def test_updating_only_the_manifest_leaves_the_markdown_stale() -> None:
     assert _markdown_histogram_failures(text, sections), (
         "the derived Markdown must still report the stale inventory"
     )
+
+
+# --- a partition label is not a partition -------------------------------------
+
+
+def _behavioural_signature(vector: dict[str, Any]) -> str:
+    """What a vector actually selects, independent of how it is labelled."""
+    return json.dumps(
+        {
+            "expected": vector["expected"],
+            "input": vector["input"],
+            "input_mode": vector["input_mode"],
+            "operation": vector["operation"],
+            "target": vector["target"],
+        },
+        sort_keys=True,
+    )
+
+
+def _behavioural_duplicates(
+    sections: tuple[dict[str, Any], ...],
+) -> list[list[str]]:
+    grouped: dict[str, list[str]] = {}
+    for section in sections:
+        for vector in section["vectors"]:
+            grouped.setdefault(_behavioural_signature(vector), []).append(
+                cast(str, vector["id"])
+            )
+    return sorted(ids for ids in grouped.values() if len(ids) > 1)
+
+
+def test_no_two_vectors_exercise_the_same_behaviour() -> None:
+    """Unique labels once hid two vectors that selected identical behaviour.
+
+    `semantic_partition` is authored, so label uniqueness proves only that the
+    author wrote different words. Two vectors with the same target, mode,
+    operation, input, and expectation occupy one boundary however they are
+    named, and the corpus advertised both as distinct partitions.
+    """
+    assert not _behavioural_duplicates((VALID, INVALID, REPLAY))
+
+
+def test_the_behavioural_signature_check_would_catch_a_copy() -> None:
+    """Otherwise the rule above could be vacuous."""
+    invalid = copy.deepcopy(INVALID)
+    twin = copy.deepcopy(invalid["vectors"][0])
+    twin["id"] = "history.invalid.probe.copy"
+    twin["semantic_partition"] = "role-binding/rejects/probe-copy"
+    invalid["vectors"].append(twin)
+
+    assert _behavioural_duplicates((VALID, invalid, REPLAY)) == [
+        [cast(str, INVALID["vectors"][0]["id"]), "history.invalid.probe.copy"]
+    ]
+
+
+def test_the_replaced_duplicates_now_witness_their_partitions() -> None:
+    """Each replacement must differ from the vector it used to copy."""
+    by_id = {cast(str, v["id"]): v for section in (VALID,) for v in section["vectors"]}
+
+    tied = by_id["history.valid.occurrence-time.equal-instants-allowed"]
+    merge = by_id["history.valid.occurrence-time.merge"]
+    assert tied["input"]["occurred_at"] == merge["input"]["occurred_at"]
+    assert tied["input"]["occurrence"] != merge["input"]["occurrence"], (
+        "equal instants must be shown on two different surfaces"
+    )
+
+    second = by_id["history.valid.evidence-link.second-fact-same-record"]
+    admitted = [
+        v
+        for v in VALID["vectors"]
+        if v["category"] == "evidence-link" and v["id"] != second["id"]
+    ]
+    assert second["input"]["evidence_record"] in [
+        v["input"].get("evidence_record") for v in admitted
+    ], "the record must be one already associated with another fact"
+    assert all(second["input"]["fact"] != v["input"].get("fact") for v in admitted), (
+        "the second link must carry a fact no other link uses"
+    )
+
+
+def test_the_change_set_requires_every_published_member() -> None:
+    """A default silently added to any member would otherwise pass unnoticed."""
+    missing = {
+        tuple(cast(list[str], v["expected"]["error_location"]))
+        for v in INVALID["vectors"]
+        if v["category"] == "change-set" and v["expected"]["error_type"] == "missing"
+    }
+
+    assert missing == {("base",), ("head",), ("changed_paths",)}
+
+
+# --- authority identifiers resolve into the locked documents ------------------
+
+
+def _declared_authority_ids(entry: dict[str, Any]) -> set[str]:
+    """Collect the ids the locked document itself publishes."""
+    document = json.loads(
+        (REPOSITORY_ROOT / cast(str, entry["path"])).read_text("utf-8")
+    )
+    source = cast(dict[str, str], entry["authority_id_source"])
+    node = _resolve_pointer(document, source["collection"])
+    field = source["id_field"]
+    if isinstance(node, dict):
+        return {cast(str, cast(dict[str, Any], node)[field])}
+    return {cast(str, item[field]) for item in cast(list[dict[str, Any]], node)}
+
+
+def test_every_declared_authority_id_resolves_in_its_locked_document() -> None:
+    """A declared id that names nothing is a citation to nowhere.
+
+    Asserting only that `authority_ids` is non-empty let the manifest name a
+    disposition or deferred entry that does not exist, and re-sealing hid it.
+    """
+    for entry in cast(list[dict[str, Any]], MANIFEST["source_decisions"]):
+        declared = set(cast(list[str], entry["authority_ids"]))
+        resolved = _declared_authority_ids(entry)
+        assert declared, entry["decision_reference"]
+        assert declared <= resolved, (
+            entry["decision_reference"],
+            sorted(declared - resolved),
+        )
+
+
+def test_the_governance_authorities_declare_their_complete_id_sets() -> None:
+    entries = {
+        cast(str, e["decision_reference"]): e
+        for e in cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+    }
+
+    base = entries["decision:s1-p05-s08:disposition"]
+    correction = entries["correction:s1-p05-s08-c01:owner-topology"]
+    assert set(cast(list[str], base["authority_ids"])) == _declared_authority_ids(base)
+    assert len(cast(list[str], base["authority_ids"])) == 12
+    assert set(cast(list[str], correction["authority_ids"])) == _declared_authority_ids(
+        correction
+    )
+    assert len(cast(list[str], correction["authority_ids"])) == 6
+
+
+def test_an_unresolvable_authority_id_is_refused() -> None:
+    entry = copy.deepcopy(
+        next(
+            e
+            for e in MANIFEST["source_decisions"]
+            if e["decision_reference"] == "closure:s1-p03:evidence-envelope"
+        )
+    )
+    entry["authority_ids"] = ["deferred:does-not-exist"]
+
+    assert not set(entry["authority_ids"]) <= _declared_authority_ids(entry)
+
+
+def test_every_vector_reference_names_a_registered_authority() -> None:
+    """A vector could otherwise cite an authority this corpus never locked."""
+    registered = {
+        cast(str, e["decision_reference"])
+        for e in cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+    }
+    cited: set[str] = set()
+    for section in (VALID, INVALID, REPLAY):
+        for vector in section["vectors"]:
+            references = cast(list[str], vector["decision_references"])
+            assert references, vector["id"]
+            assert set(references) <= registered, (vector["id"], references)
+            cited |= set(references)
+
+    assert cited == registered - {"closure:s1-p03:evidence-envelope"}

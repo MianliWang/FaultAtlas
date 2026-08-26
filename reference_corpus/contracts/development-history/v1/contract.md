@@ -26,7 +26,7 @@ Supporting authorities are consumed but not owned: `faultatlas.domain.evidence`,
 
 | Family | valid | invalid | replay |
 | --- | --- | --- | --- |
-| `change-set` | 5 | 11 | 0 |
+| `change-set` | 5 | 12 | 0 |
 | `changed-path` | 4 | 9 | 3 |
 | `changed-path-status` | 3 | 4 | 0 |
 | `evidence-association` | 0 | 0 | 12 |
@@ -38,9 +38,9 @@ Supporting authorities are consumed but not owned: `faultatlas.domain.evidence`,
 | `revision-role-binding` | 0 | 0 | 2 |
 | `role-binding` | 5 | 11 | 0 |
 | `supplied-change-set` | 0 | 0 | 1 |
-| **total** | **48** | **95** | **24** |
+| **total** | **48** | **96** | **24** |
 
-167 vectors over 19 declared fixtures. Every vector occupies a distinct semantic partition.
+168 vectors over 19 declared fixtures. Every vector occupies a distinct semantic partition.
 
 ## 4. Replay and Provenance
 

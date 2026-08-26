@@ -1070,8 +1070,9 @@ so a later published symbol forces deliberate review, and names
 `faultatlas.domain.evidence` as supporting authorities it does not own. The
 `S1.P04` snapshot modules are outside it: no `S1.P05` value consumes them.
 
-Nine files hold 167 vectors over 19 declared fixtures -- 48 valid, 95 invalid,
-and 24 replay -- each occupying a distinct semantic partition. Invalid vectors
+Nine files hold 168 vectors over 19 declared fixtures -- 48 valid, 96 invalid,
+and 24 replay -- each occupying a semantic partition that is distinct in
+behaviour, not merely in label. Invalid vectors
 lock a failure category, an error location, a location mode, and an error type,
 and deliberately lock no prose, no validator name, and no Pydantic internal
 union branch label; the prefix location mode is used only for the two
