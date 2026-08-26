@@ -592,6 +592,24 @@ def test_the_non_generalizations_are_declared_and_specific() -> None:
         assert needle in joined
 
 
+def test_the_roadmap_names_exactly_one_next_gate() -> None:
+    """Two live next-gate claims would let a consumer report the wrong gate.
+
+    Each Slice narrative states the gate that was next when it published, so a
+    superseded claim has to be retired rather than left standing beside the
+    current one.
+    """
+    text = (REPOSITORY_ROOT / "docs/roadmap.md").read_text("utf-8")
+    claims = [
+        line.strip() for line in text.splitlines() if "next and not started" in line
+    ]
+
+    assert claims
+    for claim in claims:
+        assert "`S1.P05.S10`" in claim, claim
+        assert "`S1.P05.S09`" not in claim, claim
+
+
 def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     text = " ".join((REPOSITORY_ROOT / "docs/roadmap.md").read_text("utf-8").split())
 

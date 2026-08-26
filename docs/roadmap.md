@@ -1058,8 +1058,7 @@ The effective projection keeps all twelve inherited subjects dispositioned
 exactly once with no self-introduced subject and `self_owned_open == 0`, under
 `S1.P05.S08` for six subjects and `S1.P05.S08.C01` for six. Immediate owners
 are `S2` six, `S5` five, and `S1.P06` one; long-term owners are `S5` eleven and
-`S1.P06` one. No product semantics change, no production source changes, and
-`S1.P05.S09` remains next and not started.
+`S1.P06` one. No product semantics change and no production source changes.
 
 `S1.P05.S09` publishes the source-only development-history contract corpus at
 `reference_corpus/contracts/development-history/v1`, freezing the published
