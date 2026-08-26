@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from datetime import datetime
@@ -626,20 +627,57 @@ def test_prefix_mode_is_used_only_for_the_two_discriminatorless_unions() -> None
         assert vector["expected"]["error_location"] in (["occurrence"], ["fact"])
 
 
-def test_the_non_generalizations_are_declared_and_specific() -> None:
-    goals = MANIFEST["non_goals"]
+NON_GENERALIZATIONS = (
+    "no complete development-history graph",
+    "no generic DevelopmentEvent",
+    "no generic relationship graph",
+    "no ancestry or reachability semantics",
+    "no merge-base semantics",
+    "no ahead or behind semantics",
+    "no branch containment",
+    "no historical default-branch substitution",
+    "current default branch is not historical truth",
+    "no rename or copy semantics",
+    "no complete mutable-ref history",
+    "no complete discussion history",
+    "no edit or deletion absence claim",
+    "no complete historical review state",
+    "no timestamp-implied causality",
+    "approval does not cause merge",
+    "merge does not cause ref deletion",
+    "no CI or test correctness",
+    "no repair correctness",
+    "no FaultInstance semantics",
+    "no root cause",
+    "no violated invariant",
+    "no S1.P09 confidence or review interpretation",
+    "no field-level evidence locator",
+    "no verification or support strength",
+    "no persistence",
+    "no production serializer or registry",
+    "no production corpus reader",
+    "no source ingestion",
+    "no Git or GitHub I/O",
+    "no retrieval or RAG",
+    "generic repository or evolution graph is S5-owned, not S1.P06-owned",
+)
 
-    assert len(goals) == len(set(goals)) == 23
-    joined = " | ".join(goals)
-    for needle in (
-        "no ancestry",
-        "no historical default-branch substitution",
-        "no rename or copy",
-        "no generic development event model",
-        "no field-level evidence locator",
-        "no generic repository or evolution graph owned by S1.P06",
-    ):
-        assert needle in joined
+
+def test_the_non_generalizations_are_declared_and_specific() -> None:
+    """Merging boundaries hides them: each must stand as its own published claim."""
+    goals = cast(list[str], MANIFEST["non_goals"])
+
+    assert len(goals) == len(set(goals)) == 32
+    assert list(goals) == list(NON_GENERALIZATIONS)
+
+
+def test_no_non_generalization_is_a_lexical_variant_of_another() -> None:
+    """Splitting one boundary into synonyms would inflate the count."""
+    seen: dict[frozenset[str], str] = {}
+    for goal in cast(list[str], MANIFEST["non_goals"]):
+        key = frozenset(goal.replace("-", " ").split()) - {"no", "or", "is", "not", "a"}
+        assert key not in seen, (goal, seen.get(key))
+        seen[key] = goal
 
 
 # --- the derived Markdown tracks the canonical JSON ---------------------------
@@ -669,6 +707,24 @@ def test_the_contract_markdown_is_derived_from_the_json_authorities() -> None:
     assert f"**{summary['replay']['count']}**" in text
     assert f"{summary['total_vectors']} vectors" in text
     assert f"{summary['fixtures']} declared fixtures" in text
+
+
+def test_the_contract_markdown_reports_the_repaired_surfaces() -> None:
+    """The derived prose must track the surfaces this repair added."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    contract = MANIFEST["replay_contract"]
+
+    for position, literal in cast(
+        dict[str, str], contract["retained_role_source_positions"]
+    ).items():
+        assert f"`{position}` implies `{literal}`" in text, position
+    for entry in cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"]):
+        assert f"`{entry['extra_key']}`" in text, entry["extra_key"]
+        assert entry["published_non_claim"] in text, entry["published_non_claim"]
+
+    authority = MANIFEST["effective_governance"]["authority_totals"]
+    assert f"S1.P05.S08 {authority['S1.P05.S08']}" in text
+    assert f"S1.P05.S08.C01 {authority['S1.P05.S08.C01']}" in text
 
 
 def test_the_contract_markdown_reports_the_effective_governance_totals() -> None:
@@ -744,7 +800,13 @@ def test_every_replay_source_pointer_resolves_into_its_replayed_value(
     """
     dump = cast(dict[str, Any], vector["expected"])["semantic_dump"]
     for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
-        assert set(pointer) == {"document_path", "json_pointer", "source_fields"}
+        assert set(pointer) <= {
+            "document_path",
+            "json_pointer",
+            "role_implications",
+            "source_fields",
+        }
+        assert {"document_path", "json_pointer", "source_fields"} <= set(pointer)
         path = REPOSITORY_ROOT / cast(str, pointer["document_path"])
         assert path.is_file(), f"{vector['id']}: {pointer['document_path']}"
         resolved = _resolve_pointer(
@@ -793,6 +855,49 @@ def _leaves(node: Any, prefix: str = "") -> list[tuple[str, Any]]:
     return [(prefix, node)]
 
 
+def _unsourced_leaves(vector: dict[str, Any]) -> list[tuple[str, Any]]:
+    contract = MANIFEST["replay_contract"]
+    structural = set(cast(list[str], contract["structural_leaf_names"]))
+    constants = {cast(str, contract["retained_case_constants"]["provider"])}
+    pointers = cast(list[dict[str, Any]], vector["source_pointers"])
+    mapped = {
+        replayed
+        for pointer in pointers
+        for replayed in cast(dict[str, str], pointer["source_fields"]).values()
+    } | {
+        replayed
+        for pointer in pointers
+        for replayed in cast(
+            dict[str, str], pointer.get("role_implications", {})
+        ).values()
+    }
+    return [
+        (path, value)
+        for path, value in _leaves(vector["expected"]["semantic_dump"])
+        if path.rsplit("/", 1)[-1] not in structural
+        and path not in mapped
+        and value not in constants
+    ]
+
+
+def _role_implication_failures(vector: dict[str, Any]) -> list[tuple[str, ...]]:
+    """Every declared role must equal the role its source position implies."""
+    table = cast(
+        dict[str, str], MANIFEST["replay_contract"]["retained_role_source_positions"]
+    )
+    dump = cast(dict[str, Any], vector["expected"])["semantic_dump"]
+    failures: list[tuple[str, ...]] = []
+    for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
+        implications = cast(dict[str, str], pointer.get("role_implications", {}))
+        for source_field, role_path in implications.items():
+            position = f"{pointer['json_pointer']}{source_field}"
+            implied = table.get(position)
+            observed = _resolve_pointer(dump, role_path)
+            if implied is None or implied != observed:
+                failures.append((position, role_path, str(implied), str(observed)))
+    return failures
+
+
 @pytest.mark.parametrize("vector", _SOURCED, ids=[cast(str, v["id"]) for v in _SOURCED])
 def test_every_retained_data_leaf_is_sourced(vector: dict[str, Any]) -> None:
     """Sourcing part of a retained value leaves the rest free to drift.
@@ -803,23 +908,43 @@ def test_every_retained_data_leaf_is_sourced(vector: dict[str, Any]) -> None:
     therefore be sourced, be a contract-level structural discriminator, or be a
     declared constant of the retained case.
     """
-    contract = MANIFEST["replay_contract"]
-    structural = set(cast(list[str], contract["structural_leaf_names"]))
-    constants = {cast(str, contract["retained_case_constants"]["provider"])}
-    mapped = {
-        replayed
-        for pointer in cast(list[dict[str, Any]], vector["source_pointers"])
-        for replayed in cast(dict[str, str], pointer["source_fields"]).values()
-    }
-
-    unsourced = [
-        (path, value)
-        for path, value in _leaves(vector["expected"]["semantic_dump"])
-        if path.rsplit("/", 1)[-1] not in structural
-        and path not in mapped
-        and value not in constants
-    ]
+    unsourced = _unsourced_leaves(vector)
     assert not unsourced, f"{vector['id']}: unsourced retained leaves {unsourced}"
+
+
+@pytest.mark.parametrize("vector", _SOURCED, ids=[cast(str, v["id"]) for v in _SOURCED])
+def test_every_retained_role_is_implied_by_its_source_position(
+    vector: dict[str, Any],
+) -> None:
+    """A role is what the retained comparison called it, not what the corpus says.
+
+    `base` and `head` are the only leaves that distinguish one binding from the
+    other, so a swapped role publishes a retained base revision as a head
+    binding. The literal is therefore derived from the position the digest was
+    read from rather than trusted from the vector.
+    """
+    failures = _role_implication_failures(vector)
+    assert not failures, f"{vector['id']}: {failures}"
+
+
+@pytest.mark.parametrize("vector", _SOURCED, ids=[cast(str, v["id"]) for v in _SOURCED])
+def test_every_retained_role_leaf_declares_an_implication(
+    vector: dict[str, Any],
+) -> None:
+    """A role leaf that declares nothing would silently escape the rule."""
+    declared = {
+        role_path
+        for pointer in cast(list[dict[str, Any]], vector["source_pointers"])
+        for role_path in cast(
+            dict[str, str], pointer.get("role_implications", {})
+        ).values()
+    }
+    present = {
+        path
+        for path, _ in _leaves(vector["expected"]["semantic_dump"])
+        if path.rsplit("/", 1)[-1] == "role"
+    }
+    assert declared == present, vector["id"]
 
 
 def test_the_declared_structural_and_constant_leaves_are_exact() -> None:
@@ -828,9 +953,16 @@ def test_the_declared_structural_and_constant_leaves_are_exact() -> None:
     assert contract["structural_leaf_names"] == [
         "algorithm",
         "kind",
-        "role",
         "schema_version",
     ]
+    assert "role" not in contract["structural_leaf_names"], (
+        "a retained role is semantic: it must be bound to a source position"
+    )
+    assert contract["retained_role_source_positions"] == {
+        "/observations/comparison/base_sha": "base",
+        "/observations/comparison/head_sha": "head",
+        "/observations/pr/attempts/0/bracket_a/head/sha": "head",
+    }
     assert contract["retained_case_constants"]["provider"] == "github"
     assert contract["retained_case_constants"]["rationale"]
 
@@ -841,3 +973,222 @@ def test_every_cited_document_is_a_locked_artifact() -> None:
     for vector in REPLAY["vectors"]:
         for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
             assert pointer["document_path"] in locked, vector["id"]
+
+
+# --- the role rule survives a fully re-sealed corpus --------------------------
+
+
+def _canonical(document: Any) -> bytes:
+    return (
+        json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        + "\n"
+    ).encode("utf-8")
+
+
+@pytest.mark.parametrize(
+    ("vector_id", "before", "after"),
+    (
+        ("history.replay.role-binding.base", "base", "head"),
+        ("history.replay.role-binding.head", "head", "base"),
+    ),
+)
+def test_a_digest_consistent_role_swap_is_still_refused(
+    vector_id: str, before: str, after: str
+) -> None:
+    """Re-sealing every digest must not launder a swapped role.
+
+    An author who swaps a role in both the input and the expectation and then
+    regenerates the vector digest, its sidecar, and the manifest reference
+    leaves nothing inconsistent to notice. The retained base revision would
+    publish as a head binding. The swap must fail on provenance, so this probe
+    performs the whole re-seal and asserts the semantic rule still rejects it.
+    """
+    document = json.loads((CORPUS / "replay-vectors.json").read_text("utf-8"))
+    vector = next(v for v in document["vectors"] if v["id"] == vector_id)
+    assert vector["input"]["role_assignment"]["role"] == before
+    vector["input"]["role_assignment"]["role"] = after
+    vector["expected"]["semantic_dump"]["role_assignment"]["role"] = after
+
+    resealed = hashlib.sha256(_canonical(document)).hexdigest()
+    sealed = next(
+        entry
+        for entry in MANIFEST["corpus_files"]
+        if entry["filename"] == "replay-vectors.json"
+    )
+    assert resealed != sealed["sha256"], "the mutation must really change the bytes"
+
+    # Every digest now agrees with the mutated bytes, so nothing below can pass
+    # merely because a hash failed to match.
+    assert _role_implication_failures(vector) == [
+        (
+            f"/observations/comparison/{before}_sha",
+            "/role_assignment/role",
+            before,
+            after,
+        )
+    ]
+
+
+def test_dropping_a_role_implication_leaves_the_role_unsourced() -> None:
+    """The rule must not be escapable by declaring nothing at all."""
+    vector = copy.deepcopy(
+        next(
+            v
+            for v in REPLAY["vectors"]
+            if v["id"] == "history.replay.role-binding.base"
+        )
+    )
+    for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
+        pointer.pop("role_implications", None)
+
+    assert not _role_implication_failures(vector)
+    assert [path for path, _ in _unsourced_leaves(vector)] == ["/role_assignment/role"]
+
+
+def test_no_retained_role_leaf_relies_on_the_structural_exemption() -> None:
+    """Restoring `role` to the exemption set would silently reopen the hole."""
+    exempt = set(cast(list[str], MANIFEST["replay_contract"]["structural_leaf_names"]))
+    roles = {
+        path
+        for vector in _SOURCED
+        for path, _ in _leaves(vector["expected"]["semantic_dump"])
+        if path.rsplit("/", 1)[-1] == "role"
+    }
+
+    assert roles, "the retained corpus must carry role leaves to bind"
+    assert "role" not in exempt
+
+
+# --- a caller-supplied value inherits the provenance it embeds ----------------
+
+
+def test_every_embedded_fact_equals_its_bound_retained_vector() -> None:
+    """Compositions and associations cite no source, so they must inherit one.
+
+    A link and a change set carry retained bindings inside them while declaring
+    no retained location of their own. Without this equality their nested roles,
+    revisions, and paths could drift away from the sourced vectors they claim to
+    reuse.
+    """
+    by_id = {cast(str, v["id"]): v for v in REPLAY["vectors"]}
+    checked = 0
+    for vector in REPLAY["vectors"]:
+        embedded = cast(dict[str, str], vector["embedded_facts"])
+        for pointer, source_id in embedded.items():
+            assert source_id in by_id, (vector["id"], source_id)
+            assert (
+                _resolve_pointer(vector["expected"]["semantic_dump"], pointer)
+                == by_id[source_id]["expected"]["semantic_dump"]
+            ), (vector["id"], pointer)
+            checked += 1
+
+    assert checked == 17
+
+
+def test_every_caller_supplied_replay_binds_its_embedded_facts() -> None:
+    for vector in REPLAY["vectors"]:
+        if vector["evidence_classification"] == "retained_normalized_observation":
+            assert not vector["embedded_facts"], vector["id"]
+        else:
+            assert vector["embedded_facts"], vector["id"]
+
+
+# --- every vector occupies exactly one declared semantic partition ------------
+
+
+def test_every_vector_declares_a_globally_unique_semantic_partition() -> None:
+    """Vector-id uniqueness is naming, not coverage.
+
+    Two ids may still name one boundary, which is how four spellings of evidence
+    localization once occupied four partitions. The partition key is therefore
+    declared per vector and must be globally unique across all three files.
+    """
+    partitions = [
+        cast(str, vector["semantic_partition"])
+        for section in (VALID, INVALID, REPLAY)
+        for vector in section["vectors"]
+    ]
+
+    assert len(partitions) == 167
+    assert len(set(partitions)) == 167
+
+
+def test_each_semantic_partition_is_distinct_from_its_vector_id() -> None:
+    for section in (VALID, INVALID, REPLAY):
+        for vector in section["vectors"]:
+            partition = cast(str, vector["semantic_partition"])
+            assert partition
+            assert partition != vector["id"], vector["id"]
+            assert partition.split("/")[0] == vector["category"], vector["id"]
+
+
+# --- the eleven forbidden extras protect eleven different non-claims ----------
+
+
+def test_the_forbidden_extra_ledger_covers_eleven_distinct_non_claims() -> None:
+    """Eleven rejections of `extra` are not eleven published boundaries.
+
+    Every entry hits `extra_forbidden`, so the count alone proves nothing. The
+    ledger names the non-claim each key protects, and those must all differ.
+    """
+    ledger = cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"])
+    invalid_by_id = {cast(str, v["id"]): v for v in INVALID["vectors"]}
+
+    assert len(ledger) == 11
+    assert len({entry["extra_key"] for entry in ledger}) == 11
+    assert len({entry["published_non_claim"] for entry in ledger}) == 11
+    assert len({entry["semantic_partition"] for entry in ledger}) == 11
+
+    for entry in ledger:
+        vector = invalid_by_id[entry["vector_id"]]
+        assert vector["semantic_partition"] == entry["semantic_partition"]
+        assert vector["expected"]["error_type"] == "extra_forbidden"
+        assert vector["expected"]["error_location"] == [entry["extra_key"]]
+        assert entry["extra_key"] in vector["input"]
+
+
+def test_evidence_localization_keeps_exactly_one_representative() -> None:
+    """`field_path`, `semantic_path`, and `evidence_locator` say the same thing."""
+    ledger = cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"])
+    keys = {entry["extra_key"] for entry in ledger}
+
+    assert "json_pointer" in keys
+    assert not keys & {"field_path", "semantic_path", "evidence_locator"}
+    localization = [
+        entry
+        for entry in ledger
+        if "localization" in entry["published_non_claim"]
+        or "locator" in entry["published_non_claim"]
+    ]
+    assert len(localization) == 1
+
+
+# --- the effective governance names which artifact carries each subject -------
+
+
+def test_the_effective_governance_authority_split_is_recomputed() -> None:
+    """Six subjects still stand on S08; six now stand on the C01 correction."""
+    base = json.loads(
+        (
+            REPOSITORY_ROOT / _authority("decision:s1-p05-s08:disposition")["path"]
+        ).read_text("utf-8")
+    )
+    correction = json.loads(
+        (
+            REPOSITORY_ROOT
+            / _authority("correction:s1-p05-s08-c01:owner-topology")["path"]
+        ).read_text("utf-8")
+    )
+    corrected = {
+        item["source"]["subject_id"]
+        for item in correction["superseded_dispositions"]["items"]
+    }
+
+    split = {"S1.P05.S08": 0, "S1.P05.S08.C01": 0}
+    for entry in base["inherited_subject_register"]["items"]:
+        subject_id = entry["source"]["subject_id"]
+        key = "S1.P05.S08.C01" if subject_id in corrected else "S1.P05.S08"
+        split[key] += 1
+
+    assert split == {"S1.P05.S08": 6, "S1.P05.S08.C01": 6}
+    assert MANIFEST["effective_governance"]["authority_totals"] == split

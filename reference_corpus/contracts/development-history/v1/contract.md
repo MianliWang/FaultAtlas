@@ -26,9 +26,9 @@ Supporting authorities are consumed but not owned: `faultatlas.domain.evidence`,
 
 | Family | valid | invalid | replay |
 | --- | --- | --- | --- |
-| `change-set` | 5 | 12 | 0 |
+| `change-set` | 5 | 11 | 0 |
 | `changed-path` | 4 | 9 | 3 |
-| `changed-path-status` | 3 | 3 | 0 |
+| `changed-path-status` | 3 | 4 | 0 |
 | `evidence-association` | 0 | 0 | 12 |
 | `evidence-link` | 15 | 28 | 0 |
 | `head-ref-deletion` | 3 | 7 | 1 |
@@ -54,9 +54,33 @@ The canonical replay does not flatten its layers into evidence-derived history. 
 
 Eleven history facts are individually linkable. `PullRequestChangeSet` is a published product fact and is replayed as a caller-supplied composition, but `S1.P05.S07` does not admit it as an evidence-link fact, and the replay preserves that asymmetry.
 
+Every retained `role` is derived from the source position its revision digest was read from rather than trusted from the vector, so a swapped role fails even when every digest is re-sealed:
+
+- `/observations/comparison/base_sha` implies `base`
+- `/observations/comparison/head_sha` implies `head`
+- `/observations/pr/attempts/0/bracket_a/head/sha` implies `head`
+
+A caller-supplied composition or association cites no retained location of its own; each embedded fact is instead bound to the retained vector it reuses, so its nested values inherit that provenance.
+
 ## 5. Rejection Contract
 
 Invalid vectors lock `failure_category`, `error_location`, `error_location_mode`, `error_type`. Prose messages, Pydantic internal union branch labels, and validator function names are deliberately not locked. The `prefix` location mode is used only where a discriminatorless union reports per-branch locations: the `S1.P05.S06` occurrence union and the `S1.P05.S07` fact union.
+
+The eleven `S1.P05.S07` forbidden extras protect eleven DIFFERENT published non-claims. Further spellings of one boundary earn no partition: `field_path`, `semantic_path`, and `evidence_locator` restate the localization non-claim `json_pointer` already carries.
+
+| Extra key | Published non-claim |
+| --- | --- |
+| `artifact` | no direct artifact or envelope carrier coupling |
+| `confidence` | no confidence or review-status semantics |
+| `evidence_records` | no evidence aggregation |
+| `json_pointer` | no field-level or semantic evidence localization |
+| `primary_evidence` | no primary-evidence designation or ranking |
+| `request_id` | no acquisition-request provenance coupling |
+| `schema_version` | no top-level history-evidence-link schema version |
+| `strength` | no support-strength semantics |
+| `superseded` | no automatic correction or supersession traversal |
+| `support_role` | no support-role semantics |
+| `verification` | no verification or proof semantics |
 
 ## 6. Effective Governance
 
@@ -66,32 +90,42 @@ Invalid vectors lock `failure_category`, `error_location`, `error_location_mode`
     split 5 · carried_forward 7
     immediate S1.P06 1 · S2 6 · S5 5
     long-term S1.P06 1 · S5 11
+    authority S1.P05.S08 6 · S1.P05.S08.C01 6
 
 ## 7. Non-Generalizations
 
 - no complete development-history graph
-- no generic development event model
-- no generic development-history relationship graph
-- no ancestry, descendance, reachability, or branch containment
-- no merge-base, ahead, or behind semantics
-- no historical default-branch substitution from a current observation
+- no generic DevelopmentEvent
+- no generic relationship graph
+- no ancestry or reachability semantics
+- no merge-base semantics
+- no ahead or behind semantics
+- no branch containment
+- no historical default-branch substitution
+- current default branch is not historical truth
 - no rename or copy semantics
 - no complete mutable-ref history
-- no discussion completeness
+- no complete discussion history
 - no edit or deletion absence claim
 - no complete historical review state
-- no causal order derived from timestamps
-- no merge caused by approval
-- no ref deletion caused by merge
-- no CI, test, or repair correctness claim
-- no FaultInstance or root-cause semantics
-- no confidence, review state, or claim interpretation
+- no timestamp-implied causality
+- approval does not cause merge
+- merge does not cause ref deletion
+- no CI or test correctness
+- no repair correctness
+- no FaultInstance semantics
+- no root cause
+- no violated invariant
+- no S1.P09 confidence or review interpretation
 - no field-level evidence locator
 - no verification or support strength
-- no evidence aggregation or supersession following
-- no persistence, serialization registry, or production corpus reader
-- no source ingestion, Git or GitHub I/O, or retrieval
-- no generic repository or evolution graph owned by S1.P06
+- no persistence
+- no production serializer or registry
+- no production corpus reader
+- no source ingestion
+- no Git or GitHub I/O
+- no retrieval or RAG
+- generic repository or evolution graph is S5-owned, not S1.P06-owned
 
 ## 8. Locked Source Authorities
 
