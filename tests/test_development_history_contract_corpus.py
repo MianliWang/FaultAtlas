@@ -642,6 +642,50 @@ def test_the_non_generalizations_are_declared_and_specific() -> None:
         assert needle in joined
 
 
+# --- the derived Markdown tracks the canonical JSON ---------------------------
+
+
+def test_the_contract_markdown_is_derived_from_the_json_authorities() -> None:
+    """A stale projection would misreport a frozen surface."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    summary = MANIFEST["vector_summary"]
+
+    assert text.startswith("# Development History Contract Corpus")
+    for entry in MANIFEST["target_symbols"]:
+        assert f"`{entry['symbol']}`" in text, entry["symbol"]
+        assert f"`{entry['slice_layer']}`" in text
+    for module in MANIFEST["scope"]["production_modules"]:
+        assert f"`{module}`" in text
+    for authority in MANIFEST["scope"]["supporting_authorities_not_owned"]:
+        assert f"`{authority}`" in text
+    for classification in MANIFEST["replay_contract"]["classifications"]:
+        assert f"`{classification}`" in text, classification
+    for goal in MANIFEST["non_goals"]:
+        assert goal in text, goal
+    for entry in MANIFEST["source_decisions"]:
+        assert entry["sha256"] in text
+    assert f"**{summary['valid']['count']}**" in text
+    assert f"**{summary['invalid']['count']}**" in text
+    assert f"**{summary['replay']['count']}**" in text
+    assert f"{summary['total_vectors']} vectors" in text
+    assert f"{summary['fixtures']} declared fixtures" in text
+
+
+def test_the_contract_markdown_reports_the_effective_governance_totals() -> None:
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    governance = MANIFEST["effective_governance"]
+
+    assert f"inherited {governance['inherited_subject_count']}" in text
+    assert "self_owned_open 0" in text
+    assert f"split {governance['totals']['disposition']['split']}" in text
+    assert (
+        f"carried_forward {governance['totals']['disposition']['carried_forward']}"
+        in text
+    )
+    for owner, count in governance["totals"]["immediate_owner"].items():
+        assert f"{owner} {count}" in text, owner
+
+
 def test_the_roadmap_names_exactly_one_next_gate() -> None:
     """Two live next-gate claims would let a consumer report the wrong gate.
 
@@ -724,15 +768,6 @@ def test_only_retained_observations_cite_retained_evidence() -> None:
         pointers = cast(list[dict[str, Any]], vector["source_pointers"])
         if vector["evidence_classification"] == "retained_normalized_observation":
             assert pointers, f"{vector['id']} claims retained provenance with no source"
-            # An occurrence carries an embedded fact; sourcing only the instant
-            # would leave that fact free to drift from the retained record.
-            mapped = {
-                replayed
-                for pointer in pointers
-                for replayed in cast(dict[str, str], pointer["source_fields"]).values()
-            }
-            if vector["target"] == "PullRequestHistoricalOccurrenceTime":
-                assert any(f.startswith("/occurrence/") for f in mapped), vector["id"]
             sourced += 1
         else:
             assert not pointers, (
@@ -740,6 +775,64 @@ def test_only_retained_observations_cite_retained_evidence() -> None:
             )
 
     assert sourced == 11
+
+
+def _leaves(node: Any, prefix: str = "") -> list[tuple[str, Any]]:
+    if isinstance(node, dict):
+        return [
+            leaf
+            for key, value in cast(dict[str, Any], node).items()
+            for leaf in _leaves(value, f"{prefix}/{key}")
+        ]
+    if isinstance(node, list):
+        return [
+            leaf
+            for index, value in enumerate(cast(list[Any], node))
+            for leaf in _leaves(value, f"{prefix}/{index}")
+        ]
+    return [(prefix, node)]
+
+
+@pytest.mark.parametrize("vector", _SOURCED, ids=[cast(str, v["id"]) for v in _SOURCED])
+def test_every_retained_data_leaf_is_sourced(vector: dict[str, Any]) -> None:
+    """Sourcing part of a retained value leaves the rest free to drift.
+
+    A single mapped field is not provenance for the whole value: an embedded
+    pull request, repository, or revision that no pointer covers can be changed
+    in both input and expectation and still read as retained. Every leaf must
+    therefore be sourced, be a contract-level structural discriminator, or be a
+    declared constant of the retained case.
+    """
+    contract = MANIFEST["replay_contract"]
+    structural = set(cast(list[str], contract["structural_leaf_names"]))
+    constants = {cast(str, contract["retained_case_constants"]["provider"])}
+    mapped = {
+        replayed
+        for pointer in cast(list[dict[str, Any]], vector["source_pointers"])
+        for replayed in cast(dict[str, str], pointer["source_fields"]).values()
+    }
+
+    unsourced = [
+        (path, value)
+        for path, value in _leaves(vector["expected"]["semantic_dump"])
+        if path.rsplit("/", 1)[-1] not in structural
+        and path not in mapped
+        and value not in constants
+    ]
+    assert not unsourced, f"{vector['id']}: unsourced retained leaves {unsourced}"
+
+
+def test_the_declared_structural_and_constant_leaves_are_exact() -> None:
+    contract = MANIFEST["replay_contract"]
+
+    assert contract["structural_leaf_names"] == [
+        "algorithm",
+        "kind",
+        "role",
+        "schema_version",
+    ]
+    assert contract["retained_case_constants"]["provider"] == "github"
+    assert contract["retained_case_constants"]["rationale"]
 
 
 def test_every_cited_document_is_a_locked_artifact() -> None:
