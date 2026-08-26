@@ -855,10 +855,29 @@ def _leaves(node: Any, prefix: str = "") -> list[tuple[str, Any]]:
     return [(prefix, node)]
 
 
+ROLE_SUFFIX = "/role_assignment/role"
+REVISION_SUFFIX = "/role_assignment/revision/full_digest"
+
+
+def _is_declared_constant(path: str, value: Any) -> bool:
+    """A constant is exempt where it is declared, not wherever its value appears.
+
+    Matching by value alone lets any retained leaf escape provenance simply by
+    being changed to the constant, so the exemption is scoped to the semantic
+    path the constant actually occupies.
+    """
+    constants = cast(
+        dict[str, str], MANIFEST["replay_contract"]["retained_case_constants"]
+    )
+    return (
+        path.endswith(constants["provider_leaf_suffix"])
+        and value == constants["provider"]
+    )
+
+
 def _unsourced_leaves(vector: dict[str, Any]) -> list[tuple[str, Any]]:
     contract = MANIFEST["replay_contract"]
     structural = set(cast(list[str], contract["structural_leaf_names"]))
-    constants = {cast(str, contract["retained_case_constants"]["provider"])}
     pointers = cast(list[dict[str, Any]], vector["source_pointers"])
     mapped = {
         replayed
@@ -876,7 +895,7 @@ def _unsourced_leaves(vector: dict[str, Any]) -> list[tuple[str, Any]]:
         for path, value in _leaves(vector["expected"]["semantic_dump"])
         if path.rsplit("/", 1)[-1] not in structural
         and path not in mapped
-        and value not in constants
+        and not _is_declared_constant(path, value)
     ]
 
 
@@ -895,6 +914,25 @@ def _role_implication_failures(vector: dict[str, Any]) -> list[tuple[str, ...]]:
             observed = _resolve_pointer(dump, role_path)
             if implied is None or implied != observed:
                 failures.append((position, role_path, str(implied), str(observed)))
+                continue
+            # The implication must ride the same mapping that supplies the
+            # revision it names. Without this, a role could cite one source
+            # position while its digest was read from another, and the retained
+            # head revision would publish as a base binding.
+            sources = cast(dict[str, str], pointer["source_fields"])
+            if not role_path.endswith(ROLE_SUFFIX):
+                failures.append((position, role_path, "malformed-role-path", ""))
+            elif sources.get(source_field) != (
+                role_path[: -len(ROLE_SUFFIX)] + REVISION_SUFFIX
+            ):
+                failures.append(
+                    (
+                        position,
+                        role_path,
+                        "uncoupled-from-revision-mapping",
+                        str(sources.get(source_field)),
+                    )
+                )
     return failures
 
 
@@ -947,6 +985,58 @@ def test_every_retained_role_leaf_declares_an_implication(
     assert declared == present, vector["id"]
 
 
+def test_every_replayed_association_binds_its_record_to_a_locked_artifact() -> None:
+    """A record reference is a retained claim and must be checkable as one.
+
+    An association cites no source pointer, so nothing previously tied its
+    `evidence_record` to anything real: a syntactically valid digest replayed
+    happily while its purpose claimed the retained acquisition. Each replayed
+    reference is therefore bound to a declared lock, and the lock is verified
+    against the live bytes in the same breath.
+    """
+    locks = {
+        cast(str, lock["lock_id"]): lock
+        for lock in cast(list[dict[str, Any]], REPLAY["artifact_locks"])
+    }
+    bound: dict[str, int] = {}
+    for vector in REPLAY["vectors"]:
+        lock_id = cast(str, vector["evidence_record_lock"])
+        if vector["target"] != "PullRequestHistoryFactEvidenceLink":
+            assert not lock_id, vector["id"]
+            continue
+
+        assert lock_id in locks, (vector["id"], lock_id)
+        lock = locks[lock_id]
+        raw = (REPOSITORY_ROOT / cast(str, lock["path"])).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == lock["sha256"], lock_id
+        assert len(raw) == lock["byte_length"], lock_id
+
+        record = vector["expected"]["semantic_dump"]["evidence_record"]
+        assert record["sha256"] == lock["sha256"], vector["id"]
+        assert record["byte_length"] == lock["byte_length"], vector["id"]
+        assert vector["input"]["evidence_record"]["sha256"] == lock["sha256"]
+        bound[lock_id] = bound.get(lock_id, 0) + 1
+
+    assert bound == {
+        "acquisition:run-0001": 11,
+        "correction:s04-c01-acquisition-closure": 1,
+    }
+
+
+def test_no_retained_leaf_takes_the_constant_value_outside_its_declared_path() -> None:
+    """Otherwise the exemption is a hole any leaf can climb through."""
+    constants = cast(
+        dict[str, str], MANIFEST["replay_contract"]["retained_case_constants"]
+    )
+    for vector in REPLAY["vectors"]:
+        for path, value in _leaves(vector["expected"]["semantic_dump"]):
+            if value == constants["provider"]:
+                assert path.endswith(constants["provider_leaf_suffix"]), (
+                    vector["id"],
+                    path,
+                )
+
+
 def test_the_declared_structural_and_constant_leaves_are_exact() -> None:
     contract = MANIFEST["replay_contract"]
 
@@ -964,6 +1054,10 @@ def test_the_declared_structural_and_constant_leaves_are_exact() -> None:
         "/observations/pr/attempts/0/bracket_a/head/sha": "head",
     }
     assert contract["retained_case_constants"]["provider"] == "github"
+    assert (
+        contract["retained_case_constants"]["provider_leaf_suffix"]
+        == "/repository_identity/provider"
+    )
     assert contract["retained_case_constants"]["rationale"]
 
 
