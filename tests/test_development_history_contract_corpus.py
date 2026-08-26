@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
+from collections import Counter
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -985,39 +987,104 @@ def test_every_retained_role_leaf_declares_an_implication(
     assert declared == present, vector["id"]
 
 
-def test_every_replayed_association_binds_its_record_to_a_locked_artifact() -> None:
-    """A record reference is a retained claim and must be checkable as one.
+def _canonicalization_name(recorded: Any) -> str:
+    """Retained artifacts record canonicalization as a scalar or as a block.
 
-    An association cites no source pointer, so nothing previously tied its
-    `evidence_record` to anything real: a syntactically valid digest replayed
-    happily while its purpose claimed the retained acquisition. Each replayed
-    reference is therefore bound to a declared lock, and the lock is verified
-    against the live bytes in the same breath.
+    The acquisition stores the name directly; the additive correction stores a
+    structured block that carries the same name alongside its rules. Only the
+    published `EvidenceCanonicalization` value is taken from either shape.
     """
-    locks = {
-        cast(str, lock["lock_id"]): lock
+    if isinstance(recorded, str):
+        return recorded
+    return cast(dict[str, str], recorded)["name"]
+
+
+def _reference_for_lock(lock: dict[str, Any]) -> dict[str, Any]:
+    """Build the complete published reference from the locked bytes alone."""
+    raw = (REPOSITORY_ROOT / cast(str, lock["path"])).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == lock["sha256"], lock["lock_id"]
+    assert len(raw) == lock["byte_length"], lock["lock_id"]
+
+    recorded = cast(dict[str, Any], json.loads(raw.decode("utf-8"))["format"])
+    reference = evidence.DurableEvidenceRecordReference.model_validate_json(
+        json.dumps(
+            {
+                "byte_length": len(raw),
+                "canonicalization": _canonicalization_name(
+                    recorded["canonicalization"]
+                ),
+                "format_name": recorded["name"],
+                "format_version": recorded["version"],
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            }
+        )
+    )
+    return cast(dict[str, Any], _dump(reference))
+
+
+def _locked_references() -> dict[str, dict[str, Any]]:
+    return {
+        cast(str, lock["lock_id"]): _reference_for_lock(lock)
         for lock in cast(list[dict[str, Any]], REPLAY["artifact_locks"])
     }
-    bound: dict[str, int] = {}
-    for vector in REPLAY["vectors"]:
+
+
+def _association_reference_failures(document: dict[str, Any]) -> list[tuple[str, str]]:
+    """Every association must reproduce its locked artifact's whole reference."""
+    references = _locked_references()
+    failures: list[tuple[str, str]] = []
+    for vector in cast(list[dict[str, Any]], document["vectors"]):
         lock_id = cast(str, vector["evidence_record_lock"])
         if vector["target"] != "PullRequestHistoryFactEvidenceLink":
-            assert not lock_id, vector["id"]
+            if lock_id:
+                failures.append(
+                    (cast(str, vector["id"]), "non-association-declares-lock")
+                )
             continue
+        if lock_id not in references:
+            failures.append((cast(str, vector["id"]), "unknown-artifact-lock"))
+            continue
+        expected = references[lock_id]
+        if vector["expected"]["semantic_dump"]["evidence_record"] != expected:
+            failures.append((cast(str, vector["id"]), "expectation-differs-from-lock"))
+        if vector["input"]["evidence_record"] != expected:
+            failures.append((cast(str, vector["id"]), "input-differs-from-lock"))
+    return failures
 
-        assert lock_id in locks, (vector["id"], lock_id)
-        lock = locks[lock_id]
-        raw = (REPOSITORY_ROOT / cast(str, lock["path"])).read_bytes()
-        assert hashlib.sha256(raw).hexdigest() == lock["sha256"], lock_id
-        assert len(raw) == lock["byte_length"], lock_id
 
-        record = vector["expected"]["semantic_dump"]["evidence_record"]
-        assert record["sha256"] == lock["sha256"], vector["id"]
-        assert record["byte_length"] == lock["byte_length"], vector["id"]
-        assert vector["input"]["evidence_record"]["sha256"] == lock["sha256"]
-        bound[lock_id] = bound.get(lock_id, 0) + 1
+def test_the_derived_reference_accounts_for_every_published_field() -> None:
+    """A subset comparison would leave the remaining fields free to lie."""
+    published = set(evidence.DurableEvidenceRecordReference.model_fields)
 
-    assert bound == {
+    assert published == {
+        "byte_length",
+        "canonicalization",
+        "format_name",
+        "format_version",
+        "schema_version",
+        "sha256",
+    }
+    for reference in _locked_references().values():
+        assert set(reference) == published
+
+
+def test_every_replayed_association_equals_its_locked_artifact_reference() -> None:
+    """A record reference is a retained claim and must be checkable as one.
+
+    An association cites no source pointer, so nothing else ties its
+    `evidence_record` to anything real. Binding only the content address left
+    `format_name`, `format_version`, and `canonicalization` free to describe the
+    locked artifact falsely, so the whole published reference is derived from
+    the locked bytes and compared entire.
+    """
+    assert not _association_reference_failures(REPLAY)
+
+    bound = Counter(
+        cast(str, vector["evidence_record_lock"])
+        for vector in REPLAY["vectors"]
+        if vector["target"] == "PullRequestHistoryFactEvidenceLink"
+    )
+    assert dict(bound) == {
         "acquisition:run-0001": 11,
         "correction:s04-c01-acquisition-closure": 1,
     }
@@ -1286,3 +1353,255 @@ def test_the_effective_governance_authority_split_is_recomputed() -> None:
 
     assert split == {"S1.P05.S08": 6, "S1.P05.S08.C01": 6}
     assert MANIFEST["effective_governance"]["authority_totals"] == split
+
+
+# --- the record binding is proved by mutation, not by construction ------------
+
+
+def _resealed_digest(document: Any) -> str:
+    return hashlib.sha256(_canonical(document)).hexdigest()
+
+
+def _sealed_replay_digest() -> str:
+    return cast(
+        str,
+        next(
+            entry
+            for entry in MANIFEST["corpus_files"]
+            if entry["filename"] == "replay-vectors.json"
+        )["sha256"],
+    )
+
+
+def _association(document: dict[str, Any], vector_id: str) -> dict[str, Any]:
+    return next(v for v in document["vectors"] if v["id"] == vector_id)
+
+
+REVIEW_ASSOCIATION = "history.replay.evidence-association.review-approval"
+
+
+def test_a_format_only_mutation_breaks_the_complete_reference() -> None:
+    """The content address alone is not the reference.
+
+    Keeping `sha256` and `byte_length` correct while rewriting the format
+    metadata leaves a record that addresses the locked artifact but describes a
+    different one. Nothing in the digests notices, so the whole-value comparison
+    has to.
+    """
+    document = copy.deepcopy(REPLAY)
+    vector = _association(document, REVIEW_ASSOCIATION)
+    correct = copy.deepcopy(vector["expected"]["semantic_dump"]["evidence_record"])
+    for side in (vector["input"], vector["expected"]["semantic_dump"]):
+        record = side["evidence_record"]
+        record["format_name"] = "faultatlas-pytest-4412-acquisition-closure-addendum"
+        record["format_version"] = "2"
+        record["canonicalization"] = "json-sort-keys-compact-utf8-lf-v2"
+
+    # The bytes really change, so a re-seal would hide nothing, and the content
+    # address is untouched, so no digest check can be what fails.
+    assert _resealed_digest(document) != _sealed_replay_digest()
+    for side in (vector["input"], vector["expected"]["semantic_dump"]):
+        assert side["evidence_record"]["sha256"] == correct["sha256"]
+        assert side["evidence_record"]["byte_length"] == correct["byte_length"]
+
+    assert _association_reference_failures(document) == [
+        (REVIEW_ASSOCIATION, "expectation-differs-from-lock"),
+        (REVIEW_ASSOCIATION, "input-differs-from-lock"),
+    ]
+
+
+def test_a_fake_content_address_breaks_the_complete_reference() -> None:
+    document = copy.deepcopy(REPLAY)
+    vector = _association(document, REVIEW_ASSOCIATION)
+    for side in (vector["input"], vector["expected"]["semantic_dump"]):
+        side["evidence_record"]["sha256"] = "f" * 64
+        side["evidence_record"]["byte_length"] = 999
+
+    assert _resealed_digest(document) != _sealed_replay_digest()
+    assert _association_reference_failures(document) == [
+        (REVIEW_ASSOCIATION, "expectation-differs-from-lock"),
+        (REVIEW_ASSOCIATION, "input-differs-from-lock"),
+    ]
+
+
+def test_an_unknown_artifact_lock_is_refused() -> None:
+    document = copy.deepcopy(REPLAY)
+    _association(document, REVIEW_ASSOCIATION)["evidence_record_lock"] = (
+        "acquisition:absent"
+    )
+
+    assert _association_reference_failures(document) == [
+        (REVIEW_ASSOCIATION, "unknown-artifact-lock")
+    ]
+
+
+def test_an_acquisition_association_bound_to_the_correction_lock_is_refused() -> None:
+    """A registered but wrong lock must fail as loudly as an absent one."""
+    document = copy.deepcopy(REPLAY)
+    vector = _association(document, REVIEW_ASSOCIATION)
+    vector["evidence_record_lock"] = "correction:s04-c01-acquisition-closure"
+
+    assert _association_reference_failures(document) == [
+        (REVIEW_ASSOCIATION, "expectation-differs-from-lock"),
+        (REVIEW_ASSOCIATION, "input-differs-from-lock"),
+    ]
+
+
+def test_the_single_correction_association_binds_to_the_correction_artifact() -> None:
+    vector = _association(
+        REPLAY, "history.replay.evidence-association.approval-correction-record"
+    )
+    correction = _locked_references()["correction:s04-c01-acquisition-closure"]
+
+    assert vector["evidence_record_lock"] == "correction:s04-c01-acquisition-closure"
+    assert vector["expected"]["semantic_dump"]["evidence_record"] == correction
+    assert (
+        correction["sha256"] != _locked_references()["acquisition:run-0001"]["sha256"]
+    )
+
+
+# --- category inventories are counted, never declared -------------------------
+
+
+def _category_histogram(section: dict[str, Any]) -> dict[str, int]:
+    """Counted from each vector's own category field, not from any projection."""
+    return dict(
+        sorted(Counter(cast(str, v["category"]) for v in section["vectors"]).items())
+    )
+
+
+FAMILIES = (("valid", "VALID"), ("invalid", "INVALID"), ("replay", "REPLAY"))
+
+
+def _sections(
+    valid: dict[str, Any], invalid: dict[str, Any], replay: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    return {"valid": valid, "invalid": invalid, "replay": replay}
+
+
+def _markdown_category_table(text: str) -> dict[str, tuple[int, int, int]]:
+    rows: dict[str, tuple[int, int, int]] = {}
+    for line in text.splitlines():
+        found = re.match(
+            r"^\| `([a-z-]+)` \| (\d+) \| (\d+) \| (\d+) \|$", line.strip()
+        )
+        if found:
+            rows[found.group(1)] = (
+                int(found.group(2)),
+                int(found.group(3)),
+                int(found.group(4)),
+            )
+    return rows
+
+
+def _manifest_histogram_failures(
+    manifest: dict[str, Any], sections: dict[str, dict[str, Any]]
+) -> list[tuple[str, str]]:
+    summary = cast(dict[str, Any], manifest["vector_summary"])
+    failures: list[tuple[str, str]] = []
+    for family, section in sections.items():
+        derived = _category_histogram(section)
+        if summary[family]["categories"] != derived:
+            failures.append((family, "manifest-categories-differ"))
+        if summary[family]["count"] != sum(derived.values()):
+            failures.append((family, "manifest-count-differs"))
+    return failures
+
+
+def _markdown_histogram_failures(
+    text: str, sections: dict[str, dict[str, Any]]
+) -> list[tuple[str, str]]:
+    table = _markdown_category_table(text)
+    derived = {family: _category_histogram(s) for family, s in sections.items()}
+    families = set(derived["valid"]) | set(derived["invalid"]) | set(derived["replay"])
+    failures: list[tuple[str, str]] = []
+    if set(table) != families:
+        failures.append(("*", "markdown-family-set-differs"))
+    for family in sorted(families & set(table)):
+        expected = (
+            derived["valid"].get(family, 0),
+            derived["invalid"].get(family, 0),
+            derived["replay"].get(family, 0),
+        )
+        if table[family] != expected:
+            failures.append((family, "markdown-row-differs"))
+    return failures
+
+
+def test_the_manifest_category_inventory_is_derived_from_the_vectors() -> None:
+    """Totals can balance while the families underneath them are wrong.
+
+    A vector moved between categories keeps every count summing to 167, so the
+    per-family histogram is recomputed from the vectors themselves and compared
+    entry by entry rather than in aggregate.
+    """
+    assert not _manifest_histogram_failures(MANIFEST, _sections(VALID, INVALID, REPLAY))
+
+    summary = MANIFEST["vector_summary"]
+    assert summary["valid"]["count"] == 48
+    assert summary["invalid"]["count"] == 95
+    assert summary["replay"]["count"] == 24
+    assert summary["total_vectors"] == 167
+
+
+def test_the_contract_markdown_category_table_is_derived_from_the_vectors() -> None:
+    """Two families with equal counts must not be swappable unnoticed."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+
+    assert _markdown_category_table(text), "the family table must be parseable"
+    assert not _markdown_histogram_failures(text, _sections(VALID, INVALID, REPLAY))
+
+
+def test_a_category_move_breaks_the_derived_inventory() -> None:
+    """The reproduced finding, kept permanently.
+
+    Moving a vector to another family while updating its partition prefix keeps
+    every existing consistency check satisfied and every total unchanged.
+    """
+    invalid = copy.deepcopy(INVALID)
+    moved = next(
+        v
+        for v in invalid["vectors"]
+        if v["id"] == "history.invalid.change-set.duplicate-path"
+    )
+    moved["category"] = "changed-path"
+    moved["semantic_partition"] = "changed-path/rejects/duplicate-path"
+
+    assert _resealed_digest(invalid) != next(
+        entry["sha256"]
+        for entry in MANIFEST["corpus_files"]
+        if entry["filename"] == "invalid-vectors.json"
+    )
+    assert len(invalid["vectors"]) == 95, "the totals still balance"
+
+    sections = _sections(VALID, invalid, REPLAY)
+    assert _manifest_histogram_failures(MANIFEST, sections) == [
+        ("invalid", "manifest-categories-differ")
+    ]
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    assert sorted(_markdown_histogram_failures(text, sections)) == [
+        ("change-set", "markdown-row-differs"),
+        ("changed-path", "markdown-row-differs"),
+    ]
+
+
+def test_updating_only_the_manifest_leaves_the_markdown_stale() -> None:
+    """Repairing one projection must not silence the other."""
+    invalid = copy.deepcopy(INVALID)
+    moved = next(
+        v
+        for v in invalid["vectors"]
+        if v["id"] == "history.invalid.change-set.duplicate-path"
+    )
+    moved["category"] = "changed-path"
+    moved["semantic_partition"] = "changed-path/rejects/duplicate-path"
+
+    manifest = copy.deepcopy(MANIFEST)
+    manifest["vector_summary"]["invalid"]["categories"] = _category_histogram(invalid)
+
+    sections = _sections(VALID, invalid, REPLAY)
+    assert not _manifest_histogram_failures(manifest, sections)
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    assert _markdown_histogram_failures(text, sections), (
+        "the derived Markdown must still report the stale inventory"
+    )
