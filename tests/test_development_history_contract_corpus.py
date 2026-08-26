@@ -617,3 +617,75 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     assert "`S1.P05.S10` is next and not started" in text
     assert "`S1.P06` is not eligible to begin" in text
     assert "reference_corpus/contracts/development-history/v1" in text
+
+
+# --- retained provenance is verified, not asserted ----------------------------
+
+
+def _resolve_pointer(document: Any, pointer: str) -> Any:
+    node = document
+    for token in [part for part in pointer.split("/") if part]:
+        node = (
+            cast(list[Any], node)[int(token)]
+            if isinstance(node, list)
+            else cast(dict[str, Any], node)[token]
+        )
+    return node
+
+
+_SOURCED = [v for v in REPLAY["vectors"] if v["source_pointers"]]
+
+
+@pytest.mark.parametrize("vector", _SOURCED, ids=[cast(str, v["id"]) for v in _SOURCED])
+def test_every_replay_source_pointer_resolves_into_its_replayed_value(
+    vector: dict[str, Any],
+) -> None:
+    """A retained claim must be checkable against the retained bytes.
+
+    Comparing a vector's input to its own expectation proves only that the file
+    agrees with itself: a wrong revision digest, pull-request number, path, or
+    instant would publish as a retained observation. Each cited field is
+    therefore resolved out of the locked acquisition and compared to the exact
+    replayed field.
+    """
+    dump = cast(dict[str, Any], vector["expected"])["semantic_dump"]
+    for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
+        assert set(pointer) == {"document_path", "json_pointer", "source_fields"}
+        path = REPOSITORY_ROOT / cast(str, pointer["document_path"])
+        assert path.is_file(), f"{vector['id']}: {pointer['document_path']}"
+        resolved = _resolve_pointer(
+            json.loads(path.read_text("utf-8")), cast(str, pointer["json_pointer"])
+        )
+        fields = cast(dict[str, str], pointer["source_fields"])
+        assert fields, f"{vector['id']}: a cited pointer must map at least one field"
+        for source_field, replayed_field in fields.items():
+            observed = _resolve_pointer(resolved, source_field)
+            replayed = _resolve_pointer(dump, replayed_field)
+            assert observed == replayed, (
+                f"{vector['id']}: {pointer['json_pointer']}{source_field} is "
+                f"{observed!r} but the replayed {replayed_field} is {replayed!r}"
+            )
+
+
+def test_only_retained_observations_cite_retained_evidence() -> None:
+    """Caller-supplied values must not borrow retained provenance."""
+    sourced = 0
+    for vector in REPLAY["vectors"]:
+        pointers = cast(list[dict[str, Any]], vector["source_pointers"])
+        if vector["evidence_classification"] == "retained_normalized_observation":
+            assert pointers, f"{vector['id']} claims retained provenance with no source"
+            sourced += 1
+        else:
+            assert not pointers, (
+                f"{vector['id']} is caller supplied and must cite no retained location"
+            )
+
+    assert sourced == 11
+
+
+def test_every_cited_document_is_a_locked_artifact() -> None:
+    locked = {lock["path"] for lock in REPLAY["artifact_locks"]}
+
+    for vector in REPLAY["vectors"]:
+        for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
+            assert pointer["document_path"] in locked, vector["id"]
