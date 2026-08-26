@@ -57,7 +57,14 @@ SUPPORT_ENUMS = {
     "RevisionRole": revision.RevisionRole,
     "SourceObjectKind": identity.SourceObjectKind,
 }
-ALLOWED_MARKERS = ("enum_value", "instant_value", "tuple_value", "typed_value")
+ALLOWED_MARKERS = (
+    "enum_value",
+    "indexed_value",
+    "instant_value",
+    "tuple_value",
+    "typed_value",
+)
+MAX_INDEXED_COUNT = 4097
 ALLOWED_OPERATIONS = ("construct", "reject")
 ALLOWED_INPUT_MODES = ("json", "python", "replay")
 
@@ -108,6 +115,24 @@ def _materialise(value: Any) -> Any:
         return tuple(_materialise(item) for item in cast(list[Any], payload))
     if marker == "instant_value":
         return datetime.fromisoformat(cast(str, payload).replace("Z", "+00:00"))
+    if marker == "indexed_value":
+        spec_indexed = cast(dict[str, Any], payload)
+        count = cast(int, spec_indexed["count"])
+        assert spec_indexed["target"] == "PullRequestChangedPath"
+        assert spec_indexed["template"] == "generated-changed-path"
+        assert 0 < count <= MAX_INDEXED_COUNT, f"indexed count out of bounds: {count}"
+        return tuple(
+            history.PullRequestChangedPath(
+                path=revision.GitRepositoryPath(f"generated/path-{index:04d}.py"),
+                head_object=revision.GitBlobIdentity(
+                    kind=revision.GitObjectKind.BLOB,
+                    algorithm=revision.GitHashAlgorithm.SHA1,
+                    full_digest=f"{index:040x}",
+                ),
+                status=history.ChangedPathStatus.MODIFIED,
+            )
+            for index in range(1, count + 1)
+        )
     spec = cast(dict[str, Any], payload)
     target = cast(str, spec["target"])
     if marker == "enum_value":
@@ -255,6 +280,26 @@ def test_vector_identifiers_are_unique_across_the_corpus() -> None:
     assert all(i.startswith("history.") for i in ids)
 
 
+def test_the_published_change_set_ceiling_is_covered_on_both_sides() -> None:
+    """A corpus that freezes a bounded surface must pin the bound itself."""
+    accepted = next(
+        v
+        for v in VALID["vectors"]
+        if v["id"].endswith("change-set.maximum-changed-paths")
+    )
+    rejected = next(
+        v
+        for v in INVALID["vectors"]
+        if v["id"].endswith("change-set.above-maximum-changed-paths")
+    )
+
+    assert accepted["input"]["changed_paths"]["indexed_value"]["count"] == 4096
+    assert accepted["expected"]["changed_path_count"] == 4096
+    assert rejected["input"]["changed_paths"]["indexed_value"]["count"] == 4097
+    assert rejected["expected"]["error_type"] == "too_long"
+    assert rejected["expected"]["error_location"] == ["changed_paths"]
+
+
 def test_the_declared_counts_match_the_vector_files() -> None:
     summary = MANIFEST["vector_summary"]
 
@@ -284,7 +329,12 @@ def test_every_valid_vector_constructs_its_declared_value(
     expected = vector["expected"]
 
     assert type(value).__name__ == expected["concrete_type"], vector["id"]
-    assert _dump(value) == expected["semantic_dump"], vector["id"]
+    if "changed_path_count" in expected:
+        # A cardinality probe declares its size rather than a whole dump.
+        assert "semantic_dump" not in expected, vector["id"]
+        assert len(value.changed_paths) == expected["changed_path_count"]
+    else:
+        assert _dump(value) == expected["semantic_dump"], vector["id"]
     if expected["round_trip_equal"] and isinstance(value, BaseModel):
         target = cast(Any, RESOLVABLE[vector["target"]])
         assert target.model_validate_json(value.model_dump_json()) == value
@@ -674,6 +724,15 @@ def test_only_retained_observations_cite_retained_evidence() -> None:
         pointers = cast(list[dict[str, Any]], vector["source_pointers"])
         if vector["evidence_classification"] == "retained_normalized_observation":
             assert pointers, f"{vector['id']} claims retained provenance with no source"
+            # An occurrence carries an embedded fact; sourcing only the instant
+            # would leave that fact free to drift from the retained record.
+            mapped = {
+                replayed
+                for pointer in pointers
+                for replayed in cast(dict[str, str], pointer["source_fields"]).values()
+            }
+            if vector["target"] == "PullRequestHistoricalOccurrenceTime":
+                assert any(f.startswith("/occurrence/") for f in mapped), vector["id"]
             sourced += 1
         else:
             assert not pointers, (

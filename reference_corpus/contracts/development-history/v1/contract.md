@@ -26,9 +26,9 @@ Supporting authorities are consumed but not owned: `faultatlas.domain.evidence`,
 
 | Family | valid | invalid | replay |
 | --- | --- | --- | --- |
-| `change-set` | 5 | 11 | 0 |
+| `change-set` | 5 | 12 | 0 |
 | `changed-path` | 4 | 9 | 3 |
-| `changed-path-status` | 3 | 4 | 0 |
+| `changed-path-status` | 3 | 3 | 0 |
 | `evidence-association` | 0 | 0 | 12 |
 | `evidence-link` | 15 | 28 | 0 |
 | `head-ref-deletion` | 3 | 7 | 1 |
