@@ -1724,8 +1724,8 @@ def test_roadmap_advances_p04_while_case_preserves_p03_closure_state() -> None:
     assert "`S1.P04.S09` is complete" in roadmap
     assert "`S1.P04.S10` is complete" in roadmap
     assert "`S1.P05` is active and incomplete" in roadmap
-    assert "`S1.P05.S08` are complete" in roadmap
-    assert "`S1.P05.S09` is next and not started" in roadmap
+    assert "`S1.P05.S09` are complete" in roadmap
+    assert "`S1.P05.S10` is next and not started" in roadmap
     assert "`S1.P06` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented" in roadmap
     assert CLOSURE_RELATIVE in case
