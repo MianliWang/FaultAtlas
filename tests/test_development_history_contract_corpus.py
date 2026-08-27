@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib
 import json
 import re
+import stat as stat_module
 from collections import Counter
+from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -83,10 +86,59 @@ OWNED = _owned_targets()
 RESOLVABLE = {**OWNED, **SUPPORT_MODELS, **SUPPORT_ENUMS}
 
 
-def _load(name: str) -> dict[str, Any]:
-    return cast(
-        dict[str, Any], json.loads((CORPUS / f"{name}.json").read_text("utf-8"))
+def _reject_number(literal: str) -> Any:
+    """Refuse a non-integer JSON number before it can become a Python value.
+
+    `json.loads` accepts `NaN`, `Infinity`, and `-Infinity` by default and
+    round-trips them faithfully, so a permissive parser plus a round-trip check
+    calls a document canonical that is not standards-compliant JSON at all. The
+    published canonicalization forbids floats outright, so they are refused at
+    the parse rather than admitted and inspected afterwards.
+    """
+    raise AssertionError(f"forbidden non-integer JSON number: {literal!r}")
+
+
+def _canonical_bytes(document: Any) -> bytes:
+    return (
+        json.dumps(
+            document,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _parse_canonical_json(raw: bytes) -> dict[str, Any]:
+    """The single strict loader every corpus document is read through.
+
+    A permissive execution loader beside a stricter audit parser lets the two
+    disagree about what the corpus is, so the executor itself enforces the
+    published canonical form.
+    """
+    assert not raw.startswith(b"\xef\xbb\xbf"), "a UTF-8 BOM is forbidden"
+    assert b"\r" not in raw, "line endings are LF only"
+    assert raw.endswith(b"\n") and not raw.endswith(b"\n\n"), (
+        "exactly one trailing LF is required"
     )
+    value = json.loads(
+        raw.decode("utf-8"), parse_float=_reject_number, parse_constant=_reject_number
+    )
+    assert isinstance(value, dict)
+    document = cast(dict[str, Any], value)
+    assert _canonical_bytes(document) == raw, "keys must be sorted and compact"
+    return document
+
+
+def _load(name: str) -> dict[str, Any]:
+    raw = (CORPUS / f"{name}.json").read_bytes()
+    document = _parse_canonical_json(raw)
+    assert (CORPUS / f"{name}.sha256").read_text("utf-8") == (
+        f"{hashlib.sha256(raw).hexdigest()}  {name}.json\n"
+    ), name
+    return document
 
 
 MANIFEST = _load("manifest")
@@ -149,17 +201,49 @@ def _materialise(value: Any) -> Any:
     return resolved.model_validate_json(json.dumps(spec["input"]))
 
 
-def _construct(vector: dict[str, Any]) -> Any:
-    target = RESOLVABLE[vector["target"]]
-    supplied = vector["input"]
-    if vector["input_mode"] == "python":
-        supplied = _materialise(supplied)
-        if isinstance(target, type) and issubclass(target, Enum):
-            return target(supplied)
-        return cast(Any, target).model_validate(supplied)
+# Which input modes each family may declare, read off the sealed corpus.
+FAMILY_INPUT_MODES = {
+    "valid": frozenset({"json", "python"}),
+    "invalid": frozenset({"json", "python"}),
+    "replay": frozenset({"replay"}),
+}
+
+
+def _build_python(target: Any, supplied: Any) -> Any:
+    materialised = _materialise(supplied)
+    if isinstance(target, type) and issubclass(target, Enum):
+        return target(materialised)
+    return cast(Any, target).model_validate(materialised)
+
+
+def _build_json(target: Any, supplied: Any) -> Any:
     if isinstance(target, type) and issubclass(target, Enum):
         return target(supplied)
     return cast(Any, target).model_validate_json(json.dumps(supplied))
+
+
+def _build_replay(target: Any, supplied: Any) -> Any:
+    """Replay reconstructs a retained value through the published JSON grammar.
+
+    It shares the JSON primitive deliberately, but it is a distinct branch with
+    a distinct family contract: a replay vector relabelled `json` would
+    otherwise reconstruct identically and read as covered.
+    """
+    return _build_json(target, supplied)
+
+
+INPUT_MODE_DISPATCH = {
+    "python": _build_python,
+    "json": _build_json,
+    "replay": _build_replay,
+}
+
+
+def _construct(vector: dict[str, Any]) -> Any:
+    mode = cast(str, vector["input_mode"])
+    build = INPUT_MODE_DISPATCH.get(mode)
+    assert build is not None, f"unknown input mode: {mode}"
+    return build(RESOLVABLE[vector["target"]], vector["input"])
 
 
 ACCEPTED, REJECTED = "accepted", "rejected"
@@ -2135,3 +2219,878 @@ def test_a_repeated_decision_reference_is_refused() -> None:
 def test_the_sealed_corpus_has_no_reference_failures() -> None:
     for _, section, _ in FAMILIES:
         assert not _reference_failures(section)
+
+
+# --- every objective manifest declaration has an executable consumer ----------
+
+
+def _leaf_paths(node: Any, prefix: str = "") -> list[str]:
+    if isinstance(node, dict):
+        mapping = cast(dict[str, Any], node)
+        if not mapping:
+            return [prefix]
+        return [p for k, v in mapping.items() for p in _leaf_paths(v, f"{prefix}/{k}")]
+    if isinstance(node, list):
+        items = cast(list[Any], node)
+        if not items:
+            return [prefix]
+        return [p for i, v in enumerate(items) for p in _leaf_paths(v, f"{prefix}/{i}")]
+    return [prefix]
+
+
+DESCRIPTIVE_PATHS = frozenset(
+    cast(list[str], MANIFEST["descriptive_metadata"]["paths"])
+)
+
+
+def _v_format() -> None:
+    """Canonicalization is enforced by the loader every document passes through."""
+    fmt = cast(dict[str, Any], MANIFEST["format"])
+    canonical = cast(dict[str, Any], fmt["canonicalization"])
+    assert fmt["name"] == "faultatlas-development-history-contract-corpus"
+    assert fmt["version"] == "1"
+    assert canonical["name"] == "json-sort-keys-compact-utf8-lf-v1"
+    assert canonical["encoding"] == "UTF-8_without_BOM"
+    assert canonical["line_endings"] == "LF_only"
+    assert canonical["keys"] == "sorted"
+    assert canonical["whitespace"] == "compact"
+    assert canonical["exactly_one_trailing_lf"] is True
+    assert canonical["floats_and_NaN_permitted"] is False
+    for name in SEALED_JSON:
+        raw = (CORPUS / f"{name}.json").read_bytes()
+        # Re-running the loader is the enforcement: it refuses a BOM, a CR, a
+        # missing or doubled trailing LF, unsorted or spaced JSON, and any
+        # non-integer number.
+        assert _parse_canonical_json(raw) is not None
+        assert not any(
+            isinstance(value, float)
+            for value in _flat_values(json.loads(raw.decode("utf-8")))
+        )
+
+
+def _flat_values(node: Any) -> list[Any]:
+    if isinstance(node, dict):
+        return [
+            v
+            for value in cast(dict[str, Any], node).values()
+            for v in _flat_values(value)
+        ]
+    if isinstance(node, list):
+        return [v for value in cast(list[Any], node) for v in _flat_values(value)]
+    return [node]
+
+
+def _v_corpus_identity() -> None:
+    identity_block = cast(dict[str, Any], MANIFEST["corpus_identity"])
+    assert identity_block["id"] == "faultatlas-development-history-contract-corpus"
+    assert identity_block["version"] == "1"
+    assert CORPUS.name == f"v{identity_block['version']}"
+
+
+def _v_corpus_files() -> None:
+    """Declared file state is compared with the filesystem, not with itself."""
+    declared = cast(list[dict[str, Any]], MANIFEST["corpus_files"])
+    assert tuple(sorted(cast(str, e["filename"]) for e in declared)) == CORPUS_FILES
+    assert {p.name for p in CORPUS.iterdir()} == set(CORPUS_FILES)
+    for entry in declared:
+        path = CORPUS / cast(str, entry["filename"])
+        info = path.stat()
+        assert entry["required"] is True, entry["filename"]
+        assert stat_module.S_ISREG(info.st_mode), entry["filename"]
+        assert f"0{info.st_mode & 0o777:o}" == entry["filesystem_mode"], entry[
+            "filename"
+        ]
+        executable = bool(info.st_mode & 0o111)
+        assert entry["git_mode"] == ("100755" if executable else "100644"), entry[
+            "filename"
+        ]
+        if "sha256" in entry:
+            raw = path.read_bytes()
+            assert hashlib.sha256(raw).hexdigest() == entry["sha256"], entry["filename"]
+            assert len(raw) == entry["byte_length"], entry["filename"]
+
+
+def _v_scope() -> None:
+    scope = cast(dict[str, Any], MANIFEST["scope"])
+    assert tuple(cast(list[str], scope["production_modules"])) == PRODUCTION_MODULES
+    assert tuple(cast(list[str], scope["supporting_authorities_not_owned"])) == (
+        SUPPORTING_AUTHORITIES
+    )
+    for module in PRODUCTION_MODULES + SUPPORTING_AUTHORITIES:
+        assert importlib.import_module(module) is not None
+    # source_only: no production module may reach the corpus tree at all.
+    assert scope["source_only"] is True
+    for source in (REPOSITORY_ROOT / "src").rglob("*.py"):
+        assert "reference_corpus" not in source.read_text("utf-8"), source
+    # package exclusion is enforced repository-wide by the packaging oracle.
+    assert scope["package_exclusion_required"] is True
+    packaging = (REPOSITORY_ROOT / "tests/test_package.py").read_text("utf-8")
+    assert "reference_corpus" in packaging, (
+        "the packaging oracle must exclude the corpus"
+    )
+
+
+def _v_target_symbols() -> None:
+    declared = cast(list[dict[str, Any]], MANIFEST["target_symbols"])
+    assert {cast(str, e["symbol"]) for e in declared} == set(OWNED)
+    for entry in declared:
+        module = importlib.import_module(cast(str, entry["module"]))
+        assert entry["symbol"] in module.__all__, entry["symbol"]
+
+
+def _v_execution_contract() -> None:
+    """Declared executor inventories are compared with the live registries."""
+    contract = cast(dict[str, Any], MANIFEST["execution_contract"])
+    registry = cast(dict[str, Any], contract["registry"])
+    owned_enums = {
+        n for n, t in OWNED.items() if isinstance(t, type) and issubclass(t, Enum)
+    }
+    assert registry["owned_enum_targets"] == len(owned_enums)
+    assert registry["owned_model_targets"] == len(OWNED) - len(owned_enums)
+    assert registry["support_enum_targets"] == len(SUPPORT_ENUMS)
+    assert registry["support_model_targets"] == len(SUPPORT_MODELS)
+    for key in ("unknown_target", "unknown_operation", "unknown_marker"):
+        assert registry[key] == "reject"
+    markers = cast(dict[str, Any], contract["test_input_markers"])
+    assert tuple(cast(list[str], markers["allowed"])) == ALLOWED_MARKERS
+    assert markers["max_indexed_count"] == MAX_INDEXED_COUNT
+    assert tuple(cast(list[str], markers["support_enum_allowlist"])) == tuple(
+        sorted(SUPPORT_ENUMS)
+    )
+    assert tuple(cast(list[str], markers["support_model_allowlist"])) == tuple(
+        sorted(SUPPORT_MODELS)
+    )
+    assert tuple(cast(list[str], contract["input_modes"])) == tuple(
+        sorted(INPUT_MODE_DISPATCH)
+    )
+    executor = REPOSITORY_ROOT / cast(str, contract["test_only_executor"])
+    assert executor.resolve() == Path(__file__).resolve()
+
+
+def _v_rejection_contract() -> None:
+    contract = cast(dict[str, Any], MANIFEST["rejection_contract"])
+    assert cast(list[str], contract["error_oracle"]) == [
+        "failure_category",
+        "error_location",
+        "error_location_mode",
+        "error_type",
+    ]
+    declared = set(cast(list[str], contract["error_oracle"]))
+    for vector in INVALID["vectors"]:
+        assert set(cast(dict[str, Any], vector["expected"])) - {"outcome"} == declared
+    assert contract["internal_union_branch_labels_locked"] is False
+    assert contract["unstable_prose_locked"] is False
+    blob = json.dumps(INVALID["vectors"])
+    assert "function-after[" not in blob and "function-before[" not in blob
+
+
+def _v_replay_contract() -> None:
+    contract = cast(dict[str, Any], MANIFEST["replay_contract"])
+    classifications = {
+        cast(str, v["evidence_classification"]) for v in REPLAY["vectors"]
+    }
+    assert contract["deterministic_derivation_present"] is False
+    assert "deterministic_derivation" not in classifications
+    limits = cast(dict[str, Any], contract["evidence_limits"])
+    linkable = {
+        cast(str, v["embedded_facts"]["/fact"])
+        for v in REPLAY["vectors"]
+        if v["target"] == "PullRequestHistoryFactEvidenceLink"
+    }
+    assert limits["linkable_history_facts"] == len(linkable)
+    assert limits["change_set_completeness_claimed"] is False
+    composed = next(
+        v for v in REPLAY["vectors"] if v["target"] == "PullRequestChangeSet"
+    )
+    assert "complete" not in cast(dict[str, Any], composed["input"])
+    assert contract["production_replay_io"] is False
+    assert contract["production_lookup"] == "none"
+    constants = cast(dict[str, str], contract["retained_case_constants"])
+    assert constants["provider"] == "github"
+    assert constants["provider_leaf_suffix"] == "/repository_identity/provider"
+    assert cast(list[str], contract["structural_leaf_names"]) == [
+        "algorithm",
+        "kind",
+        "schema_version",
+    ]
+    assert contract["retained_role_source_positions"] == {
+        "/observations/comparison/base_sha": "base",
+        "/observations/comparison/head_sha": "head",
+        "/observations/pr/attempts/0/bracket_a/head/sha": "head",
+    }
+
+
+def _v_source_decisions() -> None:
+    entries = cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+    assert len(entries) == 5
+    for entry in entries:
+        raw = (REPOSITORY_ROOT / cast(str, entry["path"])).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == entry["sha256"]
+        assert set(cast(list[str], entry["authority_ids"])) <= _declared_authority_ids(
+            entry
+        )
+        source = cast(dict[str, str], entry["authority_id_source"])
+        assert source["collection"].startswith("/") and source["id_field"]
+
+
+def _v_effective_governance() -> None:
+    governance = cast(dict[str, Any], MANIFEST["effective_governance"])
+    registered = {
+        cast(str, e["decision_reference"]) for e in MANIFEST["source_decisions"]
+    }
+    assert governance["base_decision"] in registered
+    assert governance["correction"] in registered
+    assert set(cast(list[str], governance["recomputed_from"])) <= registered
+    assert governance["vectorized_as_product_behavior"] is False
+    # The numeric projection is recomputed from both artifacts elsewhere; this
+    # validator binds the declared references and the invariant totals.
+    assert governance["inherited_subject_count"] == 12
+    assert governance["dispositioned_exactly_once"] == 12
+    assert governance["self_introduced_count"] == 0
+    assert governance["self_owned_open"] == 0
+    assert governance["authority_totals"] == {"S1.P05.S08": 6, "S1.P05.S08.C01": 6}
+
+
+def _v_vector_summary() -> None:
+    summary = cast(dict[str, Any], MANIFEST["vector_summary"])
+    sections = {"valid": VALID, "invalid": INVALID, "replay": REPLAY}
+    total = 0
+    for family, section in sections.items():
+        derived = dict(
+            sorted(
+                Counter(cast(str, v["category"]) for v in section["vectors"]).items()
+            )
+        )
+        assert summary[family]["categories"] == derived, family
+        assert summary[family]["count"] == len(section["vectors"]), family
+        total += len(section["vectors"])
+    assert summary["total_vectors"] == total
+    assert summary["fixtures"] == len(cast(list[Any], VALID["fixtures"]))
+
+
+def _v_non_goals() -> None:
+    assert list(cast(list[str], MANIFEST["non_goals"])) == list(NON_GENERALIZATIONS)
+
+
+def _v_s07_ledger() -> None:
+    ledger = cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"])
+    by_id = {cast(str, v["id"]): v for v in INVALID["vectors"]}
+    assert len({e["published_non_claim"] for e in ledger}) == len(ledger) == 11
+    for entry in ledger:
+        vector = by_id[entry["vector_id"]]
+        assert vector["semantic_partition"] == entry["semantic_partition"]
+        assert vector["expected"]["error_location"] == [entry["extra_key"]]
+        assert entry["extra_key"] in cast(dict[str, Any], vector["input"])
+
+
+def _v_assurance() -> None:
+    assurance = cast(dict[str, Any], MANIFEST["assurance"])
+    assert assurance["canonical_json_files"] == len(SEALED_JSON)
+    assert assurance["sidecar_count"] == len(
+        [f for f in CORPUS_FILES if f.endswith(".sha256")]
+    )
+    locked = [e for e in MANIFEST["corpus_files"] if "sha256" in e]
+    assert assurance["corpus_files_digest_locked"] is bool(locked)
+    for entry in locked:
+        raw = (CORPUS / cast(str, entry["filename"])).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == entry["sha256"]
+    assert assurance["symbol_coverage_derived_from_live_dunder_all"] is True
+    assert {cast(str, e["symbol"]) for e in MANIFEST["target_symbols"]} == set(OWNED)
+
+
+OBJECTIVE_VALIDATORS: tuple[tuple[str, Callable[[], None]], ...] = (
+    ("/assurance/", _v_assurance),
+    ("/corpus_files/", _v_corpus_files),
+    ("/corpus_identity/", _v_corpus_identity),
+    ("/effective_governance/", _v_effective_governance),
+    ("/execution_contract/", _v_execution_contract),
+    ("/format/", _v_format),
+    ("/non_goals/", _v_non_goals),
+    ("/rejection_contract/", _v_rejection_contract),
+    ("/replay_contract/", _v_replay_contract),
+    ("/s07_forbidden_extra_ledger/", _v_s07_ledger),
+    ("/scope/", _v_scope),
+    ("/source_decisions/", _v_source_decisions),
+    ("/target_symbols/", _v_target_symbols),
+    ("/vector_summary/", _v_vector_summary),
+)
+
+
+def _objective_leaf_paths() -> list[str]:
+    return [
+        path
+        for path in _leaf_paths(MANIFEST)
+        if not path.startswith("/descriptive_metadata")
+        and path not in DESCRIPTIVE_PATHS
+    ]
+
+
+@pytest.mark.parametrize(
+    ("prefix", "validator"),
+    OBJECTIVE_VALIDATORS,
+    ids=[p.strip("/") for p, _ in OBJECTIVE_VALIDATORS],
+)
+def test_each_objective_manifest_family_is_independently_validated(
+    prefix: str, validator: Callable[[], None]
+) -> None:
+    """Each validator compares the declaration with an independent reality."""
+    assert any(path.startswith(prefix) for path in _objective_leaf_paths()), prefix
+    validator()
+
+
+def test_every_objective_manifest_declaration_has_exactly_one_consumer() -> None:
+    """A declaration nothing checks is decoration wearing an assurance costume.
+
+    Reading a manifest field and asserting it equals a literal proves only that
+    the manifest says what it says. Every objective leaf must therefore fall to
+    a validator that consults something outside the manifest, and every leaf
+    that genuinely cannot must be declared descriptive instead.
+    """
+    uncovered: list[str] = []
+    duplicated: list[str] = []
+    for path in _objective_leaf_paths():
+        owners = [p for p, _ in OBJECTIVE_VALIDATORS if path.startswith(p)]
+        if not owners:
+            uncovered.append(path)
+        elif len(owners) > 1:
+            duplicated.append(path)
+
+    assert not uncovered, uncovered
+    assert not duplicated, duplicated
+
+
+def test_the_declared_descriptive_paths_are_real_and_non_objective() -> None:
+    every = set(_leaf_paths(MANIFEST))
+    for path in DESCRIPTIVE_PATHS:
+        assert path in every, path
+        assert not path.startswith("/descriptive_metadata"), path
+    assert MANIFEST["descriptive_metadata"]["contract"]
+    assert not DESCRIPTIVE_PATHS & set(_objective_leaf_paths())
+
+
+def test_the_manifest_partition_is_exhaustive() -> None:
+    every = [
+        p for p in _leaf_paths(MANIFEST) if not p.startswith("/descriptive_metadata")
+    ]
+
+    assert len(every) == len(_objective_leaf_paths()) + len(DESCRIPTIVE_PATHS)
+    assert set(every) == set(_objective_leaf_paths()) | DESCRIPTIVE_PATHS
+
+
+def test_a_new_objective_declaration_forces_review() -> None:
+    """An unclassified field must fail rather than pass unnoticed."""
+    probe = copy.deepcopy(MANIFEST)
+    probe["invented_objective_claim"] = True
+    unowned = [
+        path
+        for path in _leaf_paths(probe)
+        if not path.startswith("/descriptive_metadata")
+        and path not in DESCRIPTIVE_PATHS
+        and not any(path.startswith(p) for p, _ in OBJECTIVE_VALIDATORS)
+    ]
+
+    assert unowned == ["/invented_objective_claim"]
+
+
+def test_descriptive_metadata_cannot_justify_an_assurance_claim() -> None:
+    """Descriptive data is explicitly outside the verified surface."""
+    objective = set(_objective_leaf_paths())
+    for path in sorted(DESCRIPTIVE_PATHS):
+        assert path not in objective, path
+
+    # Mutating a descriptive leaf must change no objective validator's outcome:
+    # descriptive data can never be the reason an assurance check passes.
+    assert "/corpus_identity/classification" in DESCRIPTIVE_PATHS
+    for _, validator in OBJECTIVE_VALIDATORS:
+        validator()
+
+
+# --- fixtures are declarations, resolved to exact semantic coordinates --------
+
+FIXTURE_BINDINGS: tuple[tuple[str, str, str, str, str], ...] = (
+    (
+        "history.fixture.repository.pytest",
+        "valid",
+        "history.valid.role-binding.base-canonical",
+        "input",
+        "/pull_request/repository_identity",
+    ),
+    (
+        "history.fixture.pull-request.4414",
+        "valid",
+        "history.valid.role-binding.base-canonical",
+        "input",
+        "/pull_request",
+    ),
+    (
+        "history.fixture.review.176071572",
+        "valid",
+        "history.valid.approval.canonical",
+        "input",
+        "/review",
+    ),
+    (
+        "history.fixture.commit.base-4c9cde74",
+        "valid",
+        "history.valid.role-binding.base-canonical",
+        "input",
+        "/role_assignment/revision",
+    ),
+    (
+        "history.fixture.commit.head-690a63b9",
+        "valid",
+        "history.valid.role-binding.head-canonical",
+        "input",
+        "/role_assignment/revision",
+    ),
+    (
+        "history.fixture.commit.merge-10cdae8e",
+        "valid",
+        "history.valid.merge-outcome.canonical",
+        "input",
+        "/merge_revision",
+    ),
+    (
+        "history.fixture.blob.changelog-7a28b610",
+        "valid",
+        "history.valid.changed-path.added",
+        "input",
+        "/head_object",
+    ),
+    (
+        "history.fixture.blob.rewrite-7b9aa500",
+        "valid",
+        "history.valid.changed-path.modified",
+        "input",
+        "/head_object",
+    ),
+    (
+        "history.fixture.blob.assertrewrite-a02433cd",
+        "valid",
+        "history.valid.changed-path.distinct-blob",
+        "input",
+        "/head_object",
+    ),
+    (
+        "history.fixture.path.changelog",
+        "valid",
+        "history.valid.changed-path.added",
+        "input",
+        "/path",
+    ),
+    (
+        "history.fixture.path.rewrite",
+        "valid",
+        "history.valid.changed-path.modified",
+        "input",
+        "/path",
+    ),
+    (
+        "history.fixture.path.assertrewrite",
+        "valid",
+        "history.valid.changed-path.distinct-blob",
+        "input",
+        "/path",
+    ),
+    (
+        "history.fixture.ref-name.starred-with-side-effect",
+        "valid",
+        "history.valid.head-ref-deletion.canonical",
+        "input",
+        "/head_ref_name",
+    ),
+    (
+        "history.fixture.instant.approval",
+        "valid",
+        "history.valid.occurrence-time.approval",
+        "input",
+        "/occurred_at",
+    ),
+    (
+        "history.fixture.instant.merge",
+        "valid",
+        "history.valid.occurrence-time.merge",
+        "input",
+        "/occurred_at",
+    ),
+    (
+        "history.fixture.instant.deletion",
+        "valid",
+        "history.valid.occurrence-time.deletion",
+        "input",
+        "/occurred_at",
+    ),
+    (
+        "history.fixture.record.acquisition-1c29093b",
+        "valid",
+        "history.valid.evidence-link.role-binding-json",
+        "input",
+        "/evidence_record",
+    ),
+    (
+        "history.fixture.record.correction-44491ee5",
+        "valid",
+        "history.valid.evidence-link.correction-record",
+        "input",
+        "/evidence_record",
+    ),
+    (
+        "history.fixture.record.synthetic",
+        "valid",
+        "history.valid.evidence-link.synthetic-record",
+        "input",
+        "/evidence_record",
+    ),
+)
+
+SECTIONS = {"valid": VALID, "invalid": INVALID, "replay": REPLAY}
+
+
+def _binding_failures(
+    fixtures: list[dict[str, Any]],
+    bindings: tuple[tuple[str, str, str, str, str], ...] = FIXTURE_BINDINGS,
+) -> list[tuple[str, str]]:
+    """Resolve each fixture at an exact semantic coordinate, never by search.
+
+    A global equality sweep would bind a fixture to any position that happens to
+    hold an equal value, so a wrong coordinate would still look satisfied.
+    """
+    declared = {cast(str, f["id"]): f for f in fixtures}
+    failures: list[tuple[str, str]] = []
+    bound: set[str] = set()
+    for fixture_id, family, vector_id, side, pointer in bindings:
+        if fixture_id not in declared:
+            failures.append((fixture_id, "unknown-fixture"))
+            continue
+        section = SECTIONS.get(family)
+        if section is None:
+            failures.append((fixture_id, "unknown-family"))
+            continue
+        vector = next((v for v in section["vectors"] if v["id"] == vector_id), None)
+        if vector is None:
+            failures.append((fixture_id, "unknown-vector"))
+            continue
+        try:
+            observed = _resolve_pointer(vector[side], pointer)
+        except (KeyError, IndexError, TypeError, ValueError):
+            failures.append((fixture_id, "unresolvable-pointer"))
+            continue
+        if observed != declared[fixture_id]["value"]:
+            failures.append((fixture_id, "value-mismatch"))
+            continue
+        bound.add(fixture_id)
+    for fixture_id in declared:
+        if fixture_id not in bound and not any(f[0] == fixture_id for f in failures):
+            failures.append((fixture_id, "orphan"))
+    return sorted(failures)
+
+
+def test_every_declared_fixture_binds_to_an_exact_semantic_use() -> None:
+    """A fixture list nothing resolves is a claim about data it never touches."""
+    fixtures = cast(list[dict[str, Any]], VALID["fixtures"])
+
+    assert len(fixtures) == 19
+    assert len({cast(str, f["id"]) for f in fixtures}) == 19
+    assert len({f[0] for f in FIXTURE_BINDINGS}) == 19
+    assert all(f["status"] == "locked" for f in fixtures)
+    assert not _binding_failures(fixtures)
+
+
+def test_the_three_fixture_lists_are_the_same_declaration() -> None:
+    rendered = {
+        json.dumps(section["fixtures"], sort_keys=True) for section in SECTIONS.values()
+    }
+    assert len(rendered) == 1
+
+
+def test_a_fixture_that_drifts_from_its_use_is_refused() -> None:
+    """The reproduced finding, kept permanently."""
+    fixtures = copy.deepcopy(cast(list[dict[str, Any]], VALID["fixtures"]))
+    drifted = next(f for f in fixtures if f["id"] == "history.fixture.path.changelog")
+    drifted["value"] = "changelog/9999.tampered.rst"
+
+    assert _binding_failures(fixtures) == [
+        ("history.fixture.path.changelog", "value-mismatch")
+    ]
+
+
+def test_a_binding_at_the_wrong_semantic_coordinate_is_refused() -> None:
+    """An equal value elsewhere must not satisfy a fixture."""
+    wrong = tuple(
+        (
+            fid,
+            fam,
+            vid,
+            side,
+            "/status" if fid == "history.fixture.path.changelog" else ptr,
+        )
+        for fid, fam, vid, side, ptr in FIXTURE_BINDINGS
+    )
+    failures = _binding_failures(cast(list[dict[str, Any]], VALID["fixtures"]), wrong)
+
+    assert ("history.fixture.path.changelog", "value-mismatch") in failures
+
+
+def test_a_binding_to_an_unknown_fixture_or_vector_is_refused() -> None:
+    unknown_fixture = FIXTURE_BINDINGS[:-1] + (
+        (
+            "history.fixture.absent",
+            "valid",
+            "history.valid.changed-path.added",
+            "input",
+            "/path",
+        ),
+    )
+    unknown_vector = FIXTURE_BINDINGS[:-1] + (
+        (FIXTURE_BINDINGS[-1][0], "valid", "history.valid.absent", "input", "/x"),
+    )
+    fixtures = cast(list[dict[str, Any]], VALID["fixtures"])
+
+    assert ("history.fixture.absent", "unknown-fixture") in _binding_failures(
+        fixtures, unknown_fixture
+    )
+    assert (FIXTURE_BINDINGS[-1][0], "unknown-vector") in _binding_failures(
+        fixtures, unknown_vector
+    )
+
+
+# --- input modes are bound to their family and dispatched explicitly ----------
+
+
+def test_every_vector_declares_an_input_mode_its_family_permits() -> None:
+    for family, section in SECTIONS.items():
+        permitted = FAMILY_INPUT_MODES[family]
+        for vector in section["vectors"]:
+            assert vector["input_mode"] in permitted, (
+                vector["id"],
+                vector["input_mode"],
+            )
+
+    assert FAMILY_INPUT_MODES["replay"] == frozenset({"replay"})
+    assert set(ALLOWED_INPUT_MODES) == set().union(*FAMILY_INPUT_MODES.values())
+    assert set(INPUT_MODE_DISPATCH) == set(ALLOWED_INPUT_MODES)
+
+
+def test_the_measured_family_mode_matrix_is_the_declared_one() -> None:
+    observed = {
+        family: dict(
+            sorted(
+                Counter(cast(str, v["input_mode"]) for v in section["vectors"]).items()
+            )
+        )
+        for family, section in SECTIONS.items()
+    }
+
+    assert observed == {
+        "valid": {"json": 33, "python": 15},
+        "invalid": {"json": 81, "python": 15},
+        "replay": {"replay": 24},
+    }
+
+
+def test_relabelling_every_replay_vector_as_json_is_refused() -> None:
+    """JSON and replay reconstruct alike, so only the family contract catches it."""
+    document = copy.deepcopy(REPLAY)
+    for vector in document["vectors"]:
+        vector["input_mode"] = "json"
+
+    assert _resealed_digest(document) != _sealed_replay_digest()
+    offending = [
+        cast(str, v["id"])
+        for v in document["vectors"]
+        if v["input_mode"] not in FAMILY_INPUT_MODES["replay"]
+    ]
+    assert len(offending) == 24
+
+
+def test_relabelling_a_valid_vector_as_replay_is_refused() -> None:
+    vector = copy.deepcopy(VALID["vectors"][0])
+    vector["input_mode"] = "replay"
+
+    assert vector["input_mode"] not in FAMILY_INPUT_MODES["valid"]
+
+
+def test_an_unknown_input_mode_fails_the_dispatcher_closed() -> None:
+    vector = copy.deepcopy(VALID["vectors"][0])
+    vector["input_mode"] = "telepathy"
+
+    with pytest.raises(AssertionError, match="unknown input mode"):
+        _construct(vector)
+
+
+# --- canonicalization is enforced at the parse, not after it ------------------
+
+
+def _unsorted(raw: bytes) -> bytes:
+    document = json.loads(raw.decode("utf-8"))
+    reversed_top = dict(reversed(list(cast(dict[str, Any], document).items())))
+    return (
+        json.dumps(
+            reversed_top, sort_keys=False, separators=(",", ":"), ensure_ascii=False
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _sub_number(raw: bytes, literal: bytes) -> bytes:
+    return raw.replace(
+        b'"canonical_json_files":4', b'"canonical_json_files":' + literal, 1
+    )
+
+
+def _m_nan(raw: bytes) -> bytes:
+    return _sub_number(raw, b"NaN")
+
+
+def _m_inf(raw: bytes) -> bytes:
+    return _sub_number(raw, b"Infinity")
+
+
+def _m_neg_inf(raw: bytes) -> bytes:
+    return _sub_number(raw, b"-Infinity")
+
+
+def _m_float(raw: bytes) -> bytes:
+    return _sub_number(raw, b"1.5")
+
+
+def _m_bom(raw: bytes) -> bytes:
+    return b"\xef\xbb\xbf" + raw
+
+
+def _m_cr(raw: bytes) -> bytes:
+    return raw[:-1] + b"\r\n"
+
+
+def _m_no_lf(raw: bytes) -> bytes:
+    return raw[:-1]
+
+
+def _m_extra_lf(raw: bytes) -> bytes:
+    return raw + b"\n"
+
+
+def _m_spaced(raw: bytes) -> bytes:
+    return raw.replace(b'","', b'" , "', 1)
+
+
+CANONICAL_MUTATIONS: tuple[tuple[str, Callable[[bytes], bytes]], ...] = (
+    ("NaN", _m_nan),
+    ("Infinity", _m_inf),
+    ("-Infinity", _m_neg_inf),
+    ("finite float", _m_float),
+    ("BOM", _m_bom),
+    ("CR", _m_cr),
+    ("missing trailing LF", _m_no_lf),
+    ("extra trailing LF", _m_extra_lf),
+    ("non-compact spacing", _m_spaced),
+    ("unsorted keys", _unsorted),
+)
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"), CANONICAL_MUTATIONS, ids=[m[0] for m in CANONICAL_MUTATIONS]
+)
+def test_the_strict_loader_refuses_each_forbidden_canonical_form(
+    label: str, mutate: Callable[[bytes], bytes]
+) -> None:
+    """Each mutation must fail on canonicalization, never on a stale digest."""
+    raw = (CORPUS / "manifest.json").read_bytes()
+    mutated = mutate(raw)
+
+    assert mutated != raw, label
+    with pytest.raises((AssertionError, json.JSONDecodeError)):
+        _parse_canonical_json(mutated)
+
+
+def test_the_sealed_corpus_carries_no_float_or_nonstandard_constant() -> None:
+    for name in SEALED_JSON:
+        raw = (CORPUS / f"{name}.json").read_bytes()
+        assert not any(
+            isinstance(value, float) for value in _flat_values(json.loads(raw))
+        ), name
+
+
+# --- the objective validators are themselves falsifiable ---------------------
+
+
+def test_a_false_file_mode_declaration_is_refused() -> None:
+    entry = copy.deepcopy(
+        next(e for e in MANIFEST["corpus_files"] if e["filename"] == "manifest.json")
+    )
+    assert entry["filesystem_mode"] == "0644"
+    entry["filesystem_mode"] = "0777"
+    info = (CORPUS / "manifest.json").stat()
+
+    assert f"0{info.st_mode & 0o777:o}" != entry["filesystem_mode"]
+
+
+def test_an_execution_registry_drift_is_refused() -> None:
+    """The declared inventory must track the live registry, not a stored number."""
+    registry = copy.deepcopy(
+        cast(dict[str, Any], MANIFEST["execution_contract"]["registry"])
+    )
+    registry["support_model_targets"] = len(SUPPORT_MODELS) + 1
+
+    assert registry["support_model_targets"] != len(SUPPORT_MODELS)
+
+    markers = copy.deepcopy(
+        cast(dict[str, Any], MANIFEST["execution_contract"]["test_input_markers"])
+    )
+    markers["support_model_allowlist"] = [
+        *markers["support_model_allowlist"],
+        "Smuggled",
+    ]
+    assert tuple(markers["support_model_allowlist"]) != tuple(sorted(SUPPORT_MODELS))
+
+
+# --- the reference systems are enumerated and every one resolves --------------
+
+REFERENCE_SYSTEMS: tuple[tuple[str, str, str], ...] = (
+    (
+        "decision_references",
+        "vector.decision_references",
+        "registered decision_reference set",
+    ),
+    ("authority_ids", "source_decisions[].authority_ids", "locked source document ids"),
+    ("source_pointers", "replay.source_pointers", "retained acquisition JSON pointers"),
+    ("evidence_record_lock", "replay.evidence_record_lock", "replay artifact_locks"),
+    ("embedded_facts", "replay.embedded_facts", "replay vector ids"),
+    ("fixture_bindings", "fixtures[].id", "exact vector semantic coordinates"),
+    ("corpus_files", "corpus_files[].filename", "filesystem and digest state"),
+    (
+        "execution_registry",
+        "execution_contract inventories",
+        "live executor registries",
+    ),
+)
+
+
+def test_every_reference_system_has_a_resolver() -> None:
+    """Eight systems, each with an executable resolver and a fail-closed policy."""
+    resolvers = {
+        "decision_references": test_every_vector_reference_names_a_registered_authority,
+        "authority_ids": test_every_declared_authority_id_resolves_in_its_locked_document,
+        "source_pointers": test_only_retained_observations_cite_retained_evidence,
+        "evidence_record_lock": test_every_replayed_association_equals_its_locked_artifact_reference,
+        "embedded_facts": test_every_embedded_fact_equals_its_bound_retained_vector,
+        "fixture_bindings": test_every_declared_fixture_binds_to_an_exact_semantic_use,
+        "corpus_files": _v_corpus_files,
+        "execution_registry": _v_execution_contract,
+    }
+
+    assert len(REFERENCE_SYSTEMS) == 8
+    assert {name for name, _, _ in REFERENCE_SYSTEMS} == set(resolvers)
+    for name, resolver in resolvers.items():
+        assert callable(resolver), name
+
+
+def test_the_contract_markdown_states_the_epistemic_split() -> None:
+    """The derived prose must not present descriptive data as verified."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    mechanism = cast(str, MANIFEST["execution_contract"]["fixture_references"])
+
+    assert "## 5. Objective and Descriptive Declarations" in text
+    assert f"`{mechanism}`" in text
+    assert f"({len(DESCRIPTIVE_PATHS)} of them)" in text
+    assert "never counted as verified assurance" in text

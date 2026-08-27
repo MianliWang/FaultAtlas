@@ -62,7 +62,13 @@ Every retained `role` is derived from the source position its revision digest wa
 
 A caller-supplied composition or association cites no retained location of its own; each embedded fact is instead bound to the retained vector it reuses, so its nested values inherit that provenance.
 
-## 5. Rejection Contract
+## 5. Objective and Descriptive Declarations
+
+Every manifest declaration is exactly one of two kinds. An **objective** declaration is compared with something outside the manifest -- the live `__all__`, the filesystem, the sealed vector files, the locked source documents, or the executor's own registries -- and the focused oracle fails if any objective leaf has no such consumer. A **descriptive** declaration has no independent source of truth; the exact leaf paths are enumerated in `descriptive_metadata.paths` (83 of them) and are never counted as verified assurance.
+
+Fixture values are inlined in the vectors rather than referenced by marker. The manifest records that mechanism as `inlined_values_with_test_only_explicit_semantic_bindings`: the corpus carries the values, and the oracle resolves each of the 19 declared fixtures to an exact vector, side, and JSON pointer rather than searching for an equal value.
+
+## 6. Rejection Contract
 
 Invalid vectors lock `failure_category`, `error_location`, `error_location_mode`, `error_type`. Prose messages, Pydantic internal union branch labels, and validator function names are deliberately not locked. The `prefix` location mode is used only where a discriminatorless union reports per-branch locations: the `S1.P05.S06` occurrence union and the `S1.P05.S07` fact union.
 
@@ -82,7 +88,7 @@ The eleven `S1.P05.S07` forbidden extras protect eleven DIFFERENT published non-
 | `support_role` | no support-role semantics |
 | `verification` | no verification or proof semantics |
 
-## 6. Effective Governance
+## 7. Effective Governance
 
 `S1.P05.S08` and its append-only `S1.P05.S08.C01` correction are consumed as source authorities and are never vectorized as product behaviour. The executor recomputes the effective projection from both artifacts rather than trusting a stored table:
 
@@ -92,7 +98,7 @@ The eleven `S1.P05.S07` forbidden extras protect eleven DIFFERENT published non-
     long-term S1.P06 1 · S5 11
     authority S1.P05.S08 6 · S1.P05.S08.C01 6
 
-## 7. Non-Generalizations
+## 8. Non-Generalizations
 
 - no complete development-history graph
 - no generic DevelopmentEvent
@@ -127,7 +133,7 @@ The eleven `S1.P05.S07` forbidden extras protect eleven DIFFERENT published non-
 - no retrieval or RAG
 - generic repository or evolution graph is S5-owned, not S1.P06-owned
 
-## 8. Locked Source Authorities
+## 9. Locked Source Authorities
 
 | Authority | Role | SHA-256 |
 | --- | --- | --- |
