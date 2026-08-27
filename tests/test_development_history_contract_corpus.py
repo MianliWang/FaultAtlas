@@ -162,6 +162,66 @@ def _construct(vector: dict[str, Any]) -> Any:
     return cast(Any, target).model_validate_json(json.dumps(supplied))
 
 
+ACCEPTED, REJECTED = "accepted", "rejected"
+
+# Which operations each family is allowed to declare, read off the sealed corpus.
+FAMILY_OPERATIONS = {
+    "valid": frozenset({"construct"}),
+    "invalid": frozenset({"reject"}),
+    "replay": frozenset({"construct"}),
+}
+
+
+def _execute(vector: dict[str, Any]) -> dict[str, Any]:
+    """Run a vector by its DECLARED operation, never by the file it came from.
+
+    Execution used to be selected by which vector file was loaded, so the sealed
+    `operation` could say the opposite of what actually ran and nothing noticed.
+    Dispatching here makes the declared operation load-bearing, and an unknown
+    operation fails closed rather than falling through to a default.
+    """
+    operation = cast(str, vector["operation"])
+    assert operation in ALLOWED_OPERATIONS, f"unknown operation: {operation}"
+    resolved = cast(Any, RESOLVABLE[vector["target"]])
+    observed: dict[str, Any] = {
+        "runtime_target": resolved.__name__,
+        "errors": None,
+        "vocabulary_error": False,
+        "value": None,
+    }
+
+    if operation == "construct":
+        observed["value"] = _construct(vector)
+        observed["outcome"] = ACCEPTED
+        return observed
+
+    if operation == "reject":
+        try:
+            observed["value"] = _construct(vector)
+        except ValidationError as caught:
+            observed["outcome"] = REJECTED
+            observed["errors"] = caught.errors()
+            return observed
+        except ValueError:
+            # A closed vocabulary raises a plain ValueError rather than a
+            # ValidationError, which the rejection contract records separately.
+            observed["outcome"] = REJECTED
+            observed["vocabulary_error"] = True
+            return observed
+        observed["outcome"] = ACCEPTED
+        return observed
+
+    raise AssertionError(f"unhandled operation: {operation}")
+
+
+def _observed_round_trip(value: Any, target: Any) -> bool:
+    if isinstance(value, Enum):
+        return target(value.value) is value
+    if not isinstance(value, BaseModel):
+        return False
+    return bool(target.model_validate_json(value.model_dump_json()) == value)
+
+
 def _dump(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
@@ -328,9 +388,12 @@ def test_declared_fixtures_are_shared_and_locked() -> None:
 def test_every_valid_vector_constructs_its_declared_value(
     vector: dict[str, Any],
 ) -> None:
-    value = _construct(vector)
+    observed = _execute(vector)
+    value = observed["value"]
     expected = vector["expected"]
 
+    assert observed["outcome"] == expected["outcome"], vector["id"]
+    assert observed["runtime_target"] == expected["runtime_target"], vector["id"]
     assert type(value).__name__ == expected["concrete_type"], vector["id"]
     if "changed_path_count" in expected:
         # A cardinality probe declares its size rather than a whole dump.
@@ -338,25 +401,26 @@ def test_every_valid_vector_constructs_its_declared_value(
         assert len(value.changed_paths) == expected["changed_path_count"]
     else:
         assert _dump(value) == expected["semantic_dump"], vector["id"]
-    if expected["round_trip_equal"] and isinstance(value, BaseModel):
-        target = cast(Any, RESOLVABLE[vector["target"]])
-        assert target.model_validate_json(value.model_dump_json()) == value
+    assert (
+        _observed_round_trip(value, RESOLVABLE[vector["target"]])
+        == expected["round_trip_equal"]
+    ), vector["id"]
 
 
 @pytest.mark.parametrize("vector", INVALID["vectors"], ids=_ids(INVALID))
 def test_every_invalid_vector_is_rejected_as_declared(vector: dict[str, Any]) -> None:
     expected = vector["expected"]
+    observed = _execute(vector)
+
+    assert observed["outcome"] == expected["outcome"] == REJECTED, vector["id"]
     if expected["failure_category"] == "vocabulary_error":
-        with pytest.raises(ValueError):
-            _construct(vector)
+        assert observed["vocabulary_error"], vector["id"]
         assert expected["error_type"] == "enum"
         assert expected["error_location"] == []
         return
 
-    with pytest.raises(ValidationError) as caught:
-        _construct(vector)
-
-    errors = caught.value.errors()
+    assert not observed["vocabulary_error"], vector["id"]
+    errors = cast(list[dict[str, Any]], observed["errors"])
     assert expected["failure_category"] == "validation_error"
     location = tuple(expected["error_location"])
     if expected["error_location_mode"] == "exact":
@@ -376,12 +440,17 @@ def test_every_replay_vector_reconstructs_the_retained_value(
     vector: dict[str, Any],
 ) -> None:
     target = cast(Any, RESOLVABLE[vector["target"]])
-    value = target.model_validate_json(json.dumps(vector["input"]))
+    observed = _execute(vector)
+    value = observed["value"]
     expected = vector["expected"]
 
+    assert observed["outcome"] == expected["outcome"], vector["id"]
+    assert observed["runtime_target"] == expected["runtime_target"], vector["id"]
     assert type(value).__name__ == expected["concrete_type"], vector["id"]
     assert _dump(value) == expected["semantic_dump"], vector["id"]
-    assert target.model_validate_json(value.model_dump_json()) == value
+    assert _observed_round_trip(value, target) == expected["round_trip_equal"], vector[
+        "id"
+    ]
 
 
 def test_enum_vectors_reject_a_lexeme_outside_the_published_vocabulary() -> None:
@@ -1479,9 +1548,6 @@ def _category_histogram(section: dict[str, Any]) -> dict[str, int]:
     )
 
 
-FAMILIES = (("valid", "VALID"), ("invalid", "INVALID"), ("replay", "REPLAY"))
-
-
 def _sections(
     valid: dict[str, Any], invalid: dict[str, Any], replay: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
@@ -1619,54 +1685,115 @@ def test_updating_only_the_manifest_leaves_the_markdown_stale() -> None:
 # --- a partition label is not a partition -------------------------------------
 
 
-def _behavioural_signature(vector: dict[str, Any]) -> str:
-    """What a vector actually selects, independent of how it is labelled."""
+SIGNATURE_FIELDS = {
+    "valid": ("expected", "input", "input_mode", "operation", "target"),
+    "invalid": ("expected", "input", "input_mode", "operation", "target"),
+    "replay": (
+        "embedded_facts",
+        "evidence_classification",
+        "evidence_record_lock",
+        "expected",
+        "input",
+        "input_mode",
+        "operation",
+        "source_pointers",
+        "target",
+    ),
+}
+
+
+def _behavioural_signature(vector: dict[str, Any], family: str) -> str:
+    """What a vector actually selects, excluding every descriptive label.
+
+    `id`, `purpose`, `semantic_partition`, and `decision_references` are how a
+    vector is described, not what it executes, so renaming must never read as a
+    new boundary.
+    """
     return json.dumps(
-        {
-            "expected": vector["expected"],
-            "input": vector["input"],
-            "input_mode": vector["input_mode"],
-            "operation": vector["operation"],
-            "target": vector["target"],
-        },
-        sort_keys=True,
+        {field: vector[field] for field in SIGNATURE_FIELDS[family]}, sort_keys=True
     )
 
 
-def _behavioural_duplicates(
-    sections: tuple[dict[str, Any], ...],
-) -> list[list[str]]:
+def _family_collisions(section: dict[str, Any], family: str) -> list[list[str]]:
+    """Collisions are scoped to one family.
+
+    A valid vector and a replay vector may legitimately construct the same
+    product value while serving different contract roles, so comparing across
+    families would forbid something the corpus is entitled to do.
+    """
     grouped: dict[str, list[str]] = {}
-    for section in sections:
-        for vector in section["vectors"]:
-            grouped.setdefault(_behavioural_signature(vector), []).append(
-                cast(str, vector["id"])
-            )
+    for vector in section["vectors"]:
+        grouped.setdefault(_behavioural_signature(vector, family), []).append(
+            cast(str, vector["id"])
+        )
     return sorted(ids for ids in grouped.values() if len(ids) > 1)
 
 
-def test_no_two_vectors_exercise_the_same_behaviour() -> None:
+FAMILIES = (("valid", VALID, 48), ("invalid", INVALID, 96), ("replay", REPLAY, 24))
+
+
+@pytest.mark.parametrize(
+    ("family", "section", "count"), FAMILIES, ids=[f[0] for f in FAMILIES]
+)
+def test_no_two_vectors_in_a_family_exercise_the_same_behaviour(
+    family: str, section: dict[str, Any], count: int
+) -> None:
     """Unique labels once hid two vectors that selected identical behaviour.
 
     `semantic_partition` is authored, so label uniqueness proves only that the
-    author wrote different words. Two vectors with the same target, mode,
-    operation, input, and expectation occupy one boundary however they are
-    named, and the corpus advertised both as distinct partitions.
+    author wrote different words.
     """
-    assert not _behavioural_duplicates((VALID, INVALID, REPLAY))
+    signatures = [_behavioural_signature(v, family) for v in section["vectors"]]
+
+    assert len(signatures) == count
+    assert len(set(signatures)) == count
+    assert not _family_collisions(section, family)
 
 
-def test_the_behavioural_signature_check_would_catch_a_copy() -> None:
-    """Otherwise the rule above could be vacuous."""
-    invalid = copy.deepcopy(INVALID)
-    twin = copy.deepcopy(invalid["vectors"][0])
-    twin["id"] = "history.invalid.probe.copy"
-    twin["semantic_partition"] = "role-binding/rejects/probe-copy"
-    invalid["vectors"].append(twin)
+def test_the_behavioural_signature_check_would_catch_a_relabelled_copy() -> None:
+    """The mutation keeps every label unique, so only behaviour can fail it."""
+    valid = copy.deepcopy(VALID)
+    twin = copy.deepcopy(valid["vectors"][0])
+    twin["id"] = "history.valid.probe.relabelled-copy"
+    twin["purpose"] = "A relabelled copy of an existing witness."
+    twin["semantic_partition"] = "role-binding/accepts/probe-relabelled-copy"
+    valid["vectors"].append(twin)
 
-    assert _behavioural_duplicates((VALID, invalid, REPLAY)) == [
-        [cast(str, INVALID["vectors"][0]["id"]), "history.invalid.probe.copy"]
+    labels = [v["semantic_partition"] for v in valid["vectors"]]
+    assert len(labels) == len(set(labels)), "every label stays unique"
+    assert _family_collisions(valid, "valid") == [
+        [cast(str, VALID["vectors"][0]["id"]), "history.valid.probe.relabelled-copy"]
     ]
+
+
+def test_the_collision_helper_is_scoped_to_one_family() -> None:
+    """A cross-family match must not be reported as a duplicate.
+
+    Two synthetic descriptors with matching product behaviour, one valid and one
+    replay, are compared. Nothing sealed is touched.
+    """
+    shared: dict[str, Any] = {
+        "expected": {"outcome": ACCEPTED},
+        "input": {"probe": True},
+        "input_mode": "json",
+        "operation": "construct",
+        "target": "PullRequestChangedPath",
+    }
+    as_valid: dict[str, Any] = {**shared, "id": "probe.valid"}
+    as_replay: dict[str, Any] = {
+        **shared,
+        "id": "probe.replay",
+        "embedded_facts": {},
+        "evidence_classification": "retained_normalized_observation",
+        "evidence_record_lock": "",
+        "source_pointers": [],
+    }
+
+    assert not _family_collisions({"vectors": [as_valid]}, "valid")
+    assert not _family_collisions({"vectors": [as_replay]}, "replay")
+    assert _behavioural_signature(as_valid, "valid") != _behavioural_signature(
+        as_replay, "replay"
+    )
 
 
 def test_the_replaced_duplicates_now_witness_their_partitions() -> None:
@@ -1694,15 +1821,43 @@ def test_the_replaced_duplicates_now_witness_their_partitions() -> None:
     )
 
 
-def test_the_change_set_requires_every_published_member() -> None:
-    """A default silently added to any member would otherwise pass unnoticed."""
-    missing = {
-        tuple(cast(list[str], v["expected"]["error_location"]))
+def test_the_change_set_requiredness_coverage_is_derived_from_the_live_model() -> None:
+    """The authority is the published model, not a list written beside it.
+
+    Comparing coverage to a hand-written field set means a newly required member
+    is covered by nothing and noticed by nobody. The required set is therefore
+    read off the live model, and the corpus must carry a missing-member
+    rejection for each.
+    """
+    required = {
+        name
+        for name, field in history.PullRequestChangeSet.model_fields.items()
+        if field.is_required()
+    }
+    covered = {
+        cast(list[str], v["expected"]["error_location"])[0]
         for v in INVALID["vectors"]
         if v["category"] == "change-set" and v["expected"]["error_type"] == "missing"
     }
 
-    assert missing == {("base",), ("head",), ("changed_paths",)}
+    assert required, "the published change set must have required members"
+    assert covered == required, sorted(required ^ covered)
+
+
+def test_an_unpartitioned_required_member_is_refused() -> None:
+    """Otherwise the derivation above could quietly agree with a gap."""
+    covered = {
+        cast(list[str], v["expected"]["error_location"])[0]
+        for v in INVALID["vectors"]
+        if v["category"] == "change-set" and v["expected"]["error_type"] == "missing"
+    }
+
+    assert covered - {"head"} != covered
+    assert (covered - {"head"}) != {
+        name
+        for name, field in history.PullRequestChangeSet.model_fields.items()
+        if field.is_required()
+    }
 
 
 # --- authority identifiers resolve into the locked documents ------------------
@@ -1781,3 +1936,202 @@ def test_every_vector_reference_names_a_registered_authority() -> None:
             cited |= set(references)
 
     assert cited == registered - {"closure:s1-p03:evidence-envelope"}
+
+
+# --- declared execution metadata is enforced, not merely carried --------------
+
+
+def test_every_vector_declares_an_operation_its_family_permits() -> None:
+    """Family and operation are separate claims and both must hold."""
+    for family, section, _ in FAMILIES:
+        permitted = FAMILY_OPERATIONS[family]
+        for vector in section["vectors"]:
+            assert vector["operation"] in permitted, (vector["id"], vector["operation"])
+
+    assert FAMILY_OPERATIONS["valid"] == frozenset({"construct"})
+    assert FAMILY_OPERATIONS["invalid"] == frozenset({"reject"})
+    assert FAMILY_OPERATIONS["replay"] == frozenset({"construct"})
+    assert set(ALLOWED_OPERATIONS) == set().union(*FAMILY_OPERATIONS.values())
+
+
+def test_an_unknown_operation_fails_the_dispatcher_closed() -> None:
+    vector = copy.deepcopy(VALID["vectors"][0])
+    vector["operation"] = "walk"
+
+    with pytest.raises(AssertionError, match="unknown operation"):
+        _execute(vector)
+
+
+@pytest.mark.parametrize(
+    ("family", "index", "flipped"),
+    (("valid", 0, "reject"), ("invalid", 0, "construct")),
+)
+def test_flipping_a_declared_operation_is_refused(
+    family: str, index: int, flipped: str
+) -> None:
+    """The sealed corpus must not be able to describe the opposite of what runs.
+
+    Execution used to be chosen by which file held the vector, so `operation`
+    could be flipped and re-sealed with every test still green.
+    """
+    section = {"valid": VALID, "invalid": INVALID}[family]
+    document = copy.deepcopy(section)
+    vector = document["vectors"][index]
+    vector["operation"] = flipped
+
+    assert _resealed_digest(document) != next(
+        entry["sha256"]
+        for entry in MANIFEST["corpus_files"]
+        if entry["filename"] == f"{family}-vectors.json"
+    )
+    assert vector["operation"] not in FAMILY_OPERATIONS[family]
+
+
+def test_a_flipped_operation_also_changes_what_the_dispatcher_runs() -> None:
+    """Family membership is one guard; the dispatch itself is the other."""
+    accepted = copy.deepcopy(VALID["vectors"][0])
+    accepted["operation"] = "reject"
+    # A construct that succeeds under a reject operation is reported accepted,
+    # so the rejection contract it would need can never be satisfied.
+    assert _execute(accepted)["outcome"] == ACCEPTED
+
+    rejected = copy.deepcopy(INVALID["vectors"][0])
+    rejected["operation"] = "construct"
+    with pytest.raises(ValidationError):
+        _execute(rejected)
+
+
+@pytest.mark.parametrize(
+    ("family", "flipped"), (("valid", REJECTED), ("invalid", ACCEPTED))
+)
+def test_a_falsified_outcome_is_refused(family: str, flipped: str) -> None:
+    """`outcome` was sealed metadata that nothing ever compared."""
+    section = {"valid": VALID, "invalid": INVALID}[family]
+    document = copy.deepcopy(section)
+    vector = document["vectors"][0]
+    vector["expected"]["outcome"] = flipped
+
+    assert _resealed_digest(document) != next(
+        entry["sha256"]
+        for entry in MANIFEST["corpus_files"]
+        if entry["filename"] == f"{family}-vectors.json"
+    )
+    assert _execute(vector)["outcome"] != vector["expected"]["outcome"]
+
+
+def test_a_falsified_runtime_target_is_refused() -> None:
+    """`runtime_target` must equal the target the registry actually resolved."""
+    vector = copy.deepcopy(VALID["vectors"][0])
+    assert vector["expected"]["runtime_target"] != "PullRequestChangeSet"
+    vector["expected"]["runtime_target"] = "PullRequestChangeSet"
+
+    assert _execute(vector)["runtime_target"] != vector["expected"]["runtime_target"]
+
+
+def test_the_runtime_target_comes_from_the_registry_not_the_expectation() -> None:
+    for _, section, _ in FAMILIES:
+        for vector in section["vectors"]:
+            expected = vector["expected"]
+            if "runtime_target" not in expected:
+                continue
+            resolved = cast(type, RESOLVABLE[vector["target"]])
+            assert expected["runtime_target"] == resolved.__name__, vector["id"]
+
+
+def test_a_falsified_round_trip_claim_is_refused() -> None:
+    """The field gated the check, so declaring False silently skipped it."""
+    vector = copy.deepcopy(VALID["vectors"][0])
+    assert vector["expected"]["round_trip_equal"] is True
+    vector["expected"]["round_trip_equal"] = False
+
+    observed = _execute(vector)
+    assert (
+        _observed_round_trip(observed["value"], RESOLVABLE[vector["target"]])
+        != vector["expected"]["round_trip_equal"]
+    )
+
+
+def test_no_declared_execution_field_is_left_unverified() -> None:
+    """A sealed field that claims observable behaviour must be compared."""
+    verified = {
+        "changed_path_count",
+        "concrete_type",
+        "error_location",
+        "error_location_mode",
+        "error_type",
+        "failure_category",
+        "outcome",
+        "round_trip_equal",
+        "runtime_target",
+        "semantic_dump",
+    }
+    declared: set[str] = set()
+    for _, section, _ in FAMILIES:
+        for vector in section["vectors"]:
+            declared |= set(cast(dict[str, Any], vector["expected"]))
+
+    assert declared == verified, sorted(declared ^ verified)
+
+
+# --- decision references are registered and non-repeating ---------------------
+
+
+def test_no_vector_repeats_a_decision_reference() -> None:
+    for _, section, _ in FAMILIES:
+        for vector in section["vectors"]:
+            references = cast(list[str], vector["decision_references"])
+            assert references, vector["id"]
+            assert len(references) == len(set(references)), vector["id"]
+
+
+def _reference_failures(section: dict[str, Any]) -> list[tuple[str, str]]:
+    registered = {
+        cast(str, e["decision_reference"])
+        for e in cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+    }
+    failures: list[tuple[str, str]] = []
+    for vector in section["vectors"]:
+        references = cast(list[str], vector["decision_references"])
+        if not set(references) <= registered:
+            failures.append((cast(str, vector["id"]), "unregistered-reference"))
+        if len(references) != len(set(references)):
+            failures.append((cast(str, vector["id"]), "duplicate-reference"))
+    return failures
+
+
+def test_an_unregistered_decision_reference_is_refused() -> None:
+    document = copy.deepcopy(INVALID)
+    vector = document["vectors"][0]
+    vector["decision_references"] = ["decision:not-registered"]
+
+    assert _resealed_digest(document) != next(
+        entry["sha256"]
+        for entry in MANIFEST["corpus_files"]
+        if entry["filename"] == "invalid-vectors.json"
+    )
+    assert _reference_failures(document) == [
+        (cast(str, vector["id"]), "unregistered-reference")
+    ]
+
+
+def test_a_repeated_decision_reference_is_refused() -> None:
+    document = copy.deepcopy(INVALID)
+    vector = document["vectors"][0]
+    vector["decision_references"] = [
+        *vector["decision_references"],
+        vector["decision_references"][0],
+    ]
+
+    assert _resealed_digest(document) != next(
+        entry["sha256"]
+        for entry in MANIFEST["corpus_files"]
+        if entry["filename"] == "invalid-vectors.json"
+    )
+    assert _reference_failures(document) == [
+        (cast(str, vector["id"]), "duplicate-reference")
+    ]
+
+
+def test_the_sealed_corpus_has_no_reference_failures() -> None:
+    for _, section, _ in FAMILIES:
+        assert not _reference_failures(section)
