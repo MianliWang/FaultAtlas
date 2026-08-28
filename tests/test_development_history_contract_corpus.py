@@ -72,6 +72,7 @@ ALLOWED_MARKERS = (
 )
 MAX_INDEXED_COUNT = 4097
 ALLOWED_OPERATIONS = ("construct", "reject")
+LOCATION_MODES = ("exact", "prefix")
 ALLOWED_INPUT_MODES = ("json", "python", "replay")
 
 
@@ -496,6 +497,11 @@ def test_every_invalid_vector_is_rejected_as_declared(vector: dict[str, Any]) ->
     expected = vector["expected"]
     observed = _execute(vector)
 
+    # The mode is a closed vocabulary, and it selects how the location is
+    # compared. Treating anything that is not "exact" as prefix would let a
+    # vector publish a mode that means nothing, and the vocabulary-error branch
+    # below returns before the field is ever read.
+    assert expected["error_location_mode"] in LOCATION_MODES, vector["id"]
     assert observed["outcome"] == expected["outcome"] == REJECTED, vector["id"]
     if expected["failure_category"] == "vocabulary_error":
         assert observed["vocabulary_error"], vector["id"]
@@ -5328,3 +5334,36 @@ def test_a_reassigned_scope_role_is_refused() -> None:
         + "."
     )
     assert reassigned not in text
+
+
+def test_every_invalid_vector_declares_a_known_location_mode() -> None:
+    """The mode selects the comparison, so an unknown one means nothing."""
+    modes = {
+        cast(str, v["expected"]["error_location_mode"]) for v in INVALID["vectors"]
+    }
+
+    assert modes <= set(LOCATION_MODES)
+    assert modes == set(LOCATION_MODES), "both published modes must stay in use"
+    assert set(
+        cast(dict[str, str], MANIFEST["rejection_contract"]["error_location_modes"])
+    ) == set(LOCATION_MODES)
+
+
+def test_an_unknown_location_mode_is_refused() -> None:
+    vector = copy.deepcopy(INVALID["vectors"][0])
+    vector["expected"]["error_location_mode"] = "typo"
+
+    assert vector["expected"]["error_location_mode"] not in LOCATION_MODES
+
+
+def test_a_vocabulary_vector_still_declares_its_mode() -> None:
+    """The early return must not exempt the field from validation."""
+    vocabulary = [
+        v
+        for v in INVALID["vectors"]
+        if v["expected"]["failure_category"] == "vocabulary_error"
+    ]
+
+    assert vocabulary
+    for vector in vocabulary:
+        assert vector["expected"]["error_location_mode"] in LOCATION_MODES, vector["id"]
