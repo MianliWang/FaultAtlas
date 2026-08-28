@@ -3717,34 +3717,91 @@ def test_every_python_typing_witness_supplies_one_untyped_position() -> None:
 
 # --- every vector answers to a requirement -----------------------------------
 
-SECONDARY_ROLES = {
-    "missing": "SECONDARY_BOUNDARY_WITNESS: a required member is absent",
-    "extra": "SECONDARY_BOUNDARY_WITNESS: a forbidden extra is refused",
-    "predecessor": "SECONDARY_BOUNDARY_WITNESS: a predecessor contract boundary",
-}
+NO_REQUIREMENT = "NO_CLEAR_REQUIREMENT"
+
+
+def _model_fields_of(target: str) -> set[str]:
+    resolved = RESOLVABLE.get(target)
+    fields = getattr(resolved, "model_fields", None)
+    return set(fields) if fields else set()
+
+
+def _union_fields_of(target: str) -> set[str]:
+    resolved = RESOLVABLE.get(target)
+    fields = getattr(resolved, "model_fields", None)
+    if not fields:
+        return set()
+    return {
+        name
+        for name, info in cast(dict[str, Any], fields).items()
+        if "|" in str(info.annotation) or "Union" in str(info.annotation)
+    }
 
 
 def _vector_role(vector: dict[str, Any], primaries: set[str]) -> str:
-    if cast(str, vector["id"]) in primaries:
+    """Classify a vector only when a rule actually holds for it.
+
+    The previous fallback returned a predecessor-boundary label for anything it
+    did not recognise, which made `NO_CLEAR_REQUIREMENT` unreachable: an
+    unrelated vector could be added and the reverse ledger would still close.
+    Every branch below is now a claim that must be true of the vector.
+    """
+    vector_id = cast(str, vector["id"])
+    if vector_id in primaries:
         return "PRIMARY_WITNESS"
+
     expected = cast(dict[str, Any], vector["expected"])
-    if expected.get("error_type") == "missing":
-        return SECONDARY_ROLES["missing"]
-    if expected.get("error_type") == "extra_forbidden":
-        return SECONDARY_ROLES["extra"]
-    return SECONDARY_ROLES["predecessor"]
+    location = cast(list[str], expected.get("error_location") or [])
+    fields = _model_fields_of(cast(str, vector["target"]))
+    supplied = vector["input"] if isinstance(vector["input"], dict) else {}
+    supplied = cast(dict[str, Any], supplied)
+
+    if expected.get("failure_category") == "vocabulary_error":
+        if expected.get("error_type") == "enum" and not location:
+            return "SECONDARY_BOUNDARY_WITNESS: a closed vocabulary refuses a lexeme"
+        return NO_REQUIREMENT
+
+    if len(location) > 1 and location[0] in fields and location[0] in supplied:
+        # The outer field is supplied; the published nested type is what refuses
+        # it, so this witnesses a predecessor contract boundary.
+        return "SECONDARY_BOUNDARY_WITNESS: a nested predecessor contract boundary"
+
+    if expected.get("error_type") == "missing" and location:
+        if location[0] in fields and location[0] not in supplied:
+            return "SECONDARY_BOUNDARY_WITNESS: a required member is absent"
+        if location[0] in _union_fields_of(cast(str, vector["target"])):
+            # A closed union reports `missing` at its own field when no branch
+            # matches, which is a union claim rather than a requiredness one.
+            return "SECONDARY_BOUNDARY_WITNESS: a closed union admits no branch"
+        return NO_REQUIREMENT
+
+    if expected.get("error_type") == "extra_forbidden" and location:
+        if location[0] in supplied and location[0] not in fields:
+            return "SECONDARY_BOUNDARY_WITNESS: a forbidden extra is refused"
+        return NO_REQUIREMENT
+
+    if location and location[0] in fields:
+        return "SECONDARY_BOUNDARY_WITNESS: a published field boundary"
+    if not location:
+        return "SECONDARY_BOUNDARY_WITNESS: a cross-field model invariant"
+    return NO_REQUIREMENT
 
 
 def test_every_invalid_vector_answers_to_a_requirement() -> None:
     """The reverse direction: no vector may exist without a contract purpose."""
     primaries = {row[4] for row in REQUIREMENT_LEDGER}
+    unclassified = [
+        cast(str, v["id"])
+        for v in INVALID["vectors"]
+        if _vector_role(v, primaries) == NO_REQUIREMENT
+    ]
     roles = Counter(_vector_role(v, primaries) for v in INVALID["vectors"])
 
+    assert not unclassified, unclassified
     assert sum(roles.values()) == len(INVALID["vectors"])
     assert roles["PRIMARY_WITNESS"] == len(
         [r for r in REQUIREMENT_LEDGER if r[3] == NEGATIVE]
     )
-    assert "NO_CLEAR_REQUIREMENT" not in roles
 
 
 def test_every_replay_vector_is_canonical_provenance_coverage() -> None:
@@ -4510,3 +4567,111 @@ def test_every_forbidden_extra_key_reaches_its_vector() -> None:
             FORBIDDEN_EXTRA_AUTHORITY[entry["extra_key"]]
             == entry["published_non_claim"]
         )
+
+
+def test_an_unrecognised_vector_is_refused_by_the_reverse_ledger() -> None:
+    """The classifier must be able to fail, or the ledger proves nothing."""
+    primaries = {row[4] for row in REQUIREMENT_LEDGER}
+    stranger = {
+        "id": "history.invalid.probe.stranger",
+        "target": "PullRequestChangedPath",
+        "input": {"path": "x"},
+        "input_mode": "json",
+        "operation": "reject",
+        "expected": {
+            "error_location": ["not_a_published_field"],
+            "error_location_mode": "exact",
+            "error_type": "value_error",
+            "failure_category": "validation_error",
+            "outcome": "rejected",
+        },
+    }
+
+    assert _vector_role(stranger, primaries) == NO_REQUIREMENT
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"),
+    (
+        ("extra key that is actually a model field", "extra"),
+        ("missing error for a field that is present", "missing"),
+        ("vocabulary error carrying a location", "vocabulary"),
+    ),
+)
+def test_each_secondary_rule_must_actually_hold(label: str, mutate: str) -> None:
+    primaries = {row[4] for row in REQUIREMENT_LEDGER}
+    vector = copy.deepcopy(
+        next(
+            v
+            for v in INVALID["vectors"]
+            if v["id"].endswith("changed-path.extra-base-object")
+        )
+    )
+    if mutate == "extra":
+        vector["expected"]["error_location"] = ["path"]
+        vector["input"] = {"path": "x"}
+    elif mutate == "missing":
+        vector["expected"]["error_type"] = "missing"
+        vector["expected"]["error_location"] = ["path"]
+        vector["input"] = {"path": "x"}
+    else:
+        vector["expected"]["failure_category"] = "vocabulary_error"
+        vector["expected"]["error_type"] = "enum"
+        vector["expected"]["error_location"] = ["status"]
+
+    assert _vector_role(vector, primaries) == NO_REQUIREMENT, label
+
+
+# --- the derived governance block is rendered, not sampled -------------------
+
+
+def _render_governance_block() -> list[str]:
+    governance = cast(dict[str, Any], MANIFEST["effective_governance"])
+    totals = cast(dict[str, Any], governance["totals"])
+    owners = lambda key: " · ".join(  # noqa: E731 - local formatting helper
+        f"{owner} {count}" for owner, count in cast(dict[str, int], totals[key]).items()
+    )
+    authority = cast(dict[str, int], governance["authority_totals"])
+    return [
+        f"    inherited {governance['inherited_subject_count']}"
+        f" · exactly once {governance['dispositioned_exactly_once']}"
+        f" · self-introduced {governance['self_introduced_count']}"
+        f" · self_owned_open {governance['self_owned_open']}",
+        f"    split {totals['disposition']['split']}"
+        f" · carried_forward {totals['disposition']['carried_forward']}",
+        f"    immediate {owners('immediate_owner')}",
+        f"    long-term {owners('preserved_long_term_owner')}",
+        "    authority "
+        + " · ".join(f"{name} {count}" for name, count in authority.items()),
+    ]
+
+
+def _actual_governance_block(text: str) -> list[str]:
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("    inherited "))
+    end = start
+    while end < len(lines) and lines[end].startswith("    "):
+        end += 1
+    return lines[start:end]
+
+
+def test_the_governance_block_is_an_exact_projection() -> None:
+    """Every published governance number, not a sampled few."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+
+    assert _actual_governance_block(text) == _render_governance_block()
+
+
+@pytest.mark.parametrize(
+    "line",
+    ("inherited", "exactly once", "split", "immediate", "long-term", "authority"),
+)
+def test_no_governance_value_can_drift_unnoticed(line: str) -> None:
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    block = _actual_governance_block(text)
+    target = next(entry for entry in block if line in entry)
+    bumped = re.sub(r"(\d+)", lambda m: str(int(m.group(1)) + 1), target, count=1)
+    tampered = text.replace(target, bumped, 1)
+
+    assert tampered != text, line
+    assert _actual_governance_block(tampered) != _render_governance_block()
