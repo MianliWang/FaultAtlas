@@ -4774,6 +4774,46 @@ def test_every_invalid_vector_is_registered_or_primary() -> None:
     assert all(SECONDARY_WITNESS_REGISTRY.values())
 
 
+def _derived_requirement(vector: dict[str, Any]) -> str:
+    """The requirement a vector witnesses, read off its validated properties."""
+    expected = cast(dict[str, Any], vector["expected"])
+    location = cast(list[str], expected["error_location"])
+    if len(location) > 1:
+        return f"{location[0]} is refused by its published nested contract"
+    if expected["error_type"] == "missing":
+        return f"{location[0]} is required"
+    if expected["error_type"] == "extra_forbidden":
+        return f"no {location[0]} is published"
+    if expected.get("failure_category") == "vocabulary_error":
+        return "the vocabulary is closed"
+    if not location:
+        return "a published cross-field invariant"
+    return f"{location[0]} refuses this published boundary"
+
+
+def test_each_registered_requirement_matches_its_vector() -> None:
+    """A description nobody derives can say anything at all."""
+    mismatched = [
+        cast(str, v["id"])
+        for v in INVALID["vectors"]
+        if v["id"] in SECONDARY_WITNESS_REGISTRY
+        and SECONDARY_WITNESS_REGISTRY[cast(str, v["id"])] != _derived_requirement(v)
+    ]
+
+    assert not mismatched, mismatched
+
+
+def test_a_swapped_registry_description_is_refused() -> None:
+    vectors = {cast(str, v["id"]): v for v in INVALID["vectors"]}
+    first, second = sorted(SECONDARY_WITNESS_REGISTRY)[:2]
+    swapped = dict(SECONDARY_WITNESS_REGISTRY)
+    swapped[first], swapped[second] = swapped[second], swapped[first]
+
+    assert swapped[first] != _derived_requirement(vectors[first]) or swapped[
+        second
+    ] != _derived_requirement(vectors[second])
+
+
 def test_an_unregistered_vector_is_refused() -> None:
     """The closure must fail for a vector nobody named."""
     primaries = {row[4] for row in REQUIREMENT_LEDGER}
@@ -4790,113 +4830,219 @@ def test_an_unregistered_vector_is_refused() -> None:
 # add another whose value happens to match, publishing a pull-request number as
 # a repository identity. The permitted coordinate pairs are pinned here.
 
-SOURCE_COORDINATES: tuple[tuple[str, str], ...] = (
-    ("/observations/comparison/base_sha", "/role_assignment/revision/full_digest"),
-    ("/observations/comparison/head_sha", "/role_assignment/revision/full_digest"),
-    ("/observations/pr/attempts/0/bracket_a/head/ref/value", "/head_ref_name"),
+SOURCE_COORDINATES: tuple[tuple[str, str, str], ...] = (
     (
-        "/observations/pr/attempts/0/bracket_a/head/ref/value",
-        "/occurrence/head_ref_name",
+        "history.replay.changed-path.assertrewrite",
+        "/observations/pr/changed_files/items/2/blob_sha",
+        "/head_object/full_digest",
     ),
     (
+        "history.replay.changed-path.assertrewrite",
+        "/observations/pr/changed_files/items/2/path",
+        "/path",
+    ),
+    (
+        "history.replay.changed-path.assertrewrite",
+        "/observations/pr/changed_files/items/2/status",
+        "/status",
+    ),
+    (
+        "history.replay.changed-path.changelog",
+        "/observations/pr/changed_files/items/0/blob_sha",
+        "/head_object/full_digest",
+    ),
+    (
+        "history.replay.changed-path.changelog",
+        "/observations/pr/changed_files/items/0/path",
+        "/path",
+    ),
+    (
+        "history.replay.changed-path.changelog",
+        "/observations/pr/changed_files/items/0/status",
+        "/status",
+    ),
+    (
+        "history.replay.changed-path.rewrite",
+        "/observations/pr/changed_files/items/1/blob_sha",
+        "/head_object/full_digest",
+    ),
+    (
+        "history.replay.changed-path.rewrite",
+        "/observations/pr/changed_files/items/1/path",
+        "/path",
+    ),
+    (
+        "history.replay.changed-path.rewrite",
+        "/observations/pr/changed_files/items/1/status",
+        "/status",
+    ),
+    (
+        "history.replay.head-ref-deletion.canonical",
+        "/observations/pr/attempts/0/bracket_a/head/ref/value",
+        "/head_ref_name",
+    ),
+    (
+        "history.replay.head-ref-deletion.canonical",
         "/observations/pr/attempts/0/bracket_a/head/sha",
         "/head/role_assignment/revision/full_digest",
     ),
     (
-        "/observations/pr/attempts/0/bracket_a/head/sha",
-        "/occurrence/head/role_assignment/revision/full_digest",
-    ),
-    (
+        "history.replay.head-ref-deletion.canonical",
         "/observations/pr/attempts/0/bracket_a/number",
         "/head/pull_request/repository_scoped_number",
     ),
     (
-        "/observations/pr/attempts/0/bracket_a/number",
-        "/occurrence/head/pull_request/repository_scoped_number",
-    ),
-    (
-        "/observations/pr/attempts/0/bracket_a/number",
-        "/occurrence/pull_request/repository_scoped_number",
-    ),
-    (
-        "/observations/pr/attempts/0/bracket_a/number",
-        "/occurrence/review/parent/repository_scoped_number",
-    ),
-    (
-        "/observations/pr/attempts/0/bracket_a/number",
-        "/pull_request/repository_scoped_number",
-    ),
-    (
-        "/observations/pr/attempts/0/bracket_a/number",
-        "/review/parent/repository_scoped_number",
-    ),
-    ("/observations/pr/changed_files/items/0/blob_sha", "/head_object/full_digest"),
-    ("/observations/pr/changed_files/items/0/path", "/path"),
-    ("/observations/pr/changed_files/items/0/status", "/status"),
-    ("/observations/pr/changed_files/items/1/blob_sha", "/head_object/full_digest"),
-    ("/observations/pr/changed_files/items/1/path", "/path"),
-    ("/observations/pr/changed_files/items/1/status", "/status"),
-    ("/observations/pr/changed_files/items/2/blob_sha", "/head_object/full_digest"),
-    ("/observations/pr/changed_files/items/2/path", "/path"),
-    ("/observations/pr/changed_files/items/2/status", "/status"),
-    ("/observations/pr/reviews/items/0/commit_sha", "/approved_revision/full_digest"),
-    (
-        "/observations/pr/reviews/items/0/commit_sha",
-        "/occurrence/approved_revision/full_digest",
-    ),
-    (
-        "/observations/pr/reviews/items/0/global_id",
-        "/occurrence/review/provider_global_id",
-    ),
-    ("/observations/pr/reviews/items/0/global_id", "/review/provider_global_id"),
-    ("/observations/pr/reviews/items/0/submitted_at/normalized_utc", "/occurred_at"),
-    (
-        "/observations/pr/timeline/items/4/commit_id/value",
-        "/merge_revision/full_digest",
-    ),
-    (
-        "/observations/pr/timeline/items/4/commit_id/value",
-        "/occurrence/merge_revision/full_digest",
-    ),
-    (
-        "/observations/pr/timeline/items/4/created_at/value/normalized_utc",
-        "/occurred_at",
-    ),
-    (
-        "/observations/pr/timeline/items/6/created_at/value/normalized_utc",
-        "/occurred_at",
-    ),
-    (
+        "history.replay.head-ref-deletion.canonical",
         "/observations/repository/global_id",
         "/head/pull_request/repository_identity/provider_repository_id",
     ),
     (
-        "/observations/repository/global_id",
-        "/occurrence/head/pull_request/repository_identity/provider_repository_id",
+        "history.replay.merge-outcome.canonical",
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/pull_request/repository_scoped_number",
     ),
     (
-        "/observations/repository/global_id",
-        "/occurrence/pull_request/repository_identity/provider_repository_id",
+        "history.replay.merge-outcome.canonical",
+        "/observations/pr/timeline/items/4/commit_id/value",
+        "/merge_revision/full_digest",
     ),
     (
-        "/observations/repository/global_id",
-        "/occurrence/review/parent/repository_identity/provider_repository_id",
-    ),
-    (
+        "history.replay.merge-outcome.canonical",
         "/observations/repository/global_id",
         "/pull_request/repository_identity/provider_repository_id",
     ),
     (
+        "history.replay.occurrence-time.approval",
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/occurrence/review/parent/repository_scoped_number",
+    ),
+    (
+        "history.replay.occurrence-time.approval",
+        "/observations/pr/reviews/items/0/commit_sha",
+        "/occurrence/approved_revision/full_digest",
+    ),
+    (
+        "history.replay.occurrence-time.approval",
+        "/observations/pr/reviews/items/0/global_id",
+        "/occurrence/review/provider_global_id",
+    ),
+    (
+        "history.replay.occurrence-time.approval",
+        "/observations/pr/reviews/items/0/submitted_at/normalized_utc",
+        "/occurred_at",
+    ),
+    (
+        "history.replay.occurrence-time.approval",
+        "/observations/repository/global_id",
+        "/occurrence/review/parent/repository_identity/provider_repository_id",
+    ),
+    (
+        "history.replay.occurrence-time.deletion",
+        "/observations/pr/attempts/0/bracket_a/head/ref/value",
+        "/occurrence/head_ref_name",
+    ),
+    (
+        "history.replay.occurrence-time.deletion",
+        "/observations/pr/attempts/0/bracket_a/head/sha",
+        "/occurrence/head/role_assignment/revision/full_digest",
+    ),
+    (
+        "history.replay.occurrence-time.deletion",
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/occurrence/head/pull_request/repository_scoped_number",
+    ),
+    (
+        "history.replay.occurrence-time.deletion",
+        "/observations/pr/timeline/items/6/created_at/value/normalized_utc",
+        "/occurred_at",
+    ),
+    (
+        "history.replay.occurrence-time.deletion",
+        "/observations/repository/global_id",
+        "/occurrence/head/pull_request/repository_identity/provider_repository_id",
+    ),
+    (
+        "history.replay.occurrence-time.merge",
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/occurrence/pull_request/repository_scoped_number",
+    ),
+    (
+        "history.replay.occurrence-time.merge",
+        "/observations/pr/timeline/items/4/commit_id/value",
+        "/occurrence/merge_revision/full_digest",
+    ),
+    (
+        "history.replay.occurrence-time.merge",
+        "/observations/pr/timeline/items/4/created_at/value/normalized_utc",
+        "/occurred_at",
+    ),
+    (
+        "history.replay.occurrence-time.merge",
+        "/observations/repository/global_id",
+        "/occurrence/pull_request/repository_identity/provider_repository_id",
+    ),
+    (
+        "history.replay.review-approval.canonical",
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/review/parent/repository_scoped_number",
+    ),
+    (
+        "history.replay.review-approval.canonical",
+        "/observations/pr/reviews/items/0/commit_sha",
+        "/approved_revision/full_digest",
+    ),
+    (
+        "history.replay.review-approval.canonical",
+        "/observations/pr/reviews/items/0/global_id",
+        "/review/provider_global_id",
+    ),
+    (
+        "history.replay.review-approval.canonical",
         "/observations/repository/global_id",
         "/review/parent/repository_identity/provider_repository_id",
+    ),
+    (
+        "history.replay.role-binding.base",
+        "/observations/comparison/base_sha",
+        "/role_assignment/revision/full_digest",
+    ),
+    (
+        "history.replay.role-binding.base",
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/pull_request/repository_scoped_number",
+    ),
+    (
+        "history.replay.role-binding.base",
+        "/observations/repository/global_id",
+        "/pull_request/repository_identity/provider_repository_id",
+    ),
+    (
+        "history.replay.role-binding.head",
+        "/observations/comparison/head_sha",
+        "/role_assignment/revision/full_digest",
+    ),
+    (
+        "history.replay.role-binding.head",
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/pull_request/repository_scoped_number",
+    ),
+    (
+        "history.replay.role-binding.head",
+        "/observations/repository/global_id",
+        "/pull_request/repository_identity/provider_repository_id",
     ),
 )
 
 
 def test_every_source_mapping_uses_an_authorised_coordinate() -> None:
+    """Bound per vector: a corpus-wide set would let two vectors trade sources."""
     permitted = set(SOURCE_COORDINATES)
     observed = {
-        (f"{pointer['json_pointer']}{source_field}", replayed)
+        (
+            cast(str, vector["id"]),
+            f"{pointer['json_pointer']}{source_field}",
+            replayed,
+        )
         for vector in REPLAY["vectors"]
         for pointer in cast(list[dict[str, Any]], vector["source_pointers"])
         for source_field, replayed in cast(
@@ -4907,10 +5053,34 @@ def test_every_source_mapping_uses_an_authorised_coordinate() -> None:
     assert observed == permitted, sorted(observed ^ permitted)
 
 
+def test_two_vectors_cannot_trade_source_coordinates() -> None:
+    """The approval must be timestamped from its own retained event."""
+    permitted = set(SOURCE_COORDINATES)
+    approval = next(
+        t
+        for t in permitted
+        if t[0] == "history.replay.occurrence-time.approval" and t[2] == "/occurred_at"
+    )
+    merge = next(
+        t
+        for t in permitted
+        if t[0] == "history.replay.occurrence-time.merge" and t[2] == "/occurred_at"
+    )
+
+    assert approval[1] != merge[1]
+    traded = (permitted - {approval, merge}) | {
+        (approval[0], merge[1], approval[2]),
+        (merge[0], approval[1], merge[2]),
+    }
+    assert traded != permitted
+    assert sorted(c for _, c, _ in traded) == sorted(c for _, c, _ in permitted)
+
+
 def test_an_unauthorised_source_coordinate_is_refused() -> None:
     """Re-pointing a leaf at a different retained coordinate must fail."""
     permitted = set(SOURCE_COORDINATES)
     smuggled = (
+        "history.replay.role-binding.base",
         "/observations/pr/attempts/0/bracket_a/number",
         "/pull_request/repository_identity/provider_repository_id",
     )
