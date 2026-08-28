@@ -2439,7 +2439,15 @@ def _v_effective_governance() -> None:
     }
     assert governance["base_decision"] in registered
     assert governance["correction"] in registered
+    # Subset membership would let the correction drop out of the declared
+    # inputs while the recomputation still loads it, so the manifest could
+    # misreport which artifacts produced its totals.
+    assert set(cast(list[str], governance["recomputed_from"])) == {
+        governance["base_decision"],
+        governance["correction"],
+    }
     assert set(cast(list[str], governance["recomputed_from"])) <= registered
+    assert len(cast(list[str], governance["recomputed_from"])) == 2
     assert governance["vectorized_as_product_behavior"] is False
     # The numeric projection is recomputed from both artifacts elsewhere; this
     # validator binds the declared references and the invariant totals.
@@ -5256,3 +5264,67 @@ def test_swapped_classification_descriptions_are_refused() -> None:
 
     assert sorted(b.split(" — ", 1)[1] for b in swapped) == sorted(bodies)
     assert swapped != rendered
+
+
+def test_a_partial_recomputed_from_is_refused() -> None:
+    """Dropping the correction must not leave the declaration true."""
+    governance = cast(dict[str, Any], MANIFEST["effective_governance"])
+    complete = {governance["base_decision"], governance["correction"]}
+
+    for partial in ([], [governance["base_decision"]], [governance["correction"]]):
+        assert set(cast(list[str], partial)) != complete
+
+
+# --- the scope paragraph names roles, so it is projected too -----------------
+
+
+def _render_scope_sentence() -> str:
+    scope = cast(dict[str, Any], MANIFEST["scope"])
+    supporting = ", ".join(
+        f"`{module}`"
+        for module in cast(list[str], scope["supporting_authorities_not_owned"])
+    )
+    outside = " and ".join(f"`{module}`" for module in OUTSIDE_MODULES)
+    return (
+        f"Supporting authorities are consumed but not owned: {supporting}. "
+        f"{outside} are outside this corpus: no `S1.P05` value consumes them."
+    )
+
+
+OUTSIDE_MODULES = (
+    "faultatlas.domain.snapshot",
+    "faultatlas.domain.snapshot_evidence_link",
+)
+
+
+def test_the_scope_sentence_is_an_exact_projection() -> None:
+    """Token presence cannot tell a supporting module from an excluded one."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    rendered = _render_scope_sentence()
+
+    assert rendered in text
+    for module in OUTSIDE_MODULES:
+        assert module not in cast(
+            list[str], MANIFEST["scope"]["supporting_authorities_not_owned"]
+        )
+        assert module not in set(OWNED)
+
+
+def test_a_reassigned_scope_role_is_refused() -> None:
+    """Swapping a supporting module for an excluded one keeps every token."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    supporting = list(
+        cast(list[str], MANIFEST["scope"]["supporting_authorities_not_owned"])
+    )
+    swapped = [
+        OUTSIDE_MODULES[0] if m == "faultatlas.domain.identity" else m
+        for m in supporting
+    ]
+
+    assert sorted(swapped) != sorted(supporting)
+    reassigned = (
+        "Supporting authorities are consumed but not owned: "
+        + ", ".join(f"`{m}`" for m in swapped)
+        + "."
+    )
+    assert reassigned not in text
