@@ -4681,3 +4681,303 @@ def test_no_governance_value_can_drift_unnoticed(line: str) -> None:
 
     assert tampered != text, line
     assert _actual_governance_block(tampered) != _render_governance_block()
+
+
+# --- every secondary vector is registered, not inferred ----------------------
+#
+# Classifying by error shape still ended in broad fallbacks: any error under a
+# real field became a "field boundary" and any model-level error a "cross-field
+# invariant", so an unrelated vector could still pass as answered-for. Each
+# non-primary vector is therefore named here against the requirement it exists
+# to witness. Adding a vector without registering it fails the closure.
+
+SECONDARY_WITNESS_REGISTRY: dict[str, str] = {
+    "history.invalid.role-binding.missing-pull-request": "pull_request is required",
+    "history.invalid.role-binding.missing-role-assignment": "role_assignment is required",
+    "history.invalid.role-binding.extra-observed-at": "no observed_at is published",
+    "history.invalid.role-binding.dumped-mapping-python": "pull_request refuses this published boundary",
+    "history.invalid.role-binding.foreign-python-subject": "pull_request refuses this published boundary",
+    "history.invalid.role-binding.swapped-members": "pull_request is refused by its published nested contract",
+    "history.invalid.role-binding.null-role-assignment": "role_assignment refuses this published boundary",
+    "history.invalid.status.removed": "the vocabulary is closed",
+    "history.invalid.status.renamed": "the vocabulary is closed",
+    "history.invalid.status.copied": "the vocabulary is closed",
+    "history.invalid.changed-path.unknown-status": "status refuses this published boundary",
+    "history.invalid.changed-path.missing-path": "path is required",
+    "history.invalid.changed-path.missing-head-object": "head_object is required",
+    "history.invalid.changed-path.missing-status": "status is required",
+    "history.invalid.changed-path.extra-base-object": "no base_object is published",
+    "history.invalid.changed-path.empty-path": "path refuses this published boundary",
+    "history.invalid.approval.non-review-subject": "review refuses this published boundary",
+    "history.invalid.approval.non-pull-request-parent": "review refuses this published boundary",
+    "history.invalid.approval.blob-as-approved-revision": "approved_revision is refused by its published nested contract",
+    "history.invalid.approval.missing-review": "review is required",
+    "history.invalid.approval.missing-approved-revision": "approved_revision is required",
+    "history.invalid.approval.extra-state": "no state is published",
+    "history.invalid.approval.extra-submitted-at": "no submitted_at is published",
+    "history.invalid.merge-outcome.tree-as-merge-revision": "merge_revision is refused by its published nested contract",
+    "history.invalid.merge-outcome.missing-pull-request": "pull_request is required",
+    "history.invalid.merge-outcome.missing-merge-revision": "merge_revision is required",
+    "history.invalid.merge-outcome.extra-parents": "no ordered_parents is published",
+    "history.invalid.merge-outcome.extra-strategy": "no strategy is published",
+    "history.invalid.head-ref-deletion.empty-ref-name": "head_ref_name refuses this published boundary",
+    "history.invalid.head-ref-deletion.missing-head": "head is required",
+    "history.invalid.head-ref-deletion.missing-ref-name": "head_ref_name is required",
+    "history.invalid.head-ref-deletion.extra-namespace": "no namespace is published",
+    "history.invalid.occurrence-time.instant-naive": "occurred_at refuses this published boundary",
+    "history.invalid.occurrence-time.instant-negative-offset": "occurred_at refuses this published boundary",
+    "history.invalid.occurrence-time.instant-malformed": "occurred_at refuses this published boundary",
+    "history.invalid.occurrence-time.non-admitted-commit-identity": "occurrence is required",
+    "history.invalid.occurrence-time.non-admitted-changed-path-status": "occurrence refuses this published boundary",
+    "history.invalid.occurrence-time.non-admitted-change-set": "occurrence is required",
+    "history.invalid.occurrence-time.non-admitted-role-binding": "occurrence is required",
+    "history.invalid.occurrence-time.non-admitted-changed-path": "occurrence is required",
+    "history.invalid.occurrence-time.missing-occurred-at": "occurred_at is required",
+    "history.invalid.occurrence-time.extra-chronology": "no chronology is published",
+    "history.invalid.occurrence-time.missing-occurrence": "occurrence is required",
+    "history.invalid.occurrence-time.raw-python-instant": "occurred_at refuses this published boundary",
+    "history.invalid.evidence-link.hybrid-fact-json": "fact is required",
+    "history.invalid.evidence-link.empty-fact-json": "fact is required",
+    "history.invalid.evidence-link.malformed-record": "evidence_record is refused by its published nested contract",
+    "history.invalid.evidence-link.missing-fact": "fact is required",
+    "history.invalid.evidence-link.missing-evidence-record": "evidence_record is required",
+    "history.invalid.evidence-link.extra-schema-version": "no schema_version is published",
+    "history.invalid.evidence-link.extra-json-pointer": "no json_pointer is published",
+    "history.invalid.evidence-link.extra-support-role": "no support_role is published",
+    "history.invalid.evidence-link.extra-strength": "no strength is published",
+    "history.invalid.evidence-link.extra-verification": "no verification is published",
+    "history.invalid.evidence-link.extra-confidence": "no confidence is published",
+    "history.invalid.evidence-link.extra-primary-evidence": "no primary_evidence is published",
+    "history.invalid.evidence-link.extra-evidence-records": "no evidence_records is published",
+    "history.invalid.evidence-link.extra-superseded": "no superseded is published",
+    "history.invalid.evidence-link.extra-request-id": "no request_id is published",
+    "history.invalid.evidence-link.extra-artifact": "no artifact is published",
+    "history.invalid.evidence-link.nested-non-admitted-occurrence": "fact is required",
+    "history.invalid.evidence-link.typed-children-mapping-python": "fact refuses this published boundary",
+    "history.invalid.evidence-link.change-set-fact-python": "fact refuses this published boundary",
+    "history.invalid.evidence-link.status-fact-python": "fact refuses this published boundary",
+    "history.invalid.evidence-link.instant-naive": "fact is required",
+    "history.invalid.evidence-link.instant-non-zero-offset": "fact is required",
+    "history.invalid.evidence-link.instant-week-date": "fact is required",
+    "history.invalid.evidence-link.instant-basic-format": "fact is required",
+}
+
+
+def test_every_invalid_vector_is_registered_or_primary() -> None:
+    primaries = {row[4] for row in REQUIREMENT_LEDGER}
+    ids = {cast(str, v["id"]) for v in INVALID["vectors"]}
+    registered = set(SECONDARY_WITNESS_REGISTRY)
+
+    assert not (primaries & registered), sorted(primaries & registered)
+    assert registered <= ids, sorted(registered - ids)
+    assert ids - primaries == registered, sorted((ids - primaries) ^ registered)
+    assert all(SECONDARY_WITNESS_REGISTRY.values())
+
+
+def test_an_unregistered_vector_is_refused() -> None:
+    """The closure must fail for a vector nobody named."""
+    primaries = {row[4] for row in REQUIREMENT_LEDGER}
+    ids = {cast(str, v["id"]) for v in INVALID["vectors"]} | {
+        "history.invalid.probe.stranger"
+    }
+
+    assert ids - primaries != set(SECONDARY_WITNESS_REGISTRY)
+
+
+# --- a source coordinate is authoritative for one replayed field -------------
+#
+# Value equality is not provenance: a resealed vector could drop one mapping and
+# add another whose value happens to match, publishing a pull-request number as
+# a repository identity. The permitted coordinate pairs are pinned here.
+
+SOURCE_COORDINATES: tuple[tuple[str, str], ...] = (
+    ("/observations/comparison/base_sha", "/role_assignment/revision/full_digest"),
+    ("/observations/comparison/head_sha", "/role_assignment/revision/full_digest"),
+    ("/observations/pr/attempts/0/bracket_a/head/ref/value", "/head_ref_name"),
+    (
+        "/observations/pr/attempts/0/bracket_a/head/ref/value",
+        "/occurrence/head_ref_name",
+    ),
+    (
+        "/observations/pr/attempts/0/bracket_a/head/sha",
+        "/head/role_assignment/revision/full_digest",
+    ),
+    (
+        "/observations/pr/attempts/0/bracket_a/head/sha",
+        "/occurrence/head/role_assignment/revision/full_digest",
+    ),
+    (
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/head/pull_request/repository_scoped_number",
+    ),
+    (
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/occurrence/head/pull_request/repository_scoped_number",
+    ),
+    (
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/occurrence/pull_request/repository_scoped_number",
+    ),
+    (
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/occurrence/review/parent/repository_scoped_number",
+    ),
+    (
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/pull_request/repository_scoped_number",
+    ),
+    (
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/review/parent/repository_scoped_number",
+    ),
+    ("/observations/pr/changed_files/items/0/blob_sha", "/head_object/full_digest"),
+    ("/observations/pr/changed_files/items/0/path", "/path"),
+    ("/observations/pr/changed_files/items/0/status", "/status"),
+    ("/observations/pr/changed_files/items/1/blob_sha", "/head_object/full_digest"),
+    ("/observations/pr/changed_files/items/1/path", "/path"),
+    ("/observations/pr/changed_files/items/1/status", "/status"),
+    ("/observations/pr/changed_files/items/2/blob_sha", "/head_object/full_digest"),
+    ("/observations/pr/changed_files/items/2/path", "/path"),
+    ("/observations/pr/changed_files/items/2/status", "/status"),
+    ("/observations/pr/reviews/items/0/commit_sha", "/approved_revision/full_digest"),
+    (
+        "/observations/pr/reviews/items/0/commit_sha",
+        "/occurrence/approved_revision/full_digest",
+    ),
+    (
+        "/observations/pr/reviews/items/0/global_id",
+        "/occurrence/review/provider_global_id",
+    ),
+    ("/observations/pr/reviews/items/0/global_id", "/review/provider_global_id"),
+    ("/observations/pr/reviews/items/0/submitted_at/normalized_utc", "/occurred_at"),
+    (
+        "/observations/pr/timeline/items/4/commit_id/value",
+        "/merge_revision/full_digest",
+    ),
+    (
+        "/observations/pr/timeline/items/4/commit_id/value",
+        "/occurrence/merge_revision/full_digest",
+    ),
+    (
+        "/observations/pr/timeline/items/4/created_at/value/normalized_utc",
+        "/occurred_at",
+    ),
+    (
+        "/observations/pr/timeline/items/6/created_at/value/normalized_utc",
+        "/occurred_at",
+    ),
+    (
+        "/observations/repository/global_id",
+        "/head/pull_request/repository_identity/provider_repository_id",
+    ),
+    (
+        "/observations/repository/global_id",
+        "/occurrence/head/pull_request/repository_identity/provider_repository_id",
+    ),
+    (
+        "/observations/repository/global_id",
+        "/occurrence/pull_request/repository_identity/provider_repository_id",
+    ),
+    (
+        "/observations/repository/global_id",
+        "/occurrence/review/parent/repository_identity/provider_repository_id",
+    ),
+    (
+        "/observations/repository/global_id",
+        "/pull_request/repository_identity/provider_repository_id",
+    ),
+    (
+        "/observations/repository/global_id",
+        "/review/parent/repository_identity/provider_repository_id",
+    ),
+)
+
+
+def test_every_source_mapping_uses_an_authorised_coordinate() -> None:
+    permitted = set(SOURCE_COORDINATES)
+    observed = {
+        (f"{pointer['json_pointer']}{source_field}", replayed)
+        for vector in REPLAY["vectors"]
+        for pointer in cast(list[dict[str, Any]], vector["source_pointers"])
+        for source_field, replayed in cast(
+            dict[str, str], pointer["source_fields"]
+        ).items()
+    }
+
+    assert observed == permitted, sorted(observed ^ permitted)
+
+
+def test_an_unauthorised_source_coordinate_is_refused() -> None:
+    """Re-pointing a leaf at a different retained coordinate must fail."""
+    permitted = set(SOURCE_COORDINATES)
+    smuggled = (
+        "/observations/pr/attempts/0/bracket_a/number",
+        "/pull_request/repository_identity/provider_repository_id",
+    )
+
+    assert smuggled not in permitted
+    assert permitted | {smuggled} != permitted
+
+
+def test_each_replayed_leaf_has_one_source_within_a_vector() -> None:
+    """Two coordinates for one leaf would let either stand in for the other.
+
+    Across vectors a leaf legitimately has different sources -- the base and
+    head bindings both replay `/role_assignment/revision/full_digest`, from
+    `base_sha` and `head_sha` respectively. Within a single vector it must not.
+    """
+    ambiguous: dict[str, dict[str, list[str]]] = {}
+    for vector in REPLAY["vectors"]:
+        by_leaf: dict[str, set[str]] = {}
+        for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
+            for source_field, replayed in cast(
+                dict[str, str], pointer["source_fields"]
+            ).items():
+                by_leaf.setdefault(replayed, set()).add(
+                    f"{pointer['json_pointer']}{source_field}"
+                )
+        clashes = {leaf: sorted(v) for leaf, v in by_leaf.items() if len(v) > 1}
+        if clashes:
+            ambiguous[cast(str, vector["id"])] = clashes
+
+    assert not ambiguous, ambiguous
+
+
+# --- the non-goal bullet block is projected, not searched --------------------
+
+
+def _render_non_goal_block() -> list[str]:
+    return [f"- {goal}" for goal in cast(list[str], MANIFEST["non_goals"])]
+
+
+def _actual_non_goal_block(text: str) -> list[str]:
+    lines = text.splitlines()
+    start = lines.index("## 8. Non-Generalizations") + 1
+    while start < len(lines) and not lines[start].startswith("- "):
+        start += 1
+    end = start
+    while end < len(lines) and lines[end].startswith("- "):
+        end += 1
+    return lines[start:end]
+
+
+def test_the_non_goal_block_is_an_exact_projection() -> None:
+    text = (CORPUS / "contract.md").read_text("utf-8")
+
+    assert _actual_non_goal_block(text) == _render_non_goal_block()
+    assert len(_render_non_goal_block()) == 32
+
+
+@pytest.mark.parametrize("mutate", ("extra", "missing", "reorder", "changed"))
+def test_no_non_goal_bullet_can_drift(mutate: str) -> None:
+    rendered = _render_non_goal_block()
+    if mutate == "extra":
+        drifted = [*rendered, "- no invented boundary"]
+    elif mutate == "missing":
+        drifted = rendered[:-1]
+    elif mutate == "reorder":
+        drifted = list(reversed(rendered))
+    else:
+        drifted = [rendered[0].replace("no ", "no longer "), *rendered[1:]]
+
+    assert drifted != rendered, mutate
