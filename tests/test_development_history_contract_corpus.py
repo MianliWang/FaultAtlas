@@ -5383,6 +5383,39 @@ VECTOR_DOCUMENTS = (
     ("replay-vectors", REPLAY),
 )
 
+# The five declarations every vector document publishes, held test-side because
+# a block cannot be its own authority. Comparing each file against
+# `VALID["assurance"]` only proves the three agree, and three files agree just
+# as readily on a disclaimed value: `expected_dumps_independently_authored`
+# could be flipped to `false` corpus-wide, resealed, and every check would still
+# pass. Naming the required declaration here consumes all five keys at once, so
+# a changed value, a dropped key, and an unknown key are each a failure.
+REQUIRED_VECTOR_ASSURANCE: dict[str, object] = {
+    "expected_dumps_independently_authored": True,
+    "fixture_scope": "file_local_acyclic_explicit_only",
+    "production_dump_used_as_oracle": False,
+    "round_trip_expectation_explicit_per_vector": True,
+    "status": "locked",
+}
+
+
+def _assurance_failures(block: dict[str, Any]) -> list[tuple[str, str]]:
+    """Every way a published assurance block departs from the required one."""
+    failures: list[tuple[str, str]] = []
+    for key, required in REQUIRED_VECTOR_ASSURANCE.items():
+        if key not in block:
+            failures.append((key, "missing"))
+        elif block[key] != required:
+            failures.append((key, "value-differs"))
+        # `True == 1` and `False == 0`, and the envelope permits integers, so a
+        # boolean arriving as a number must fail as loudly as a changed value.
+        elif type(block[key]) is not type(required):
+            failures.append((key, "widened-type"))
+    failures.extend(
+        (key, "unknown") for key in sorted(set(block) - set(REQUIRED_VECTOR_ASSURANCE))
+    )
+    return failures
+
 
 @pytest.mark.parametrize(
     ("name", "document"), VECTOR_DOCUMENTS, ids=[n for n, _ in VECTOR_DOCUMENTS]
@@ -5412,18 +5445,55 @@ def test_each_vector_file_envelope_matches_the_enforced_contract(
 def test_each_vector_file_assurance_block_is_the_same_declaration(
     name: str, document: dict[str, Any]
 ) -> None:
+    """Measured against the required declaration, not against each other."""
     assurance = cast(dict[str, Any], document["assurance"])
 
-    assert assurance == cast(dict[str, Any], VALID["assurance"]), name
-    assert assurance["status"] == "locked"
-    assert assurance["production_dump_used_as_oracle"] is False
-    assert assurance["fixture_scope"] == "file_local_acyclic_explicit_only"
-    assert assurance["round_trip_expectation_explicit_per_vector"] is True
+    assert _assurance_failures(assurance) == [], name
     # the round-trip claim must hold of the vectors themselves
     for vector in document["vectors"]:
         expected = cast(dict[str, Any], vector["expected"])
         if "round_trip_equal" in expected:
             assert isinstance(expected["round_trip_equal"], bool), vector["id"]
+
+
+def test_a_falsified_assurance_declaration_is_refused() -> None:
+    """No published key is unconsumed, and no unknown key arrives silently.
+
+    Each probe mutates the block the way a corpus-wide reseal would: all three
+    files still carry identical assurance, so nothing here is caught by the
+    files agreeing. What the declaration says is what fails.
+    """
+    published = cast(dict[str, Any], VALID["assurance"])
+    assert _assurance_failures(published) == []
+
+    for key, falsified in (
+        ("expected_dumps_independently_authored", False),
+        ("fixture_scope", "any_vector_may_reference_any_other"),
+        ("production_dump_used_as_oracle", True),
+        ("round_trip_expectation_explicit_per_vector", False),
+        ("status", "draft"),
+    ):
+        required = REQUIRED_VECTOR_ASSURANCE[key]
+        assert falsified != required, key
+
+        flipped = copy.deepcopy(published)
+        flipped[key] = falsified
+        assert _assurance_failures(flipped) == [(key, "value-differs")], key
+
+        dropped = copy.deepcopy(published)
+        del dropped[key]
+        assert _assurance_failures(dropped) == [(key, "missing")], key
+
+    extra = copy.deepcopy(published)
+    extra["second_author_reviewed"] = True
+    assert _assurance_failures(extra) == [("second_author_reviewed", "unknown")]
+
+    # `0 == False`, so only the declared type separates these two blocks.
+    widened = copy.deepcopy(published)
+    widened["production_dump_used_as_oracle"] = 0
+    assert _assurance_failures(widened) == [
+        ("production_dump_used_as_oracle", "widened-type")
+    ]
 
 
 def test_a_falsified_vector_envelope_is_refused() -> None:
