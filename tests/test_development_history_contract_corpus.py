@@ -5151,3 +5151,108 @@ def test_no_non_goal_bullet_can_drift(mutate: str) -> None:
         drifted = [rendered[0].replace("no ", "no longer "), *rendered[1:]]
 
     assert drifted != rendered, mutate
+
+
+# --- a citation belongs to a vector, not merely to the corpus ----------------
+#
+# Membership in the registered set says a reference exists somewhere. It cannot
+# tell whether the retained correction is cited by the association that
+# actually replays it or by an unrelated valid vector, because the union is the
+# same either way. The citing population of each non-baseline authority is
+# therefore pinned.
+
+GOVERNANCE_REFERENCES = (
+    "decision:s1-p05-s08:disposition",
+    "correction:s1-p05-s08-c01:owner-topology",
+)
+RETAINED_ACQUISITION_REFERENCE = "acquisition:run-0001"
+RETAINED_CORRECTION_REFERENCE = "correction:s04-c01-acquisition-closure"
+CORRECTION_CITING_VECTOR = (
+    "history.replay.evidence-association.approval-correction-record"
+)
+
+
+def _citing(reference: str) -> set[str]:
+    return {
+        cast(str, v["id"])
+        for section in (VALID, INVALID, REPLAY)
+        for v in section["vectors"]
+        if reference in cast(list[str], v["decision_references"])
+    }
+
+
+def test_each_authority_is_cited_by_exactly_its_own_vectors() -> None:
+    every = {
+        cast(str, v["id"])
+        for section in (VALID, INVALID, REPLAY)
+        for v in section["vectors"]
+    }
+    replay_ids = {cast(str, v["id"]) for v in REPLAY["vectors"]}
+
+    for reference in GOVERNANCE_REFERENCES:
+        assert _citing(reference) == every, reference
+    assert _citing(RETAINED_ACQUISITION_REFERENCE) == replay_ids
+    assert _citing(RETAINED_CORRECTION_REFERENCE) == {CORRECTION_CITING_VECTOR}
+
+
+def test_a_moved_citation_is_refused() -> None:
+    """Moving the retained correction to another vector preserves the union."""
+    moved = (_citing(RETAINED_CORRECTION_REFERENCE) - {CORRECTION_CITING_VECTOR}) | {
+        "history.valid.role-binding.base-canonical"
+    }
+
+    assert len(moved) == len(_citing(RETAINED_CORRECTION_REFERENCE))
+    assert moved != {CORRECTION_CITING_VECTOR}
+
+
+def test_the_correction_citing_vector_is_the_one_that_replays_it() -> None:
+    """The citation must name the vector whose record is the correction."""
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == CORRECTION_CITING_VECTOR)
+
+    assert vector["evidence_record_lock"] == RETAINED_CORRECTION_REFERENCE
+    assert RETAINED_CORRECTION_REFERENCE in cast(
+        list[str], vector["decision_references"]
+    )
+
+
+# --- the replay classification bullets are projected, not sampled ------------
+
+
+def _render_classification_block() -> list[str]:
+    classifications = cast(
+        dict[str, str], MANIFEST["replay_contract"]["classifications"]
+    )
+    return [f"- `{key}` — {value}" for key, value in sorted(classifications.items())]
+
+
+def _actual_classification_block(text: str) -> list[str]:
+    lines = text.splitlines()
+    start = next(
+        i for i, line in enumerate(lines) if line.startswith("- `caller_supplied_")
+    )
+    end = start
+    while end < len(lines) and lines[end].startswith("- `"):
+        end += 1
+    return lines[start:end]
+
+
+def test_the_classification_block_is_an_exact_projection() -> None:
+    text = (CORPUS / "contract.md").read_text("utf-8")
+
+    assert _actual_classification_block(text) == _render_classification_block()
+    assert len(_render_classification_block()) == 3
+
+
+def test_swapped_classification_descriptions_are_refused() -> None:
+    """Token presence cannot tell a link layer from a composition layer."""
+    rendered = _render_classification_block()
+    keys = [line.split("`")[1] for line in rendered]
+    bodies = [line.split(" — ", 1)[1] for line in rendered]
+    swapped = [
+        f"- `{keys[0]}` — {bodies[1]}",
+        f"- `{keys[1]}` — {bodies[0]}",
+        rendered[2],
+    ]
+
+    assert sorted(b.split(" — ", 1)[1] for b in swapped) == sorted(bodies)
+    assert swapped != rendered
