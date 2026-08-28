@@ -844,9 +844,8 @@ def test_the_contract_markdown_is_derived_from_the_json_authorities() -> None:
     summary = MANIFEST["vector_summary"]
 
     assert text.startswith("# Development History Contract Corpus")
-    for entry in MANIFEST["target_symbols"]:
-        assert f"`{entry['symbol']}`" in text, entry["symbol"]
-        assert f"`{entry['slice_layer']}`" in text
+    # The target table is compared whole by the row projection below; token
+    # presence cannot tell a correct row from a transposed one.
     for module in MANIFEST["scope"]["production_modules"]:
         assert f"`{module}`" in text
     for authority in MANIFEST["scope"]["supporting_authorities_not_owned"]:
@@ -4248,3 +4247,118 @@ def test_the_python_instant_witness_isolates_its_field() -> None:
     assert isinstance(supplied["occurred_at"], str)
     assert vector["expected"]["error_location"] == ["occurred_at"]
     assert vector["expected"]["error_type"] == "datetime_type"
+
+
+# --- the derived target table is rendered, not merely mentioned --------------
+#
+# `slice_layer` and `target_class` remain descriptive: the manifest is their
+# only source and they are not independently verified. That does not licence a
+# projection that loses which symbol they belong to. Checking each token for
+# presence passes happily when two rows exchange a column, so the association
+# tuple -- not the column set -- is what the Markdown must preserve.
+
+TARGET_TABLE_HEADER = (
+    "| Symbol | Module | Slice | Target class |",
+    "| --- | --- | --- | --- |",
+)
+
+
+def _render_target_table() -> list[str]:
+    """Render the whole table from the manifest, in its authoritative order."""
+    rows = [
+        "| `{symbol}` | `{module}` | `{slice_layer}` | `{target_class}` |".format(
+            symbol=entry["symbol"],
+            module=entry["module"],
+            slice_layer=entry["slice_layer"],
+            target_class=entry["target_class"],
+        )
+        for entry in cast(list[dict[str, str]], MANIFEST["target_symbols"])
+    ]
+    return [*TARGET_TABLE_HEADER, *rows]
+
+
+def _actual_target_table(text: str) -> list[str]:
+    lines = text.splitlines()
+    start = lines.index(TARGET_TABLE_HEADER[0])
+    end = start
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    return lines[start:end]
+
+
+def test_the_target_table_is_an_exact_projection_of_the_manifest() -> None:
+    text = (CORPUS / "contract.md").read_text("utf-8")
+
+    assert _actual_target_table(text) == _render_target_table()
+
+
+def _table_projection_matches(entries: list[dict[str, str]], text: str) -> bool:
+    rendered = [
+        *TARGET_TABLE_HEADER,
+        *[
+            "| `{symbol}` | `{module}` | `{slice_layer}` | `{target_class}` |".format(
+                symbol=e["symbol"],
+                module=e["module"],
+                slice_layer=e["slice_layer"],
+                target_class=e["target_class"],
+            )
+            for e in entries
+        ],
+    ]
+    return _actual_target_table(text) == rendered
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"),
+    (
+        ("slice_layer swapped between rows", "slice_layer"),
+        ("target_class swapped between rows", "target_class"),
+        ("module swapped between rows", "module"),
+        ("row replaced by a duplicate", "duplicate"),
+        ("row removed", "missing"),
+        ("row added", "extra"),
+        ("rows reordered", "reorder"),
+    ),
+)
+def test_no_target_row_association_can_drift(label: str, mutate: str) -> None:
+    """Every probe changes an association, never a token inventory."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    entries = copy.deepcopy(cast(list[dict[str, str]], MANIFEST["target_symbols"]))
+
+    if mutate in {"slice_layer", "target_class", "module"}:
+        first, second = (0, 1) if mutate != "module" else (0, 8)
+        entries[first][mutate], entries[second][mutate] = (
+            entries[second][mutate],
+            entries[first][mutate],
+        )
+        assert sorted(e[mutate] for e in entries) == sorted(
+            cast(dict[str, str], e)[mutate] for e in MANIFEST["target_symbols"]
+        ), "the column inventory must be unchanged, only the association"
+    elif mutate == "duplicate":
+        entries[1] = copy.deepcopy(entries[0])
+    elif mutate == "missing":
+        entries.pop()
+    elif mutate == "extra":
+        entries.append(copy.deepcopy(entries[0]))
+    else:
+        entries.reverse()
+
+    assert not _table_projection_matches(entries, text), label
+
+
+def test_a_changed_markdown_row_is_refused() -> None:
+    """Drift in the other direction: the Markdown moves, the manifest does not."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    tampered = text.replace("| `S1.P05.S01` |", "| `S1.P05.S09` |", 1)
+
+    assert tampered != text
+    assert _actual_target_table(tampered) != _render_target_table()
+
+
+def test_the_target_row_columns_stay_descriptive() -> None:
+    """Rendering them faithfully must not promote them to verified claims."""
+    for index in range(len(cast(list[Any], MANIFEST["target_symbols"]))):
+        for column in ("slice_layer", "target_class"):
+            assert f"/target_symbols/{index}/{column}" in DESCRIPTIVE_PATHS
+        for column in ("symbol", "module"):
+            assert f"/target_symbols/{index}/{column}" not in DESCRIPTIVE_PATHS
