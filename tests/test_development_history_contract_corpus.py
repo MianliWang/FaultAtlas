@@ -3753,8 +3753,10 @@ def _vector_role(vector: dict[str, Any], primaries: set[str]) -> str:
     expected = cast(dict[str, Any], vector["expected"])
     location = cast(list[str], expected.get("error_location") or [])
     fields = _model_fields_of(cast(str, vector["target"]))
-    supplied = vector["input"] if isinstance(vector["input"], dict) else {}
-    supplied = cast(dict[str, Any], supplied)
+    raw_input = vector["input"]
+    supplied: dict[str, Any] = (
+        cast(dict[str, Any], raw_input) if isinstance(raw_input, dict) else {}
+    )
 
     if expected.get("failure_category") == "vocabulary_error":
         if expected.get("error_type") == "enum" and not location:
@@ -4628,9 +4630,13 @@ def test_each_secondary_rule_must_actually_hold(label: str, mutate: str) -> None
 def _render_governance_block() -> list[str]:
     governance = cast(dict[str, Any], MANIFEST["effective_governance"])
     totals = cast(dict[str, Any], governance["totals"])
-    owners = lambda key: " · ".join(  # noqa: E731 - local formatting helper
-        f"{owner} {count}" for owner, count in cast(dict[str, int], totals[key]).items()
-    )
+
+    def owners(key: str) -> str:
+        return " · ".join(
+            f"{owner} {count}"
+            for owner, count in cast(dict[str, int], totals[key]).items()
+        )
+
     authority = cast(dict[str, int], governance["authority_totals"])
     return [
         f"    inherited {governance['inherited_subject_count']}"
