@@ -451,9 +451,9 @@ def test_the_declared_counts_match_the_vector_files() -> None:
     summary = MANIFEST["vector_summary"]
 
     assert summary["valid"]["count"] == len(VALID["vectors"]) == 48
-    assert summary["invalid"]["count"] == len(INVALID["vectors"]) == 108
+    assert summary["invalid"]["count"] == len(INVALID["vectors"]) == 109
     assert summary["replay"]["count"] == len(REPLAY["vectors"]) == 24
-    assert summary["total_vectors"] == 180
+    assert summary["total_vectors"] == 181
     assert summary["fixtures"] == len(VALID["fixtures"]) == 19
 
 
@@ -1432,8 +1432,8 @@ def test_every_vector_declares_a_globally_unique_semantic_partition() -> None:
         for vector in section["vectors"]
     ]
 
-    assert len(partitions) == 180
-    assert len(set(partitions)) == 180
+    assert len(partitions) == 181
+    assert len(set(partitions)) == 181
 
 
 def test_each_semantic_partition_is_distinct_from_its_vector_id() -> None:
@@ -1698,9 +1698,9 @@ def test_the_manifest_category_inventory_is_derived_from_the_vectors() -> None:
 
     summary = MANIFEST["vector_summary"]
     assert summary["valid"]["count"] == 48
-    assert summary["invalid"]["count"] == 108
+    assert summary["invalid"]["count"] == 109
     assert summary["replay"]["count"] == 24
-    assert summary["total_vectors"] == 180
+    assert summary["total_vectors"] == 181
 
 
 def test_the_contract_markdown_category_table_is_derived_from_the_vectors() -> None:
@@ -1731,7 +1731,7 @@ def test_a_category_move_breaks_the_derived_inventory() -> None:
         for entry in MANIFEST["corpus_files"]
         if entry["filename"] == "invalid-vectors.json"
     )
-    assert len(invalid["vectors"]) == 108, "the totals still balance"
+    assert len(invalid["vectors"]) == 109, "the totals still balance"
 
     sections = _sections(VALID, invalid, REPLAY)
     assert _manifest_histogram_failures(MANIFEST, sections) == [
@@ -1813,7 +1813,7 @@ def _family_collisions(section: dict[str, Any], family: str) -> list[list[str]]:
     return sorted(ids for ids in grouped.values() if len(ids) > 1)
 
 
-FAMILIES = (("valid", VALID, 48), ("invalid", INVALID, 108), ("replay", REPLAY, 24))
+FAMILIES = (("valid", VALID, 48), ("invalid", INVALID, 109), ("replay", REPLAY, 24))
 
 
 @pytest.mark.parametrize(
@@ -2883,7 +2883,7 @@ def test_the_measured_family_mode_matrix_is_the_declared_one() -> None:
 
     assert observed == {
         "valid": {"json": 33, "python": 15},
-        "invalid": {"json": 84, "python": 24},
+        "invalid": {"json": 84, "python": 25},
         "replay": {"replay": 24},
     }
 
@@ -3194,6 +3194,13 @@ REQUIREMENT_LEDGER: tuple[tuple[str, str, str, str, str], ...] = (
         "head_object must be a blob",
         NEGATIVE,
         "history.invalid.changed-path.commit-as-head-object",
+    ),
+    (
+        "CP-04",
+        "PullRequestChangedPath",
+        "Python input requires the published status member",
+        NEGATIVE,
+        "history.invalid.changed-path.raw-python-status",
     ),
     # PullRequestChangeSet
     (
@@ -3748,3 +3755,340 @@ def test_every_replay_vector_is_canonical_provenance_coverage() -> None:
             "caller_supplied_composition",
             "caller_supplied_association",
         }, vector["id"]
+
+
+# --- cross-system edge: an artifact lock answers to a source authority -------
+
+
+def _lock_authority_failures(
+    locks: list[dict[str, Any]], authorities: list[dict[str, Any]]
+) -> list[tuple[str, str]]:
+    """Resolve each lock id back to the source decision that authorises it.
+
+    Each system was previously verified only against itself: the locks against
+    their bytes, the authorities against theirs. Nothing tied a lock id to the
+    authority whose bytes it claims, so the two could describe different
+    records while both stayed internally consistent.
+    """
+    by_reference: dict[str, list[dict[str, Any]]] = {}
+    for entry in authorities:
+        by_reference.setdefault(cast(str, entry["decision_reference"]), []).append(
+            entry
+        )
+
+    failures: list[tuple[str, str]] = []
+    for lock in locks:
+        lock_id = cast(str, lock["lock_id"])
+        matches = by_reference.get(lock_id, [])
+        if not matches:
+            failures.append((lock_id, "unknown-authority"))
+            continue
+        if len(matches) > 1:
+            failures.append((lock_id, "ambiguous-authority"))
+            continue
+        authority = matches[0]
+        if authority["path"] != lock["path"]:
+            failures.append((lock_id, "authority-path-differs"))
+        if authority["sha256"] != lock["sha256"]:
+            failures.append((lock_id, "authority-digest-differs"))
+        raw = (REPOSITORY_ROOT / cast(str, lock["path"])).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != lock["sha256"]:
+            failures.append((lock_id, "live-bytes-differ"))
+        if len(raw) != lock["byte_length"]:
+            failures.append((lock_id, "live-length-differs"))
+    return sorted(failures)
+
+
+def test_every_artifact_lock_resolves_to_its_source_authority() -> None:
+    locks = cast(list[dict[str, Any]], REPLAY["artifact_locks"])
+    authorities = cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+
+    assert not _lock_authority_failures(locks, authorities)
+    assert len({cast(str, lock["lock_id"]) for lock in locks}) == len(locks)
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate_locks", "mutate_authorities", "expected"),
+    (
+        ("wrong authority path", None, "path", "authority-path-differs"),
+        ("wrong authority digest", None, "sha256", "authority-digest-differs"),
+        ("unknown lock id", "lock_id", None, "unknown-authority"),
+        ("swapped logical authority", "swap", None, "authority-path-differs"),
+    ),
+)
+def test_the_lock_authority_edge_is_load_bearing(
+    label: str,
+    mutate_locks: str | None,
+    mutate_authorities: str | None,
+    expected: str,
+) -> None:
+    """Each probe changes only the cross-system edge, never a digest seal."""
+    locks = copy.deepcopy(cast(list[dict[str, Any]], REPLAY["artifact_locks"]))
+    authorities = copy.deepcopy(
+        cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+    )
+
+    if mutate_locks == "lock_id":
+        locks[0]["lock_id"] = "acquisition:invented"
+    elif mutate_locks == "swap":
+        locks[0]["lock_id"], locks[1]["lock_id"] = (
+            locks[1]["lock_id"],
+            locks[0]["lock_id"],
+        )
+    if mutate_authorities:
+        target = (
+            next(
+                a for a in authorities if a["decision_reference"] == locks[0]["lock_id"]
+            )
+            if mutate_locks is None
+            else authorities[0]
+        )
+        target[mutate_authorities] = (
+            "reference_corpus/elsewhere.json"
+            if mutate_authorities == "path"
+            else "0" * 64
+        )
+
+    reasons = {reason for _, reason in _lock_authority_failures(locks, authorities)}
+    assert expected in reasons, (label, reasons)
+
+
+# --- the embedded-fact provenance graph --------------------------------------
+
+RETAINED = "retained_normalized_observation"
+CALLER_SUPPLIED = {"caller_supplied_composition", "caller_supplied_association"}
+
+
+def _embedded_graph_failures(vectors: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """Equality is not provenance: the source must itself be retained.
+
+    Without a class restriction a caller-supplied value could stand as its own
+    source -- or two could cite each other -- and the equality check would
+    compare a dump with itself and call it sourced. Cycle detection is a real
+    traversal rather than a reliance on the graph currently being one level
+    deep.
+    """
+    by_id = {cast(str, v["id"]): v for v in vectors}
+    failures: list[tuple[str, str]] = []
+    edges: dict[str, set[str]] = {}
+    for vector in vectors:
+        consumer = cast(str, vector["id"])
+        embedded = cast(dict[str, str], vector["embedded_facts"])
+        if embedded and vector["evidence_classification"] not in CALLER_SUPPLIED:
+            failures.append((consumer, "retained-consumer-declares-embedded-facts"))
+        for pointer, source in embedded.items():
+            edges.setdefault(consumer, set()).add(source)
+            if source == consumer:
+                failures.append((consumer, "self-reference"))
+                continue
+            if source not in by_id:
+                failures.append((consumer, "unknown-source"))
+                continue
+            if by_id[source]["evidence_classification"] != RETAINED:
+                failures.append((consumer, "source-is-not-a-retained-observation"))
+            if not pointer.startswith("/"):
+                failures.append((consumer, "malformed-pointer"))
+
+    # depth-first cycle detection over whatever shape the graph actually has
+    colour: dict[str, int] = {}
+
+    def visit(node: str) -> bool:
+        colour[node] = 1
+        for nxt in edges.get(node, ()):  # pragma: no branch - small graph
+            if colour.get(nxt) == 1:
+                return True
+            if colour.get(nxt) is None and visit(nxt):
+                return True
+        colour[node] = 2
+        return False
+
+    for node in list(edges):
+        if colour.get(node) is None and visit(node):
+            failures.append((node, "cycle"))
+    return sorted(set(failures))
+
+
+def test_the_embedded_fact_graph_is_retained_sourced_and_acyclic() -> None:
+    vectors = cast(list[dict[str, Any]], REPLAY["vectors"])
+
+    assert not _embedded_graph_failures(vectors)
+    edges = [
+        (cast(str, v["id"]), src)
+        for v in vectors
+        for src in cast(dict[str, str], v["embedded_facts"]).values()
+    ]
+    consumers = {c for c, _ in edges}
+    sources = {s for _, s in edges}
+    assert len(edges) == 17
+    assert len(consumers) == 13
+    assert len(sources) == 11
+    assert not consumers & sources, "a consumer must never also be a source"
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"),
+    (
+        ("self-reference", "self"),
+        ("caller-supplied source", "caller"),
+        ("two-node cycle", "cycle"),
+        ("unknown source", "unknown"),
+        ("source reclassified away from retained", "reclassify"),
+    ),
+)
+def test_the_embedded_graph_rule_is_the_direct_detector(
+    label: str, mutate: str
+) -> None:
+    vectors = copy.deepcopy(cast(list[dict[str, Any]], REPLAY["vectors"]))
+    by_id = {cast(str, v["id"]): v for v in vectors}
+    first = by_id["history.replay.evidence-association.review-approval"]
+    second = by_id["history.replay.evidence-association.merge-outcome"]
+
+    if mutate == "self":
+        first["embedded_facts"] = {"/fact": first["id"]}
+        expected = "self-reference"
+    elif mutate == "caller":
+        first["embedded_facts"] = {"/fact": second["id"]}
+        expected = "source-is-not-a-retained-observation"
+    elif mutate == "cycle":
+        first["embedded_facts"] = {"/fact": second["id"]}
+        second["embedded_facts"] = {"/fact": first["id"]}
+        expected = "cycle"
+    elif mutate == "unknown":
+        first["embedded_facts"] = {"/fact": "history.replay.absent"}
+        expected = "unknown-source"
+    else:
+        by_id["history.replay.review-approval.canonical"]["evidence_classification"] = (
+            "caller_supplied_composition"
+        )
+        expected = "source-is-not-a-retained-observation"
+
+    reasons = {reason for _, reason in _embedded_graph_failures(vectors)}
+    assert expected in reasons, (label, reasons)
+
+
+def test_the_two_cross_edges_are_not_new_reference_systems() -> None:
+    """Eight systems, each resolved; these additions are consistency edges."""
+    assert len(REFERENCE_SYSTEMS) == 8
+    cross_edges = {
+        "artifact_locks -> source_decisions": _lock_authority_failures,
+        "embedded_facts -> retained acyclic graph": _embedded_graph_failures,
+    }
+    assert len(cross_edges) == 2
+    assert all(callable(resolver) for resolver in cross_edges.values())
+
+
+# --- constraints the framework enforces are requirements too ------------------
+#
+# The guard ledger above walks custom validators. That is not the whole
+# contract: an annotation, an enum, a Field bound, or a model_config value can
+# publish an observable boundary with no raise site anywhere, which is exactly
+# how the raw-status boundary went uncovered. These rows record the audited
+# disposition of every such constraint so a later sweep starts from the
+# constraint surface rather than rediscovering it.
+
+P05_OWNED = "P05_CORPUS_REQUIREMENT"
+PREDECESSOR = "PREDECESSOR_TYPE_REQUIREMENT"
+UNIT_OWNED = "UNIT_ORACLE_REQUIREMENT"
+GENERIC_OWNED = "FRAMEWORK_GENERIC"
+EQUIVALENT = "EQUIVALENT_ENFORCEMENT"
+
+FRAMEWORK_CONSTRAINT_LEDGER: tuple[tuple[str, str, str, str, str], ...] = (
+    (
+        "FC-01",
+        "PullRequestChangedPath.status",
+        "enum",
+        P05_OWNED,
+        "history.invalid.changed-path.raw-python-status",
+    ),
+    (
+        "FC-02",
+        "PullRequestChangedPath.status",
+        "enum vocabulary",
+        P05_OWNED,
+        "history.invalid.changed-path.unknown-status",
+    ),
+    (
+        "FC-03",
+        "PullRequestChangeSet.changed_paths",
+        "Field min_length",
+        P05_OWNED,
+        "history.invalid.change-set.empty-changed-paths",
+    ),
+    (
+        "FC-04",
+        "PullRequestChangeSet.changed_paths",
+        "Field max_length",
+        P05_OWNED,
+        "history.invalid.change-set.above-maximum-changed-paths",
+    ),
+    (
+        "FC-05",
+        "PullRequestHistoricalOccurrenceTime.occurred_at",
+        "AwareDatetime",
+        P05_OWNED,
+        "history.invalid.occurrence-time.instant-naive",
+    ),
+    (
+        "FC-06",
+        "PullRequestHistoricalOccurrenceTime.occurrence",
+        "union membership",
+        P05_OWNED,
+        "history.invalid.occurrence-time.non-admitted-change-set",
+    ),
+    (
+        "FC-07",
+        "PullRequestHistoryFactEvidenceLink.fact",
+        "union membership",
+        P05_OWNED,
+        "history.invalid.evidence-link.change-set-fact",
+    ),
+    (
+        "FC-08",
+        "every target",
+        "extra=forbid",
+        P05_OWNED,
+        "history.invalid.change-set.extra-complete",
+    ),
+    ("FC-09", "nested identity construction", "predecessor schema", PREDECESSOR, ""),
+    ("FC-10", "every target", "frozen assignment", UNIT_OWNED, ""),
+    ("FC-11", "every target", "revalidate_instances", GENERIC_OWNED, ""),
+    ("FC-12", "seven targets", "strict=True on model-typed fields", EQUIVALENT, ""),
+)
+
+
+def test_the_framework_constraint_ledger_is_closed() -> None:
+    """No observable constraint may be left without a recorded disposition."""
+    owners = {row[3] for row in FRAMEWORK_CONSTRAINT_LEDGER}
+
+    assert owners <= {P05_OWNED, PREDECESSOR, UNIT_OWNED, GENERIC_OWNED, EQUIVALENT}
+    ids = [row[0] for row in FRAMEWORK_CONSTRAINT_LEDGER]
+    assert len(ids) == len(set(ids))
+    by_id = {
+        cast(str, v["id"]): v
+        for section in SECTIONS.values()
+        for v in section["vectors"]
+    }
+    for row_id, _, _, ownership, witness in FRAMEWORK_CONSTRAINT_LEDGER:
+        if ownership == P05_OWNED:
+            assert witness, row_id
+            assert witness in by_id, (row_id, witness)
+        else:
+            assert not witness, row_id
+
+
+def test_the_enum_field_requires_its_published_member_in_python() -> None:
+    """The boundary that no raise site published, now witnessed."""
+    vector = next(
+        v
+        for v in INVALID["vectors"]
+        if v["id"] == "history.invalid.changed-path.raw-python-status"
+    )
+
+    assert vector["input_mode"] == "python"
+    assert vector["input"]["status"] == "added", (
+        "the lexeme itself must be supplied raw"
+    )
+    assert "typed_value" in cast(dict[str, Any], vector["input"]["path"])
+    assert "typed_value" in cast(dict[str, Any], vector["input"]["head_object"])
+    assert vector["expected"]["error_location"] == ["status"]
+    assert vector["expected"]["error_type"] == "is_instance_of"
