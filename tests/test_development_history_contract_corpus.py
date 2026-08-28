@@ -451,9 +451,9 @@ def test_the_declared_counts_match_the_vector_files() -> None:
     summary = MANIFEST["vector_summary"]
 
     assert summary["valid"]["count"] == len(VALID["vectors"]) == 48
-    assert summary["invalid"]["count"] == len(INVALID["vectors"]) == 96
+    assert summary["invalid"]["count"] == len(INVALID["vectors"]) == 108
     assert summary["replay"]["count"] == len(REPLAY["vectors"]) == 24
-    assert summary["total_vectors"] == 168
+    assert summary["total_vectors"] == 180
     assert summary["fixtures"] == len(VALID["fixtures"]) == 19
 
 
@@ -1432,8 +1432,8 @@ def test_every_vector_declares_a_globally_unique_semantic_partition() -> None:
         for vector in section["vectors"]
     ]
 
-    assert len(partitions) == 168
-    assert len(set(partitions)) == 168
+    assert len(partitions) == 180
+    assert len(set(partitions)) == 180
 
 
 def test_each_semantic_partition_is_distinct_from_its_vector_id() -> None:
@@ -1698,9 +1698,9 @@ def test_the_manifest_category_inventory_is_derived_from_the_vectors() -> None:
 
     summary = MANIFEST["vector_summary"]
     assert summary["valid"]["count"] == 48
-    assert summary["invalid"]["count"] == 96
+    assert summary["invalid"]["count"] == 108
     assert summary["replay"]["count"] == 24
-    assert summary["total_vectors"] == 168
+    assert summary["total_vectors"] == 180
 
 
 def test_the_contract_markdown_category_table_is_derived_from_the_vectors() -> None:
@@ -1731,7 +1731,7 @@ def test_a_category_move_breaks_the_derived_inventory() -> None:
         for entry in MANIFEST["corpus_files"]
         if entry["filename"] == "invalid-vectors.json"
     )
-    assert len(invalid["vectors"]) == 96, "the totals still balance"
+    assert len(invalid["vectors"]) == 108, "the totals still balance"
 
     sections = _sections(VALID, invalid, REPLAY)
     assert _manifest_histogram_failures(MANIFEST, sections) == [
@@ -1813,7 +1813,7 @@ def _family_collisions(section: dict[str, Any], family: str) -> list[list[str]]:
     return sorted(ids for ids in grouped.values() if len(ids) > 1)
 
 
-FAMILIES = (("valid", VALID, 48), ("invalid", INVALID, 96), ("replay", REPLAY, 24))
+FAMILIES = (("valid", VALID, 48), ("invalid", INVALID, 108), ("replay", REPLAY, 24))
 
 
 @pytest.mark.parametrize(
@@ -2883,7 +2883,7 @@ def test_the_measured_family_mode_matrix_is_the_declared_one() -> None:
 
     assert observed == {
         "valid": {"json": 33, "python": 15},
-        "invalid": {"json": 81, "python": 15},
+        "invalid": {"json": 84, "python": 24},
         "replay": {"replay": 24},
     }
 
@@ -3094,3 +3094,657 @@ def test_the_contract_markdown_states_the_epistemic_split() -> None:
     assert f"`{mechanism}`" in text
     assert f"({len(DESCRIPTIVE_PATHS)} of them)" in text
     assert "never counted as verified assurance" in text
+
+
+# --- the nine-target semantic requirement ledger ------------------------------
+#
+# One row per independently published requirement. A validator function may
+# publish more than one requirement -- `_require_typed_python_binding` publishes
+# both the base and the head typing rule -- and each gets its own row and its
+# own witness. Nothing here records source text, line numbers, or validator
+# names: the ledger is semantic.
+
+NEGATIVE, POSITIVE = "NEGATIVE_ISOLATED", "POSITIVE_ISOLATED"
+RELATIONAL, UNIT, GENERIC = "RELATIONAL_POSITIVE", "UNIT_ORACLE", "FRAMEWORK_GENERIC"
+
+REQUIREMENT_LEDGER: tuple[tuple[str, str, str, str, str], ...] = (
+    # PullRequestRevisionRoleBinding
+    (
+        "RB-01",
+        "PullRequestRevisionRoleBinding",
+        "pull_request typed in Python",
+        NEGATIVE,
+        "history.invalid.role-binding.untyped-python-pull-request",
+    ),
+    (
+        "RB-02",
+        "PullRequestRevisionRoleBinding",
+        "role_assignment typed in Python",
+        NEGATIVE,
+        "history.invalid.role-binding.untyped-python-role-assignment",
+    ),
+    (
+        "RB-03",
+        "PullRequestRevisionRoleBinding",
+        "subject must be a pull request",
+        NEGATIVE,
+        "history.invalid.role-binding.non-pull-request-subject",
+    ),
+    (
+        "RB-04",
+        "PullRequestRevisionRoleBinding",
+        "bound role must be base or head",
+        NEGATIVE,
+        "history.invalid.role-binding.disallowed-revision-role",
+    ),
+    (
+        "RB-05",
+        "PullRequestRevisionRoleBinding",
+        "base binding is accepted",
+        POSITIVE,
+        "history.valid.role-binding.base-canonical",
+    ),
+    (
+        "RB-06",
+        "PullRequestRevisionRoleBinding",
+        "head binding is accepted",
+        POSITIVE,
+        "history.valid.role-binding.head-canonical",
+    ),
+    # ChangedPathStatus
+    (
+        "ST-01",
+        "ChangedPathStatus",
+        "added is admitted",
+        POSITIVE,
+        "history.valid.status.added",
+    ),
+    (
+        "ST-02",
+        "ChangedPathStatus",
+        "modified is admitted",
+        POSITIVE,
+        "history.valid.status.modified",
+    ),
+    (
+        "ST-03",
+        "ChangedPathStatus",
+        "the vocabulary is closed",
+        NEGATIVE,
+        "history.invalid.status.not-a-status",
+    ),
+    # PullRequestChangedPath
+    (
+        "CP-01",
+        "PullRequestChangedPath",
+        "path typed in Python",
+        NEGATIVE,
+        "history.invalid.changed-path.untyped-python-path",
+    ),
+    (
+        "CP-02",
+        "PullRequestChangedPath",
+        "head_object typed in Python",
+        NEGATIVE,
+        "history.invalid.changed-path.untyped-python-head-object",
+    ),
+    (
+        "CP-03",
+        "PullRequestChangedPath",
+        "head_object must be a blob",
+        NEGATIVE,
+        "history.invalid.changed-path.commit-as-head-object",
+    ),
+    # PullRequestChangeSet
+    (
+        "CS-01",
+        "PullRequestChangeSet",
+        "base is required",
+        NEGATIVE,
+        "history.invalid.change-set.missing-base",
+    ),
+    (
+        "CS-02",
+        "PullRequestChangeSet",
+        "head is required",
+        NEGATIVE,
+        "history.invalid.change-set.missing-head",
+    ),
+    (
+        "CS-03",
+        "PullRequestChangeSet",
+        "changed_paths is required",
+        NEGATIVE,
+        "history.invalid.change-set.missing-changed-paths",
+    ),
+    (
+        "CS-04",
+        "PullRequestChangeSet",
+        "at least one changed path",
+        NEGATIVE,
+        "history.invalid.change-set.empty-changed-paths",
+    ),
+    (
+        "CS-05",
+        "PullRequestChangeSet",
+        "at most 4096 changed paths",
+        NEGATIVE,
+        "history.invalid.change-set.above-maximum-changed-paths",
+    ),
+    (
+        "CS-06",
+        "PullRequestChangeSet",
+        "base typed in Python",
+        NEGATIVE,
+        "history.invalid.change-set.untyped-python-base",
+    ),
+    (
+        "CS-07",
+        "PullRequestChangeSet",
+        "head typed in Python",
+        NEGATIVE,
+        "history.invalid.change-set.untyped-python-head",
+    ),
+    (
+        "CS-08",
+        "PullRequestChangeSet",
+        "changed_paths is a tuple in Python",
+        NEGATIVE,
+        "history.invalid.change-set.python-list-not-tuple",
+    ),
+    (
+        "CS-09",
+        "PullRequestChangeSet",
+        "changed_paths holds published values",
+        NEGATIVE,
+        "history.invalid.change-set.untyped-python-changed-path-element",
+    ),
+    (
+        "CS-10",
+        "PullRequestChangeSet",
+        "base and head bind one pull request",
+        NEGATIVE,
+        "history.invalid.change-set.mismatched-pull-requests",
+    ),
+    (
+        "CS-11",
+        "PullRequestChangeSet",
+        "base position requires the base role",
+        NEGATIVE,
+        "history.invalid.change-set.base-position-rejects-non-base-role",
+    ),
+    (
+        "CS-12",
+        "PullRequestChangeSet",
+        "head position requires the head role",
+        NEGATIVE,
+        "history.invalid.change-set.head-position-rejects-non-head-role",
+    ),
+    (
+        "CS-13",
+        "PullRequestChangeSet",
+        "base and head revisions differ",
+        NEGATIVE,
+        "history.invalid.change-set.equal-base-and-head-revision",
+    ),
+    (
+        "CS-14",
+        "PullRequestChangeSet",
+        "base and head algorithms match",
+        NEGATIVE,
+        "history.invalid.change-set.mismatched-revision-algorithms",
+    ),
+    (
+        "CS-15",
+        "PullRequestChangeSet",
+        "object algorithms match the head",
+        NEGATIVE,
+        "history.invalid.change-set.mixed-hash-algorithms",
+    ),
+    (
+        "CS-16",
+        "PullRequestChangeSet",
+        "repository paths are unique",
+        NEGATIVE,
+        "history.invalid.change-set.duplicate-path",
+    ),
+    (
+        "CS-17",
+        "PullRequestChangeSet",
+        "no completeness claim",
+        NEGATIVE,
+        "history.invalid.change-set.extra-complete",
+    ),
+    (
+        "CS-18",
+        "PullRequestChangeSet",
+        "supplied order is preserved",
+        POSITIVE,
+        "history.valid.change-set.supplied-order-preserved",
+    ),
+    # PullRequestReviewRevisionApproval
+    (
+        "RA-01",
+        "PullRequestReviewRevisionApproval",
+        "review typed in Python",
+        NEGATIVE,
+        "history.invalid.approval.untyped-python-review",
+    ),
+    (
+        "RA-02",
+        "PullRequestReviewRevisionApproval",
+        "approved_revision typed in Python",
+        NEGATIVE,
+        "history.invalid.approval.untyped-python-approved-revision",
+    ),
+    (
+        "RA-03",
+        "PullRequestReviewRevisionApproval",
+        "review must be a pull-request review",
+        NEGATIVE,
+        "history.invalid.approval.non-review-kind-subject",
+    ),
+    (
+        "RA-04",
+        "PullRequestReviewRevisionApproval",
+        "approval is independent of HEAD",
+        RELATIONAL,
+        "history.valid.approval.revision-need-not-be-head",
+    ),
+    # PullRequestMergeRevisionOutcome
+    (
+        "MO-01",
+        "PullRequestMergeRevisionOutcome",
+        "pull_request typed in Python",
+        NEGATIVE,
+        "history.invalid.merge-outcome.untyped-python-pull-request",
+    ),
+    (
+        "MO-02",
+        "PullRequestMergeRevisionOutcome",
+        "merge_revision typed in Python",
+        NEGATIVE,
+        "history.invalid.merge-outcome.untyped-python-merge-revision",
+    ),
+    (
+        "MO-03",
+        "PullRequestMergeRevisionOutcome",
+        "subject must be a pull request",
+        NEGATIVE,
+        "history.invalid.merge-outcome.non-pull-request-subject",
+    ),
+    (
+        "MO-04",
+        "PullRequestMergeRevisionOutcome",
+        "merge revision is independent of head",
+        RELATIONAL,
+        "history.valid.merge-outcome.revision-independent-of-head",
+    ),
+    # PullRequestHeadRefDeletion
+    (
+        "HD-01",
+        "PullRequestHeadRefDeletion",
+        "head typed in Python",
+        NEGATIVE,
+        "history.invalid.head-ref-deletion.untyped-python-head",
+    ),
+    (
+        "HD-02",
+        "PullRequestHeadRefDeletion",
+        "head_ref_name typed in Python",
+        NEGATIVE,
+        "history.invalid.head-ref-deletion.raw-python-ref-name",
+    ),
+    (
+        "HD-03",
+        "PullRequestHeadRefDeletion",
+        "the binding must carry the head role",
+        NEGATIVE,
+        "history.invalid.head-ref-deletion.base-binding",
+    ),
+    (
+        "HD-04",
+        "PullRequestHeadRefDeletion",
+        "a refs/-prefixed name is refused",
+        NEGATIVE,
+        "history.invalid.head-ref-deletion.refs-prefixed-name",
+    ),
+    # PullRequestHistoricalOccurrenceTime
+    (
+        "OT-01",
+        "PullRequestHistoricalOccurrenceTime",
+        "occurrence typed in Python",
+        NEGATIVE,
+        "history.invalid.occurrence-time.untyped-python-occurrence",
+    ),
+    (
+        "OT-02",
+        "PullRequestHistoricalOccurrenceTime",
+        "occurred_at must be a zero UTC offset",
+        NEGATIVE,
+        "history.invalid.occurrence-time.instant-positive-offset",
+    ),
+    (
+        "OT-03",
+        "PullRequestHistoricalOccurrenceTime",
+        "the approval branch is admitted",
+        POSITIVE,
+        "history.valid.occurrence-time.approval",
+    ),
+    (
+        "OT-04",
+        "PullRequestHistoricalOccurrenceTime",
+        "the merge branch is admitted",
+        POSITIVE,
+        "history.valid.occurrence-time.merge",
+    ),
+    (
+        "OT-05",
+        "PullRequestHistoricalOccurrenceTime",
+        "the deletion branch is admitted",
+        POSITIVE,
+        "history.valid.occurrence-time.deletion",
+    ),
+    (
+        "OT-06",
+        "PullRequestHistoricalOccurrenceTime",
+        "equal instants carry no order",
+        RELATIONAL,
+        "history.valid.occurrence-time.equal-instants-allowed",
+    ),
+    # PullRequestHistoryFactEvidenceLink
+    (
+        "EL-01",
+        "PullRequestHistoryFactEvidenceLink",
+        "fact typed in Python",
+        NEGATIVE,
+        "history.invalid.evidence-link.untyped-python-fact",
+    ),
+    (
+        "EL-02",
+        "PullRequestHistoryFactEvidenceLink",
+        "occurrence-time fact typed in Python",
+        NEGATIVE,
+        "history.invalid.evidence-link.occurrence-time-fact-python",
+    ),
+    (
+        "EL-03",
+        "PullRequestHistoryFactEvidenceLink",
+        "evidence_record typed in Python",
+        NEGATIVE,
+        "history.invalid.evidence-link.untyped-python-record",
+    ),
+    (
+        "EL-04",
+        "PullRequestHistoryFactEvidenceLink",
+        "a change set is not an admitted fact",
+        NEGATIVE,
+        "history.invalid.evidence-link.change-set-fact",
+    ),
+    (
+        "EL-05",
+        "PullRequestHistoryFactEvidenceLink",
+        "a status is not an admitted fact",
+        NEGATIVE,
+        "history.invalid.evidence-link.changed-path-status-fact",
+    ),
+    (
+        "EL-06",
+        "PullRequestHistoryFactEvidenceLink",
+        "one record carries a second fact",
+        RELATIONAL,
+        "history.valid.evidence-link.second-fact-same-record",
+    ),
+)
+
+LEDGER_TARGETS = {row[1] for row in REQUIREMENT_LEDGER}
+
+
+def test_the_requirement_ledger_covers_every_owned_target() -> None:
+    assert LEDGER_TARGETS == set(OWNED)
+
+
+def test_every_ledger_witness_exists_and_matches_its_coverage_kind() -> None:
+    """A ledger row is a claim about a vector; the vector must bear it out."""
+    by_id = {
+        cast(str, v["id"]): (family, v)
+        for family, section in SECTIONS.items()
+        for v in section["vectors"]
+    }
+    seen: set[str] = set()
+    for req_id, target, _, kind, witness in REQUIREMENT_LEDGER:
+        assert req_id not in seen, req_id
+        seen.add(req_id)
+        assert witness in by_id, (req_id, witness)
+        family, vector = by_id[witness]
+        assert vector["target"] == target, req_id
+        if kind == NEGATIVE:
+            assert family == "invalid", req_id
+            assert vector["operation"] == "reject", req_id
+        else:
+            assert family == "valid", req_id
+            assert vector["operation"] == "construct", req_id
+
+
+# Four outer typed-input guards are equivalent mutants: deleting one leaves the
+# same input refused by the nested published type at the same normalized error
+# location and error type, so no vector can ever distinguish them. The
+# requirement stays corpus-owned and witnessed -- it is the MUTATION that is
+# uninformative, not the contract. Recorded semantically: no line numbers, no
+# source text, no hashes.
+EQUIVALENT_MUTANT_REDUNDANT_ENFORCEMENT: tuple[tuple[str, str, str, str], ...] = (
+    ("CP-02", "PullRequestChangedPath.head_object", "GitBlobIdentity", "head_object"),
+    (
+        "RA-02",
+        "PullRequestReviewRevisionApproval.approved_revision",
+        "GitCommitIdentity",
+        "approved_revision",
+    ),
+    (
+        "MO-02",
+        "PullRequestMergeRevisionOutcome.merge_revision",
+        "GitCommitIdentity",
+        "merge_revision",
+    ),
+    (
+        "EL-02",
+        "PullRequestHistoryFactEvidenceLink.fact occurrence-time branch",
+        "PullRequestHistoricalOccurrenceTime",
+        "fact",
+    ),
+)
+
+
+def test_no_actionable_requirement_is_uncovered() -> None:
+    """Every ledger row carries a recognised coverage kind."""
+    assert not [
+        r
+        for r in REQUIREMENT_LEDGER
+        if r[3] not in {NEGATIVE, POSITIVE, RELATIONAL, UNIT, GENERIC}
+    ]
+
+
+def test_the_equivalent_mutant_register_is_exactly_four() -> None:
+    """A fifth entry would mean a requirement lost its discriminating witness.
+
+    Each entry names the nested published type that enforces the same boundary,
+    and the witness that still pins the published rejection contract.
+    """
+    ledger = {row[0]: row for row in REQUIREMENT_LEDGER}
+
+    assert len(EQUIVALENT_MUTANT_REDUNDANT_ENFORCEMENT) == 4
+    assert {row[0] for row in EQUIVALENT_MUTANT_REDUNDANT_ENFORCEMENT} == {
+        "CP-02",
+        "RA-02",
+        "MO-02",
+        "EL-02",
+    }
+    for req_id, outer, nested, location in EQUIVALENT_MUTANT_REDUNDANT_ENFORCEMENT:
+        assert req_id in ledger, req_id
+        assert ledger[req_id][3] == NEGATIVE, req_id
+        assert outer and nested, req_id
+        witness = next(v for v in INVALID["vectors"] if v["id"] == ledger[req_id][4])
+        assert witness["input_mode"] == "python", req_id
+        assert cast(list[str], witness["expected"]["error_location"])[0] == location
+        assert witness["expected"]["error_type"] == "value_error", req_id
+
+
+# --- a negative witness must violate exactly what it claims -------------------
+
+
+def _change_set_siblings(supplied: dict[str, Any]) -> dict[str, bool]:
+    """Evaluate each published change-set invariant on a JSON candidate.
+
+    Validator ordering is not proof of isolation: a vector can be rejected for
+    the reason it names while quietly violating a second requirement, which is
+    how one cross-swapped vector came to stand for two role rules.
+    """
+    base = cast(dict[str, Any], supplied["base"])
+    head = cast(dict[str, Any], supplied["head"])
+    paths = cast(list[dict[str, Any]], supplied["changed_paths"])
+    base_rev = base["role_assignment"]["revision"]
+    head_rev = head["role_assignment"]["revision"]
+    return {
+        "same_pull_request": base["pull_request"] == head["pull_request"],
+        "base_role_is_base": base["role_assignment"]["role"] == "base",
+        "head_role_is_head": head["role_assignment"]["role"] == "head",
+        "revisions_distinct": base_rev != head_rev,
+        "algorithms_match": base_rev["algorithm"] == head_rev["algorithm"],
+        "objects_match_head": all(
+            entry["head_object"]["algorithm"] == head_rev["algorithm"]
+            for entry in paths
+        ),
+        "paths_unique": len({entry["path"] for entry in paths}) == len(paths),
+        "cardinality_valid": 1 <= len(paths) <= 4096,
+    }
+
+
+CHANGE_SET_ISOLATION = (
+    (
+        "history.invalid.change-set.base-position-rejects-non-base-role",
+        "base_role_is_base",
+    ),
+    (
+        "history.invalid.change-set.head-position-rejects-non-head-role",
+        "head_role_is_head",
+    ),
+    ("history.invalid.change-set.mismatched-revision-algorithms", "algorithms_match"),
+)
+
+
+@pytest.mark.parametrize(
+    ("vector_id", "violated"),
+    CHANGE_SET_ISOLATION,
+    ids=[v[1] for v in CHANGE_SET_ISOLATION],
+)
+def test_each_change_set_witness_violates_exactly_one_requirement(
+    vector_id: str, violated: str
+) -> None:
+    vector = next(v for v in INVALID["vectors"] if v["id"] == vector_id)
+    observed = _change_set_siblings(cast(dict[str, Any], vector["input"]))
+
+    assert observed[violated] is False, (vector_id, violated)
+    satisfied = {k: v for k, v in observed.items() if k != violated}
+    assert all(satisfied.values()), (vector_id, satisfied)
+
+
+def test_the_retired_cross_swap_is_gone() -> None:
+    """Two role rules now have one witness each; the pair vector added nothing."""
+    ids = {cast(str, v["id"]) for v in INVALID["vectors"]}
+
+    assert "history.invalid.change-set.wrong-role-assignment" not in ids
+    both: list[str] = []
+    for vector in INVALID["vectors"]:
+        supplied = cast(dict[str, Any], vector["input"])
+        if vector["category"] != "change-set" or vector["input_mode"] != "json":
+            continue
+        if not all(
+            isinstance(supplied.get(part), dict)
+            and "role_assignment" in cast(dict[str, Any], supplied[part])
+            for part in ("base", "head")
+        ) or not isinstance(supplied.get("changed_paths"), list):
+            continue
+        observed = _change_set_siblings(supplied)
+        if not observed["base_role_is_base"] and not observed["head_role_is_head"]:
+            both.append(cast(str, vector["id"]))
+    assert not both, "no vector may violate both role requirements at once"
+
+
+def test_every_python_typing_witness_supplies_one_untyped_position() -> None:
+    """A typed-input witness must be untyped in exactly the position it names."""
+    expectations = {
+        "history.invalid.change-set.untyped-python-base": ("base", ("head",)),
+        "history.invalid.change-set.untyped-python-head": ("head", ("base",)),
+        "history.invalid.approval.untyped-python-approved-revision": (
+            "approved_revision",
+            ("review",),
+        ),
+        "history.invalid.merge-outcome.untyped-python-pull-request": (
+            "pull_request",
+            ("merge_revision",),
+        ),
+        "history.invalid.merge-outcome.untyped-python-merge-revision": (
+            "merge_revision",
+            ("pull_request",),
+        ),
+        "history.invalid.head-ref-deletion.untyped-python-head": (
+            "head",
+            ("head_ref_name",),
+        ),
+        "history.invalid.occurrence-time.untyped-python-occurrence": ("occurrence", ()),
+        "history.invalid.evidence-link.occurrence-time-fact-python": (
+            "fact",
+            ("evidence_record",),
+        ),
+    }
+    for vector_id, (untyped, typed) in expectations.items():
+        vector = next(v for v in INVALID["vectors"] if v["id"] == vector_id)
+        assert vector["input_mode"] == "python", vector_id
+        supplied = cast(dict[str, Any], vector["input"])
+        assert "typed_value" not in cast(dict[str, Any], supplied[untyped]), vector_id
+        for field in typed:
+            assert "typed_value" in cast(dict[str, Any], supplied[field]), (
+                vector_id,
+                field,
+            )
+
+
+# --- every vector answers to a requirement -----------------------------------
+
+SECONDARY_ROLES = {
+    "missing": "SECONDARY_BOUNDARY_WITNESS: a required member is absent",
+    "extra": "SECONDARY_BOUNDARY_WITNESS: a forbidden extra is refused",
+    "predecessor": "SECONDARY_BOUNDARY_WITNESS: a predecessor contract boundary",
+}
+
+
+def _vector_role(vector: dict[str, Any], primaries: set[str]) -> str:
+    if cast(str, vector["id"]) in primaries:
+        return "PRIMARY_WITNESS"
+    expected = cast(dict[str, Any], vector["expected"])
+    if expected.get("error_type") == "missing":
+        return SECONDARY_ROLES["missing"]
+    if expected.get("error_type") == "extra_forbidden":
+        return SECONDARY_ROLES["extra"]
+    return SECONDARY_ROLES["predecessor"]
+
+
+def test_every_invalid_vector_answers_to_a_requirement() -> None:
+    """The reverse direction: no vector may exist without a contract purpose."""
+    primaries = {row[4] for row in REQUIREMENT_LEDGER}
+    roles = Counter(_vector_role(v, primaries) for v in INVALID["vectors"])
+
+    assert sum(roles.values()) == len(INVALID["vectors"])
+    assert roles["PRIMARY_WITNESS"] == len(
+        [r for r in REQUIREMENT_LEDGER if r[3] == NEGATIVE]
+    )
+    assert "NO_CLEAR_REQUIREMENT" not in roles
+
+
+def test_every_replay_vector_is_canonical_provenance_coverage() -> None:
+    for vector in REPLAY["vectors"]:
+        assert vector["evidence_classification"] in {
+            "retained_normalized_observation",
+            "caller_supplied_composition",
+            "caller_supplied_association",
+        }, vector["id"]

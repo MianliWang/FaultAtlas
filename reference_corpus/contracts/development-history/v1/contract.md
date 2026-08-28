@@ -26,21 +26,21 @@ Supporting authorities are consumed but not owned: `faultatlas.domain.evidence`,
 
 | Family | valid | invalid | replay |
 | --- | --- | --- | --- |
-| `change-set` | 5 | 12 | 0 |
+| `change-set` | 5 | 17 | 0 |
 | `changed-path` | 4 | 9 | 3 |
 | `changed-path-status` | 3 | 4 | 0 |
 | `evidence-association` | 0 | 0 | 12 |
-| `evidence-link` | 15 | 28 | 0 |
-| `head-ref-deletion` | 3 | 7 | 1 |
-| `merge-outcome` | 3 | 6 | 1 |
-| `occurrence-time` | 7 | 11 | 3 |
-| `review-approval` | 3 | 8 | 1 |
+| `evidence-link` | 15 | 29 | 0 |
+| `head-ref-deletion` | 3 | 8 | 1 |
+| `merge-outcome` | 3 | 8 | 1 |
+| `occurrence-time` | 7 | 12 | 3 |
+| `review-approval` | 3 | 10 | 1 |
 | `revision-role-binding` | 0 | 0 | 2 |
 | `role-binding` | 5 | 11 | 0 |
 | `supplied-change-set` | 0 | 0 | 1 |
-| **total** | **48** | **96** | **24** |
+| **total** | **48** | **108** | **24** |
 
-168 vectors over 19 declared fixtures. Every vector occupies a distinct semantic partition.
+180 vectors over 19 declared fixtures. Every vector occupies a distinct semantic partition.
 
 ## 4. Replay and Provenance
 
