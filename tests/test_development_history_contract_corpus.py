@@ -4249,110 +4249,194 @@ def test_the_python_instant_witness_isolates_its_field() -> None:
     assert vector["expected"]["error_type"] == "datetime_type"
 
 
-# --- the derived target table is rendered, not merely mentioned --------------
+# --- every derived table is rendered whole, never token-matched --------------
 #
-# `slice_layer` and `target_class` remain descriptive: the manifest is their
-# only source and they are not independently verified. That does not licence a
-# projection that loses which symbol they belong to. Checking each token for
-# presence passes happily when two rows exchange a column, so the association
-# tuple -- not the column set -- is what the Markdown must preserve.
+# Token presence cannot tell a correct row from a transposed one: two rows may
+# exchange a column and every symbol, digest, and claim still occurs somewhere
+# in the file. The association tuple is the contract, so each table is rendered
+# from its canonical authority and compared to the extracted block exactly --
+# and a closure check requires every table in the document to be one of them.
 
-TARGET_TABLE_HEADER = (
-    "| Symbol | Module | Slice | Target class |",
-    "| --- | --- | --- | --- |",
+
+def _md_row(cells: tuple[str, ...]) -> str:
+    return "| " + " | ".join(cells) + " |"
+
+
+def _tick(value: object) -> str:
+    return f"`{value}`"
+
+
+def _render_targets() -> list[tuple[str, ...]]:
+    return [
+        (
+            _tick(e["symbol"]),
+            _tick(e["module"]),
+            _tick(e["slice_layer"]),
+            _tick(e["target_class"]),
+        )
+        for e in cast(list[dict[str, str]], MANIFEST["target_symbols"])
+    ]
+
+
+def _render_inventory() -> list[tuple[str, ...]]:
+    counts = {
+        family: Counter(cast(str, v["category"]) for v in section["vectors"])
+        for family, section in SECTIONS.items()
+    }
+    families: list[str] = sorted(
+        {family for counter in counts.values() for family in counter}
+    )
+    rows = [
+        (
+            _tick(family),
+            str(counts["valid"][family]),
+            str(counts["invalid"][family]),
+            str(counts["replay"][family]),
+        )
+        for family in families
+    ]
+    rows.append(
+        (
+            "**total**",
+            f"**{len(VALID['vectors'])}**",
+            f"**{len(INVALID['vectors'])}**",
+            f"**{len(REPLAY['vectors'])}**",
+        )
+    )
+    return rows
+
+
+def _render_forbidden_extras() -> list[tuple[str, ...]]:
+    return [
+        (_tick(e["extra_key"]), e["published_non_claim"])
+        for e in cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"])
+    ]
+
+
+def _render_authorities() -> list[tuple[str, ...]]:
+    return [
+        (_tick(e["decision_reference"]), _tick(e["authority_role"]), _tick(e["sha256"]))
+        for e in cast(list[dict[str, str]], MANIFEST["source_decisions"])
+    ]
+
+
+DERIVED_TABLES: tuple[
+    tuple[str, tuple[str, ...], Callable[[], list[tuple[str, ...]]]], ...
+] = (
+    ("target symbols", ("Symbol", "Module", "Slice", "Target class"), _render_targets),
+    ("vector inventory", ("Family", "valid", "invalid", "replay"), _render_inventory),
+    (
+        "forbidden extras",
+        ("Extra key", "Published non-claim"),
+        _render_forbidden_extras,
+    ),
+    ("source authorities", ("Authority", "Role", "SHA-256"), _render_authorities),
 )
 
 
-def _render_target_table() -> list[str]:
-    """Render the whole table from the manifest, in its authoritative order."""
-    rows = [
-        "| `{symbol}` | `{module}` | `{slice_layer}` | `{target_class}` |".format(
-            symbol=entry["symbol"],
-            module=entry["module"],
-            slice_layer=entry["slice_layer"],
-            target_class=entry["target_class"],
-        )
-        for entry in cast(list[dict[str, str]], MANIFEST["target_symbols"])
+def _render_table(header: tuple[str, ...], rows: list[tuple[str, ...]]) -> list[str]:
+    return [
+        _md_row(header),
+        _md_row(tuple("---" for _ in header)),
+        *[_md_row(row) for row in rows],
     ]
-    return [*TARGET_TABLE_HEADER, *rows]
 
 
-def _actual_target_table(text: str) -> list[str]:
-    lines = text.splitlines()
-    start = lines.index(TARGET_TABLE_HEADER[0])
-    end = start
-    while end < len(lines) and lines[end].startswith("|"):
-        end += 1
-    return lines[start:end]
-
-
-def test_the_target_table_is_an_exact_projection_of_the_manifest() -> None:
-    text = (CORPUS / "contract.md").read_text("utf-8")
-
-    assert _actual_target_table(text) == _render_target_table()
-
-
-def _table_projection_matches(entries: list[dict[str, str]], text: str) -> bool:
-    rendered = [
-        *TARGET_TABLE_HEADER,
-        *[
-            "| `{symbol}` | `{module}` | `{slice_layer}` | `{target_class}` |".format(
-                symbol=e["symbol"],
-                module=e["module"],
-                slice_layer=e["slice_layer"],
-                target_class=e["target_class"],
-            )
-            for e in entries
-        ],
-    ]
-    return _actual_target_table(text) == rendered
+def _markdown_tables(text: str) -> list[list[str]]:
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("|"):
+            current.append(line)
+        elif current:
+            blocks.append(current)
+            current = []
+    if current:
+        blocks.append(current)
+    return blocks
 
 
 @pytest.mark.parametrize(
-    ("label", "mutate"),
-    (
-        ("slice_layer swapped between rows", "slice_layer"),
-        ("target_class swapped between rows", "target_class"),
-        ("module swapped between rows", "module"),
-        ("row replaced by a duplicate", "duplicate"),
-        ("row removed", "missing"),
-        ("row added", "extra"),
-        ("rows reordered", "reorder"),
-    ),
+    ("label", "header", "render"), DERIVED_TABLES, ids=[t[0] for t in DERIVED_TABLES]
 )
-def test_no_target_row_association_can_drift(label: str, mutate: str) -> None:
-    """Every probe changes an association, never a token inventory."""
+def test_each_derived_table_is_an_exact_projection(
+    label: str, header: tuple[str, ...], render: Callable[[], list[tuple[str, ...]]]
+) -> None:
+    tables = _markdown_tables((CORPUS / "contract.md").read_text("utf-8"))
+    actual = [t for t in tables if t[0] == _md_row(header)]
+
+    assert len(actual) == 1, label
+    assert actual[0] == _render_table(header, render()), label
+
+
+def test_every_markdown_table_is_a_registered_projection() -> None:
+    """A table nobody renders is a table nobody checks."""
+    tables = _markdown_tables((CORPUS / "contract.md").read_text("utf-8"))
+    rendered = [_render_table(header, render()) for _, header, render in DERIVED_TABLES]
+
+    assert len(tables) == len(DERIVED_TABLES) == 4
+    assert sorted(tables) == sorted(rendered)
+
+
+# (label, table index, column, two row indices whose value in that column differs)
+ASSOCIATION_PROBES = (
+    ("target symbols", 0, 2, 0, 1),
+    ("vector inventory", 1, 1, 0, 1),
+    ("forbidden extras", 2, 1, 0, 1),
+    ("source authorities", 3, 1, 0, 1),
+)
+
+
+@pytest.mark.parametrize(
+    ("label", "table_index", "column", "first", "second"),
+    ASSOCIATION_PROBES,
+    ids=[p[0] for p in ASSOCIATION_PROBES],
+)
+def test_no_derived_table_row_association_can_drift(
+    label: str, table_index: int, column: int, first: int, second: int
+) -> None:
+    """Swap one column between two rows; the column inventory is unchanged."""
+    _, header, render = DERIVED_TABLES[table_index]
+    rows = [list(row) for row in render()]
+    assert rows[first][column] != rows[second][column], label
+    rows[first][column], rows[second][column] = (
+        rows[second][column],
+        rows[first][column],
+    )
+    mutated = [tuple(row) for row in rows]
+
+    assert sorted(r[column] for r in mutated) == sorted(r[column] for r in render())
+    assert _render_table(header, mutated) != _render_table(header, render()), label
+
+
+@pytest.mark.parametrize(
+    ("label", "table_index"), [(t[0], i) for i, t in enumerate(DERIVED_TABLES)]
+)
+def test_no_derived_table_may_lose_gain_or_reorder_a_row(
+    label: str, table_index: int
+) -> None:
+    _, header, render = DERIVED_TABLES[table_index]
+    expected = _render_table(header, render())
+    rows = render()
+
+    assert _render_table(header, rows[:-1]) != expected
+    assert _render_table(header, [*rows, rows[0]]) != expected
+    assert _render_table(header, [rows[0], *rows]) != expected
+    assert _render_table(header, list(reversed(rows))) != expected
+
+
+def test_a_changed_markdown_cell_is_refused() -> None:
+    """Drift the other way: the Markdown moves, the manifest does not."""
     text = (CORPUS / "contract.md").read_text("utf-8")
-    entries = copy.deepcopy(cast(list[dict[str, str]], MANIFEST["target_symbols"]))
-
-    if mutate in {"slice_layer", "target_class", "module"}:
-        first, second = (0, 1) if mutate != "module" else (0, 8)
-        entries[first][mutate], entries[second][mutate] = (
-            entries[second][mutate],
-            entries[first][mutate],
-        )
-        assert sorted(e[mutate] for e in entries) == sorted(
-            cast(dict[str, str], e)[mutate] for e in MANIFEST["target_symbols"]
-        ), "the column inventory must be unchanged, only the association"
-    elif mutate == "duplicate":
-        entries[1] = copy.deepcopy(entries[0])
-    elif mutate == "missing":
-        entries.pop()
-    elif mutate == "extra":
-        entries.append(copy.deepcopy(entries[0]))
-    else:
-        entries.reverse()
-
-    assert not _table_projection_matches(entries, text), label
-
-
-def test_a_changed_markdown_row_is_refused() -> None:
-    """Drift in the other direction: the Markdown moves, the manifest does not."""
-    text = (CORPUS / "contract.md").read_text("utf-8")
-    tampered = text.replace("| `S1.P05.S01` |", "| `S1.P05.S09` |", 1)
-
-    assert tampered != text
-    assert _actual_target_table(tampered) != _render_target_table()
+    for original, replacement in (
+        ("| `S1.P05.S01` |", "| `S1.P05.S09` |"),
+        ("no confidence or review-status semantics", "no evidence aggregation"),
+    ):
+        tampered = text.replace(original, replacement, 1)
+        assert tampered != text, original
+        tables = _markdown_tables(tampered)
+        rendered = [_render_table(h, r()) for _, h, r in DERIVED_TABLES]
+        assert sorted(tables) != sorted(rendered), original
 
 
 def test_the_target_row_columns_stay_descriptive() -> None:
@@ -4362,3 +4446,67 @@ def test_the_target_row_columns_stay_descriptive() -> None:
             assert f"/target_symbols/{index}/{column}" in DESCRIPTIVE_PATHS
         for column in ("symbol", "module"):
             assert f"/target_symbols/{index}/{column}" not in DESCRIPTIVE_PATHS
+    for index in range(len(cast(list[Any], MANIFEST["source_decisions"]))):
+        assert f"/source_decisions/{index}/authority_role" in DESCRIPTIVE_PATHS
+
+
+# --- the forbidden-extra pairing has an authority of its own -----------------
+#
+# Rendering the ledger faithfully stops the Markdown drifting from the manifest,
+# but it cannot stop the manifest itself pairing a key with the wrong claim: a
+# consistent edit to both would project cleanly. The pairing is the whole point
+# of the ledger -- it is what makes eleven `extra_forbidden` rejections eleven
+# different published non-claims -- so it is pinned here as well.
+
+FORBIDDEN_EXTRA_AUTHORITY = {
+    "schema_version": "no top-level history-evidence-link schema version",
+    "json_pointer": "no field-level or semantic evidence localization",
+    "support_role": "no support-role semantics",
+    "strength": "no support-strength semantics",
+    "verification": "no verification or proof semantics",
+    "confidence": "no confidence or review-status semantics",
+    "primary_evidence": "no primary-evidence designation or ranking",
+    "evidence_records": "no evidence aggregation",
+    "superseded": "no automatic correction or supersession traversal",
+    "request_id": "no acquisition-request provenance coupling",
+    "artifact": "no direct artifact or envelope carrier coupling",
+}
+
+
+def test_each_forbidden_extra_is_paired_with_its_own_non_claim() -> None:
+    ledger = cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"])
+    observed = {entry["extra_key"]: entry["published_non_claim"] for entry in ledger}
+
+    assert observed == FORBIDDEN_EXTRA_AUTHORITY
+    assert len(FORBIDDEN_EXTRA_AUTHORITY) == 11
+    assert len(set(FORBIDDEN_EXTRA_AUTHORITY.values())) == 11
+
+
+def test_a_consistently_swapped_pairing_is_still_refused() -> None:
+    """The mutation that a faithful projection alone would let through."""
+    swapped = dict(FORBIDDEN_EXTRA_AUTHORITY)
+    swapped["artifact"], swapped["confidence"] = (
+        FORBIDDEN_EXTRA_AUTHORITY["confidence"],
+        FORBIDDEN_EXTRA_AUTHORITY["artifact"],
+    )
+
+    assert sorted(swapped.values()) == sorted(FORBIDDEN_EXTRA_AUTHORITY.values())
+    assert set(swapped) == set(FORBIDDEN_EXTRA_AUTHORITY)
+    assert swapped != FORBIDDEN_EXTRA_AUTHORITY
+
+
+def test_every_forbidden_extra_key_reaches_its_vector() -> None:
+    """The pairing must also hold at the vector that enforces it."""
+    ledger = cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"])
+    by_id = {cast(str, v["id"]): v for v in INVALID["vectors"]}
+
+    for entry in ledger:
+        vector = by_id[entry["vector_id"]]
+        assert entry["extra_key"] in cast(dict[str, Any], vector["input"])
+        assert cast(list[str], vector["expected"]["error_location"]) == [
+            entry["extra_key"]
+        ]
+        assert (
+            FORBIDDEN_EXTRA_AUTHORITY[entry["extra_key"]]
+            == entry["published_non_claim"]
+        )
