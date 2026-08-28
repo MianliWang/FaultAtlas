@@ -451,9 +451,9 @@ def test_the_declared_counts_match_the_vector_files() -> None:
     summary = MANIFEST["vector_summary"]
 
     assert summary["valid"]["count"] == len(VALID["vectors"]) == 48
-    assert summary["invalid"]["count"] == len(INVALID["vectors"]) == 109
+    assert summary["invalid"]["count"] == len(INVALID["vectors"]) == 111
     assert summary["replay"]["count"] == len(REPLAY["vectors"]) == 24
-    assert summary["total_vectors"] == 181
+    assert summary["total_vectors"] == 183
     assert summary["fixtures"] == len(VALID["fixtures"]) == 19
 
 
@@ -1432,8 +1432,8 @@ def test_every_vector_declares_a_globally_unique_semantic_partition() -> None:
         for vector in section["vectors"]
     ]
 
-    assert len(partitions) == 181
-    assert len(set(partitions)) == 181
+    assert len(partitions) == 183
+    assert len(set(partitions)) == 183
 
 
 def test_each_semantic_partition_is_distinct_from_its_vector_id() -> None:
@@ -1698,9 +1698,9 @@ def test_the_manifest_category_inventory_is_derived_from_the_vectors() -> None:
 
     summary = MANIFEST["vector_summary"]
     assert summary["valid"]["count"] == 48
-    assert summary["invalid"]["count"] == 109
+    assert summary["invalid"]["count"] == 111
     assert summary["replay"]["count"] == 24
-    assert summary["total_vectors"] == 181
+    assert summary["total_vectors"] == 183
 
 
 def test_the_contract_markdown_category_table_is_derived_from_the_vectors() -> None:
@@ -1731,7 +1731,7 @@ def test_a_category_move_breaks_the_derived_inventory() -> None:
         for entry in MANIFEST["corpus_files"]
         if entry["filename"] == "invalid-vectors.json"
     )
-    assert len(invalid["vectors"]) == 109, "the totals still balance"
+    assert len(invalid["vectors"]) == 111, "the totals still balance"
 
     sections = _sections(VALID, invalid, REPLAY)
     assert _manifest_histogram_failures(MANIFEST, sections) == [
@@ -1813,7 +1813,7 @@ def _family_collisions(section: dict[str, Any], family: str) -> list[list[str]]:
     return sorted(ids for ids in grouped.values() if len(ids) > 1)
 
 
-FAMILIES = (("valid", VALID, 48), ("invalid", INVALID, 109), ("replay", REPLAY, 24))
+FAMILIES = (("valid", VALID, 48), ("invalid", INVALID, 111), ("replay", REPLAY, 24))
 
 
 @pytest.mark.parametrize(
@@ -2883,7 +2883,7 @@ def test_the_measured_family_mode_matrix_is_the_declared_one() -> None:
 
     assert observed == {
         "valid": {"json": 33, "python": 15},
-        "invalid": {"json": 84, "python": 25},
+        "invalid": {"json": 85, "python": 26},
         "replay": {"replay": 24},
     }
 
@@ -4092,3 +4092,159 @@ def test_the_enum_field_requires_its_published_member_in_python() -> None:
     assert "typed_value" in cast(dict[str, Any], vector["input"]["head_object"])
     assert vector["expected"]["error_location"] == ["status"]
     assert vector["expected"]["error_type"] == "is_instance_of"
+
+
+# --- the field surface, closed by matrix rather than by inspection -----------
+#
+# Two coverage questions were previously answered per finding, not per field:
+# does every required field have a witness that actually omits it, and does
+# every field have a witness for its Python input language. Both are now
+# matrices over the live field surface, so a newly required field or a newly
+# published Python boundary forces review instead of arriving unnoticed.
+
+
+def _required_field_coordinates() -> list[tuple[str, str]]:
+    return sorted(
+        (name, field)
+        for name, target in OWNED.items()
+        if hasattr(target, "model_fields")
+        for field, info in target.model_fields.items()
+        if info.is_required()
+    )
+
+
+def _omits(vector: dict[str, Any], field: str) -> bool:
+    """True omission is a property of the supplied input, never of an error code.
+
+    A discriminatorless union reports `missing` at its own field when no branch
+    matches, so a present-but-wrong value looks identical to an absent one if
+    the error type is all that is consulted.
+    """
+    supplied = vector["input"]
+    if not isinstance(supplied, dict):
+        return False
+    return field not in cast(dict[str, Any], supplied)
+
+
+def _omission_witnesses(field_target: str, field: str) -> list[str]:
+    return [
+        cast(str, v["id"])
+        for v in INVALID["vectors"]
+        if v["target"] == field_target
+        and _omits(v, field)
+        and v["expected"]["error_type"] == "missing"
+        and cast(list[str], v["expected"]["error_location"]) == [field]
+    ]
+
+
+def _python_language_witnesses(field_target: str, field: str) -> list[str]:
+    return [
+        cast(str, v["id"])
+        for v in INVALID["vectors"]
+        if v["target"] == field_target
+        and v["input_mode"] == "python"
+        and not _omits(v, field)
+        and cast(list[str], v["expected"]["error_location"])[:1] == [field]
+    ]
+
+
+def test_every_required_field_has_a_true_omission_witness() -> None:
+    coordinates = _required_field_coordinates()
+    uncovered = [
+        f"{target}.{field}"
+        for target, field in coordinates
+        if not _omission_witnesses(target, field)
+    ]
+
+    assert len(coordinates) == 18
+    assert not uncovered, uncovered
+
+
+def test_every_required_field_has_a_python_language_witness() -> None:
+    coordinates = _required_field_coordinates()
+    uncovered = [
+        f"{target}.{field}"
+        for target, field in coordinates
+        if not _python_language_witnesses(target, field)
+    ]
+
+    assert len(coordinates) == 18
+    assert not uncovered, uncovered
+
+
+def test_a_present_wrong_branch_value_is_not_an_omission_witness() -> None:
+    """The false positive that hid the occurrence requiredness gap."""
+    union_vectors = [
+        v
+        for v in INVALID["vectors"]
+        if v["target"] == "PullRequestHistoricalOccurrenceTime"
+        and v["expected"]["error_type"] == "missing"
+        and cast(list[str], v["expected"]["error_location"]) == ["occurrence"]
+        and not _omits(v, "occurrence")
+    ]
+
+    assert union_vectors, "the non-admitted union vectors must still exist"
+    for vector in union_vectors:
+        assert "occurrence" in cast(dict[str, Any], vector["input"])
+        assert vector["id"] not in _omission_witnesses(
+            "PullRequestHistoricalOccurrenceTime", "occurrence"
+        )
+
+
+def test_removing_the_omission_witness_reopens_exactly_one_coordinate() -> None:
+    kept = [
+        v
+        for v in INVALID["vectors"]
+        if v["id"] != "history.invalid.occurrence-time.missing-occurrence"
+    ]
+    surviving = {
+        f"{target}.{field}"
+        for target, field in _required_field_coordinates()
+        for witnesses in [
+            [
+                cast(str, v["id"])
+                for v in kept
+                if v["target"] == target
+                and _omits(v, field)
+                and v["expected"]["error_type"] == "missing"
+                and cast(list[str], v["expected"]["error_location"]) == [field]
+            ]
+        ]
+        if not witnesses
+    }
+
+    assert surviving == {"PullRequestHistoricalOccurrenceTime.occurrence"}
+
+
+def test_a_json_instant_vector_cannot_fill_the_python_language_cell() -> None:
+    """The occurred_at cell demands a Python-mode witness, not a JSON neighbour."""
+    json_instants = [
+        cast(str, v["id"])
+        for v in INVALID["vectors"]
+        if v["target"] == "PullRequestHistoricalOccurrenceTime"
+        and v["input_mode"] == "json"
+        and cast(list[str], v["expected"]["error_location"])[:1] == ["occurred_at"]
+    ]
+    python_witnesses = _python_language_witnesses(
+        "PullRequestHistoricalOccurrenceTime", "occurred_at"
+    )
+
+    assert json_instants, "the JSON instant boundaries must still exist"
+    assert python_witnesses == ["history.invalid.occurrence-time.raw-python-instant"]
+    assert not set(json_instants) & set(python_witnesses)
+
+
+def test_the_python_instant_witness_isolates_its_field() -> None:
+    """Occurrence stays valid and present, so only the instant language fails."""
+    vector = next(
+        v
+        for v in INVALID["vectors"]
+        if v["id"] == "history.invalid.occurrence-time.raw-python-instant"
+    )
+    supplied = cast(dict[str, Any], vector["input"])
+
+    assert vector["input_mode"] == "python"
+    assert "typed_value" in cast(dict[str, Any], supplied["occurrence"])
+    assert isinstance(supplied["occurred_at"], str)
+    assert vector["expected"]["error_location"] == ["occurred_at"]
+    assert vector["expected"]["error_type"] == "datetime_type"

@@ -33,14 +33,14 @@ Supporting authorities are consumed but not owned: `faultatlas.domain.evidence`,
 | `evidence-link` | 15 | 29 | 0 |
 | `head-ref-deletion` | 3 | 8 | 1 |
 | `merge-outcome` | 3 | 8 | 1 |
-| `occurrence-time` | 7 | 12 | 3 |
+| `occurrence-time` | 7 | 14 | 3 |
 | `review-approval` | 3 | 10 | 1 |
 | `revision-role-binding` | 0 | 0 | 2 |
 | `role-binding` | 5 | 11 | 0 |
 | `supplied-change-set` | 0 | 0 | 1 |
-| **total** | **48** | **109** | **24** |
+| **total** | **48** | **111** | **24** |
 
-181 vectors over 19 declared fixtures. Every vector occupies a distinct semantic partition.
+183 vectors over 19 declared fixtures. Every vector occupies a distinct semantic partition.
 
 ## 4. Replay and Provenance
 
