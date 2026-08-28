@@ -5367,3 +5367,89 @@ def test_a_vocabulary_vector_still_declares_its_mode() -> None:
     assert vocabulary
     for vector in vocabulary:
         assert vector["expected"]["error_location_mode"] in LOCATION_MODES, vector["id"]
+
+
+# --- each vector file states its own decoding contract, so check it ----------
+#
+# `_load` enforces canonicalization from hard-coded rules and only the manifest
+# `format` block was ever compared. Each vector document carries its own
+# `format` and `assurance` envelope, which could therefore declare a different
+# version, or permit floats, while the file decoded correctly anyway -- durable
+# JSON misstating its own contract.
+
+VECTOR_DOCUMENTS = (
+    ("valid-vectors", VALID),
+    ("invalid-vectors", INVALID),
+    ("replay-vectors", REPLAY),
+)
+
+
+@pytest.mark.parametrize(
+    ("name", "document"), VECTOR_DOCUMENTS, ids=[n for n, _ in VECTOR_DOCUMENTS]
+)
+def test_each_vector_file_envelope_matches_the_enforced_contract(
+    name: str, document: dict[str, Any]
+) -> None:
+    """A document may not describe a decoding contract other than the real one."""
+    assert document["format"] == MANIFEST["format"], name
+
+    canonical = cast(dict[str, Any], document["format"]["canonicalization"])
+    raw = (CORPUS / f"{name}.json").read_bytes()
+    assert canonical["floats_and_NaN_permitted"] is False, name
+    assert not any(isinstance(v, float) for v in _flat_values(json.loads(raw))), name
+    assert canonical["keys"] == "sorted" and canonical["whitespace"] == "compact", name
+    assert _canonical_bytes(json.loads(raw)) == raw, name
+    assert canonical["line_endings"] == "LF_only" and b"\r" not in raw, name
+    assert canonical["encoding"] == "UTF-8_without_BOM"
+    assert not raw.startswith(b"\xef\xbb\xbf"), name
+    assert canonical["exactly_one_trailing_lf"] is True
+    assert raw.endswith(b"\n") and not raw.endswith(b"\n\n"), name
+
+
+@pytest.mark.parametrize(
+    ("name", "document"), VECTOR_DOCUMENTS, ids=[n for n, _ in VECTOR_DOCUMENTS]
+)
+def test_each_vector_file_assurance_block_is_the_same_declaration(
+    name: str, document: dict[str, Any]
+) -> None:
+    assurance = cast(dict[str, Any], document["assurance"])
+
+    assert assurance == cast(dict[str, Any], VALID["assurance"]), name
+    assert assurance["status"] == "locked"
+    assert assurance["production_dump_used_as_oracle"] is False
+    assert assurance["fixture_scope"] == "file_local_acyclic_explicit_only"
+    assert assurance["round_trip_expectation_explicit_per_vector"] is True
+    # the round-trip claim must hold of the vectors themselves
+    for vector in document["vectors"]:
+        expected = cast(dict[str, Any], vector["expected"])
+        if "round_trip_equal" in expected:
+            assert isinstance(expected["round_trip_equal"], bool), vector["id"]
+
+
+def test_a_falsified_vector_envelope_is_refused() -> None:
+    """Version drift and a relaxed float claim must both fail."""
+    probe = copy.deepcopy(cast(dict[str, Any], VALID["format"]))
+    probe["version"] = "2"
+    assert probe != MANIFEST["format"]
+
+    relaxed = copy.deepcopy(cast(dict[str, Any], VALID["format"]))
+    relaxed["canonicalization"]["floats_and_NaN_permitted"] = True
+    assert relaxed != MANIFEST["format"]
+    assert relaxed["canonicalization"]["floats_and_NaN_permitted"] is not False
+
+
+def test_every_vector_document_key_is_accounted_for() -> None:
+    """A new top-level key in a vector file must force review."""
+    expected = {
+        "valid-vectors": {"assurance", "fixtures", "format", "vectors"},
+        "invalid-vectors": {"assurance", "fixtures", "format", "vectors"},
+        "replay-vectors": {
+            "artifact_locks",
+            "assurance",
+            "fixtures",
+            "format",
+            "vectors",
+        },
+    }
+    for name, document in VECTOR_DOCUMENTS:
+        assert set(document) == expected[name], name
