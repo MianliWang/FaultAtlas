@@ -5226,6 +5226,166 @@ def test_the_correction_citing_vector_is_the_one_that_replays_it() -> None:
     )
 
 
+# --- the replay summary sentences are projected, not sampled -----------------
+#
+# Section 4 states three manifest facts in prose: whether the replay flattens
+# its layers, whether a deterministic derivation is published, and how many
+# history facts are individually linkable. Nothing compared those sentences to
+# the JSON, so the derived document could assert the exact opposite of the
+# manifest -- "is present" over `deterministic_derivation_present: false` -- and
+# stay green. `contract.md` carries no digest, so this projection is its only
+# guard.
+#
+# The prose skeleton is test-side; every value in it comes from the manifest.
+# The block is the set of section-4 lines that make one of these claims, so a
+# paragraph added or lost changes it, while an explanatory paragraph that claims
+# none of them is left alone. The classification and retained-role bullets keep
+# their own exact projections; this composes with them and repeats neither.
+#
+# The marker list is lexical, and that bounds what the sweep can promise: it
+# catches a restatement written in the document's own vocabulary, not an
+# arbitrary paraphrase. The exact comparison below is the contract; the sweep
+# only stops a second sentence from sitting beside the first.
+
+# The document spells small integers as words. Anything outside the table falls
+# back to digits so a changed count still renders and fails the comparison.
+NUMBER_WORDS = {
+    0: "zero",
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+    9: "nine",
+    10: "ten",
+    11: "eleven",
+    12: "twelve",
+}
+REPLAY_SUMMARY_SECTION = "## 4. Replay and Provenance"
+REPLAY_SUMMARY_MARKERS = (
+    "flatten",
+    "deterministic_derivation",
+    "deterministic derivation",
+    "linkable",
+)
+
+
+def _spelled(count: int) -> str:
+    return NUMBER_WORDS.get(count, str(count))
+
+
+def _target_entry(symbol: str) -> dict[str, str]:
+    """The declared row for `symbol`; its absence means the prose is stale."""
+    targets = cast(list[dict[str, str]], MANIFEST["target_symbols"])
+    return next(entry for entry in targets if entry["symbol"] == symbol)
+
+
+def _render_replay_summary_block() -> list[str]:
+    contract = cast(dict[str, Any], MANIFEST["replay_contract"])
+    classifications = cast(dict[str, str], contract["classifications"])
+    derivation = cast(bool, contract["deterministic_derivation_present"])
+    flattened = cast(bool, contract["flattened_evidence_derived_history_claimed"])
+    linkable = cast(
+        int, cast(dict[str, Any], contract["evidence_limits"])["linkable_history_facts"]
+    )
+    phase = cast(dict[str, Any], MANIFEST["scope"])["phase"]
+    change_set = _target_entry("PullRequestChangeSet")["symbol"]
+    link_slice = _target_entry("PullRequestHistoryFactEvidenceLink")["slice_layer"]
+
+    return [
+        (
+            f"The canonical replay {'flattens' if flattened else 'does not flatten'}"
+            " its layers into evidence-derived history."
+            f" {_spelled(len(classifications)).capitalize()} classifications are used"
+            f" and a fourth is {'present' if derivation else 'deliberately absent'}:"
+        ),
+        (
+            f"`deterministic_derivation` is {'present' if derivation else 'not present'}:"
+            f" `{phase}` publishes no deterministic derivation, and the ahead, behind,"
+            " and merge-base values the retained comparison carries remain deferred"
+            " with `S1.P02` `deferred:22`."
+        ),
+        (
+            f"{_spelled(linkable).capitalize()} history facts are individually linkable."
+            f" `{change_set}` is a published product fact and is replayed as a"
+            f" caller-supplied composition, but `{link_slice}` does not admit it as an"
+            " evidence-link fact, and the replay preserves that asymmetry."
+        ),
+    ]
+
+
+def _section_lines(text: str, heading: str) -> list[str]:
+    lines = text.splitlines()
+    start = lines.index(heading) + 1
+    end = start
+    while end < len(lines) and not lines[end].startswith("## "):
+        end += 1
+    return lines[start:end]
+
+
+def _actual_replay_summary_block(text: str) -> list[str]:
+    """Every section-4 line making one of these claims, in document order."""
+    return [
+        line
+        for line in _section_lines(text, REPLAY_SUMMARY_SECTION)
+        if any(marker in line.lower() for marker in REPLAY_SUMMARY_MARKERS)
+    ]
+
+
+def test_the_replay_summary_block_is_an_exact_projection() -> None:
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    rendered = _render_replay_summary_block()
+
+    assert _actual_replay_summary_block(text) == rendered
+    assert len(rendered) == 3
+
+
+def test_the_replay_summary_reads_its_values_from_the_manifest() -> None:
+    """Every varying token is a manifest value, not a frozen spelling."""
+    contract = cast(dict[str, Any], MANIFEST["replay_contract"])
+    limits = cast(dict[str, Any], contract["evidence_limits"])
+    rendered = _render_replay_summary_block()
+
+    assert contract["flattened_evidence_derived_history_claimed"] is False
+    assert contract["deterministic_derivation_present"] is False
+    assert limits["linkable_history_facts"] == 11
+    assert cast(dict[str, Any], MANIFEST["scope"])["phase"] == "S1.P05"
+    assert _target_entry("PullRequestHistoryFactEvidenceLink")["slice_layer"] == (
+        "S1.P05.S07"
+    )
+
+    assert "does not flatten" in rendered[0]
+    assert rendered[1].startswith("`deterministic_derivation` is not present: `S1.P05`")
+    assert rendered[2].startswith("Eleven history facts")
+    # the count is spelled from the manifest, never matched against the English
+    assert _spelled(cast(int, limits["linkable_history_facts"])) == "eleven"
+    assert _spelled(len(cast(dict[str, Any], contract["classifications"]))) == "three"
+    assert _spelled(97) == "97", "an unmapped count must render, not raise"
+
+
+def test_a_contradicted_replay_summary_is_refused() -> None:
+    """A second sentence may not assert what the canonical one denies."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    rendered = _render_replay_summary_block()
+    section = _section_lines(text, REPLAY_SUMMARY_SECTION)
+
+    contradiction = "`deterministic_derivation` is present after all."
+    assert any(m in contradiction.lower() for m in REPLAY_SUMMARY_MARKERS)
+    assert contradiction not in section
+
+    for damaged in (
+        [*rendered, contradiction],
+        rendered[:-1],
+        [*rendered, rendered[0]],
+        [rendered[0], rendered[0], rendered[2]],
+        list(reversed(rendered)),
+    ):
+        assert damaged != rendered
+
+
 # --- the replay classification bullets are projected, not sampled ------------
 
 
