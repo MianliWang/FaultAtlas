@@ -11,7 +11,7 @@ from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -2244,6 +2244,51 @@ DESCRIPTIVE_PATHS = frozenset(
     cast(list[str], MANIFEST["descriptive_metadata"]["paths"])
 )
 
+# --- the classifier sits outside the domain it classifies --------------------
+#
+# `/descriptive_metadata` is not a declaration about the corpus; it is the rule
+# that sorts declarations into two kinds. It cannot be inside the partition it
+# defines: as a descriptive entry it would have to enumerate its own 83 leaves,
+# which creates 83 more leaves to enumerate and never terminates, and as an
+# objective entry it would need a consumer proving the classification true by
+# consulting the classification. The exclusion is named once here and reused, so
+# it reads as a decision rather than a repeated `startswith`.
+META_SCHEMA_ROOT = "/descriptive_metadata"
+
+# The two kinds every declaration falls into. `_objective_leaf_paths` and
+# `DESCRIPTIVE_PATHS` are their extensions.
+DECLARATION_KINDS = ("objective", "descriptive")
+
+# The classification rule the manifest publishes about its own leaves, held
+# test-side. The surface cannot self-prove this: a rule naming which leaves have
+# no independent source of truth is not itself checkable against one. This pins
+# the REQUIRED PUBLISHED DECLARATION only -- it makes no claim that the manifest
+# proves its own truth, and it is deliberately absent from OBJECTIVE_VALIDATORS.
+REQUIRED_META_CONTRACT = (
+    "these exact leaf paths carry human-oriented description only: they have no "
+    "independent source of truth, are never counted as verified assurance, and "
+    "must not be cited by contract.md or the pull request as independently "
+    "checked; every other manifest leaf is objective and must be covered by the "
+    "focused oracle's validator registry"
+)
+
+
+def _meta_schema_leaf_paths(document: dict[str, Any] | None = None) -> list[str]:
+    """The classifier's own leaves, which no declaration kind may claim."""
+    node = MANIFEST if document is None else document
+    return [
+        path
+        for path in _leaf_paths(node)
+        if path == META_SCHEMA_ROOT or path.startswith(f"{META_SCHEMA_ROOT}/")
+    ]
+
+
+def _declaration_universe(document: dict[str, Any] | None = None) -> list[str]:
+    """Every manifest leaf that declares something about the corpus."""
+    node = MANIFEST if document is None else document
+    excluded = set(_meta_schema_leaf_paths(node))
+    return [path for path in _leaf_paths(node) if path not in excluded]
+
 
 def _v_format() -> None:
     """Canonicalization is enforced by the loader every document passes through."""
@@ -2527,11 +2572,15 @@ OBJECTIVE_VALIDATORS: tuple[tuple[str, Callable[[], None]], ...] = (
 
 
 def _objective_leaf_paths() -> list[str]:
+    return [path for path in _declaration_universe() if path not in DESCRIPTIVE_PATHS]
+
+
+def _unowned_objective_paths() -> list[str]:
+    """Objective declarations no validator prefix claims."""
     return [
         path
-        for path in _leaf_paths(MANIFEST)
-        if not path.startswith("/descriptive_metadata")
-        and path not in DESCRIPTIVE_PATHS
+        for path in _objective_leaf_paths()
+        if not any(path.startswith(prefix) for prefix, _ in OBJECTIVE_VALIDATORS)
     ]
 
 
@@ -2556,35 +2605,94 @@ def test_every_objective_manifest_declaration_has_exactly_one_consumer() -> None
     a validator that consults something outside the manifest, and every leaf
     that genuinely cannot must be declared descriptive instead.
     """
-    uncovered: list[str] = []
-    duplicated: list[str] = []
-    for path in _objective_leaf_paths():
-        owners = [p for p, _ in OBJECTIVE_VALIDATORS if path.startswith(p)]
-        if not owners:
-            uncovered.append(path)
-        elif len(owners) > 1:
-            duplicated.append(path)
+    duplicated = [
+        path
+        for path in _objective_leaf_paths()
+        if len([p for p, _ in OBJECTIVE_VALIDATORS if path.startswith(p)]) > 1
+    ]
 
-    assert not uncovered, uncovered
+    assert not _unowned_objective_paths(), _unowned_objective_paths()
     assert not duplicated, duplicated
 
 
 def test_the_declared_descriptive_paths_are_real_and_non_objective() -> None:
     every = set(_leaf_paths(MANIFEST))
+    meta = set(_meta_schema_leaf_paths())
     for path in DESCRIPTIVE_PATHS:
         assert path in every, path
-        assert not path.startswith("/descriptive_metadata"), path
+        assert path not in meta, path
     assert MANIFEST["descriptive_metadata"]["contract"]
     assert not DESCRIPTIVE_PATHS & set(_objective_leaf_paths())
 
 
 def test_the_manifest_partition_is_exhaustive() -> None:
-    every = [
-        p for p in _leaf_paths(MANIFEST) if not p.startswith("/descriptive_metadata")
-    ]
+    every = _declaration_universe()
 
     assert len(every) == len(_objective_leaf_paths()) + len(DESCRIPTIVE_PATHS)
     assert set(every) == set(_objective_leaf_paths()) | DESCRIPTIVE_PATHS
+
+
+def test_the_meta_schema_is_exactly_the_classifier_and_its_paths() -> None:
+    """The excluded domain is enumerated, not assumed from a prefix."""
+    declared = cast(list[str], MANIFEST["descriptive_metadata"]["paths"])
+    expected = [f"{META_SCHEMA_ROOT}/contract"] + [
+        f"{META_SCHEMA_ROOT}/paths/{index}" for index in range(len(declared))
+    ]
+
+    assert sorted(_meta_schema_leaf_paths()) == sorted(expected)
+    assert len(_meta_schema_leaf_paths()) == len(declared) + 1 == 84
+
+
+def test_the_declaration_universe_excludes_the_meta_schema() -> None:
+    every = set(_leaf_paths(MANIFEST))
+    meta = set(_meta_schema_leaf_paths())
+    universe = set(_declaration_universe())
+
+    assert universe == every - meta
+    assert not universe & meta
+    assert len(every) == 470
+    assert len(meta) == 84
+    assert len(universe) == 386
+
+
+def test_the_declaration_universe_is_partitioned_in_two_kinds() -> None:
+    """386 = 303 + 83, with nothing unclassified and nothing counted twice."""
+    universe = set(_declaration_universe())
+    objective = set(_objective_leaf_paths())
+    descriptive = set(DESCRIPTIVE_PATHS)
+
+    assert len(DECLARATION_KINDS) == 2
+    assert universe == objective | descriptive
+    assert not objective & descriptive
+    assert len(universe) == len(objective) + len(descriptive)
+    assert len(objective) == 303
+    assert len(descriptive) == 83
+    # no meta-schema leaf reaches either side of the accounting
+    assert not (objective | descriptive) & set(_meta_schema_leaf_paths())
+
+
+def test_the_meta_contract_is_the_required_published_declaration() -> None:
+    """Pins the published rule; it does not prove the manifest true of itself.
+
+    The rule names the leaves that have no independent source of truth, so no
+    canonical surface can confirm it -- confirming it would mean consulting the
+    very classification it defines. It is therefore held test-side, and stays
+    out of `OBJECTIVE_VALIDATORS`: pinning a declaration is not verifying it.
+    """
+    declared = cast(dict[str, Any], MANIFEST["descriptive_metadata"])["contract"]
+
+    assert type(declared) is str
+    assert declared == REQUIRED_META_CONTRACT
+    assert not [p for p, _ in OBJECTIVE_VALIDATORS if p.startswith(META_SCHEMA_ROOT)]
+
+    # the clauses `_render_epistemic_split` keys on must really be in the rule,
+    # or the renderer would silently take its negative branch
+    for clause in (
+        "have no independent source of truth",
+        "are never counted as verified assurance",
+        "every other manifest leaf is objective",
+    ):
+        assert clause in declared, clause
 
 
 def test_a_new_objective_declaration_forces_review() -> None:
@@ -2593,9 +2701,8 @@ def test_a_new_objective_declaration_forces_review() -> None:
     probe["invented_objective_claim"] = True
     unowned = [
         path
-        for path in _leaf_paths(probe)
-        if not path.startswith("/descriptive_metadata")
-        and path not in DESCRIPTIVE_PATHS
+        for path in _declaration_universe(probe)
+        if path not in DESCRIPTIVE_PATHS
         and not any(path.startswith(p) for p, _ in OBJECTIVE_VALIDATORS)
     ]
 
@@ -5827,3 +5934,413 @@ def test_every_vector_document_key_is_accounted_for() -> None:
     }
     for name, document in VECTOR_DOCUMENTS:
         assert set(document) == expected[name], name
+
+
+# --- step 1: the document projection foundation ------------------------------
+#
+# The sweep found two thirds of contract.md's canonical claims falsifiable with
+# the suite green. Closing that is a four-step repair; this is step 1, and it
+# lands only the foundation: an ordered heading authority so later selectors can
+# be bounded to their section, the two least-verified sections, and the registry
+# record type. The global completeness invariant belongs to step 4, so nothing
+# here asserts that every region is registered.
+
+
+CONTRACT_HEADINGS = (
+    "# Development History Contract Corpus",
+    "## 1. Scope and Authority Warning",
+    "## 2. Covered Product Surface",
+    "## 3. Vector Inventory",
+    "## 4. Replay and Provenance",
+    "## 5. Objective and Descriptive Declarations",
+    "## 6. Rejection Contract",
+    "## 7. Effective Governance",
+    "## 8. Non-Generalizations",
+    "## 9. Locked Source Authorities",
+)
+SECTION_ONE, SECTION_FIVE = CONTRACT_HEADINGS[1], CONTRACT_HEADINGS[5]
+
+
+# CommonMark lets an ATX heading carry up to three leading spaces, and lets a
+# paragraph become a heading by underlining it. Matching only column-zero `#`
+# would let a whole fabricated section be appended without notice.
+ATX_HEADING = re.compile(r"^ {0,3}#{1,6} ")
+SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-{2,})[ \t]*$")
+
+
+def _actual_headings(text: str) -> list[str]:
+    lines = text.splitlines()
+    found: list[str] = []
+    for index, line in enumerate(lines):
+        if ATX_HEADING.match(line):
+            found.append(line)
+        elif index and SETEXT_UNDERLINE.match(line) and lines[index - 1].strip():
+            found.append(lines[index - 1])
+    return found
+
+
+def _section_paragraphs(text: str, heading: str) -> list[str]:
+    return [line for line in _section_lines(text, heading) if line]
+
+
+def test_the_contract_headings_are_the_published_sequence() -> None:
+    """Every heading load-bearing, so a section can anchor its own selector."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+
+    assert _actual_headings(text) == list(CONTRACT_HEADINGS)
+    assert len(CONTRACT_HEADINGS) == 10
+
+
+def test_a_drifting_heading_sequence_is_refused() -> None:
+    """Missing, duplicated, reordered and renamed must each fail."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    for label, original, replacement in (
+        ("missing", "## 6. Rejection Contract\n", ""),
+        ("duplicate", "## 6. Rejection Contract", "## 3. Vector Inventory"),
+        ("reordered", "## 8. Non-Generalizations", "## 9. Locked Source Authorities"),
+        ("renamed", "## 6. Rejection Contract", "## 6. Rejection Rules"),
+        # a fabricated section may not enter by an indented or underlined heading
+        ("indented", "## 6. Rejection Contract", "   ## 10. Extra Guarantees"),
+        ("setext", "## 6. Rejection Contract", "10. Extra Guarantees\n---------"),
+    ):
+        tampered = text.replace(original, replacement, 1)
+        assert tampered != text, label
+        assert _actual_headings(tampered) != list(CONTRACT_HEADINGS), label
+
+
+# --- section 1: the scope and authority warning ------------------------------
+
+
+def _contract_markdown_entry() -> dict[str, str]:
+    files = cast(list[dict[str, str]], MANIFEST["corpus_files"])
+    return next(entry for entry in files if entry["filename"] == "contract.md")
+
+
+def _render_scope_warning() -> list[str]:
+    """The identity clause, read from the manifest rather than frozen."""
+    identity = cast(dict[str, Any], MANIFEST["corpus_identity"])
+    scope = cast(dict[str, Any], MANIFEST["scope"])
+    execution = cast(dict[str, Any], MANIFEST["execution_contract"])
+    assurance = cast(dict[str, Any], MANIFEST["assurance"])
+    derived = str(_contract_markdown_entry()["role"]).startswith("derived_")
+
+    # The nine-item negative enumeration is skeleton: four of its terms have no
+    # canonical declaration anywhere in the corpus, so rendering them from an
+    # authority would be inventing one.
+    return [
+        (
+            f"This {cast(str, identity['classification']).split('_')[0]},"
+            f" {'source-only' if scope['source_only'] else 'production'}"
+            f" `{identity['originating_slice']}` contract corpus is not a"
+            " production schema, class, adapter, reader, writer, migration,"
+            " persistence contract, or public API."
+            f" The {_spelled(cast(int, assurance['canonical_json_files']))}"
+            " canonical JSON files are the semantic authority; this Markdown is"
+            f" {'derived' if derived else 'authoritative'}."
+            " The corpus is executed only by"
+            f" `{execution['test_only_executor']}` and is excluded from"
+            f" {'the wheel and the sdist' if scope['package_exclusion_required'] else 'nothing'}."
+        )
+    ]
+
+
+def _actual_scope_warning(text: str) -> list[str]:
+    return _section_paragraphs(text, SECTION_ONE)
+
+
+def test_the_scope_warning_is_an_exact_projection() -> None:
+    text = (CORPUS / "contract.md").read_text("utf-8")
+
+    assert _actual_scope_warning(text) == _render_scope_warning()
+    # The sentence spends only the first token of the classification, so the
+    # rest could drift to say the opposite of the sentence carrying it. The leaf
+    # is descriptive -- no canonical surface can confirm it -- so the published
+    # value is pinned test-side rather than left free.
+    assert MANIFEST["corpus_identity"]["classification"] == (
+        "internal_source_repository_only_contract_corpus"
+    )
+    # the slice coordinate is declared twice and the two must not diverge
+    assert (
+        MANIFEST["scope"]["slice"] == MANIFEST["corpus_identity"]["originating_slice"]
+    )
+    # the declared file count is the sealed set the loader actually reads
+    assert MANIFEST["assurance"]["canonical_json_files"] == len(SEALED_JSON) == 4
+
+
+# --- section 5: one paragraph pair, four different authorities ---------------
+#
+# The epistemic split is compositional and must not pretend one source owns it.
+# The count comes from the ordered `paths` list -- not a frozenset, which would
+# hide a duplicate entry behind a smaller number. The meaning of "descriptive"
+# comes from the meta-contract. The fail-closed sentence is a statement about
+# the ORACLE, so it is rendered from the oracle's own closure rather than from
+# a manifest leaf describing itself. The fixture mechanism and count come from
+# the execution contract and the vector summary.
+
+
+def _render_epistemic_split() -> list[str]:
+    meta = cast(dict[str, Any], MANIFEST["descriptive_metadata"])
+    declared = cast(list[str], meta["paths"])
+    contract = cast(str, meta["contract"])
+    truth = (
+        "no independent source of truth"
+        if "have no independent source of truth" in contract
+        else "an independent source of truth"
+    )
+    counted = (
+        "are never counted as verified assurance"
+        if "are never counted as verified assurance" in contract
+        else "are counted as verified assurance"
+    )
+    # observed, not declared: the oracle either leaves an objective leaf
+    # unowned or it does not
+    consumer = "fails if any" if not _unowned_objective_paths() else "passes even if an"
+
+    return [
+        (
+            "Every manifest declaration is exactly one of"
+            f" {_spelled(len(DECLARATION_KINDS))} kinds. An **objective**"
+            " declaration is compared with something outside the manifest -- the"
+            " live `__all__`, the filesystem, the sealed vector files, the locked"
+            " source documents, or the executor's own registries -- and the"
+            f" focused oracle {consumer} objective leaf has no such consumer. A"
+            f" **descriptive** declaration has {truth}; the exact leaf paths are"
+            f" enumerated in `descriptive_metadata.paths` ({len(declared)} of"
+            f" them) and {counted}."
+        )
+    ]
+
+
+def _render_fixture_mechanism() -> list[str]:
+    execution = cast(dict[str, Any], MANIFEST["execution_contract"])
+    mechanism = cast(str, execution["fixture_references"])
+    fixtures = cast(dict[str, Any], MANIFEST["vector_summary"])["fixtures"]
+    inlined = mechanism.startswith("inlined_values")
+
+    return [
+        (
+            "Fixture values are"
+            f" {'inlined in the vectors rather than referenced by marker' if inlined else 'referenced by marker rather than inlined in the vectors'}."
+            f" The manifest records that mechanism as `{mechanism}`: the corpus"
+            f" carries the values, and the oracle resolves each of the {fixtures}"
+            " declared fixtures to an exact vector, side, and JSON pointer rather"
+            " than searching for an equal value."
+        )
+    ]
+
+
+def _actual_epistemic_split(text: str) -> list[str]:
+    return _section_paragraphs(text, SECTION_FIVE)[:1]
+
+
+def _actual_fixture_mechanism(text: str) -> list[str]:
+    return _section_paragraphs(text, SECTION_FIVE)[1:]
+
+
+def test_the_epistemic_split_is_an_exact_projection() -> None:
+    text = (CORPUS / "contract.md").read_text("utf-8")
+
+    assert _actual_epistemic_split(text) == _render_epistemic_split()
+    assert _actual_fixture_mechanism(text) == _render_fixture_mechanism()
+    assert len(_section_paragraphs(text, SECTION_FIVE)) == 2
+
+
+def test_the_epistemic_counts_come_from_their_own_sources() -> None:
+    """Each number is read from the surface that owns it, not from the prose."""
+    declared = cast(list[str], MANIFEST["descriptive_metadata"]["paths"])
+    summary = cast(dict[str, Any], MANIFEST["vector_summary"])
+
+    # the ordered list, so a duplicated entry could not hide behind a set
+    assert len(declared) == len(set(declared)) == len(DESCRIPTIVE_PATHS) == 83
+    assert f"({len(declared)} of them)" in _render_epistemic_split()[0]
+    assert summary["fixtures"] == 19 == len(cast(list[Any], VALID["fixtures"]))
+    assert summary["fixtures"] == len(FIXTURE_BINDINGS)
+    # the fail-closed clause is an observation about the oracle
+    assert _unowned_objective_paths() == []
+
+
+# --- step 1: the projection registry record ----------------------------------
+#
+# Three axes, deliberately separate, because one status cannot mean both "the
+# Markdown faithfully projects its authority" and "the underlying claim has
+# independent truth authority". A descriptive `slice_layer` is projected
+# EXACTly and is CANONICAL_DECLARATION_ONLY; the section-5 fail-closed sentence
+# is projected EXACTly and is INDEPENDENTLY_VERIFIED; a claim whose external
+# owner has published no structured authority yet is EXTERNAL_AUTHORITY_DEFERRED
+# while still being projected exactly. Where a region composes several
+# authorities the weakest assurance is recorded, so the row never overclaims.
+#
+# Step 1 registers only the regions it closes. There is deliberately no "every
+# region is registered" invariant here -- that is step 4, and asserting it now
+# would demand placeholder rows for regions nobody has analysed.
+
+PROJECTION_KINDS = ("EXACT", "EXPLANATORY")
+EPISTEMIC_KINDS = ("OBJECTIVE", "DESCRIPTIVE", "EXPLANATORY")
+AUTHORITY_ASSURANCES = (
+    "INDEPENDENTLY_VERIFIED",
+    "CANONICAL_DECLARATION_ONLY",
+    "EXTERNAL_AUTHORITY_DEFERRED",
+)
+
+
+class ContractRegion(NamedTuple):
+    region_id: str
+    heading: str | None
+    selector: Callable[[str], list[str]]
+    renderer: Callable[[], list[str]] | None
+    authority: tuple[str, ...]
+    projection_kind: str
+    epistemic_kind: str
+    authority_assurance: str
+
+
+CONTRACT_PROJECTION_REGISTRY: tuple[ContractRegion, ...] = (
+    ContractRegion(
+        "s1.scope-warning",
+        SECTION_ONE,
+        _actual_scope_warning,
+        _render_scope_warning,
+        (
+            "/corpus_identity/classification",
+            "/corpus_identity/originating_slice",
+            "/scope/source_only",
+            "/scope/package_exclusion_required",
+            "/assurance/canonical_json_files",
+            "/execution_contract/test_only_executor",
+            "/corpus_files/8/role",
+        ),
+        "EXACT",
+        "DESCRIPTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s5.epistemic-split",
+        SECTION_FIVE,
+        _actual_epistemic_split,
+        _render_epistemic_split,
+        (
+            "/descriptive_metadata/paths",
+            "/descriptive_metadata/contract",
+            "DECLARATION_KINDS",
+            "_unowned_objective_paths",
+        ),
+        "EXACT",
+        "OBJECTIVE",
+        # the fail-closed clause is observed from the oracle, but the paragraph
+        # also restates the meta-contract, which nothing can independently
+        # confirm -- weakest assurance wins so the row cannot overclaim
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s5.fixture-mechanism",
+        SECTION_FIVE,
+        _actual_fixture_mechanism,
+        _render_fixture_mechanism,
+        ("/execution_contract/fixture_references", "/vector_summary/fixtures"),
+        "EXACT",
+        "DESCRIPTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+)
+
+
+def test_every_registered_region_declares_a_known_classification() -> None:
+    seen: set[str] = set()
+    for region in CONTRACT_PROJECTION_REGISTRY:
+        assert region.region_id not in seen, region.region_id
+        seen.add(region.region_id)
+        assert region.projection_kind in PROJECTION_KINDS, region.region_id
+        assert region.epistemic_kind in EPISTEMIC_KINDS, region.region_id
+        assert region.authority_assurance in AUTHORITY_ASSURANCES, region.region_id
+        # explanatory prose carries no renderer and cites nothing; a derived
+        # region must say where it reads from
+        assert (region.renderer is None) == (region.projection_kind == "EXPLANATORY"), (
+            region.region_id
+        )
+        assert bool(region.authority) == (region.renderer is not None), region.region_id
+
+
+def test_every_registered_region_resolves_and_projects() -> None:
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    for region in CONTRACT_PROJECTION_REGISTRY:
+        assert region.heading in CONTRACT_HEADINGS, region.region_id
+        assert region.renderer is not None, region.region_id
+
+        selected = region.selector(text)
+        assert len(selected) == 1, region.region_id
+        assert selected == region.renderer(), region.region_id
+
+        for reference in region.authority:
+            if reference.startswith("/"):
+                _resolve_pointer(MANIFEST, reference)
+            else:
+                assert reference in globals(), (region.region_id, reference)
+
+
+def _drifted(value: Any) -> Any:
+    """A value distinguishable from the original in every rendered branch."""
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value + 1
+    if isinstance(value, str):
+        return ""
+    if isinstance(value, list):
+        return [*cast(list[Any], value), "drifted"]
+    raise AssertionError(f"no drift defined for {type(value).__name__}")
+
+
+def test_every_registered_renderer_depends_on_its_declared_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A renderer that ignores its authority transcribes rather than projects.
+
+    Comparing a renderer to the document proves only that the two agree today;
+    a renderer returning a frozen copy of the prose would agree just as well.
+    Each declared pointer is therefore drifted in place and the render must
+    move, which is what makes the authority column mean something.
+    """
+    for region in CONTRACT_PROJECTION_REGISTRY:
+        assert region.renderer is not None, region.region_id
+        baseline = region.renderer()
+        pointers = [ref for ref in region.authority if ref.startswith("/")]
+        assert pointers, region.region_id
+
+        for pointer in pointers:
+            parent_path, _, leaf = pointer.rpartition("/")
+            parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
+            monkeypatch.setitem(parent, leaf, _drifted(parent[leaf]))
+            assert region.renderer() != baseline, (region.region_id, pointer)
+            monkeypatch.undo()
+
+        assert region.renderer() == baseline, region.region_id
+
+
+def test_every_registered_region_rejects_a_semantic_edit() -> None:
+    """A renderer that cannot discriminate is decoration, not a projection."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    probes = {
+        "s1.scope-warning": (
+            "is not a production schema",
+            "is a production schema",
+        ),
+        "s5.epistemic-split": (
+            "has no independent source of truth",
+            "has an independent source of truth",
+        ),
+        # anchored inside section 5: "19 declared fixtures" also occurs in
+        # section 3, and a selector that could be fooled by that duplicate is
+        # exactly what this projection replaces
+        "s5.fixture-mechanism": (
+            "each of the 19 declared fixtures",
+            "each of the 20 declared fixtures",
+        ),
+    }
+
+    assert set(probes) == {r.region_id for r in CONTRACT_PROJECTION_REGISTRY}
+    for region in CONTRACT_PROJECTION_REGISTRY:
+        original, replacement = probes[region.region_id]
+        tampered = text.replace(original, replacement, 1)
+        assert tampered != text, region.region_id
+        assert region.renderer is not None
+        assert region.selector(tampered) != region.renderer(), region.region_id
