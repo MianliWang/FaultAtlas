@@ -872,12 +872,9 @@ def test_the_contract_markdown_is_derived_from_the_json_authorities() -> None:
 def test_the_contract_markdown_reports_the_repaired_surfaces() -> None:
     """The derived prose must track the surfaces this repair added."""
     text = (CORPUS / "contract.md").read_text("utf-8")
-    contract = MANIFEST["replay_contract"]
 
-    for position, literal in cast(
-        dict[str, str], contract["retained_role_source_positions"]
-    ).items():
-        assert f"`{position}` implies `{literal}`" in text, position
+    # The role implications are compared whole by the block projection below;
+    # containment cannot tell a declared mapping from a fabricated one.
     for entry in cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"]):
         assert f"`{entry['extra_key']}`" in text, entry["extra_key"]
         assert entry["published_non_claim"] in text, entry["published_non_claim"]
@@ -5257,6 +5254,74 @@ def test_the_classification_block_is_an_exact_projection() -> None:
     assert len(_render_classification_block()) == 3
 
 
+# --- the retained-role implications are projected, not sampled ---------------
+#
+# Containment only asked whether each declared mapping appeared somewhere, which
+# a fabricated bullet satisfies as easily as a real one: the derived document
+# could publish a source coordinate the JSON authority never declared, and
+# `contract.md` carries no digest to catch it. The pair -- source coordinate and
+# implied role -- is the unit, so the block is rendered whole and compared.
+
+
+ROLE_IMPLICATION = re.compile(r"^- `[^`]+` implies `[^`]+`$")
+ROLE_SECTION = "## 4. Replay and Provenance"
+
+
+def _render_role_implication_block() -> list[str]:
+    positions = cast(
+        dict[str, str], MANIFEST["replay_contract"]["retained_role_source_positions"]
+    )
+    return [f"- `{position}` implies `{role}`" for position, role in positions.items()]
+
+
+def _actual_role_implication_block(text: str) -> list[str]:
+    """The bullets as section 4 actually publishes them, in document order."""
+    lines = text.splitlines()
+    start = lines.index(ROLE_SECTION) + 1
+    section = start
+    while section < len(lines) and not lines[section].startswith("## "):
+        section += 1
+    while start < section and not ROLE_IMPLICATION.match(lines[start]):
+        start += 1
+    end = start
+    while end < section and ROLE_IMPLICATION.match(lines[end]):
+        end += 1
+    return lines[start:end]
+
+
+def test_the_role_implication_block_is_an_exact_projection() -> None:
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    rendered = _render_role_implication_block()
+
+    # bounded to section 4, so the block cannot be rehomed under another heading
+    assert _actual_role_implication_block(text) == rendered
+    assert len(rendered) == 3
+    # `implies` is this document's only word for the relation and appears
+    # nowhere else, so sweeping every line catches a mapping smuggled in as an
+    # indented sub-bullet, a `*` bullet, or a sentence of prose.
+    assert [line for line in text.splitlines() if "implies" in line] == rendered
+
+
+def test_a_moved_role_implication_is_refused() -> None:
+    """The role multiset survives a swap; the pairing does not."""
+    rendered = _render_role_implication_block()
+    positions = [line.split("`")[1] for line in rendered]
+    roles = [line.split("`")[3] for line in rendered]
+    assert roles[0] != roles[1], "the probe needs two rows that differ"
+
+    swapped = [
+        f"- `{positions[0]}` implies `{roles[1]}`",
+        f"- `{positions[1]}` implies `{roles[0]}`",
+        rendered[2],
+    ]
+
+    assert sorted(line.split("`")[3] for line in swapped) == sorted(roles)
+    assert swapped != rendered
+    assert [*rendered[:2]] != rendered
+    assert [*rendered, rendered[0]] != rendered
+    assert [rendered[0], rendered[0], rendered[2]] != rendered
+
+
 def test_swapped_classification_descriptions_are_refused() -> None:
     """Token presence cannot tell a link layer from a composition layer."""
     rendered = _render_classification_block()
@@ -5454,6 +5519,85 @@ def test_each_vector_file_assurance_block_is_the_same_declaration(
         expected = cast(dict[str, Any], vector["expected"])
         if "round_trip_equal" in expected:
             assert isinstance(expected["round_trip_equal"], bool), vector["id"]
+
+
+# --- the same assurance property, restated on another canonical surface ------
+#
+# The manifest declares two of the vector contract's properties again in its own
+# vocabulary. Three surfaces then describe one authoring fact, and nothing bound
+# them: the manifest could say a production dump WAS the oracle while all three
+# vector files said it was not, and the corpus stayed green.
+#
+# Each surface is measured against `REQUIRED_VECTOR_ASSURANCE`, never against
+# another surface, so the three form a star around the test-side authority
+# rather than a ring that agrees with itself. What this proves is consistency of
+# the published declarations, not that any of them is independently true: these
+# manifest leaves are descriptive, they stay in `descriptive_metadata.paths`,
+# and none is added to `OBJECTIVE_VALIDATORS`.
+#
+# `production_dump_used_as_oracle` has only one manifest restatement; the
+# `assurance` block carries no such key. `/assurance/status` is deliberately not
+# a member -- see `test_every_restated_assurance_leaf_is_bound`.
+ASSURANCE_COHERENCE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "independent authorship",
+        "expected_dumps_independently_authored",
+        (
+            "/assurance/expected_dumps_independently_authored",
+            "/execution_contract/expectation_contract/independently_authored",
+        ),
+    ),
+    (
+        "production dump oracle",
+        "production_dump_used_as_oracle",
+        ("/execution_contract/expectation_contract/production_dump_used_as_oracle",),
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("label", "vector_key", "manifest_paths"),
+    ASSURANCE_COHERENCE,
+    ids=[entry[0] for entry in ASSURANCE_COHERENCE],
+)
+def test_a_restated_assurance_property_agrees_with_the_vector_contract(
+    label: str, vector_key: str, manifest_paths: tuple[str, ...]
+) -> None:
+    """Cross-source consistency, not independent proof of either surface."""
+    required = REQUIRED_VECTOR_ASSURANCE[vector_key]
+    assert type(required) is bool, label
+
+    for path in manifest_paths:
+        declared = _resolve_pointer(MANIFEST, path)
+        # `1 == True` and `0 == False`, so the declared type must match too
+        assert type(declared) is bool, (label, path)
+        assert declared is required, (label, path)
+
+
+def test_every_restated_assurance_leaf_is_bound() -> None:
+    """A same-named twin must join the rule rather than arrive unbound.
+
+    The guard matches on leaf name, so it holds only for a restatement that
+    keeps the vector contract's spelling. It cannot see a renamed one -- the
+    live `independently_authored` below is itself a rename, which is why that
+    path has to be named explicitly rather than discovered.
+    """
+    bound = {path for _, _, paths in ASSURANCE_COHERENCE for path in paths}
+    restated = {
+        path
+        for path, _ in _leaves(MANIFEST)
+        if path.rsplit("/", 1)[-1] in REQUIRED_VECTOR_ASSURANCE
+    }
+
+    # `/assurance/status` is excluded on purpose. `status` is each surface's own
+    # seal lifecycle, not one corpus-wide fact: `repository-snapshot` publishes a
+    # manifest `sealed_publication_candidate` over vectors reading `locked`, and
+    # `revision-locator` does the same. Requiring agreement here would contradict
+    # a shape the sibling corpora already ship.
+    assert restated - bound == {"/assurance/status"}
+    assert bound - restated == {
+        "/execution_contract/expectation_contract/independently_authored"
+    }
 
 
 def test_a_falsified_assurance_declaration_is_refused() -> None:
