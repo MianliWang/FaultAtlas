@@ -1820,6 +1820,169 @@ def _family_collisions(section: dict[str, Any], family: str) -> list[list[str]]:
 FAMILIES = (("valid", VALID, 48), ("invalid", INVALID, 111), ("replay", REPLAY, 24))
 
 
+# --- the vector record publishes exactly these keys and no others ------------
+#
+# The document root is closed and the `expected` block is closed, but the record
+# between them was not: a resealed vector could carry an arbitrary new canonical
+# field that no executor reads, and every oracle stayed green. Held test-side
+# because a corpus cannot prove its own allowed envelope -- deriving the set
+# from the vectors would accept whatever they happen to contain, which is the
+# defect rather than the fix.
+#
+# Membership is structural. A key is published or it is not; an empty value is
+# still a published field, and `embedded_facts = {}` does not make the key
+# optional. The four replay keys carry retained provenance and belong to replay
+# alone, so their presence on a valid or invalid vector is as wrong as their
+# absence from a replay one.
+COMMON_VECTOR_KEYS = frozenset(
+    {
+        "category",
+        "decision_references",
+        "expected",
+        "id",
+        "input",
+        "input_mode",
+        "operation",
+        "purpose",
+        "semantic_partition",
+        "target",
+    }
+)
+REPLAY_PROVENANCE_KEYS = frozenset(
+    {
+        "embedded_facts",
+        "evidence_classification",
+        "evidence_record_lock",
+        "source_pointers",
+    }
+)
+REQUIRED_VECTOR_KEYS_BY_FAMILY: dict[str, frozenset[str]] = {
+    "valid": COMMON_VECTOR_KEYS,
+    "invalid": COMMON_VECTOR_KEYS,
+    "replay": COMMON_VECTOR_KEYS | REPLAY_PROVENANCE_KEYS,
+}
+
+
+def _envelope_failures(family: str, vector: dict[str, Any]) -> list[tuple[str, ...]]:
+    """Every way one vector record departs from its family's published shape."""
+    required = REQUIRED_VECTOR_KEYS_BY_FAMILY[family]
+    present = set(vector)
+    vector_id = cast(str, vector.get("id", "<no id>"))
+    return [
+        (family, vector_id, kind, key)
+        for kind, keys in (
+            ("missing", sorted(required - present)),
+            ("unexpected", sorted(present - required)),
+        )
+        for key in keys
+    ]
+
+
+@pytest.mark.parametrize(
+    ("family", "section", "count"), FAMILIES, ids=[f[0] for f in FAMILIES]
+)
+def test_every_vector_record_publishes_exactly_its_family_envelope(
+    family: str, section: dict[str, Any], count: int
+) -> None:
+    """Exact equality, so an addition and an omission both fail."""
+    failures = [
+        failure
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+        for failure in _envelope_failures(family, vector)
+    ]
+
+    assert not failures, failures
+    assert len(cast(list[Any], section["vectors"])) == count
+
+
+def test_each_family_publishes_exactly_one_vector_shape() -> None:
+    """Derived, not authored: the corpus holds one record shape per family."""
+    shapes = {
+        family: {frozenset(vector) for vector in section["vectors"]}
+        for family, section, _ in FAMILIES
+    }
+    total = sum(len(cast(list[Any], s["vectors"])) for _, s, _ in FAMILIES)
+
+    for family, observed in shapes.items():
+        assert observed == {REQUIRED_VECTOR_KEYS_BY_FAMILY[family]}, family
+    assert total == 183
+
+    # The envelope may not quietly be rewritten to follow the corpus. A mapping
+    # built from the vectors would accept whatever they happen to carry, which
+    # is the defect rather than the fix, so the mapping is pinned to its two
+    # authored sets -- and those in turn to `SIGNATURE_FIELDS`, a list that
+    # predates this closure and is read by a different test.
+    assert REQUIRED_VECTOR_KEYS_BY_FAMILY["valid"] == COMMON_VECTOR_KEYS
+    assert REQUIRED_VECTOR_KEYS_BY_FAMILY["invalid"] == COMMON_VECTOR_KEYS
+    assert REQUIRED_VECTOR_KEYS_BY_FAMILY["replay"] == (
+        COMMON_VECTOR_KEYS | REPLAY_PROVENANCE_KEYS
+    )
+    assert set(SIGNATURE_FIELDS["replay"]) - set(SIGNATURE_FIELDS["valid"]) == (
+        REPLAY_PROVENANCE_KEYS
+    )
+    assert set(SIGNATURE_FIELDS["valid"]) <= COMMON_VECTOR_KEYS
+    # a subset anchor cannot see a widened set, so the sizes are pinned too:
+    # publishing a new record field has to be a deliberate edit here, which is
+    # the whole point of closing this envelope
+    assert len(COMMON_VECTOR_KEYS) == 10
+    assert len(REPLAY_PROVENANCE_KEYS) == 4
+
+    # the replay keys are replay's alone, in both directions
+    assert not COMMON_VECTOR_KEYS & REPLAY_PROVENANCE_KEYS
+    assert shapes["valid"] == shapes["invalid"]
+    assert next(iter(shapes["replay"])) - next(iter(shapes["valid"])) == (
+        REPLAY_PROVENANCE_KEYS
+    )
+
+
+def test_a_drifting_vector_envelope_is_refused() -> None:
+    """Additions, omissions, renames and family crossings each fail."""
+    probes: list[tuple[str, str, dict[str, Any]]] = []
+    for family, section, _ in FAMILIES:
+        sample = copy.deepcopy(cast(dict[str, Any], section["vectors"][0]))
+        extra = {"valid": "verified", "invalid": "independently_reviewed"}.get(
+            family, "confidence"
+        )
+        probes.append((family, "unknown key", {**sample, extra: True}))
+        probes.append(
+            (
+                family,
+                "missing common key",
+                {k: v for k, v in sample.items() if k != "purpose"},
+            )
+        )
+        renamed = {k: v for k, v in sample.items() if k != "purpose"}
+        renamed["rationale"] = sample["purpose"]
+        probes.append((family, "renamed key", renamed))
+
+    for family in ("valid", "invalid"):
+        sample = copy.deepcopy(cast(dict[str, Any], SECTIONS[family]["vectors"][0]))
+        for key in sorted(REPLAY_PROVENANCE_KEYS):
+            probes.append((family, f"replay key {key}", {**sample, key: {}}))
+
+    replay = copy.deepcopy(cast(dict[str, Any], REPLAY["vectors"][0]))
+    for key in sorted(REPLAY_PROVENANCE_KEYS):
+        probes.append(
+            ("replay", f"dropped {key}", {k: v for k, v in replay.items() if k != key})
+        )
+    # an empty value is still a published field
+    probes.append(
+        (
+            "replay",
+            "dropped embedded_facts though it was empty",
+            {k: v for k, v in replay.items() if k != "embedded_facts"},
+        )
+    )
+
+    for family, label, damaged in probes:
+        assert _envelope_failures(family, damaged), (family, label)
+
+    # and the live records themselves stay clean
+    for family, section, _ in FAMILIES:
+        for vector in cast(list[dict[str, Any]], section["vectors"]):
+            assert not _envelope_failures(family, vector), vector["id"]
+
+
 @pytest.mark.parametrize(
     ("family", "section", "count"), FAMILIES, ids=[f[0] for f in FAMILIES]
 )
