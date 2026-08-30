@@ -10810,6 +10810,3437 @@ def test_the_change_set_fact_primary_witness_is_unchanged() -> None:
     assert _missing_shape(vector) == UNION_REJECTION
 
 
+# --- a purpose states claims, and every claim answers to an authority --------
+#
+# Each vector publishes a sentence saying what it is for, and the only rule
+# over 183 of them was `assert vector["purpose"]`. Truthiness accepts any
+# non-empty string, so two vectors could exchange sentences, or one could be
+# replaced with prose about nothing at all, and every oracle stayed green.
+#
+# A purpose is not one claim. "The retained merged timeline event records
+# merge revision 10cdae8e; the ordinary pull request object omits it" makes a
+# provenance claim and then a descriptive one, and they are not equally
+# supported. So the ledger below records ORDERED CLAIMS per vector, each with
+# its own assurance class and its own authority, and the sentence is rebuilt
+# by joining the rendered fragments with "; " and a final full stop. The
+# comparison against the published text is exact -- punctuation, case and
+# spacing -- with no normalising anywhere.
+#
+# What the four classes mean, stated plainly because the difference matters:
+#
+#   BEHAVIOUR_DERIVED           the fragment's content is read out of the
+#                               vector's own executing fields, so a changed
+#                               revision, path, instant or count changes it.
+#   REQUIREMENT_DERIVED         the fragment is SELECTED by a requirement
+#                               identity independently validated against this
+#                               vector. The English is authored; what is
+#                               derived is which sentence this vector is
+#                               entitled to. That is what defeats a swap, and
+#                               it is not a claim that the wording was
+#                               reconstructed from structure.
+#   PROVENANCE_DERIVED          the content is resolved through validated
+#                               replay provenance -- source pointers, embedded
+#                               facts, the evidence record lock.
+#   CANONICAL_DECLARATION_ONLY  authored interpretation with no independent
+#                               structured truth behind it, or a fragment
+#                               rendered from a manifest leaf that the corpus
+#                               itself declares descriptive. Pinning it proves
+#                               the text has not drifted. It proves nothing
+#                               about whether the text is true.
+#
+# The renderers never read `purpose`; the equality test is the only place the
+# published string is touched. They also never parse a vector id, a semantic
+# partition or a category for meaning -- those are identifiers and taxonomy,
+# closed by their own authorities, and reading English out of them would make
+# this rule agree with itself.
+
+BEHAVIOUR_DERIVED = "BEHAVIOUR_DERIVED"
+REQUIREMENT_DERIVED = "REQUIREMENT_DERIVED"
+PROVENANCE_DERIVED = "PROVENANCE_DERIVED"
+CANONICAL_DECLARATION_ONLY = "CANONICAL_DECLARATION_ONLY"
+
+PURPOSE_ASSURANCE_CLASSES = (
+    BEHAVIOUR_DERIVED,
+    REQUIREMENT_DERIVED,
+    PROVENANCE_DERIVED,
+    CANONICAL_DECLARATION_ONLY,
+)
+
+
+class PurposeClaim(NamedTuple):
+    """One claim a purpose makes, its strength, and what answers for it."""
+
+    assurance: str
+    renderer: str
+    authority: str
+
+
+# ---- valid family renderers ---------------------------------------------
+
+"""Structured ledger and deterministic renderers for the `valid` family.
+
+Each of the 48 valid vectors publishes a human-readable sentence, and this
+module reproduces every one exactly, so a sentence that is swapped between
+vectors or replaced with unrelated prose stops rendering.
+
+The strength behind that is not uniform, and the ledger says so per claim.
+Twenty-nine fragments are read out of `input` / `expected` / `input_mode`, out
+of a live production model definition, or out of a requirement row that is
+independently validated against the vector. Sixteen, over fifteen vectors, are
+authored sentences this corpus carries no structured source for -- the
+"distinct value" relations, which speak about a sibling vector no single
+record expresses, and the per-target "Python input ..." wordings, which the
+declared markers do not determine. Those are labelled
+CANONICAL_DECLARATION_ONLY and pinned, which refuses drift and claims nothing
+more.
+
+No renderer reads the published sentence, and none parses a vector id, a
+semantic partition or a category label to decide what to say.
+"""
+
+_pV_OWNED_MODELS: dict[str, type[BaseModel]] = {
+    name: symbol
+    for module in (history_module, link_module)
+    for name in module.__all__
+    if isinstance(symbol := getattr(module, name), type)
+    and issubclass(symbol, BaseModel)
+}
+
+_pV_SYMBOL_BY_FIELD_SET: dict[frozenset[str], str] = {
+    frozenset(model.model_fields): name for name, model in _pV_OWNED_MODELS.items()
+}
+
+assert len(_pV_SYMBOL_BY_FIELD_SET) == len(_pV_OWNED_MODELS), (
+    "field sets must discriminate"
+)
+
+_pV_REQUIREMENT_BY_WITNESS: dict[str, str] = {
+    row[4]: row[0] for row in REQUIREMENT_LEDGER
+}
+
+_PV_REQUIREMENT_SENTENCES: dict[str, str] = {
+    "CS-18": "Supplied order is preserved exactly and carries no source meaning",
+    "RA-04": "The approved revision need not equal any current head binding",
+    "MO-04": "The merge revision is unconstrained by any base or head binding",
+    "OT-06": ("equal instants across two surfaces carry no order and are accepted"),
+    "EL-06": (
+        "The same record associated with a second, different fact is an "
+        "independent link value"
+    ),
+}
+
+_PV_OCCURRENCE_SURFACE_NAMES: dict[str, str] = {
+    "PullRequestReviewRevisionApproval": "review approval",
+    "PullRequestMergeRevisionOutcome": "merge outcome",
+    "PullRequestHeadRefDeletion": "head-ref deletion",
+}
+
+_PV_OCCURRENCE_SURFACE_SHORT_NAMES: dict[str, str] = {
+    "PullRequestReviewRevisionApproval": "approval",
+    "PullRequestMergeRevisionOutcome": "merge",
+    "PullRequestHeadRefDeletion": "deletion",
+}
+
+_PV_INSTANT_NAMES: dict[str, str] = {
+    "2018-11-17T23:54:20Z": "approval",
+    "2018-11-18T00:17:25Z": "merge",
+    "2018-11-18T00:17:28Z": "deletion",
+}
+
+_PV_PATH_NAMES: dict[str, str] = {
+    "changelog/4412.bugfix.rst": "changelog",
+    "src/_pytest/assertion/rewrite.py": "rewrite",
+    "testing/test_assertrewrite.py": "assertrewrite",
+}
+
+_PV_CANONICAL_DECLARATIONS: dict[str, tuple[str, ...]] = {
+    "history.valid.role-binding.distinct-pull-request": (
+        "A different pull request with the same revision is a distinct value",
+    ),
+    "history.valid.role-binding.distinct-revision": (
+        "A different revision in the same role is a distinct value",
+    ),
+    "history.valid.role-binding.python-typed": (
+        "Python input accepts already published typed children",
+    ),
+    "history.valid.status.python-enum": (
+        "The enum member itself is accepted in Python input",
+    ),
+    "history.valid.changed-path.distinct-blob": (
+        "A different head-side blob is a distinct value",
+    ),
+    "history.valid.changed-path.python-typed": (
+        "Python input accepts typed path, blob, and status",
+    ),
+    "history.valid.change-set.python-typed": (
+        "Python input requires a tuple of typed changed paths",
+    ),
+    "history.valid.approval.python-typed": (
+        "Python input accepts typed review and revision",
+    ),
+    "history.valid.merge-outcome.python-typed": (
+        "Python input accepts typed subject and revision",
+    ),
+    "history.valid.head-ref-deletion.distinct-ref-name": (
+        "A different ref lexeme is a distinct value",
+    ),
+    "history.valid.head-ref-deletion.python-typed": (
+        "Python input requires a typed ref name",
+    ),
+    "history.valid.occurrence-time.sub-second-preserved": (
+        "Sub-second precision is preserved exactly as supplied",
+    ),
+    "history.valid.occurrence-time.python-typed": (
+        "Python input requires a typed occurrence and aware instant",
+    ),
+    "history.valid.evidence-link.correction-record": (
+        "The same fact may name the retained additive correction record",
+    ),
+    "history.valid.evidence-link.synthetic-record": (
+        "Structural validity holds against a synthetic record",
+        "no retained support is claimed",
+    ),
+}
+
+_pV_ONES = (
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+)
+
+_pV_TENS = (
+    "",
+    "",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "sixty",
+    "seventy",
+    "eighty",
+    "ninety",
+)
+
+_pV_OFFSET = re.compile(r"(Z|[+-]\d{2}:\d{2})$")
+
+
+def _pV_under_hundred(value: int) -> str:
+    if value < 20:
+        return _pV_ONES[value]
+    tens, ones = divmod(value, 10)
+    return _pV_TENS[tens] if not ones else f"{_pV_TENS[tens]}-{_pV_ONES[ones]}"
+
+
+def _pV_under_thousand(value: int) -> str:
+    hundreds, rest = divmod(value, 100)
+    if not hundreds:
+        return _pV_under_hundred(rest)
+    head = f"{_pV_ONES[hundreds]} hundred"
+    return head if not rest else f"{head} and {_pV_under_hundred(rest)}"
+
+
+def _pV_spell(value: int) -> str:
+    """Spell a non-negative integer below one million, British `and` form."""
+    assert 0 <= value < 1_000_000, value
+    thousands, rest = divmod(value, 1000)
+    if not thousands:
+        return _pV_under_thousand(rest)
+    head = f"{_pV_under_thousand(thousands)} thousand"
+    if not rest:
+        return head
+    joiner = " and " if rest < 100 else " "
+    return f"{head}{joiner}{_pV_under_thousand(rest)}"
+
+
+def _pV_capitalise(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def _pV_plain(value: Any) -> Any:
+    """Strip the declared python-input markers down to the declared value."""
+    while isinstance(value, dict):
+        shaped = cast(dict[str, Any], value)
+        if len(shaped) != 1:
+            break
+        marker, payload = next(iter(shaped.items()))
+        if marker in ("typed_value", "enum_value"):
+            value = payload["input"]
+        elif marker == "instant_value":
+            value = payload
+        else:
+            break
+    return cast(Any, value)
+
+
+def _pV_symbol_of(value: Any) -> str:
+    """Name the union member a declared value is, from its own shape."""
+    if isinstance(value, dict) and set(cast(dict[str, Any], value)) == {"typed_value"}:
+        return str(cast(dict[str, Any], value)["typed_value"]["target"])
+    return _pV_SYMBOL_BY_FIELD_SET[frozenset(cast(dict[str, Any], _pV_plain(value)))]
+
+
+def _pV_changed_path_count(declared: Any) -> int:
+    if isinstance(declared, list):
+        return len(cast(list[Any], declared))
+    shaped = cast(dict[str, Any], declared)
+    if "tuple_value" in shaped:
+        return len(cast(list[Any], shaped["tuple_value"]))
+    return int(shaped["indexed_value"]["count"])
+
+
+def _PV_role_binding_canonical(vector: dict[str, Any], family: str) -> str:
+    """`<ROLE>` and the pull-request number, read out of the declared input."""
+    supplied = vector["input"]
+    role = _pV_plain(supplied["role_assignment"])["role"]
+    number = _pV_plain(supplied["pull_request"])["repository_scoped_number"]
+    return f"The canonical {role.upper()} binding of pull request {number}"
+
+
+def _PV_status_member(vector: dict[str, Any], family: str) -> str:
+    """The admitted vocabulary member, read out of the authored dump."""
+    return f"The published {vector['expected']['semantic_dump']} status member"
+
+
+def _PV_changed_path_canonical(vector: dict[str, Any], family: str) -> str:
+    """Status out of the input; the path's published fixture name beside it."""
+    supplied = vector["input"]
+    status = _pV_plain(supplied["status"])
+    name = _PV_PATH_NAMES[_pV_plain(supplied["path"])]
+    return f"The canonical {status} {name} path"
+
+
+def _PV_change_set_supplied_count(vector: dict[str, Any], family: str) -> str:
+    count = _pV_changed_path_count(vector["input"]["changed_paths"])
+    return f"The canonical supplied change set over {_pV_spell(count)} paths"
+
+
+def _PV_change_set_minimum(vector: dict[str, Any], family: str) -> str:
+    count = _pV_changed_path_count(vector["input"]["changed_paths"])
+    return f"{_pV_capitalise(_pV_spell(count))} changed path is the published minimum"
+
+
+def _PV_change_set_maximum(vector: dict[str, Any], family: str) -> str:
+    count = _pV_changed_path_count(vector["input"]["changed_paths"])
+    return (
+        f"{_pV_capitalise(_pV_spell(count))} changed paths is the published maximum "
+        "and is accepted"
+    )
+
+
+def _PV_approval_canonical(vector: dict[str, Any], family: str) -> str:
+    supplied = vector["input"]
+    review = _pV_plain(supplied["review"])["provider_global_id"]
+    revision = _pV_plain(supplied["approved_revision"])["full_digest"][:8]
+    return f"Review {review} approves revision {revision}"
+
+
+def _PV_merge_outcome_canonical(vector: dict[str, Any], family: str) -> str:
+    supplied = vector["input"]
+    number = _pV_plain(supplied["pull_request"])["repository_scoped_number"]
+    revision = _pV_plain(supplied["merge_revision"])["full_digest"][:8]
+    return f"Pull request {number} merged as revision {revision}"
+
+
+def _PV_head_ref_deletion_canonical(vector: dict[str, Any], family: str) -> str:
+    lexeme = _pV_plain(vector["input"]["head_ref_name"])
+    return f"The recorded head ref {lexeme} was deleted"
+
+
+def _PV_occurrence_instant(vector: dict[str, Any], family: str) -> str:
+    """The admitted surface and the instant it carries, both from the input."""
+    supplied = vector["input"]
+    surface = _PV_OCCURRENCE_SURFACE_NAMES[_pV_symbol_of(supplied["occurrence"])]
+    return f"The {surface} occurred at {_pV_plain(supplied['occurred_at'])}"
+
+
+def _PV_occurrence_offset_normalisation(vector: dict[str, Any], family: str) -> str:
+    """Both offset lexemes: one supplied, one in the authored dump."""
+    supplied = _pV_OFFSET.search(_pV_plain(vector["input"]["occurred_at"]))
+    normalized = _pV_OFFSET.search(vector["expected"]["semantic_dump"]["occurred_at"])
+    assert supplied and normalized
+    return (
+        f"An explicit {supplied.group(1)} offset is accepted and normalized "
+        f"to {normalized.group(1)}"
+    )
+
+
+def _PV_occurrence_tied_surface(vector: dict[str, Any], family: str) -> str:
+    """Which surface carries which of the locked instants."""
+    supplied = vector["input"]
+    surface = _PV_OCCURRENCE_SURFACE_SHORT_NAMES[_pV_symbol_of(supplied["occurrence"])]
+    instant = _PV_INSTANT_NAMES[_pV_plain(supplied["occurred_at"])]
+    return f"The {surface} surface carries the {instant} instant"
+
+
+def _PV_evidence_link_json_fact(vector: dict[str, Any], family: str) -> str:
+    symbol = _pV_symbol_of(vector["input"]["fact"])
+    return f"A {symbol} is an admitted fact in the link's JSON reconstruction"
+
+
+def _PV_evidence_link_python_fact(vector: dict[str, Any], family: str) -> str:
+    symbol = _pV_symbol_of(vector["input"]["fact"])
+    return f"A published {symbol} is admitted in Python input"
+
+
+def _PV_requirement_sentence(vector: dict[str, Any], family: str) -> str:
+    """One fixed sentence per ledger row, selected by that row's witness."""
+    return _PV_REQUIREMENT_SENTENCES[_pV_REQUIREMENT_BY_WITNESS[vector["id"]]]
+
+
+def _pV_declaration(index: int) -> Callable[[dict[str, Any], str], str]:
+    def render(vector: dict[str, Any], family: str) -> str:
+        """Authored interpretation; no structured authority stands behind it."""
+        return _PV_CANONICAL_DECLARATIONS[vector["id"]][index]
+
+    return render
+
+
+_PV_canonical_declaration = _pV_declaration(0)
+
+_PV_canonical_declaration_second = _pV_declaration(1)
+
+
+_PV_DECLARATION = "CANONICAL_DECLARATION_ONLY"
+
+
+# ---- invalid family renderers -------------------------------------------
+
+"""Rendered semantics for the `invalid` family of the development-history corpus.
+
+Every invalid vector carries a requirement identity that the corpus test module
+already validates independently of any prose:
+
+  * a ``REQUIREMENT_LEDGER`` row whose witness (``row[4]``) is this vector, and
+    whose declared target is asserted equal to ``vector["target"]``; or
+  * membership in ``SECONDARY_WITNESS_REGISTRY``, whose registered requirement
+    string ``_derived_requirement`` recomputes from the vector's own validated
+    ``expected`` / ``input`` fields.
+
+One renderer, :func:`_pI_render_requirement_gloss`, turns that identity -- never a
+vector id, partition or category string -- into the authored sentence the corpus
+publishes for it.  Where one identity covers several vectors the key is widened
+with a structured discriminator read out of the vector (the supplied lexeme, the
+supplied union branch's key set, the normalized error type, the typed/enum
+boundary marker, or the grammar of the supplied instant).  Two vectors publish a
+second, separable claim about their own input; those render from the input and
+expected fields directly.
+"""
+
+
+_pI_LEDGER_BY_WITNESS = {row[4]: row for row in REQUIREMENT_LEDGER}
+
+
+def _pI_identity(vector: dict[str, Any]) -> tuple[str, str]:
+    """The validated (target, requirement) pair this vector witnesses."""
+    row = _pI_LEDGER_BY_WITNESS.get(vector["id"])
+    if row is not None:
+        return (vector["target"], row[2])
+    registered = SECONDARY_WITNESS_REGISTRY[vector["id"]]
+    derived = _derived_requirement(vector)
+    if registered != derived:  # pragma: no cover - the corpus tests forbid it
+        raise AssertionError(vector["id"])
+    return (vector["target"], derived)
+
+
+def _pI_instant_grammar(lexeme: str) -> str:
+    """Classify a supplied instant lexeme by its own shape."""
+    date, marker, clock = lexeme.partition("T")
+    if not marker:
+        return "unparsed"
+    if "W" in date:
+        return "week"
+    if "-" not in date:
+        return "basic"
+    if clock.endswith("Z"):
+        return "utc"
+    for sign in ("+", "-"):
+        cut = clock.rfind(sign)
+        if cut > 0:
+            return "zero-offset" if set(clock[cut + 1 :]) <= {"0", ":"} else "offset"
+    return "naive"
+
+
+def _pI_supplied_shape(node: Any) -> tuple[Any, ...]:
+    """The published boundary marker (or bare shape) of a supplied member."""
+    if isinstance(node, dict):
+        shaped = cast(dict[str, Any], node)
+        if set(shaped) == {"typed_value"}:
+            return ("typed", cast(str, shaped["typed_value"]["target"]))
+        if set(shaped) == {"enum_value"}:
+            return ("enum", cast(str, shaped["enum_value"]["target"]))
+        return ("mapping", tuple(sorted(shaped)))
+    return ("scalar", type(node).__name__)
+
+
+def _pI_fact_branch(vector: dict[str, Any]) -> tuple[Any, ...]:
+    """Which admitted-fact branch the supplied mapping reaches for, if any."""
+    fact = vector["input"]["fact"]
+    keys = tuple(sorted(fact))
+    if keys == ("occurred_at", "occurrence"):
+        if not isinstance(fact["occurrence"], dict):
+            return ("nested-occurrence",)
+        return ("instant", _pI_instant_grammar(fact["occurred_at"]))
+    return ("fact-keys", keys)
+
+
+def _pI_no_discriminator(_vector: dict[str, Any]) -> tuple[Any, ...]:
+    return ()
+
+
+_pI_DISCRIMINATORS: dict[
+    tuple[Any, ...], Callable[[dict[str, Any]], tuple[Any, ...]]
+] = {
+    ("ChangedPathStatus", "the vocabulary is closed"): lambda v: (v["input"],),
+    (
+        "PullRequestReviewRevisionApproval",
+        "review refuses this published boundary",
+    ): lambda v: (
+        v["input"]["review"]["kind"],
+        v["input"]["review"]["parent"]["kind"],
+    ),
+    (
+        "PullRequestRevisionRoleBinding",
+        "pull_request refuses this published boundary",
+    ): lambda v: _pI_supplied_shape(v["input"]["pull_request"]),
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurred_at refuses this published boundary",
+    ): lambda v: (v["expected"]["error_type"],),
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurrence admits only its published union members",
+    ): lambda v: tuple(sorted(v["input"]["occurrence"])),
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact refuses this published boundary",
+    ): lambda v: _pI_supplied_shape(v["input"]["fact"]),
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact admits only its published union members",
+    ): _pI_fact_branch,
+}
+
+
+def _pI_gloss_key(vector: dict[str, Any]) -> tuple[Any, ...]:
+    identity = _pI_identity(vector)
+    discriminate = _pI_DISCRIMINATORS.get(identity, _pI_no_discriminator)
+    return identity + tuple(discriminate(vector))
+
+
+_pI_REQUIREMENT_GLOSS: dict[tuple[Any, ...], str] = {
+    (
+        "ChangedPathStatus",
+        "the vocabulary is closed",
+        "copied",
+    ): "Copy is not a published status",
+    (
+        "ChangedPathStatus",
+        "the vocabulary is closed",
+        "not-a-status",
+    ): "An arbitrary lexeme outside the closed vocabulary is refused",
+    (
+        "ChangedPathStatus",
+        "the vocabulary is closed",
+        "removed",
+    ): "Removal is not a published status",
+    (
+        "ChangedPathStatus",
+        "the vocabulary is closed",
+        "renamed",
+    ): "Rename is not a published status",
+    (
+        "PullRequestChangeSet",
+        "at least one changed path",
+    ): "Supplying no changed path is not an empty change set",
+    (
+        "PullRequestChangeSet",
+        "at most 4096 changed paths",
+    ): "One above the published maximum is refused",
+    (
+        "PullRequestChangeSet",
+        "base and head algorithms match",
+    ): "The two revisions must share one hash algorithm",
+    (
+        "PullRequestChangeSet",
+        "base and head bind one pull request",
+    ): "Both bindings must name one pull request",
+    (
+        "PullRequestChangeSet",
+        "base and head revisions differ",
+    ): "The two bindings must name distinct revisions",
+    (
+        "PullRequestChangeSet",
+        "base is required",
+    ): "A change set requires its base binding",
+    (
+        "PullRequestChangeSet",
+        "base position requires the base role",
+    ): "The base position independently requires the base revision role",
+    (
+        "PullRequestChangeSet",
+        "base typed in Python",
+    ): "The base position independently requires an already published binding in Python input",
+    (
+        "PullRequestChangeSet",
+        "changed_paths holds published values",
+    ): "A supplied tuple must contain published changed paths, not mappings",
+    (
+        "PullRequestChangeSet",
+        "changed_paths is a tuple in Python",
+    ): "Python input requires a tuple rather than a list",
+    (
+        "PullRequestChangeSet",
+        "changed_paths is required",
+    ): "A change set requires its supplied changed paths",
+    (
+        "PullRequestChangeSet",
+        "head is required",
+    ): "A change set requires its head binding",
+    (
+        "PullRequestChangeSet",
+        "head position requires the head role",
+    ): "The head position independently requires the head revision role",
+    (
+        "PullRequestChangeSet",
+        "head typed in Python",
+    ): "The head position independently requires an already published binding in Python input",
+    (
+        "PullRequestChangeSet",
+        "no completeness claim",
+    ): "No completeness claim is published here",
+    (
+        "PullRequestChangeSet",
+        "object algorithms match the head",
+    ): "One change set uses exactly one hash algorithm",
+    (
+        "PullRequestChangeSet",
+        "repository paths are unique",
+    ): "A repository path may appear at most once",
+    (
+        "PullRequestChangedPath",
+        "Python input requires the published status member",
+    ): "Python input must already supply the published status member, not its lexeme",
+    (
+        "PullRequestChangedPath",
+        "head_object is required",
+    ): "A changed path requires its head-side object",
+    (
+        "PullRequestChangedPath",
+        "head_object must be a blob",
+    ): "The head-side object must be a blob",
+    (
+        "PullRequestChangedPath",
+        "head_object typed in Python",
+    ): "Python input requires a published blob identity",
+    (
+        "PullRequestChangedPath",
+        "no base_object is published",
+    ): "No base-side object is published here",
+    (
+        "PullRequestChangedPath",
+        "path is required",
+    ): "A changed path requires its repository path",
+    (
+        "PullRequestChangedPath",
+        "path refuses this published boundary",
+    ): "An empty repository path is refused",
+    (
+        "PullRequestChangedPath",
+        "path typed in Python",
+    ): "Python input requires a published repository path",
+    (
+        "PullRequestChangedPath",
+        "status is required",
+    ): "A changed path requires its supplied status",
+    (
+        "PullRequestChangedPath",
+        "status refuses this published boundary",
+    ): "The status vocabulary is closed to added and modified",
+    (
+        "PullRequestHeadRefDeletion",
+        "a refs/-prefixed name is refused",
+    ): "A published ref name carries no refs/ prefix",
+    (
+        "PullRequestHeadRefDeletion",
+        "head is required",
+    ): "A deletion requires its recorded head binding",
+    (
+        "PullRequestHeadRefDeletion",
+        "head typed in Python",
+    ): "The deleted head requires an already published binding in Python input",
+    (
+        "PullRequestHeadRefDeletion",
+        "head_ref_name is required",
+    ): "A deletion requires the ref lexeme it recorded",
+    (
+        "PullRequestHeadRefDeletion",
+        "head_ref_name refuses this published boundary",
+    ): "An empty ref lexeme is refused",
+    (
+        "PullRequestHeadRefDeletion",
+        "head_ref_name typed in Python",
+    ): "Python input requires a published ref name",
+    (
+        "PullRequestHeadRefDeletion",
+        "no namespace is published",
+    ): "No ref namespace is published here",
+    (
+        "PullRequestHeadRefDeletion",
+        "the binding must carry the head role",
+    ): "The bound revision must carry the head role",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "no chronology is published",
+    ): "No chronology, order, or sequence is published here",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurred_at is required",
+    ): "An occurrence time requires its instant",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurred_at must be a zero UTC offset",
+    ): "A positive non-zero offset is refused",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurred_at refuses this published boundary",
+        "datetime_parsing",
+    ): "A malformed instant is refused",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurred_at refuses this published boundary",
+        "datetime_type",
+    ): "Python input must already supply an aware datetime, not its lexeme",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurred_at refuses this published boundary",
+        "timezone_aware",
+    ): "A naive instant carries no zone and is refused",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurred_at refuses this published boundary",
+        "value_error",
+    ): "A negative non-zero offset is refused",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurrence admits only its published union members",
+        "algorithm",
+        "full_digest",
+        "kind",
+        "schema_version",
+    ): "A commit-identity is not an admitted occurrence",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurrence admits only its published union members",
+        "base",
+        "changed_paths",
+        "head",
+    ): "A change-set is not an admitted occurrence",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurrence admits only its published union members",
+        "head_object",
+        "path",
+        "status",
+    ): "A changed-path is not an admitted occurrence",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurrence admits only its published union members",
+        "pull_request",
+        "role_assignment",
+    ): "A role-binding is not an admitted occurrence",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurrence is required",
+    ): "An occurrence time requires the occurrence it dates",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurrence refuses this published boundary",
+    ): "A changed-path-status is not an admitted occurrence",
+    (
+        "PullRequestHistoricalOccurrenceTime",
+        "occurrence typed in Python",
+    ): "An admitted occurrence requires an already published value in Python input",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "a change set is not an admitted fact",
+    ): "A caller-supplied change set is not an admitted fact",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "a status is not an admitted fact",
+    ): "A closed status vocabulary is not a fact",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "evidence_record is refused by its published nested contract",
+    ): "A malformed durable record reference is refused",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "evidence_record is required",
+    ): "A link requires its durable evidence record",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "evidence_record typed in Python",
+    ): "Python input requires a published durable record reference",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact admits only its published union members",
+        "fact-keys",
+        ("merge_revision", "path"),
+    ): "A hybrid mapping matching no admitted branch is refused",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact admits only its published union members",
+        "fact-keys",
+        (),
+    ): "An empty mapping matches no admitted branch",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact admits only its published union members",
+        "instant",
+        "basic",
+    ): "A basic-format instant is outside the published grammar",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact admits only its published union members",
+        "instant",
+        "naive",
+    ): "A naive instant is refused through the fact union",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact admits only its published union members",
+        "instant",
+        "offset",
+    ): "A non-zero offset is refused through the fact union",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact admits only its published union members",
+        "instant",
+        "week",
+    ): "A week date is outside the published instant grammar",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact admits only its published union members",
+        "nested-occurrence",
+    ): "A non-admitted inner occurrence is refused through the nested union",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact is required",
+    ): "A link requires its fact",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact refuses this published boundary",
+        "enum",
+        "ChangedPathStatus",
+    ): "The status vocabulary stays inadmissible in Python input",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact refuses this published boundary",
+        "mapping",
+        ("approved_revision", "review"),
+    ): "A mapping of published children is still not a published fact",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact refuses this published boundary",
+        "typed",
+        "PullRequestChangeSet",
+    ): "The change set stays inadmissible in Python input",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "fact typed in Python",
+    ): "Python input requires an already published fact",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no artifact is published",
+    ): "The link references a durable record, never an artifact carrier",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no confidence is published",
+    ): "No confidence is published",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no evidence_records is published",
+    ): "No evidence aggregate is published",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no json_pointer is published",
+    ): "No evidence localization is published, under any spelling",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no primary_evidence is published",
+    ): "No primary designation is published",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no request_id is published",
+    ): "The link carries no acquisition-request provenance",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no schema_version is published",
+    ): "The link carries no version of its own",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no strength is published",
+    ): "No evidence strength is published",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no superseded is published",
+    ): "A link never follows a correction to a superseding record",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no support_role is published",
+    ): "No support role is published",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "no verification is published",
+    ): "No verification outcome is published",
+    (
+        "PullRequestHistoryFactEvidenceLink",
+        "occurrence-time fact typed in Python",
+    ): "The occurrence-time branch requires an already published fact in Python input",
+    (
+        "PullRequestMergeRevisionOutcome",
+        "merge_revision is refused by its published nested contract",
+    ): "The merge revision must be a commit",
+    (
+        "PullRequestMergeRevisionOutcome",
+        "merge_revision is required",
+    ): "A merge outcome requires the revision it merged as",
+    (
+        "PullRequestMergeRevisionOutcome",
+        "merge_revision typed in Python",
+    ): "The merge revision requires an already published commit identity in Python input",
+    (
+        "PullRequestMergeRevisionOutcome",
+        "no ordered_parents is published",
+    ): "No parent topology is embedded here",
+    (
+        "PullRequestMergeRevisionOutcome",
+        "no strategy is published",
+    ): "No merge strategy is published here",
+    (
+        "PullRequestMergeRevisionOutcome",
+        "pull_request is required",
+    ): "A merge outcome requires its pull request",
+    (
+        "PullRequestMergeRevisionOutcome",
+        "pull_request typed in Python",
+    ): "The merged subject requires an already published numbered identity in Python input",
+    (
+        "PullRequestMergeRevisionOutcome",
+        "subject must be a pull request",
+    ): "The subject must identify a pull request",
+    (
+        "PullRequestReviewRevisionApproval",
+        "approved_revision is refused by its published nested contract",
+    ): "The approved revision must be a commit",
+    (
+        "PullRequestReviewRevisionApproval",
+        "approved_revision is required",
+    ): "An approval requires the revision it approved",
+    (
+        "PullRequestReviewRevisionApproval",
+        "approved_revision typed in Python",
+    ): "The approved revision requires an already published commit identity in Python input",
+    (
+        "PullRequestReviewRevisionApproval",
+        "no state is published",
+    ): "No review state vocabulary is published here",
+    (
+        "PullRequestReviewRevisionApproval",
+        "no submitted_at is published",
+    ): "Occurrence time is a separate published relation",
+    (
+        "PullRequestReviewRevisionApproval",
+        "review is required",
+    ): "An approval requires its review identity",
+    (
+        "PullRequestReviewRevisionApproval",
+        "review must be a pull-request review",
+    ): "A provider-scoped object of a pull request may still fail the published review-kind requirement",
+    (
+        "PullRequestReviewRevisionApproval",
+        "review refuses this published boundary",
+        "issue_comment",
+        "pull_request",
+    ): "The subject must identify a pull request review",
+    (
+        "PullRequestReviewRevisionApproval",
+        "review refuses this published boundary",
+        "pull_request_review",
+        "issue",
+    ): "A published review parents a pull request",
+    (
+        "PullRequestReviewRevisionApproval",
+        "review typed in Python",
+    ): "Python input requires a published review identity",
+    (
+        "PullRequestRevisionRoleBinding",
+        "bound role must be base or head",
+    ): "Only the base and head roles are recorded here",
+    (
+        "PullRequestRevisionRoleBinding",
+        "no observed_at is published",
+    ): "No observation time is published here",
+    (
+        "PullRequestRevisionRoleBinding",
+        "pull_request is refused by its published nested contract",
+    ): "Swapping the two members is refused",
+    (
+        "PullRequestRevisionRoleBinding",
+        "pull_request is required",
+    ): "A binding requires its pull request",
+    (
+        "PullRequestRevisionRoleBinding",
+        "pull_request refuses this published boundary",
+        "mapping",
+        ("kind", "repository_identity", "repository_scoped_number", "schema_version"),
+    ): "A dumped mapping is not a published value in Python input",
+    (
+        "PullRequestRevisionRoleBinding",
+        "pull_request refuses this published boundary",
+        "typed",
+        "ProviderScopedSourceObjectIdentity",
+    ): "A foreign published identity is refused in the subject position",
+    (
+        "PullRequestRevisionRoleBinding",
+        "pull_request typed in Python",
+    ): "Python input requires an already published subject",
+    (
+        "PullRequestRevisionRoleBinding",
+        "role_assignment is required",
+    ): "A binding requires its role assignment",
+    (
+        "PullRequestRevisionRoleBinding",
+        "role_assignment refuses this published boundary",
+    ): "A null role assignment is refused",
+    (
+        "PullRequestRevisionRoleBinding",
+        "role_assignment typed in Python",
+    ): "Python input requires an already published role assignment",
+    (
+        "PullRequestRevisionRoleBinding",
+        "subject must be a pull request",
+    ): "The subject must identify a pull request",
+}
+
+
+def _pI_render_requirement_gloss(vector: dict[str, Any], family: str) -> str:
+    """The authored sentence selected by this vector's requirement identity."""
+    return _pI_REQUIREMENT_GLOSS[_pI_gloss_key(vector)]
+
+
+def _pI_render_objects_already_match_head(vector: dict[str, Any], family: str) -> str:
+    """Whether every supplied changed object already matches the head revision."""
+    supplied = vector["input"]
+    head_algorithm = supplied["head"]["role_assignment"]["revision"]["algorithm"]
+    objects = [p["head_object"]["algorithm"] for p in supplied["changed_paths"]]
+    if objects and all(a == head_algorithm for a in objects):
+        return "every changed object already matches the head"
+    return "not every changed object matches the head"
+
+
+def _pI_render_true_omission_not_union(vector: dict[str, Any], family: str) -> str:
+    """Whether the recorded failure is a real omission or a closed-union refusal."""
+    expected = vector["expected"]
+    field = expected["error_location"][0]
+    supplied = vector["input"]
+    omitted = isinstance(supplied, dict) and field not in supplied
+    if omitted and expected["error_location_mode"] == "exact":
+        return "omitting it is not a union failure"
+    return "omitting it is a union failure"
+
+
+# ---- replay family renderers --------------------------------------------
+
+"""Structured ledger + deterministic renderers for the ``replay`` family.
+
+Every fragment below is produced from a validated structured authority carried
+by the vector itself (``source_pointers``, ``embedded_facts``,
+``evidence_record_lock``, ``evidence_classification``, ``target``) or from a
+leaf of the sealed manifest.  No renderer reads the published prose, and no
+renderer inspects a vector identifier, semantic partition, or category lexeme.
+"""
+
+
+_PR_RETAINED_NODE_NOUNS: dict[str, str] = {
+    "/observations/comparison": "comparison",
+    "/observations/pr/changed_files/items": "changed-file item",
+    "/observations/pr/reviews/items": "review",
+    "/observations/pr/timeline/items": "merged timeline event",
+}
+
+_PR_CALLER_VERBS: dict[str, str] = {
+    "caller_supplied_association": "associates",
+    "caller_supplied_composition": "composes",
+}
+
+_PR_OCCURRENCE_KINDS: dict[frozenset[str], str] = {
+    frozenset({"approved_revision", "review"}): "approval",
+    frozenset({"merge_revision", "pull_request"}): "merge",
+    frozenset({"head", "head_ref_name"}): "deletion",
+}
+
+_PR_TARGET_DECLARATIONS: dict[str, str] = {
+    "PullRequestHeadRefDeletion": (
+        "The retained head_ref_deleted event and recorded head ref lexeme"
+    ),
+}
+
+_PR_CARDINAL_WORDS: dict[int, str] = {1: "one", 2: "two", 3: "three"}
+
+_PR_EVIDENCE_LINK_NON_CLAIM = (
+    "the link asserts no support, verification, or localization"
+)
+
+_PR_CHANGE_SET_COMPLETENESS = (
+    "the retained collection declares completeness and this value"
+)
+
+
+def _pR_resolve(node: Any, pointer: str) -> Any:
+    for token in [part for part in pointer.split("/") if part]:
+        node = (
+            cast(list[Any], node)[int(token)]
+            if isinstance(node, list)
+            else cast(dict[str, Any], node)[token]
+        )
+    return node
+
+
+def _pR_replayed(vector: dict[str, Any], pointer: str) -> Any:
+    """Read a replayed leaf out of the vector's independently authored dump."""
+    return _pR_resolve(vector["expected"]["semantic_dump"], pointer)
+
+
+def _pR_source_position(pointer: dict[str, Any]) -> str:
+    parts = [p for p in pointer["json_pointer"].split("/") if p and not p.isdigit()]
+    return "/" + "/".join(parts)
+
+
+def _pR_primary(vector: dict[str, Any]) -> dict[str, Any]:
+    return vector["source_pointers"][0]
+
+
+def _pR_replayed_targets(vector: dict[str, Any]) -> list[str]:
+    return [
+        target
+        for pointer in vector["source_pointers"]
+        for target in pointer["source_fields"].values()
+    ]
+
+
+def _pR_target_ending(targets: list[str], leaf: str) -> str:
+    return next(t for t in targets if t.rsplit("/", 1)[-1] == leaf)
+
+
+def _pR_short(digest: str) -> str:
+    return digest[:8]
+
+
+def _pR_authority_role(reference: str) -> str:
+    entry = next(
+        row
+        for row in MANIFEST["source_decisions"]
+        if row["decision_reference"] == reference
+    )
+    return str(entry["authority_role"])
+
+
+def _PR_retained_role_binding_fact(vector: dict[str, Any], family: str) -> str:
+    """Retained comparison node, the role it implies, its revision and the PR."""
+    pointer = next(p for p in vector["source_pointers"] if p.get("role_implications"))
+    noun = _PR_RETAINED_NODE_NOUNS[_pR_source_position(pointer)]
+    role = _pR_replayed(vector, next(iter(pointer["role_implications"].values())))
+    revision = _pR_replayed(
+        vector,
+        _pR_target_ending(list(pointer["source_fields"].values()), "full_digest"),
+    )
+    number = _pR_replayed(
+        vector,
+        _pR_target_ending(_pR_replayed_targets(vector), "repository_scoped_number"),
+    )
+    return f"The retained {noun} records {role} {_pR_short(revision)} for pull request {number}"
+
+
+def _PR_retained_changed_path_fact(vector: dict[str, Any], family: str) -> str:
+    """Retained changed-file node and the repository path it carries."""
+    pointer = _pR_primary(vector)
+    noun = _PR_RETAINED_NODE_NOUNS[_pR_source_position(pointer)]
+    path = _pR_replayed(
+        vector, _pR_target_ending(list(pointer["source_fields"].values()), "path")
+    )
+    return f"The retained {noun} for {path}"
+
+
+def _PR_retained_review_approval_fact(vector: dict[str, Any], family: str) -> str:
+    """Retained review node, its provider id and the revision it approves."""
+    pointer = _pR_primary(vector)
+    noun = _PR_RETAINED_NODE_NOUNS[_pR_source_position(pointer)]
+    fields = list(pointer["source_fields"].values())
+    review = _pR_replayed(vector, _pR_target_ending(fields, "provider_global_id"))
+    revision = _pR_replayed(vector, _pR_target_ending(fields, "full_digest"))
+    return f"The retained {noun} {review} approves revision {_pR_short(revision)}"
+
+
+def _PR_retained_merge_event_fact(vector: dict[str, Any], family: str) -> str:
+    """Retained timeline event and the merge revision it alone carries."""
+    pointer = _pR_primary(vector)
+    noun = _PR_RETAINED_NODE_NOUNS[_pR_source_position(pointer)]
+    target = _pR_target_ending(list(pointer["source_fields"].values()), "full_digest")
+    subject = target.strip("/").split("/")[0].replace("_", " ")
+    return f"The retained {noun} records {subject} {_pR_short(_pR_replayed(vector, target))}"
+
+
+def _PR_retained_occurrence_instant_fact(vector: dict[str, Any], family: str) -> str:
+    """Retained instant and the published history fact it is attached to."""
+    roots = sorted({t.strip("/").split("/")[0] for t in _pR_replayed_targets(vector)})
+    instant = next(
+        _pR_replayed(vector, f"/{r}")
+        for r in roots
+        if isinstance(_pR_replayed(vector, f"/{r}"), str)
+    )
+    occurrence = next(
+        _pR_replayed(vector, f"/{r}")
+        for r in roots
+        if isinstance(_pR_replayed(vector, f"/{r}"), dict)
+    )
+    kind = _PR_OCCURRENCE_KINDS[frozenset(occurrence)]
+    return f"The retained source instant {instant} for the {kind} occurrence"
+
+
+def _PR_retained_target_declaration(vector: dict[str, Any], family: str) -> str:
+    """Authored declaration selected by the vector's published product symbol."""
+    return _PR_TARGET_DECLARATIONS[vector["target"]]
+
+
+def _PR_caller_composed_change_set(vector: dict[str, Any], family: str) -> str:
+    """Caller composition: the bound role bindings plus a choice of paths."""
+    verb = _PR_CALLER_VERBS[vector["evidence_classification"]]
+    bindings = [key for key in vector["embedded_facts"] if key.count("/") == 1]
+    count = _PR_CARDINAL_WORDS[len(bindings)]
+    return f"A caller {verb} the {count} bindings with a selection of retained paths"
+
+
+def _PR_change_set_completeness_limit(vector: dict[str, Any], family: str) -> str:
+    """Descriptive limit: the published change-set completeness flag."""
+    claimed = MANIFEST["replay_contract"]["evidence_limits"][
+        "change_set_completeness_claimed"
+    ]
+    return f"{_PR_CHANGE_SET_COMPLETENESS} {'does' if claimed else 'does not'}"
+
+
+def _PR_merge_revision_absent_surface(vector: dict[str, Any], family: str) -> str:
+    """Descriptive limit: the surface the published merge-revision source excludes."""
+    declared = MANIFEST["replay_contract"]["evidence_limits"]["merge_revision_source"]
+    return f"{declared.split(', not ', 1)[1]} omits it"
+
+
+def _PR_caller_association_to_locked_record(vector: dict[str, Any], family: str) -> str:
+    """Caller association from the bound fact to the locked evidence record."""
+    verb = _PR_CALLER_VERBS[vector["evidence_classification"]]
+    bound = sorted(vector["embedded_facts"])[0].strip("/").replace("_", " ")
+    kind = vector["evidence_record_lock"].split(":", 1)[0]
+    return f"A caller {verb} the {bound} with the retained {kind} record"
+
+
+def _PR_evidence_link_non_claim(vector: dict[str, Any], family: str) -> str:
+    """Authored summary of the S07 published non-claims."""
+    return _PR_EVIDENCE_LINK_NON_CLAIM
+
+
+def _PR_second_independent_correction_link(vector: dict[str, Any], family: str) -> str:
+    """Authored reading of the correction association, named by its authority role."""
+    role = _pR_authority_role(vector["evidence_record_lock"]).split("_")
+    record = " ".join(role[:-1] + ["record"] if role[-1] == "evidence" else role)
+    return f"The same fact associated with the {record} is a second independent link"
+
+
+def _PR_supersession_limit(vector: dict[str, Any], family: str) -> str:
+    """Descriptive limit: the published supersession-traversal flag."""
+    limits = MANIFEST["replay_contract"]["evidence_limits"]
+    subject, participle = "supersession_followed".split("_")
+    return (
+        f"{'a' if limits['supersession_followed'] else 'no'} {subject} is {participle}"
+    )
+
+
+PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
+    # -- 48 valid vectors -----------------------------------------------
+    "history.valid.role-binding.base-canonical": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:role_binding_canonical",
+            "input:/role_assignment/role",
+        ),
+    ),
+    "history.valid.role-binding.head-canonical": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:role_binding_canonical",
+            "input:/role_assignment/role",
+        ),
+    ),
+    "history.valid.status.added": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:status_member",
+            "expected:/semantic_dump",
+        ),
+    ),
+    "history.valid.status.modified": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:status_member",
+            "expected:/semantic_dump",
+        ),
+    ),
+    "history.valid.changed-path.added": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:changed_path_canonical",
+            "input:/status",
+        ),
+    ),
+    "history.valid.changed-path.modified": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:changed_path_canonical",
+            "input:/status",
+        ),
+    ),
+    "history.valid.change-set.canonical-three-paths": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:change_set_supplied_count",
+            "input:/changed_paths",
+        ),
+    ),
+    "history.valid.change-set.single-path-minimum": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:change_set_minimum",
+            "input:/changed_paths",
+        ),
+    ),
+    "history.valid.change-set.supplied-order-preserved": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "valid:requirement_sentence",
+            "requirement:CS-18",
+        ),
+    ),
+    "history.valid.change-set.maximum-changed-paths": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:change_set_maximum",
+            "input:/changed_paths/indexed_value/count",
+        ),
+    ),
+    "history.valid.approval.canonical": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:approval_canonical",
+            "input:/review/provider_global_id",
+        ),
+    ),
+    "history.valid.approval.revision-need-not-be-head": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "valid:requirement_sentence",
+            "requirement:RA-04",
+        ),
+    ),
+    "history.valid.merge-outcome.canonical": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:merge_outcome_canonical",
+            "input:/merge_revision/full_digest",
+        ),
+    ),
+    "history.valid.merge-outcome.revision-independent-of-head": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "valid:requirement_sentence",
+            "requirement:MO-04",
+        ),
+    ),
+    "history.valid.head-ref-deletion.canonical": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:head_ref_deletion_canonical",
+            "input:/head_ref_name",
+        ),
+    ),
+    "history.valid.occurrence-time.approval": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:occurrence_instant",
+            "input:/occurred_at",
+        ),
+    ),
+    "history.valid.occurrence-time.merge": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:occurrence_instant",
+            "input:/occurred_at",
+        ),
+    ),
+    "history.valid.occurrence-time.deletion": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:occurrence_instant",
+            "input:/occurred_at",
+        ),
+    ),
+    "history.valid.occurrence-time.offset-zero-form": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:occurrence_offset_normalisation",
+            "input:/occurred_at",
+        ),
+    ),
+    "history.valid.occurrence-time.equal-instants-allowed": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:occurrence_tied_surface",
+            "input:/occurred_at",
+        ),
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "valid:requirement_sentence",
+            "requirement:OT-06",
+        ),
+    ),
+    "history.valid.evidence-link.role-binding-json": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_json_fact",
+            "input:/fact",
+        ),
+    ),
+    "history.valid.evidence-link.changed-path-json": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_json_fact",
+            "input:/fact",
+        ),
+    ),
+    "history.valid.evidence-link.review-approval-json": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_json_fact",
+            "input:/fact",
+        ),
+    ),
+    "history.valid.evidence-link.merge-outcome-json": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_json_fact",
+            "input:/fact",
+        ),
+    ),
+    "history.valid.evidence-link.head-ref-deletion-json": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_json_fact",
+            "input:/fact",
+        ),
+    ),
+    "history.valid.evidence-link.occurrence-time-json": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_json_fact",
+            "input:/fact",
+        ),
+    ),
+    "history.valid.evidence-link.role-binding-python": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_python_fact",
+            "input:/fact/typed_value/target",
+        ),
+    ),
+    "history.valid.evidence-link.changed-path-python": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_python_fact",
+            "input:/fact/typed_value/target",
+        ),
+    ),
+    "history.valid.evidence-link.review-approval-python": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_python_fact",
+            "input:/fact/typed_value/target",
+        ),
+    ),
+    "history.valid.evidence-link.merge-outcome-python": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_python_fact",
+            "input:/fact/typed_value/target",
+        ),
+    ),
+    "history.valid.evidence-link.head-ref-deletion-python": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_python_fact",
+            "input:/fact/typed_value/target",
+        ),
+    ),
+    "history.valid.evidence-link.occurrence-time-python": (
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "valid:evidence_link_python_fact",
+            "input:/fact/typed_value/target",
+        ),
+    ),
+    "history.valid.evidence-link.second-fact-same-record": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "valid:requirement_sentence",
+            "requirement:EL-06",
+        ),
+    ),
+    "history.valid.role-binding.distinct-pull-request": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.role-binding.distinct-revision": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.role-binding.python-typed": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.status.python-enum": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.changed-path.distinct-blob": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.changed-path.python-typed": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.change-set.python-typed": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.approval.python-typed": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.merge-outcome.python-typed": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.head-ref-deletion.distinct-ref-name": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.head-ref-deletion.python-typed": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.occurrence-time.sub-second-preserved": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.occurrence-time.python-typed": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.evidence-link.correction-record": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+    ),
+    "history.valid.evidence-link.synthetic-record": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration",
+            "literal",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "valid:canonical_declaration_second",
+            "literal",
+        ),
+    ),
+    # -- 111 invalid vectors --------------------------------------------
+    "history.invalid.approval.blob-as-approved-revision": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.approval.extra-state": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.approval.extra-submitted-at": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.approval.missing-approved-revision": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.approval.missing-review": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.approval.non-pull-request-parent": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.approval.non-review-kind-subject": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:RA-03",
+        ),
+    ),
+    "history.invalid.approval.non-review-subject": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.approval.untyped-python-approved-revision": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:RA-02",
+        ),
+    ),
+    "history.invalid.approval.untyped-python-review": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:RA-01",
+        ),
+    ),
+    "history.invalid.change-set.above-maximum-changed-paths": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-05",
+        ),
+    ),
+    "history.invalid.change-set.base-position-rejects-non-base-role": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-11",
+        ),
+    ),
+    "history.invalid.change-set.duplicate-path": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-16",
+        ),
+    ),
+    "history.invalid.change-set.empty-changed-paths": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-04",
+        ),
+    ),
+    "history.invalid.change-set.equal-base-and-head-revision": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-13",
+        ),
+    ),
+    "history.invalid.change-set.extra-complete": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-17",
+        ),
+    ),
+    "history.invalid.change-set.head-position-rejects-non-head-role": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-12",
+        ),
+    ),
+    "history.invalid.change-set.mismatched-pull-requests": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-10",
+        ),
+    ),
+    "history.invalid.change-set.mismatched-revision-algorithms": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-14",
+        ),
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "invalid:objects_already_match_head",
+            "input:/changed_paths",
+        ),
+    ),
+    "history.invalid.change-set.missing-base": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-01",
+        ),
+    ),
+    "history.invalid.change-set.missing-changed-paths": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-03",
+        ),
+    ),
+    "history.invalid.change-set.missing-head": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-02",
+        ),
+    ),
+    "history.invalid.change-set.mixed-hash-algorithms": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-15",
+        ),
+    ),
+    "history.invalid.change-set.python-list-not-tuple": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-08",
+        ),
+    ),
+    "history.invalid.change-set.untyped-python-base": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-06",
+        ),
+    ),
+    "history.invalid.change-set.untyped-python-changed-path-element": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-09",
+        ),
+    ),
+    "history.invalid.change-set.untyped-python-head": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CS-07",
+        ),
+    ),
+    "history.invalid.changed-path.commit-as-head-object": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CP-03",
+        ),
+    ),
+    "history.invalid.changed-path.empty-path": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.changed-path.extra-base-object": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.changed-path.missing-head-object": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.changed-path.missing-path": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.changed-path.missing-status": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.changed-path.raw-python-status": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CP-04",
+        ),
+    ),
+    "history.invalid.changed-path.unknown-status": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.changed-path.untyped-python-head-object": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CP-02",
+        ),
+    ),
+    "history.invalid.changed-path.untyped-python-path": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:CP-01",
+        ),
+    ),
+    "history.invalid.evidence-link.change-set-fact": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:EL-04",
+        ),
+    ),
+    "history.invalid.evidence-link.change-set-fact-python": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.changed-path-status-fact": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:EL-05",
+        ),
+    ),
+    "history.invalid.evidence-link.empty-fact-json": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-artifact": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-confidence": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-evidence-records": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-json-pointer": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-primary-evidence": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-request-id": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-schema-version": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-strength": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-superseded": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-support-role": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.extra-verification": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.hybrid-fact-json": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.instant-basic-format": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.instant-naive": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.instant-non-zero-offset": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.instant-week-date": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.malformed-record": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.missing-evidence-record": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.missing-fact": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.nested-non-admitted-occurrence": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.occurrence-time-fact-python": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:EL-02",
+        ),
+    ),
+    "history.invalid.evidence-link.status-fact-python": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.typed-children-mapping-python": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.evidence-link.untyped-python-fact": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:EL-01",
+        ),
+    ),
+    "history.invalid.evidence-link.untyped-python-record": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:EL-03",
+        ),
+    ),
+    "history.invalid.head-ref-deletion.base-binding": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:HD-03",
+        ),
+    ),
+    "history.invalid.head-ref-deletion.empty-ref-name": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.head-ref-deletion.extra-namespace": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.head-ref-deletion.missing-head": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.head-ref-deletion.missing-ref-name": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.head-ref-deletion.raw-python-ref-name": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:HD-02",
+        ),
+    ),
+    "history.invalid.head-ref-deletion.refs-prefixed-name": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:HD-04",
+        ),
+    ),
+    "history.invalid.head-ref-deletion.untyped-python-head": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:HD-01",
+        ),
+    ),
+    "history.invalid.merge-outcome.extra-parents": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.merge-outcome.extra-strategy": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.merge-outcome.missing-merge-revision": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.merge-outcome.missing-pull-request": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.merge-outcome.non-pull-request-subject": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:MO-03",
+        ),
+    ),
+    "history.invalid.merge-outcome.tree-as-merge-revision": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.merge-outcome.untyped-python-merge-revision": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:MO-02",
+        ),
+    ),
+    "history.invalid.merge-outcome.untyped-python-pull-request": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:MO-01",
+        ),
+    ),
+    "history.invalid.occurrence-time.extra-chronology": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.instant-malformed": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.instant-naive": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.instant-negative-offset": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.instant-positive-offset": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:OT-02",
+        ),
+    ),
+    "history.invalid.occurrence-time.missing-occurred-at": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.missing-occurrence": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+        PurposeClaim(
+            BEHAVIOUR_DERIVED,
+            "invalid:true_omission_not_union",
+            "expected:/error_location_mode",
+        ),
+    ),
+    "history.invalid.occurrence-time.non-admitted-change-set": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.non-admitted-changed-path": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.non-admitted-changed-path-status": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.non-admitted-commit-identity": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.non-admitted-role-binding": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.raw-python-instant": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.occurrence-time.untyped-python-occurrence": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:OT-01",
+        ),
+    ),
+    "history.invalid.role-binding.disallowed-revision-role": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:RB-04",
+        ),
+    ),
+    "history.invalid.role-binding.dumped-mapping-python": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.role-binding.extra-observed-at": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.role-binding.foreign-python-subject": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.role-binding.missing-pull-request": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.role-binding.missing-role-assignment": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.role-binding.non-pull-request-subject": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:RB-03",
+        ),
+    ),
+    "history.invalid.role-binding.null-role-assignment": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.role-binding.swapped-members": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.role-binding.untyped-python-pull-request": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:RB-01",
+        ),
+    ),
+    "history.invalid.role-binding.untyped-python-role-assignment": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:RB-02",
+        ),
+    ),
+    "history.invalid.status.copied": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.status.not-a-status": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "requirement:ST-03",
+        ),
+    ),
+    "history.invalid.status.removed": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    "history.invalid.status.renamed": (
+        PurposeClaim(
+            REQUIREMENT_DERIVED,
+            "invalid:requirement_gloss",
+            "secondary-witness",
+        ),
+    ),
+    # -- 24 replay vectors ----------------------------------------------
+    "history.replay.role-binding.base": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:retained_role_binding_fact",
+            "source-pointer:/observations/comparison",
+        ),
+    ),
+    "history.replay.role-binding.head": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:retained_role_binding_fact",
+            "source-pointer:/observations/comparison",
+        ),
+    ),
+    "history.replay.changed-path.changelog": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:retained_changed_path_fact",
+            "source-pointer:/observations/pr/changed_files/items/0",
+        ),
+    ),
+    "history.replay.changed-path.rewrite": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:retained_changed_path_fact",
+            "source-pointer:/observations/pr/changed_files/items/1",
+        ),
+    ),
+    "history.replay.changed-path.assertrewrite": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:retained_changed_path_fact",
+            "source-pointer:/observations/pr/changed_files/items/2",
+        ),
+    ),
+    "history.replay.change-set.supplied-three-paths": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_composed_change_set",
+            "embedded-fact:/base",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:change_set_completeness_limit",
+            "manifest:/replay_contract/evidence_limits/change_set_completeness_claimed",
+        ),
+    ),
+    "history.replay.review-approval.canonical": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:retained_review_approval_fact",
+            "source-pointer:/observations/pr/reviews/items/0",
+        ),
+    ),
+    "history.replay.merge-outcome.canonical": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:retained_merge_event_fact",
+            "source-pointer:/observations/pr/timeline/items/4",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:merge_revision_absent_surface",
+            "manifest:/replay_contract/evidence_limits/merge_revision_source",
+        ),
+    ),
+    "history.replay.head-ref-deletion.canonical": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:retained_target_declaration",
+            "target",
+        ),
+    ),
+    "history.replay.occurrence-time.approval": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:retained_occurrence_instant_fact",
+            "source-pointer:/observations/pr/reviews/items/0/submitted_at",
+        ),
+    ),
+    "history.replay.occurrence-time.merge": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:retained_occurrence_instant_fact",
+            "source-pointer:/observations/pr/timeline/items/4/created_at/value",
+        ),
+    ),
+    "history.replay.occurrence-time.deletion": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:retained_occurrence_instant_fact",
+            "source-pointer:/observations/pr/timeline/items/6/created_at/value",
+        ),
+    ),
+    "history.replay.evidence-association.base-binding": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.head-binding": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.changed-path-changelog": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.changed-path-rewrite": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.changed-path-assertrewrite": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.review-approval": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.merge-outcome": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.head-ref-deletion": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.occurrence-approval": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.occurrence-merge": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.occurrence-deletion": (
+        PurposeClaim(
+            PROVENANCE_DERIVED,
+            "replay:caller_association_to_locked_record",
+            "evidence-record-lock",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:evidence_link_non_claim",
+            "literal",
+        ),
+    ),
+    "history.replay.evidence-association.approval-correction-record": (
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:second_independent_correction_link",
+            "manifest:/source_decisions/4/authority_role",
+        ),
+        PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:supersession_limit",
+            "manifest:/replay_contract/evidence_limits/supersession_followed",
+        ),
+    ),
+}
+
+
+PURPOSE_RENDERERS: dict[str, Callable[[dict[str, Any], str], str]] = {
+    "valid:approval_canonical": _PV_approval_canonical,
+    "valid:canonical_declaration": _PV_canonical_declaration,
+    "valid:canonical_declaration_second": _PV_canonical_declaration_second,
+    "valid:change_set_maximum": _PV_change_set_maximum,
+    "valid:change_set_minimum": _PV_change_set_minimum,
+    "valid:change_set_supplied_count": _PV_change_set_supplied_count,
+    "valid:changed_path_canonical": _PV_changed_path_canonical,
+    "valid:evidence_link_json_fact": _PV_evidence_link_json_fact,
+    "valid:evidence_link_python_fact": _PV_evidence_link_python_fact,
+    "valid:head_ref_deletion_canonical": _PV_head_ref_deletion_canonical,
+    "valid:merge_outcome_canonical": _PV_merge_outcome_canonical,
+    "valid:occurrence_instant": _PV_occurrence_instant,
+    "valid:occurrence_offset_normalisation": _PV_occurrence_offset_normalisation,
+    "valid:occurrence_tied_surface": _PV_occurrence_tied_surface,
+    "valid:requirement_sentence": _PV_requirement_sentence,
+    "valid:role_binding_canonical": _PV_role_binding_canonical,
+    "valid:status_member": _PV_status_member,
+    "invalid:objects_already_match_head": _pI_render_objects_already_match_head,
+    "invalid:requirement_gloss": _pI_render_requirement_gloss,
+    "invalid:true_omission_not_union": _pI_render_true_omission_not_union,
+    "replay:caller_association_to_locked_record": _PR_caller_association_to_locked_record,
+    "replay:caller_composed_change_set": _PR_caller_composed_change_set,
+    "replay:change_set_completeness_limit": _PR_change_set_completeness_limit,
+    "replay:evidence_link_non_claim": _PR_evidence_link_non_claim,
+    "replay:merge_revision_absent_surface": _PR_merge_revision_absent_surface,
+    "replay:retained_changed_path_fact": _PR_retained_changed_path_fact,
+    "replay:retained_merge_event_fact": _PR_retained_merge_event_fact,
+    "replay:retained_occurrence_instant_fact": _PR_retained_occurrence_instant_fact,
+    "replay:retained_review_approval_fact": _PR_retained_review_approval_fact,
+    "replay:retained_role_binding_fact": _PR_retained_role_binding_fact,
+    "replay:retained_target_declaration": _PR_retained_target_declaration,
+    "replay:second_independent_correction_link": _PR_second_independent_correction_link,
+    "replay:supersession_limit": _PR_supersession_limit,
+}
+
+
+def _render_purpose(
+    vector: dict[str, Any],
+    family: str,
+    ledger: dict[str, tuple[PurposeClaim, ...]] | None = None,
+) -> str:
+    """Rebuild the published sentence from its claims, and only from those.
+
+    The ledger is a parameter so a probe can move a claim descriptor and watch
+    the rendering follow it; defaulting to the authored one keeps the call
+    sites that only ask about the live corpus short.
+    """
+    claims = (PURPOSE_SEMANTICS if ledger is None else ledger)[cast(str, vector["id"])]
+    fragments = [PURPOSE_RENDERERS[claim.renderer](vector, family) for claim in claims]
+    return "; ".join(fragments) + "."
+
+
+def _purpose_authority_failures(
+    vector: dict[str, Any], family: str, claim: PurposeClaim
+) -> list[str]:
+    """Every way a claim's declared authority fails to answer for it."""
+    reasons: list[str] = []
+    authority = claim.authority
+    identifier = cast(str, vector["id"])
+    if claim.assurance not in PURPOSE_ASSURANCE_CLASSES:
+        reasons.append("unknown-assurance")
+    if claim.renderer not in PURPOSE_RENDERERS:
+        reasons.append("unknown-renderer")
+    if authority.startswith("requirement:"):
+        row_id = authority.split(":", 1)[1]
+        rows = [row for row in REQUIREMENT_LEDGER if row[0] == row_id]
+        if len(rows) != 1:
+            reasons.append("requirement-row-not-unique")
+        elif rows[0][4] != identifier:
+            reasons.append("requirement-row-witnesses-another-vector")
+    elif authority == "secondary-witness":
+        if identifier not in SECONDARY_WITNESS_REGISTRY:
+            reasons.append("not-a-secondary-witness")
+        elif SECONDARY_WITNESS_REGISTRY[identifier] != _derived_requirement(vector):
+            reasons.append("secondary-witness-derivation-differs")
+    elif authority.startswith(("input:", "expected:")):
+        root, pointer = authority.split(":", 1)
+        try:
+            _resolve_pointer(vector[root], pointer)
+        except (KeyError, IndexError, TypeError):
+            reasons.append("pointer-does-not-resolve")
+    elif authority.startswith("source-pointer:"):
+        pointer = authority.split(":", 1)[1]
+        cited = {
+            cast(str, entry["json_pointer"])
+            for entry in cast(list[dict[str, Any]], vector.get("source_pointers") or [])
+        }
+        if pointer not in cited:
+            reasons.append("source-pointer-not-cited")
+    elif authority.startswith("embedded-fact:"):
+        # `embedded_facts` is keyed by pointer strings, so this is membership
+        pointer = authority.split(":", 1)[1]
+        if pointer not in cast(dict[str, Any], vector.get("embedded_facts") or {}):
+            reasons.append("embedded-fact-not-declared")
+    elif authority.startswith("manifest:"):
+        pointer = authority.split(":", 1)[1]
+        try:
+            _resolve_pointer(MANIFEST, pointer)
+        except (KeyError, IndexError, TypeError):
+            reasons.append("manifest-pointer-does-not-resolve")
+        if (
+            pointer in DESCRIPTIVE_PATHS
+            and claim.assurance != CANONICAL_DECLARATION_ONLY
+        ):
+            reasons.append("descriptive-leaf-claimed-as-verified")
+    elif authority in ("target", "input_mode"):
+        if authority not in vector:
+            reasons.append("field-absent")
+    elif authority in ("evidence-classification", "evidence-record-lock"):
+        if not vector.get(authority.replace("-", "_")):
+            reasons.append("provenance-field-absent")
+    elif authority == "literal":
+        if claim.assurance != CANONICAL_DECLARATION_ONLY:
+            reasons.append("literal-claimed-as-verified")
+    else:
+        reasons.append("unrecognised-authority")
+    return reasons
+
+
+def _purpose_failures(
+    sections: dict[str, dict[str, Any]],
+    ledger: dict[str, tuple[PurposeClaim, ...]],
+) -> list[tuple[str, str]]:
+    """`(vector_id, reason)` for every purpose the ledger cannot account for."""
+    failures: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for family, section in sorted(sections.items()):
+        for vector in section["vectors"]:
+            identifier = cast(str, vector["id"])
+            if identifier in seen:
+                failures.append((identifier, "vector-id-repeated"))
+                continue
+            seen.add(identifier)
+            if identifier not in ledger:
+                failures.append((identifier, "vector-absent-from-ledger"))
+                continue
+            claims = ledger[identifier]
+            if not claims:
+                failures.append((identifier, "no-claim"))
+                continue
+            for claim in claims:
+                for reason in _purpose_authority_failures(vector, family, claim):
+                    failures.append((identifier, reason))
+            try:
+                rendered = _render_purpose(vector, family, ledger)
+            except Exception:  # noqa: BLE001 - a renderer that cannot run is a failure
+                failures.append((identifier, "renderer-raised"))
+                continue
+            if rendered != vector["purpose"]:
+                failures.append((identifier, "rendered-purpose-differs"))
+    for identifier in sorted(set(ledger) - seen):
+        failures.append((identifier, "ledger-entry-unpopulated"))
+    return sorted(failures)
+
+
+def _purpose_sections() -> dict[str, dict[str, Any]]:
+    return _sections(VALID, INVALID, REPLAY)
+
+
+def test_every_published_purpose_is_rebuilt_from_its_claims() -> None:
+    """The reported finding, closed.
+
+    Swapping two purposes, or replacing one with unrelated prose, left every
+    oracle green because truthiness was the whole rule.
+    """
+    assert not _purpose_failures(_purpose_sections(), PURPOSE_SEMANTICS)
+
+    assert len(PURPOSE_SEMANTICS) == 183
+    assert sum(len(claims) for claims in PURPOSE_SEMANTICS.values()) == 201
+    for family, section in _purpose_sections().items():
+        for vector in section["vectors"]:
+            assert _render_purpose(vector, family) == vector["purpose"], vector["id"]
+
+
+def test_the_purpose_ledger_closes_against_the_corpus_both_ways() -> None:
+    published = {
+        cast(str, vector["id"])
+        for section in (VALID, INVALID, REPLAY)
+        for vector in section["vectors"]
+    }
+
+    assert published - set(PURPOSE_SEMANTICS) == set(), "a vector the ledger omits"
+    assert set(PURPOSE_SEMANTICS) - published == set(), "an entry no vector publishes"
+    assert [
+        len([v for v in section["vectors"] if v["id"] in PURPOSE_SEMANTICS])
+        for section in (VALID, INVALID, REPLAY)
+    ] == [48, 111, 24]
+
+
+def test_every_purpose_claim_carries_a_recognised_assurance_class() -> None:
+    """No fragment may sit outside the partition, and none may be unowned."""
+    counted = Counter(
+        claim.assurance for claims in PURPOSE_SEMANTICS.values() for claim in claims
+    )
+
+    assert set(counted) <= set(PURPOSE_ASSURANCE_CLASSES)
+    assert sum(counted.values()) == 201
+    assert not [
+        identifier for identifier, claims in PURPOSE_SEMANTICS.items() if not claims
+    ], "every vector states at least one claim"
+    assert all(
+        claim.renderer in PURPOSE_RENDERERS
+        for claims in PURPOSE_SEMANTICS.values()
+        for claim in claims
+    )
+
+
+def test_every_invalid_purpose_answers_to_a_validated_requirement() -> None:
+    """All 111 rest on an identity the corpus independently validates.
+
+    Forty-three are REQUIREMENT_LEDGER witnesses; the rest are secondary
+    witnesses whose registered requirement `_derived_requirement` reproduces
+    from validated properties. None falls back to canonical declaration.
+    """
+    ledger_witnesses = {row[4] for row in REQUIREMENT_LEDGER}
+    unowned: list[str] = []
+    for vector in INVALID["vectors"]:
+        identifier = cast(str, vector["id"])
+        if identifier not in ledger_witnesses and identifier not in (
+            SECONDARY_WITNESS_REGISTRY
+        ):
+            unowned.append(identifier)
+    assert not unowned, unowned
+
+    declaration_only = [
+        identifier
+        for vector in INVALID["vectors"]
+        for identifier in [cast(str, vector["id"])]
+        for claim in PURPOSE_SEMANTICS[identifier]
+        if claim.assurance == CANONICAL_DECLARATION_ONLY
+    ]
+    assert not declaration_only, declaration_only
+
+    for identifier in SECONDARY_WITNESS_REGISTRY:
+        vector = next(v for v in INVALID["vectors"] if v["id"] == identifier)
+        assert SECONDARY_WITNESS_REGISTRY[identifier] == _derived_requirement(vector)
+
+
+REQUIRED_ASSURANCE_BY_AUTHORITY_FORM: dict[str, str] = {
+    "embedded-fact": PROVENANCE_DERIVED,
+    "evidence-classification": PROVENANCE_DERIVED,
+    "evidence-record-lock": PROVENANCE_DERIVED,
+    "expected": BEHAVIOUR_DERIVED,
+    "input": BEHAVIOUR_DERIVED,
+    "input_mode": BEHAVIOUR_DERIVED,
+    "literal": CANONICAL_DECLARATION_ONLY,
+    "manifest": CANONICAL_DECLARATION_ONLY,
+    "requirement": REQUIREMENT_DERIVED,
+    "secondary-witness": REQUIREMENT_DERIVED,
+    "source-pointer": PROVENANCE_DERIVED,
+    "target": CANONICAL_DECLARATION_ONLY,
+}
+
+
+def _authority_form(authority: str) -> str:
+    return authority.split(":", 1)[0]
+
+
+def _reachable_purpose_functions() -> dict[str, ast.FunctionDef]:
+    """Every module-level function a renderer can reach, transitively.
+
+    A guard that reads only the registered renderer's own source proves
+    nothing: one hop into a helper puts the code back out of sight.
+    """
+    module = ast.parse(Path(__file__).read_text("utf-8"))
+    defined = {
+        node.name: node for node in module.body if isinstance(node, ast.FunctionDef)
+    }
+    frontier = {
+        renderer.__name__
+        for renderer in PURPOSE_RENDERERS.values()
+        if renderer.__name__ in defined
+    }
+    # a closure renderer reports its inner name, so seed the factories too
+    frontier |= {
+        node.name
+        for node in module.body
+        if isinstance(node, ast.FunctionDef)
+        and any(
+            isinstance(inner, ast.FunctionDef) and inner.name == "render"
+            for inner in ast.walk(node)
+        )
+    }
+    reached: dict[str, ast.FunctionDef] = {}
+    while frontier:
+        name = frontier.pop()
+        node = defined.get(name)
+        if node is None or name in reached:
+            continue
+        reached[name] = node
+        for call in ast.walk(node):
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Name):
+                if call.func.id in defined and call.func.id not in reached:
+                    frontier.add(call.func.id)
+    return reached
+
+
+def _identifier_readers(node: ast.FunctionDef) -> list[str]:
+    """Names bound to the vector id, so a rename cannot hide the parsing."""
+    bound = {"__vector_id__"}
+    for statement in ast.walk(node):
+        if not isinstance(statement, ast.Assign):
+            continue
+        value = statement.value
+        if (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id == "cast"
+            and value.args
+        ):
+            value = value.args[-1]  # cast(str, vector["id"]) still binds the id
+        if (
+            isinstance(value, ast.Subscript)
+            and isinstance(value.slice, ast.Constant)
+            and value.slice.value == "id"
+        ):
+            bound |= {t.id for t in statement.targets if isinstance(t, ast.Name)}
+    return sorted(bound)
+
+
+def test_no_renderer_reads_the_text_it_is_rebuilding() -> None:
+    """A renderer that consulted `purpose` would only be copying it.
+
+    The check follows the call graph. Reading the registered function's own
+    source would leave every helper it calls unexamined, and one hop is all a
+    renderer would need to echo the sentence back.
+    """
+    reachable = _reachable_purpose_functions()
+
+    assert len(reachable) >= len(PURPOSE_RENDERERS), "the closure is not smaller"
+    for name, node in sorted(reachable.items()):
+        for literal in ast.walk(node):
+            if isinstance(literal, ast.Constant) and literal.value == "purpose":
+                raise AssertionError(f"{name} names the field it rebuilds")
+            if isinstance(literal, ast.Attribute) and literal.attr == "purpose":
+                raise AssertionError(f"{name} reaches the field it rebuilds")
+
+    resolver = inspect.getsource(_purpose_authority_failures)
+    assert '"purpose"' not in resolver
+
+
+def test_no_renderer_reads_meaning_out_of_an_identifier() -> None:
+    """Ids, partitions and categories are identifiers, not English.
+
+    Deriving BASE from a `.base-canonical` suffix, or merge prose from a
+    `merge-outcome` category, would make this rule restate the labels other
+    authorities already close. The id may be a dict key and nothing else, so
+    the check tracks every name it is bound to and refuses any attribute call
+    or subscript on it -- a substring search would miss `identifier.rsplit`.
+    """
+    for name, node in sorted(_reachable_purpose_functions().items()):
+        for literal in ast.walk(node):
+            if isinstance(literal, ast.Constant) and literal.value in (
+                "semantic_partition",
+                "category",
+            ):
+                raise AssertionError(f"{name} reads a taxonomy label")
+
+        readers = set(_identifier_readers(node))
+        for used in ast.walk(node):
+            target: ast.expr | None = None
+            if isinstance(used, ast.Attribute):
+                target = used.value
+            elif isinstance(used, ast.Subscript):
+                target = used.value
+            if isinstance(target, ast.Name) and target.id in readers:
+                raise AssertionError(f"{name} takes the vector id apart")
+            if (
+                isinstance(target, ast.Subscript)
+                and isinstance(target.slice, ast.Constant)
+                and target.slice.value == "id"
+            ):
+                raise AssertionError(f"{name} takes the vector id apart")
+
+
+def test_every_claim_class_follows_from_the_authority_it_cites() -> None:
+    """The class is not decoration: the authority form determines it.
+
+    Without this, relabelling a provenance claim as a canonical declaration --
+    or the reverse -- would be silent, and the four classes would carry no
+    weight beyond the word in the ledger.
+    """
+    forms = {
+        _authority_form(claim.authority)
+        for claims in PURPOSE_SEMANTICS.values()
+        for claim in claims
+    }
+    unknown = forms - set(REQUIRED_ASSURANCE_BY_AUTHORITY_FORM)
+    assert not unknown, sorted(unknown)
+    assert {REQUIRED_ASSURANCE_BY_AUTHORITY_FORM[form] for form in forms} == set(
+        PURPOSE_ASSURANCE_CLASSES
+    ), "every class is reached by a live claim"
+
+    for identifier, claims in PURPOSE_SEMANTICS.items():
+        for claim in claims:
+            assert (
+                claim.assurance
+                == REQUIRED_ASSURANCE_BY_AUTHORITY_FORM[
+                    _authority_form(claim.authority)
+                ]
+            ), (identifier, claim.authority, claim.assurance)
+
+
+def test_relabelling_a_claim_is_refused() -> None:
+    """Every one of the 201 claims, moved to every other class, is caught."""
+    silent: list[tuple[str, str]] = []
+    for identifier, claims in PURPOSE_SEMANTICS.items():
+        for index, claim in enumerate(claims):
+            for other in PURPOSE_ASSURANCE_CLASSES:
+                if other == claim.assurance:
+                    continue
+                moved = list(claims)
+                moved[index] = PurposeClaim(other, claim.renderer, claim.authority)
+                ledger = dict(PURPOSE_SEMANTICS)
+                ledger[identifier] = tuple(moved)
+                if not _claim_class_failures(ledger):
+                    silent.append((identifier, other))
+    assert not silent, silent[:5]
+
+
+def _claim_class_failures(
+    ledger: dict[str, tuple[PurposeClaim, ...]],
+) -> list[tuple[str, str]]:
+    """`(vector_id, reason)` wherever a class does not follow its authority."""
+    return sorted(
+        (identifier, "assurance-does-not-follow-authority")
+        for identifier, claims in ledger.items()
+        for claim in claims
+        if REQUIRED_ASSURANCE_BY_AUTHORITY_FORM.get(_authority_form(claim.authority))
+        != claim.assurance
+    )
+
+
+def test_a_derived_claim_moves_when_the_field_it_cites_moves() -> None:
+    """A cited pointer that the renderer ignores is not an authority.
+
+    Every `input:`/`expected:` claim names a leaf. Blanking that leaf must
+    change the sentence, otherwise the citation is decoration.
+    """
+    inert: list[tuple[str, str]] = []
+    for family, section in _purpose_sections().items():
+        for vector in section["vectors"]:
+            identifier = cast(str, vector["id"])
+            for claim in PURPOSE_SEMANTICS[identifier]:
+                if not claim.authority.startswith(("input:", "expected:")):
+                    continue
+                root, pointer = claim.authority.split(":", 1)
+                edited = copy.deepcopy(vector)
+                parent = _resolve_pointer(
+                    edited[root], pointer.rsplit("/", 1)[0] or "/"
+                )
+                leaf = pointer.rsplit("/", 1)[-1]
+                try:
+                    if isinstance(parent, list):
+                        cast(list[Any], parent)[int(leaf)] = "-"
+                    else:
+                        cast(dict[str, Any], parent)[leaf] = "-"
+                    moved = _render_purpose(edited, family)
+                except Exception:  # noqa: BLE001 - a raising renderer did notice
+                    continue
+                if moved == vector["purpose"]:
+                    inert.append((identifier, claim.authority))
+    assert not inert, inert[:5]
+
+
+def test_the_purpose_ledger_is_bound_once_anywhere_in_the_module() -> None:
+    """A rebuild hidden inside a function body is still a rebuild.
+
+    Scanning only module-level statements would let `def _f(): LEDGER[k] = ...`
+    followed by `_f()` recompute the authored ledger from the corpus while the
+    literal above stayed on the page for a reader.
+    """
+    name = "PURPOSE_SEMANTICS"
+    module = ast.parse(Path(__file__).read_text("utf-8"))
+    annotated = [
+        node
+        for node in module.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == name
+    ]
+    assert len(annotated) == 1
+
+    writes: list[str] = []
+    for node in ast.walk(module):
+        targets: list[ast.expr] = []
+        if isinstance(node, ast.Assign):
+            targets = list(node.targets)
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+            targets = [node.target]
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id == name:
+                if node is not annotated[0]:
+                    writes.append("rebound")
+            if (
+                isinstance(target, ast.Subscript)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == name
+            ):
+                writes.append("item-assigned")
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == name
+            and node.func.attr in ("update", "setdefault", "pop", "clear")
+        ):
+            writes.append(f"mutated by {node.func.attr}")
+    assert not writes, writes
+
+
+def test_purpose_is_not_part_of_behavioural_identity() -> None:
+    """Purpose describes a vector; it does not select what the vector does."""
+    for fields in SIGNATURE_FIELDS.values():
+        assert "purpose" not in fields
+
+    for family, section in _purpose_sections().items():
+        original = cast(dict[str, Any], section["vectors"][0])
+        relabelled = copy.deepcopy(original)
+        relabelled["purpose"] = "A sentence this corpus never publishes."
+        assert _behavioural_fingerprint(relabelled, family) == (
+            _behavioural_fingerprint(original, family)
+        ), family
+
+
+def _swapped(family: str, first_id: str, second_id: str) -> dict[str, Any]:
+    section = copy.deepcopy(_purpose_sections()[family])
+    first = next(v for v in section["vectors"] if v["id"] == first_id)
+    second = next(v for v in section["vectors"] if v["id"] == second_id)
+    first["purpose"], second["purpose"] = second["purpose"], first["purpose"]
+    return section
+
+
+def test_swapping_two_valid_purposes_is_refused() -> None:
+    """The reported reproduction, kept permanently."""
+    section = _swapped(
+        "valid",
+        "history.valid.role-binding.base-canonical",
+        "history.valid.role-binding.head-canonical",
+    )
+    sections = _sections(section, INVALID, REPLAY)
+
+    assert _resealed_digest(section) != next(
+        entry["sha256"]
+        for entry in MANIFEST["corpus_files"]
+        if entry["filename"] == "valid-vectors.json"
+    )
+    assert _purpose_failures(sections, PURPOSE_SEMANTICS) == [
+        ("history.valid.role-binding.base-canonical", "rendered-purpose-differs"),
+        ("history.valid.role-binding.head-canonical", "rendered-purpose-differs"),
+    ]
+
+
+def test_swapping_two_invalid_purposes_is_refused() -> None:
+    """Two different requirements cannot borrow each other's sentence."""
+    section = _swapped(
+        "invalid",
+        "history.invalid.role-binding.non-pull-request-subject",
+        "history.invalid.change-set.mismatched-revision-algorithms",
+    )
+    assert _purpose_failures(_sections(VALID, section, REPLAY), PURPOSE_SEMANTICS) == [
+        (
+            "history.invalid.change-set.mismatched-revision-algorithms",
+            "rendered-purpose-differs",
+        ),
+        (
+            "history.invalid.role-binding.non-pull-request-subject",
+            "rendered-purpose-differs",
+        ),
+    ]
+
+
+def test_swapping_two_replay_purposes_is_refused() -> None:
+    """Retained base and head provenance are not interchangeable."""
+    section = _swapped(
+        "replay", "history.replay.role-binding.base", "history.replay.role-binding.head"
+    )
+    assert _purpose_failures(_sections(VALID, INVALID, section), PURPOSE_SEMANTICS) == [
+        ("history.replay.role-binding.base", "rendered-purpose-differs"),
+        ("history.replay.role-binding.head", "rendered-purpose-differs"),
+    ]
+
+
+def test_a_retained_purpose_cannot_borrow_a_caller_supplied_one() -> None:
+    """Retained observation and caller-supplied composition differ in kind."""
+    section = _swapped(
+        "replay",
+        "history.replay.changed-path.changelog",
+        "history.replay.change-set.supplied-three-paths",
+    )
+    assert _purpose_failures(_sections(VALID, INVALID, section), PURPOSE_SEMANTICS) == [
+        ("history.replay.change-set.supplied-three-paths", "rendered-purpose-differs"),
+        ("history.replay.changed-path.changelog", "rendered-purpose-differs"),
+    ]
+
+
+def test_unrelated_and_empty_purposes_are_refused() -> None:
+    """Neither survives the rebuild.
+
+    Truthiness accepted the unrelated sentence; the empty string it already
+    rejected. Both are kept because the rule now refuses them for the same
+    reason -- the claims no longer rebuild what is published.
+    """
+    for replacement in ("This text is unrelated to the vector.", ""):
+        section = copy.deepcopy(VALID)
+        edited = next(
+            v
+            for v in section["vectors"]
+            if v["id"] == "history.valid.change-set.canonical-three-paths"
+        )
+        edited["purpose"] = replacement
+        assert _purpose_failures(
+            _sections(section, INVALID, REPLAY), PURPOSE_SEMANTICS
+        ) == [
+            (
+                "history.valid.change-set.canonical-three-paths",
+                "rendered-purpose-differs",
+            )
+        ], replacement
+
+
+def test_moving_a_structured_fact_moves_the_rendered_purpose() -> None:
+    """A derived fragment follows its authority, which is the point of it."""
+    section = copy.deepcopy(VALID)
+    edited = next(
+        v for v in section["vectors"] if v["id"] == "history.valid.approval.canonical"
+    )
+    original = _render_purpose(edited, "valid")
+    review = cast(dict[str, Any], cast(dict[str, Any], edited["input"])["review"])
+    assert "176071572" in original, "the published review id is in the sentence"
+    review["provider_global_id"] = "999999999"
+
+    moved = _render_purpose(edited, "valid")
+    assert moved != original
+    assert "999999999" in moved and "176071572" not in moved
+    assert _purpose_failures(
+        _sections(section, INVALID, REPLAY), PURPOSE_SEMANTICS
+    ) == [("history.valid.approval.canonical", "rendered-purpose-differs")]
+
+
+def test_pointing_a_claim_at_another_requirement_is_refused() -> None:
+    """A claim may not cite a row that witnesses a different vector."""
+    identifier = "history.invalid.role-binding.untyped-python-pull-request"
+    ledger = dict(PURPOSE_SEMANTICS)
+    claim = ledger[identifier][0]
+    ledger[identifier] = (
+        PurposeClaim(claim.assurance, claim.renderer, "requirement:RB-02"),
+    )
+
+    assert (
+        identifier,
+        "requirement-row-witnesses-another-vector",
+    ) in _purpose_failures(_purpose_sections(), ledger)
+
+
+def test_a_swapped_pair_of_ledger_entries_is_refused() -> None:
+    """The corpus is untouched; only the claim descriptors move."""
+    first = "history.valid.role-binding.base-canonical"
+    second = "history.valid.status.added"
+    ledger = dict(PURPOSE_SEMANTICS)
+    assert ledger[first] != ledger[second], "the two entries describe different claims"
+    ledger[first], ledger[second] = ledger[second], ledger[first]
+
+    # each is refused, for the reason the exchange actually causes: the
+    # role-binding vector renders the wrong sentence, and the status vector is
+    # handed an authority that does not resolve against it at all
+    assert _purpose_failures(_purpose_sections(), ledger) == [
+        (first, "rendered-purpose-differs"),
+        (second, "pointer-does-not-resolve"),
+        (second, "renderer-raised"),
+    ]
+
+    # two vectors whose claims are genuinely identical descriptors are
+    # interchangeable in the ledger by construction; the sentence still has to
+    # come out right, which is what the rendering equality above enforces
+    twins = "history.valid.occurrence-time.approval"
+    other = "history.valid.occurrence-time.merge"
+    assert PURPOSE_SEMANTICS[twins] == PURPOSE_SEMANTICS[other]
+
+
+def test_a_descriptive_manifest_leaf_may_not_be_claimed_as_verified() -> None:
+    """Rendering from a descriptive leaf does not promote it."""
+    descriptive = [
+        (identifier, claim)
+        for identifier, claims in PURPOSE_SEMANTICS.items()
+        for claim in claims
+        if claim.authority.startswith("manifest:")
+        and claim.authority.split(":", 1)[1] in DESCRIPTIVE_PATHS
+    ]
+    assert descriptive, "the replay family renders canonical claims from the manifest"
+    for identifier, claim in descriptive:
+        assert claim.assurance == CANONICAL_DECLARATION_ONLY, identifier
+
+    identifier, claim = descriptive[0]
+    ledger = dict(PURPOSE_SEMANTICS)
+    ledger[identifier] = tuple(
+        PurposeClaim(PROVENANCE_DERIVED, c.renderer, c.authority) if c is claim else c
+        for c in ledger[identifier]
+    )
+    assert (
+        identifier,
+        "descriptive-leaf-claimed-as-verified",
+    ) in _purpose_failures(_purpose_sections(), ledger)
+
+
+def test_a_canonical_literal_fragment_is_declared_not_verified() -> None:
+    """Every literal pin is labelled for what it is, and drifts loudly."""
+    literals = [
+        (identifier, index)
+        for identifier, claims in PURPOSE_SEMANTICS.items()
+        for index, claim in enumerate(claims)
+        if claim.authority == "literal"
+    ]
+    assert literals
+    for identifier, index in literals:
+        assert PURPOSE_SEMANTICS[identifier][index].assurance == (
+            CANONICAL_DECLARATION_ONLY
+        ), identifier
+
+    ledger = dict(PURPOSE_SEMANTICS)
+    identifier, index = literals[0]
+    claims = list(ledger[identifier])
+    claims[index] = PurposeClaim(
+        BEHAVIOUR_DERIVED, claims[index].renderer, claims[index].authority
+    )
+    ledger[identifier] = tuple(claims)
+    assert (identifier, "literal-claimed-as-verified") in _purpose_failures(
+        _purpose_sections(), ledger
+    )
+
+
+def test_the_purpose_ledger_is_written_out_and_never_computed() -> None:
+    """A ledger a comprehension could rebuild is not an authority."""
+    name = "PURPOSE_SEMANTICS"
+    module = ast.parse(Path(__file__).read_text("utf-8"))
+    assigned = [
+        node
+        for node in module.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == name
+    ]
+
+    assert len(assigned) == 1
+    literal = assigned[0].value
+    assert isinstance(literal, ast.Dict)
+    assert len(literal.keys) == 183
+    for key, value in zip(literal.keys, literal.values, strict=True):
+        assert isinstance(key, ast.Constant) and isinstance(key.value, str)
+        assert isinstance(value, ast.Tuple)
+        for element in value.elts:
+            # every claim is a PurposeClaim(...) call over three constants
+            assert isinstance(element, ast.Call)
+            assert isinstance(element.func, ast.Name)
+            assert element.func.id == "PurposeClaim"
+            assert len(element.args) == 3 and not element.keywords
+            assert isinstance(element.args[0], ast.Name)
+            assert element.args[0].id in PURPOSE_ASSURANCE_CLASSES
+            for argument in element.args[1:]:
+                assert isinstance(argument, ast.Constant)
+                assert isinstance(argument.value, str)
+
+    touching = [
+        node
+        for statement in module.body
+        if not isinstance(
+            statement, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        )
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Name) and node.id == name
+    ]
+    assert len(touching) == 1, "the ledger is bound once and never rebound"
+    assert touching[0] is assigned[0].target
+
+    shape = {
+        cast(str, cast(ast.Constant, key).value): len(cast(ast.Tuple, value).elts)
+        for key, value in zip(literal.keys, literal.values, strict=True)
+    }
+    assert shape == {
+        identifier: len(claims) for identifier, claims in PURPOSE_SEMANTICS.items()
+    }
+
+
 def test_the_missing_classifier_reads_no_authored_prose() -> None:
     """The derived side must not consult the text it is checking."""
     source = inspect.getsource(_missing_shape) + inspect.getsource(_derived_requirement)
