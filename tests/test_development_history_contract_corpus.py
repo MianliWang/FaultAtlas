@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import importlib
@@ -1554,6 +1555,528 @@ def test_each_semantic_partition_is_distinct_from_its_vector_id() -> None:
             assert partition
             assert partition != vector["id"], vector["id"]
             assert partition.split("/")[0] == vector["category"], vector["id"]
+
+
+# --- a partition identity is attached to one vector identity ------------------
+#
+# Three rules already govern `semantic_partition`. The values are globally
+# unique, each prefix repeats the vector's own category, and the behavioural
+# signature deliberately excludes the field so that renaming a label never
+# reads as a new boundary. Together they establish that the corpus publishes a
+# valid partition -- 183 distinct labels over 183 distinct behaviours.
+#
+# None of them establishes ATTACHMENT: which authored label belongs to which
+# vector. Two vectors in one category can exchange their complete partition
+# values and every rule above still holds, because uniqueness survives a
+# permutation, the prefix is shared, and the signature never looks. The corpus
+# then publishes each behaviour under the other's identity.
+#
+# Coverage and attachment are different properties, and the signature bijection
+# only ever proved the first. The attachment is therefore authored here, keyed
+# by the durable vector id.
+#
+# What this proves: the published partition identity is attached to the
+# published vector identity that carries it. What it does not prove: that
+# suffixes such as `canonical`, `python-typed` or `equal-instants-allowed` are
+# correct descriptions of anything. Those stay opaque -- this repair does not
+# promote a naming convention into product semantics, and the existing prefix
+# rule remains the only lexical claim the corpus makes.
+
+REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID: dict[str, str] = {
+    # -- 48 valid vectors --------------------------------------------------
+    "history.valid.role-binding.base-canonical": "role-binding/accepts/base-canonical",
+    "history.valid.role-binding.head-canonical": "role-binding/accepts/head-canonical",
+    "history.valid.role-binding.distinct-pull-request": "role-binding/accepts/distinct-pull-request",
+    "history.valid.role-binding.distinct-revision": "role-binding/accepts/distinct-revision",
+    "history.valid.role-binding.python-typed": "role-binding/accepts/python-typed",
+    "history.valid.status.added": "changed-path-status/accepts/added",
+    "history.valid.status.modified": "changed-path-status/accepts/modified",
+    "history.valid.status.python-enum": "changed-path-status/accepts/python-enum",
+    "history.valid.changed-path.added": "changed-path/accepts/added",
+    "history.valid.changed-path.modified": "changed-path/accepts/modified",
+    "history.valid.changed-path.distinct-blob": "changed-path/accepts/distinct-blob",
+    "history.valid.changed-path.python-typed": "changed-path/accepts/python-typed",
+    "history.valid.change-set.canonical-three-paths": "change-set/accepts/canonical-three-paths",
+    "history.valid.change-set.single-path-minimum": "change-set/accepts/single-path-minimum",
+    "history.valid.change-set.supplied-order-preserved": "change-set/accepts/supplied-order-preserved",
+    "history.valid.change-set.maximum-changed-paths": "change-set/accepts/maximum-changed-paths",
+    "history.valid.change-set.python-typed": "change-set/accepts/python-typed",
+    "history.valid.approval.canonical": "review-approval/accepts/canonical",
+    "history.valid.approval.revision-need-not-be-head": "review-approval/accepts/revision-need-not-be-head",
+    "history.valid.approval.python-typed": "review-approval/accepts/python-typed",
+    "history.valid.merge-outcome.canonical": "merge-outcome/accepts/canonical",
+    "history.valid.merge-outcome.revision-independent-of-head": "merge-outcome/accepts/revision-independent-of-head",
+    "history.valid.merge-outcome.python-typed": "merge-outcome/accepts/python-typed",
+    "history.valid.head-ref-deletion.canonical": "head-ref-deletion/accepts/canonical",
+    "history.valid.head-ref-deletion.distinct-ref-name": "head-ref-deletion/accepts/distinct-ref-name",
+    "history.valid.head-ref-deletion.python-typed": "head-ref-deletion/accepts/python-typed",
+    "history.valid.occurrence-time.approval": "occurrence-time/accepts/approval",
+    "history.valid.occurrence-time.merge": "occurrence-time/accepts/merge",
+    "history.valid.occurrence-time.deletion": "occurrence-time/accepts/deletion",
+    "history.valid.occurrence-time.offset-zero-form": "occurrence-time/accepts/offset-zero-form",
+    "history.valid.occurrence-time.equal-instants-allowed": "occurrence-time/accepts/equal-instants-allowed",
+    "history.valid.occurrence-time.sub-second-preserved": "occurrence-time/accepts/sub-second-preserved",
+    "history.valid.occurrence-time.python-typed": "occurrence-time/accepts/python-typed",
+    "history.valid.evidence-link.role-binding-json": "evidence-link/accepts/role-binding-json",
+    "history.valid.evidence-link.changed-path-json": "evidence-link/accepts/changed-path-json",
+    "history.valid.evidence-link.review-approval-json": "evidence-link/accepts/review-approval-json",
+    "history.valid.evidence-link.merge-outcome-json": "evidence-link/accepts/merge-outcome-json",
+    "history.valid.evidence-link.head-ref-deletion-json": "evidence-link/accepts/head-ref-deletion-json",
+    "history.valid.evidence-link.occurrence-time-json": "evidence-link/accepts/occurrence-time-json",
+    "history.valid.evidence-link.role-binding-python": "evidence-link/accepts/role-binding-python",
+    "history.valid.evidence-link.changed-path-python": "evidence-link/accepts/changed-path-python",
+    "history.valid.evidence-link.review-approval-python": "evidence-link/accepts/review-approval-python",
+    "history.valid.evidence-link.merge-outcome-python": "evidence-link/accepts/merge-outcome-python",
+    "history.valid.evidence-link.head-ref-deletion-python": "evidence-link/accepts/head-ref-deletion-python",
+    "history.valid.evidence-link.occurrence-time-python": "evidence-link/accepts/occurrence-time-python",
+    "history.valid.evidence-link.correction-record": "evidence-link/accepts/correction-record",
+    "history.valid.evidence-link.synthetic-record": "evidence-link/accepts/synthetic-record",
+    "history.valid.evidence-link.second-fact-same-record": "evidence-link/accepts/second-fact-same-record",
+    # -- 111 invalid vectors -----------------------------------------------
+    "history.invalid.role-binding.non-pull-request-subject": "role-binding/rejects/non-pull-request-subject",
+    "history.invalid.role-binding.disallowed-revision-role": "role-binding/rejects/disallowed-revision-role",
+    "history.invalid.role-binding.missing-pull-request": "role-binding/rejects/missing-pull-request",
+    "history.invalid.role-binding.missing-role-assignment": "role-binding/rejects/missing-role-assignment",
+    "history.invalid.role-binding.extra-observed-at": "role-binding/rejects/extra-observed-at",
+    "history.invalid.role-binding.untyped-python-pull-request": "role-binding/rejects/untyped-python-pull-request",
+    "history.invalid.role-binding.untyped-python-role-assignment": "role-binding/rejects/untyped-python-role-assignment",
+    "history.invalid.role-binding.dumped-mapping-python": "role-binding/rejects/dumped-mapping-python",
+    "history.invalid.role-binding.foreign-python-subject": "role-binding/rejects/foreign-python-subject",
+    "history.invalid.role-binding.swapped-members": "role-binding/rejects/swapped-members",
+    "history.invalid.role-binding.null-role-assignment": "role-binding/rejects/null-role-assignment",
+    "history.invalid.status.removed": "changed-path-status/rejects/removed",
+    "history.invalid.status.renamed": "changed-path-status/rejects/renamed",
+    "history.invalid.status.copied": "changed-path-status/rejects/copied",
+    "history.invalid.status.not-a-status": "changed-path-status/rejects/not-a-status",
+    "history.invalid.changed-path.unknown-status": "changed-path/rejects/unknown-status",
+    "history.invalid.changed-path.commit-as-head-object": "changed-path/rejects/commit-as-head-object",
+    "history.invalid.changed-path.missing-path": "changed-path/rejects/missing-path",
+    "history.invalid.changed-path.missing-head-object": "changed-path/rejects/missing-head-object",
+    "history.invalid.changed-path.missing-status": "changed-path/rejects/missing-status",
+    "history.invalid.changed-path.extra-base-object": "changed-path/rejects/extra-base-object",
+    "history.invalid.changed-path.untyped-python-path": "changed-path/rejects/untyped-python-path",
+    "history.invalid.changed-path.untyped-python-head-object": "changed-path/rejects/untyped-python-head-object",
+    "history.invalid.changed-path.empty-path": "changed-path/rejects/empty-path",
+    "history.invalid.changed-path.raw-python-status": "changed-path/rejects/python-input-requires-typed-status",
+    "history.invalid.change-set.empty-changed-paths": "change-set/rejects/empty-changed-paths",
+    "history.invalid.change-set.above-maximum-changed-paths": "change-set/rejects/above-maximum-changed-paths",
+    "history.invalid.change-set.duplicate-path": "change-set/rejects/duplicate-path",
+    "history.invalid.change-set.equal-base-and-head-revision": "change-set/rejects/equal-base-and-head-revision",
+    "history.invalid.change-set.mismatched-pull-requests": "change-set/rejects/mismatched-pull-requests",
+    "history.invalid.change-set.mixed-hash-algorithms": "change-set/rejects/mixed-hash-algorithms",
+    "history.invalid.change-set.missing-base": "change-set/rejects/missing-base",
+    "history.invalid.change-set.missing-head": "change-set/rejects/missing-head",
+    "history.invalid.change-set.missing-changed-paths": "change-set/rejects/missing-changed-paths",
+    "history.invalid.change-set.extra-complete": "change-set/rejects/extra-complete",
+    "history.invalid.change-set.python-list-not-tuple": "change-set/rejects/python-list-not-tuple",
+    "history.invalid.change-set.untyped-python-base": "change-set/rejects/untyped-python-base",
+    "history.invalid.change-set.untyped-python-head": "change-set/rejects/untyped-python-head",
+    "history.invalid.change-set.untyped-python-changed-path-element": "change-set/rejects/untyped-python-changed-path-element",
+    "history.invalid.change-set.base-position-rejects-non-base-role": "change-set/rejects/base-position-rejects-non-base-role",
+    "history.invalid.change-set.head-position-rejects-non-head-role": "change-set/rejects/head-position-rejects-non-head-role",
+    "history.invalid.change-set.mismatched-revision-algorithms": "change-set/rejects/mismatched-revision-algorithms",
+    "history.invalid.approval.non-review-subject": "review-approval/rejects/non-review-subject",
+    "history.invalid.approval.non-pull-request-parent": "review-approval/rejects/non-pull-request-parent",
+    "history.invalid.approval.blob-as-approved-revision": "review-approval/rejects/blob-as-approved-revision",
+    "history.invalid.approval.missing-review": "review-approval/rejects/missing-review",
+    "history.invalid.approval.missing-approved-revision": "review-approval/rejects/missing-approved-revision",
+    "history.invalid.approval.extra-state": "review-approval/rejects/extra-state",
+    "history.invalid.approval.extra-submitted-at": "review-approval/rejects/extra-submitted-at",
+    "history.invalid.approval.untyped-python-review": "review-approval/rejects/untyped-python-review",
+    "history.invalid.approval.untyped-python-approved-revision": "review-approval/rejects/untyped-python-approved-revision",
+    "history.invalid.approval.non-review-kind-subject": "review-approval/rejects/non-review-kind-subject",
+    "history.invalid.merge-outcome.non-pull-request-subject": "merge-outcome/rejects/non-pull-request-subject",
+    "history.invalid.merge-outcome.tree-as-merge-revision": "merge-outcome/rejects/tree-as-merge-revision",
+    "history.invalid.merge-outcome.missing-pull-request": "merge-outcome/rejects/missing-pull-request",
+    "history.invalid.merge-outcome.missing-merge-revision": "merge-outcome/rejects/missing-merge-revision",
+    "history.invalid.merge-outcome.extra-parents": "merge-outcome/rejects/extra-parents",
+    "history.invalid.merge-outcome.extra-strategy": "merge-outcome/rejects/extra-strategy",
+    "history.invalid.merge-outcome.untyped-python-pull-request": "merge-outcome/rejects/untyped-python-pull-request",
+    "history.invalid.merge-outcome.untyped-python-merge-revision": "merge-outcome/rejects/untyped-python-merge-revision",
+    "history.invalid.head-ref-deletion.base-binding": "head-ref-deletion/rejects/base-binding",
+    "history.invalid.head-ref-deletion.refs-prefixed-name": "head-ref-deletion/rejects/refs-prefixed-name",
+    "history.invalid.head-ref-deletion.empty-ref-name": "head-ref-deletion/rejects/empty-ref-name",
+    "history.invalid.head-ref-deletion.missing-head": "head-ref-deletion/rejects/missing-head",
+    "history.invalid.head-ref-deletion.missing-ref-name": "head-ref-deletion/rejects/missing-ref-name",
+    "history.invalid.head-ref-deletion.extra-namespace": "head-ref-deletion/rejects/extra-namespace",
+    "history.invalid.head-ref-deletion.raw-python-ref-name": "head-ref-deletion/rejects/raw-python-ref-name",
+    "history.invalid.head-ref-deletion.untyped-python-head": "head-ref-deletion/rejects/untyped-python-head",
+    "history.invalid.occurrence-time.instant-naive": "occurrence-time/rejects/instant-naive",
+    "history.invalid.occurrence-time.instant-positive-offset": "occurrence-time/rejects/instant-positive-offset",
+    "history.invalid.occurrence-time.instant-negative-offset": "occurrence-time/rejects/instant-negative-offset",
+    "history.invalid.occurrence-time.instant-malformed": "occurrence-time/rejects/instant-malformed",
+    "history.invalid.occurrence-time.non-admitted-commit-identity": "occurrence-time/rejects/non-admitted-commit-identity",
+    "history.invalid.occurrence-time.non-admitted-changed-path-status": "occurrence-time/rejects/non-admitted-changed-path-status",
+    "history.invalid.occurrence-time.non-admitted-change-set": "occurrence-time/rejects/non-admitted-change-set",
+    "history.invalid.occurrence-time.non-admitted-role-binding": "occurrence-time/rejects/non-admitted-role-binding",
+    "history.invalid.occurrence-time.non-admitted-changed-path": "occurrence-time/rejects/non-admitted-changed-path",
+    "history.invalid.occurrence-time.missing-occurred-at": "occurrence-time/rejects/missing-occurred-at",
+    "history.invalid.occurrence-time.extra-chronology": "occurrence-time/rejects/extra-chronology",
+    "history.invalid.occurrence-time.untyped-python-occurrence": "occurrence-time/rejects/untyped-python-occurrence",
+    "history.invalid.occurrence-time.missing-occurrence": "occurrence-time/rejects/missing-occurrence",
+    "history.invalid.occurrence-time.raw-python-instant": "occurrence-time/rejects/raw-python-instant",
+    "history.invalid.evidence-link.change-set-fact": "evidence-link/rejects/change-set-fact",
+    "history.invalid.evidence-link.changed-path-status-fact": "evidence-link/rejects/changed-path-status-fact",
+    "history.invalid.evidence-link.hybrid-fact-json": "evidence-link/rejects/hybrid-fact-json",
+    "history.invalid.evidence-link.empty-fact-json": "evidence-link/rejects/empty-fact-json",
+    "history.invalid.evidence-link.malformed-record": "evidence-link/rejects/malformed-record",
+    "history.invalid.evidence-link.missing-fact": "evidence-link/rejects/missing-fact",
+    "history.invalid.evidence-link.missing-evidence-record": "evidence-link/rejects/missing-evidence-record",
+    "history.invalid.evidence-link.extra-schema-version": "evidence-link/rejects/extra-schema-version",
+    "history.invalid.evidence-link.extra-json-pointer": "evidence-link/rejects/extra-json-pointer",
+    "history.invalid.evidence-link.extra-support-role": "evidence-link/rejects/extra-support-role",
+    "history.invalid.evidence-link.extra-strength": "evidence-link/rejects/extra-strength",
+    "history.invalid.evidence-link.extra-verification": "evidence-link/rejects/extra-verification",
+    "history.invalid.evidence-link.extra-confidence": "evidence-link/rejects/extra-confidence",
+    "history.invalid.evidence-link.extra-primary-evidence": "evidence-link/rejects/extra-primary-evidence",
+    "history.invalid.evidence-link.extra-evidence-records": "evidence-link/rejects/extra-evidence-records",
+    "history.invalid.evidence-link.extra-superseded": "evidence-link/rejects/extra-superseded",
+    "history.invalid.evidence-link.extra-request-id": "evidence-link/rejects/extra-request-id",
+    "history.invalid.evidence-link.extra-artifact": "evidence-link/rejects/extra-artifact",
+    "history.invalid.evidence-link.nested-non-admitted-occurrence": "evidence-link/rejects/nested-non-admitted-occurrence",
+    "history.invalid.evidence-link.untyped-python-fact": "evidence-link/rejects/untyped-python-fact",
+    "history.invalid.evidence-link.typed-children-mapping-python": "evidence-link/rejects/typed-children-mapping-python",
+    "history.invalid.evidence-link.untyped-python-record": "evidence-link/rejects/untyped-python-record",
+    "history.invalid.evidence-link.change-set-fact-python": "evidence-link/rejects/change-set-fact-python",
+    "history.invalid.evidence-link.status-fact-python": "evidence-link/rejects/status-fact-python",
+    "history.invalid.evidence-link.instant-naive": "evidence-link/rejects/instant-naive",
+    "history.invalid.evidence-link.instant-non-zero-offset": "evidence-link/rejects/instant-non-zero-offset",
+    "history.invalid.evidence-link.instant-week-date": "evidence-link/rejects/instant-week-date",
+    "history.invalid.evidence-link.instant-basic-format": "evidence-link/rejects/instant-basic-format",
+    "history.invalid.evidence-link.occurrence-time-fact-python": "evidence-link/rejects/occurrence-time-fact-python",
+    # -- 24 replay vectors -------------------------------------------------
+    "history.replay.role-binding.base": "revision-role-binding/replays/base",
+    "history.replay.role-binding.head": "revision-role-binding/replays/head",
+    "history.replay.changed-path.changelog": "changed-path/replays/changelog",
+    "history.replay.changed-path.rewrite": "changed-path/replays/rewrite",
+    "history.replay.changed-path.assertrewrite": "changed-path/replays/assertrewrite",
+    "history.replay.change-set.supplied-three-paths": "supplied-change-set/replays/supplied-three-paths",
+    "history.replay.review-approval.canonical": "review-approval/replays/canonical",
+    "history.replay.merge-outcome.canonical": "merge-outcome/replays/canonical",
+    "history.replay.head-ref-deletion.canonical": "head-ref-deletion/replays/canonical",
+    "history.replay.occurrence-time.approval": "occurrence-time/replays/approval",
+    "history.replay.occurrence-time.merge": "occurrence-time/replays/merge",
+    "history.replay.occurrence-time.deletion": "occurrence-time/replays/deletion",
+    "history.replay.evidence-association.base-binding": "evidence-association/replays/base-binding",
+    "history.replay.evidence-association.head-binding": "evidence-association/replays/head-binding",
+    "history.replay.evidence-association.changed-path-changelog": "evidence-association/replays/changed-path-changelog",
+    "history.replay.evidence-association.changed-path-rewrite": "evidence-association/replays/changed-path-rewrite",
+    "history.replay.evidence-association.changed-path-assertrewrite": "evidence-association/replays/changed-path-assertrewrite",
+    "history.replay.evidence-association.review-approval": "evidence-association/replays/review-approval",
+    "history.replay.evidence-association.merge-outcome": "evidence-association/replays/merge-outcome",
+    "history.replay.evidence-association.head-ref-deletion": "evidence-association/replays/head-ref-deletion",
+    "history.replay.evidence-association.occurrence-approval": "evidence-association/replays/occurrence-approval",
+    "history.replay.evidence-association.occurrence-merge": "evidence-association/replays/occurrence-merge",
+    "history.replay.evidence-association.occurrence-deletion": "evidence-association/replays/occurrence-deletion",
+    "history.replay.evidence-association.approval-correction-record": "evidence-association/replays/approval-correction-record",
+}
+
+
+def _attachment_failures(
+    sections: dict[str, dict[str, Any]],
+    authority: dict[str, str],
+) -> list[tuple[str, str]]:
+    """`(coordinate, reason)` for every disagreement, in both directions.
+
+    Counting 183 on each side would accept a corpus that repeated one id, so
+    every vector is looked up individually, duplicates are named, and every
+    authority entry must be reached.
+    """
+    failures: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for section in sections.values():
+        for vector in section["vectors"]:
+            identifier = cast(str, vector["id"])
+            if identifier in seen:
+                failures.append((identifier, "vector-id-repeated"))
+                continue
+            seen.add(identifier)
+            if identifier not in authority:
+                failures.append((identifier, "vector-absent-from-authority"))
+                continue
+            if cast(str, vector["semantic_partition"]) != authority[identifier]:
+                failures.append((identifier, "partition-differs"))
+    for identifier in sorted(set(authority) - seen):
+        failures.append((identifier, "authority-entry-unpopulated"))
+    return sorted(failures)
+
+
+def test_every_vector_carries_the_partition_identity_authored_for_it() -> None:
+    """The reported finding, closed.
+
+    Exchanging the complete partition values of
+    `history.valid.merge-outcome.canonical` and
+    `history.valid.merge-outcome.python-typed` satisfied every published rule,
+    because none of them related a partition identity to a vector identity.
+    """
+    sections = _sections(VALID, INVALID, REPLAY)
+
+    assert not _attachment_failures(sections, REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID)
+
+    authority = REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID
+    assert len(authority) == 183
+    assert len(set(authority.values())) == 183, "attachment stays one-to-one"
+    assert sum(len(section["vectors"]) for section in sections.values()) == 183
+
+
+def test_the_attachment_authority_closes_against_the_corpus_both_ways() -> None:
+    """No vector without an entry, no entry without a vector."""
+    observed = {
+        cast(str, vector["id"]): cast(str, vector["semantic_partition"])
+        for section in (VALID, INVALID, REPLAY)
+        for vector in section["vectors"]
+    }
+    authority = REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID
+
+    assert set(observed) - set(authority) == set(), "a vector the authority omits"
+    assert set(authority) - set(observed) == set(), "an entry no vector populates"
+    assert observed == authority
+
+    per_family = [
+        len([v for v in section["vectors"] if v["id"] in authority])
+        for section in (VALID, INVALID, REPLAY)
+    ]
+    assert per_family == [48, 111, 24]
+
+
+def test_the_attachment_authority_is_written_out_and_never_computed() -> None:
+    """A literal that a comprehension could rebuild is not an authority.
+
+    The envelope repairs showed how easily an apparently authored mapping gets
+    laundered into corpus-derived state. Checking only that a literal is
+    *written* is not enough, because a later statement can rebind the name to
+    something derived while leaving the literal in place for a reader to see.
+    Three things are therefore required: the literal holds 183 string pairs,
+    the name is touched exactly once at module scope, and the object the module
+    actually binds equals the literal that was inspected.
+    """
+    name = "REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID"
+    module = ast.parse(Path(__file__).read_text("utf-8"))
+    assigned = [
+        node
+        for node in module.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == name
+    ]
+
+    assert len(assigned) == 1
+    literal = assigned[0].value
+    assert isinstance(literal, ast.Dict)
+    assert len(literal.keys) == 183
+    for key, value in zip(literal.keys, literal.values, strict=True):
+        assert isinstance(key, ast.Constant) and isinstance(key.value, str)
+        assert isinstance(value, ast.Constant) and isinstance(value.value, str)
+
+    # a second binding, an augmented assignment or a `.update(...)` at module
+    # scope would all leave the literal above untouched and still replace what
+    # the module binds, so the name must appear exactly once outside a body
+    touching = [
+        node
+        for statement in module.body
+        if not isinstance(
+            statement, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        )
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Name) and node.id == name
+    ]
+    assert len(touching) == 1, "the authority is bound once and never rebound"
+    assert touching[0] is assigned[0].target
+
+    # and what is bound at run time must be the literal that was inspected
+    assert ast.literal_eval(literal) == REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID
+
+    source = inspect.getsource(_attachment_failures)
+    for forbidden in ("VALID", "INVALID", "REPLAY", "MANIFEST", "CORPUS"):
+        assert forbidden not in source, forbidden
+
+
+def test_a_same_category_partition_swap_breaks_only_the_attachment_rule() -> None:
+    """The reproduction, kept permanently.
+
+    Two vectors in one category exchange their complete partition values.
+    Uniqueness survives a permutation, the prefix is shared, and the
+    behavioural signature never looks, so only the attachment notices.
+    """
+    valid = copy.deepcopy(VALID)
+    first = next(
+        v
+        for v in valid["vectors"]
+        if v["id"] == "history.valid.merge-outcome.canonical"
+    )
+    second = next(
+        v
+        for v in valid["vectors"]
+        if v["id"] == "history.valid.merge-outcome.python-typed"
+    )
+    before = sorted(cast(str, v["semantic_partition"]) for v in valid["vectors"])
+    first["semantic_partition"], second["semantic_partition"] = (
+        second["semantic_partition"],
+        first["semantic_partition"],
+    )
+
+    assert _resealed_digest(valid) != next(
+        entry["sha256"]
+        for entry in MANIFEST["corpus_files"]
+        if entry["filename"] == "valid-vectors.json"
+    )
+
+    sections = _sections(valid, INVALID, REPLAY)
+    assert (
+        sorted(cast(str, v["semantic_partition"]) for v in valid["vectors"]) == before
+    )
+    assert first["category"] == second["category"] == "merge-outcome"
+    assert first["target"] == second["target"]
+    assert all(
+        cast(str, v["semantic_partition"]).split("/")[0] == v["category"]
+        for v in valid["vectors"]
+    ), "the prefix rule is still satisfied"
+    assert not _family_collisions(valid, "valid"), "behaviour is unchanged"
+    assert not _taxonomy_failures(sections, REQUIRED_CATEGORY_BY_FAMILY_TARGET)
+    assert not _manifest_histogram_failures(MANIFEST, sections)
+
+    assert _attachment_failures(sections, REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID) == [
+        ("history.valid.merge-outcome.canonical", "partition-differs"),
+        ("history.valid.merge-outcome.python-typed", "partition-differs"),
+    ]
+
+
+def test_the_same_swap_in_the_invalid_family_also_fails() -> None:
+    """A second family, a different pair: the rule is not tuned to one place."""
+    invalid = copy.deepcopy(INVALID)
+    first = next(
+        v
+        for v in invalid["vectors"]
+        if v["id"] == "history.invalid.merge-outcome.extra-parents"
+    )
+    second = next(
+        v
+        for v in invalid["vectors"]
+        if v["id"] == "history.invalid.merge-outcome.extra-strategy"
+    )
+    first["semantic_partition"], second["semantic_partition"] = (
+        second["semantic_partition"],
+        first["semantic_partition"],
+    )
+
+    sections = _sections(VALID, invalid, REPLAY)
+    assert not _family_collisions(invalid, "invalid")
+    assert not _taxonomy_failures(sections, REQUIRED_CATEGORY_BY_FAMILY_TARGET)
+    assert _attachment_failures(sections, REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID) == [
+        ("history.invalid.merge-outcome.extra-parents", "partition-differs"),
+        ("history.invalid.merge-outcome.extra-strategy", "partition-differs"),
+    ]
+
+
+def test_the_same_swap_in_the_replay_family_also_fails() -> None:
+    """Replay has categories with two vectors, so the real swap applies here."""
+    replay = copy.deepcopy(REPLAY)
+    first = next(
+        v for v in replay["vectors"] if v["id"] == "history.replay.role-binding.base"
+    )
+    second = next(
+        v for v in replay["vectors"] if v["id"] == "history.replay.role-binding.head"
+    )
+    held = {
+        cast(str, v["id"])
+        for v in replay["vectors"]
+        if v["category"] == "revision-role-binding"
+    }
+    assert held == {cast(str, first["id"]), cast(str, second["id"])}, (
+        "the chosen replay category holds exactly these two vectors"
+    )
+    first["semantic_partition"], second["semantic_partition"] = (
+        second["semantic_partition"],
+        first["semantic_partition"],
+    )
+
+    sections = _sections(VALID, INVALID, replay)
+    assert not _family_collisions(replay, "replay")
+    assert not _taxonomy_failures(sections, REQUIRED_CATEGORY_BY_FAMILY_TARGET)
+    assert _attachment_failures(sections, REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID) == [
+        ("history.replay.role-binding.base", "partition-differs"),
+        ("history.replay.role-binding.head", "partition-differs"),
+    ]
+
+
+def test_an_unknown_same_prefix_partition_fails_the_attachment_rule() -> None:
+    """A fresh label with the right prefix satisfies every older rule."""
+    valid = copy.deepcopy(VALID)
+    renamed = next(
+        v
+        for v in valid["vectors"]
+        if v["id"] == "history.valid.merge-outcome.canonical"
+    )
+    renamed["semantic_partition"] = "merge-outcome/accepts/newly-invented-boundary"
+
+    partitions = [cast(str, v["semantic_partition"]) for v in valid["vectors"]]
+    assert len(set(partitions)) == 48, "uniqueness is still satisfiable"
+    assert all(
+        cast(str, v["semantic_partition"]).split("/")[0] == v["category"]
+        for v in valid["vectors"]
+    )
+
+    assert _attachment_failures(
+        _sections(valid, INVALID, REPLAY), REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID
+    ) == [("history.valid.merge-outcome.canonical", "partition-differs")]
+
+
+def test_a_missing_authority_entry_fails_the_attachment_rule() -> None:
+    authority = copy.deepcopy(REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID)
+    del authority["history.replay.changed-path.rewrite"]
+
+    assert _attachment_failures(_sections(VALID, INVALID, REPLAY), authority) == [
+        ("history.replay.changed-path.rewrite", "vector-absent-from-authority")
+    ]
+
+
+def test_an_extra_authority_entry_fails_the_attachment_rule() -> None:
+    authority = copy.deepcopy(REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID)
+    authority["history.valid.merge-outcome.never-published"] = (
+        "merge-outcome/accepts/never-published"
+    )
+
+    assert _attachment_failures(_sections(VALID, INVALID, REPLAY), authority) == [
+        ("history.valid.merge-outcome.never-published", "authority-entry-unpopulated")
+    ]
+
+
+def test_swapped_authority_values_fail_against_an_untouched_corpus() -> None:
+    """The mutation may sit on either side; the relation is what is checked."""
+    authority = copy.deepcopy(REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID)
+    first, second = (
+        "history.valid.changed-path.added",
+        "history.valid.changed-path.python-typed",
+    )
+    authority[first], authority[second] = authority[second], authority[first]
+
+    assert len(set(authority.values())) == 183, "the authority is still a bijection"
+    assert _attachment_failures(_sections(VALID, INVALID, REPLAY), authority) == [
+        (first, "partition-differs"),
+        (second, "partition-differs"),
+    ]
+
+
+def test_the_behavioural_signature_still_ignores_the_partition() -> None:
+    """Attachment must not be allowed to confirm itself.
+
+    Folding `semantic_partition` into the signature would make every partition
+    edit look like a behaviour change, and the independence this repair relies
+    on would collapse into self-confirmation.
+    """
+    for fields in SIGNATURE_FIELDS.values():
+        assert "semantic_partition" not in fields
+        assert "id" not in fields
+        assert "purpose" not in fields
+
+    relabelled = copy.deepcopy(VALID)
+    moved = relabelled["vectors"][0]
+    moved["semantic_partition"] = "role-binding/accepts/some-other-label"
+
+    assert _behavioural_signature(moved, "valid") == _behavioural_signature(
+        VALID["vectors"][0], "valid"
+    ), "the signature must not move when only the label moves"
+    assert not _family_collisions(relabelled, "valid")
 
 
 # --- the eleven forbidden extras protect eleven different non-claims ----------
