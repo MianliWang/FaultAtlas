@@ -468,6 +468,113 @@ def test_declared_fixtures_are_shared_and_locked() -> None:
     assert VALID["fixtures"] == INVALID["fixtures"] == REPLAY["fixtures"]
 
 
+# --- the records nested inside a vector document publish exact key sets ------
+#
+# The document root, the vector record and the `expected` block are each closed,
+# but two record collections sitting beside the vectors were not: a fixture
+# could gain a `value_sha256` and an artifact lock a `format_version`, both
+# resealed, and every oracle stayed green. These are separate schemas from the
+# vector envelope and from each other -- a fixture is a shared declaration
+# replicated across three files, a lock is a digest-bearing citation living in
+# replay alone -- so each gets its own authored set rather than one recursive
+# "all dictionaries must have known keys" engine.
+#
+# Authored, because a durable record cannot authorize its own envelope
+# expansion: a set built from the records would admit whatever they happen to
+# carry, which is the defect rather than the fix.
+#
+# Structural only. `fixture["value"]` deliberately carries heterogeneous domain
+# values and is governed by the semantic bindings below, not by this rule.
+REQUIRED_FIXTURE_RECORD_KEYS = frozenset({"id", "status", "value"})
+REQUIRED_ARTIFACT_LOCK_KEYS = frozenset({"byte_length", "lock_id", "path", "sha256"})
+
+
+def _record_envelope_failures(
+    label: str, record: dict[str, Any], required: frozenset[str], key: str
+) -> list[tuple[str, ...]]:
+    """Every way one nested record departs from its published key set."""
+    present = set(record)
+    identity = cast(str, record.get(key, "<unidentified>"))
+    return [
+        (label, identity, kind, name)
+        for kind, names in (
+            ("missing", sorted(required - present)),
+            ("unexpected", sorted(present - required)),
+        )
+        for name in names
+    ]
+
+
+def test_every_fixture_record_publishes_exactly_its_envelope() -> None:
+    """A fixture declares an id, a status and a value -- and nothing else."""
+    failures = [
+        failure
+        for family, section, _ in FAMILIES
+        for fixture in cast(list[dict[str, Any]], section["fixtures"])
+        for failure in _record_envelope_failures(
+            family, fixture, REQUIRED_FIXTURE_RECORD_KEYS, "id"
+        )
+    ]
+
+    assert not failures, failures
+    shapes = {
+        frozenset(fixture)
+        for _, section, _ in FAMILIES
+        for fixture in cast(list[dict[str, Any]], section["fixtures"])
+    }
+    assert shapes == {REQUIRED_FIXTURE_RECORD_KEYS}
+    assert len(REQUIRED_FIXTURE_RECORD_KEYS) == 3
+
+
+def test_every_artifact_lock_publishes_exactly_its_envelope() -> None:
+    """A lock cites a path by digest and length; it makes no other claim."""
+    locks = cast(list[dict[str, Any]], REPLAY["artifact_locks"])
+    failures = [
+        failure
+        for lock in locks
+        for failure in _record_envelope_failures(
+            "replay", lock, REQUIRED_ARTIFACT_LOCK_KEYS, "lock_id"
+        )
+    ]
+
+    assert not failures, failures
+    assert {frozenset(lock) for lock in locks} == {REQUIRED_ARTIFACT_LOCK_KEYS}
+    assert len(REQUIRED_ARTIFACT_LOCK_KEYS) == 4
+
+
+def test_a_drifting_nested_record_envelope_is_refused() -> None:
+    """Additions, omissions and renames each fail, whatever the value."""
+    fixture = copy.deepcopy(cast(dict[str, Any], VALID["fixtures"][0]))
+    lock = copy.deepcopy(cast(list[dict[str, Any]], REPLAY["artifact_locks"])[0])
+
+    probes: list[tuple[str, dict[str, Any], frozenset[str], str]] = []
+    for label, record, required, key, dropped, renamed in (
+        ("fixture", fixture, REQUIRED_FIXTURE_RECORD_KEYS, "id", "status", "value"),
+        ("lock", lock, REQUIRED_ARTIFACT_LOCK_KEYS, "lock_id", "byte_length", "sha256"),
+    ):
+        # an unknown key is unexpected whatever it holds: emptiness is not
+        # absence, and a published field is published
+        empties: tuple[Any, ...] = ("", False, None, [], {}, 0)
+        for value in empties:
+            probes.append((label, {**record, "smuggled": value}, required, key))
+        probes.append(
+            (label, {k: v for k, v in record.items() if k != dropped}, required, key)
+        )
+        crossed = {k: v for k, v in record.items() if k != renamed}
+        crossed[f"{renamed}_renamed"] = record[renamed]
+        probes.append((label, crossed, required, key))
+
+    for label, damaged, required, key in probes:
+        assert _record_envelope_failures(label, damaged, required, key), label
+
+    # the authored sets may not be rebuilt from the records they validate
+    assert REQUIRED_FIXTURE_RECORD_KEYS == frozenset({"id", "status", "value"})
+    assert REQUIRED_ARTIFACT_LOCK_KEYS == frozenset(
+        {"byte_length", "lock_id", "path", "sha256"}
+    )
+    assert not REQUIRED_FIXTURE_RECORD_KEYS & REQUIRED_ARTIFACT_LOCK_KEYS
+
+
 # --- executing the vectors ----------------------------------------------------
 
 
