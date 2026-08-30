@@ -1877,6 +1877,333 @@ def test_updating_only_the_manifest_leaves_the_markdown_stale() -> None:
     )
 
 
+# --- the corpus taxonomy attaches one category to one target ------------------
+#
+# `target` names a published product symbol; `category` is the corpus's own
+# taxonomy label for the vectors aimed at that symbol. Every existing check
+# reads the two fields apart. The histograms count categories without ever
+# asking which target they describe, the partition prefix only repeats the
+# category the same vector already carries, and the behavioural signature
+# deliberately ignores both labels. Nothing binds the pair, so exchanging the
+# categories of two same-family vectors leaves every count, every prefix and
+# every signature intact while the published taxonomy now names the wrong
+# target.
+#
+# The relationship is therefore authored below. It cannot be recovered from the
+# corpus it governs: a histogram a reciprocal swap leaves untouched cannot
+# witness the pairing it preserves, and the replay family alone refutes reading
+# the pairing off the vector ids. What this pins is the published corpus
+# taxonomy -- that the corpus attaches its label to the target it meant. It
+# does not claim the lexeme `merge-outcome` is independently true of
+# `PullRequestMergeRevisionOutcome`; that would need a product authority this
+# corpus does not carry.
+#
+# The dependency runs one way: this authority fixes the category, and the
+# category fixes the partition prefix. Neither the prefix nor the histogram may
+# be read back as evidence for which category belongs to which target.
+
+REQUIRED_CATEGORY_BY_FAMILY_TARGET: dict[str, dict[str, str]] = {
+    "valid": {
+        "ChangedPathStatus": "changed-path-status",
+        "PullRequestChangeSet": "change-set",
+        "PullRequestChangedPath": "changed-path",
+        "PullRequestHeadRefDeletion": "head-ref-deletion",
+        "PullRequestHistoricalOccurrenceTime": "occurrence-time",
+        "PullRequestHistoryFactEvidenceLink": "evidence-link",
+        "PullRequestMergeRevisionOutcome": "merge-outcome",
+        "PullRequestReviewRevisionApproval": "review-approval",
+        "PullRequestRevisionRoleBinding": "role-binding",
+    },
+    "invalid": {
+        "ChangedPathStatus": "changed-path-status",
+        "PullRequestChangeSet": "change-set",
+        "PullRequestChangedPath": "changed-path",
+        "PullRequestHeadRefDeletion": "head-ref-deletion",
+        "PullRequestHistoricalOccurrenceTime": "occurrence-time",
+        "PullRequestHistoryFactEvidenceLink": "evidence-link",
+        "PullRequestMergeRevisionOutcome": "merge-outcome",
+        "PullRequestReviewRevisionApproval": "review-approval",
+        "PullRequestRevisionRoleBinding": "role-binding",
+    },
+    "replay": {
+        "PullRequestChangeSet": "supplied-change-set",
+        "PullRequestChangedPath": "changed-path",
+        "PullRequestHeadRefDeletion": "head-ref-deletion",
+        "PullRequestHistoricalOccurrenceTime": "occurrence-time",
+        "PullRequestHistoryFactEvidenceLink": "evidence-association",
+        "PullRequestMergeRevisionOutcome": "merge-outcome",
+        "PullRequestReviewRevisionApproval": "review-approval",
+        "PullRequestRevisionRoleBinding": "revision-role-binding",
+    },
+}
+
+
+def _observed_taxonomy(
+    sections: dict[str, dict[str, Any]],
+) -> set[tuple[str, str, str]]:
+    return {
+        (family, cast(str, vector["target"]), cast(str, vector["category"]))
+        for family, section in sections.items()
+        for vector in section["vectors"]
+    }
+
+
+def _authored_taxonomy(
+    authority: dict[str, dict[str, str]],
+) -> set[tuple[str, str, str]]:
+    return {
+        (family, target, category)
+        for family, rows in authority.items()
+        for target, category in rows.items()
+    }
+
+
+def _taxonomy_failures(
+    sections: dict[str, dict[str, Any]],
+    authority: dict[str, dict[str, str]],
+) -> list[tuple[str, str, str]]:
+    """`(family, coordinate, reason)` for every disagreement, in both directions.
+
+    Set equality alone would accept a family whose vectors all crowd onto one
+    coordinate, so each vector is looked up individually and each authority
+    entry must be reached by at least one vector.
+    """
+    failures: list[tuple[str, str, str]] = []
+    for family in sorted(set(sections) | set(authority)):
+        if family not in authority:
+            failures.append((family, "*", "family-absent-from-authority"))
+            continue
+        if family not in sections:
+            failures.append((family, "*", "family-absent-from-corpus"))
+            continue
+        expected = authority[family]
+        populated: set[str] = set()
+        for vector in sections[family]["vectors"]:
+            identifier = cast(str, vector["id"])
+            target = cast(str, vector["target"])
+            if target not in expected:
+                failures.append((family, identifier, "target-unknown-to-authority"))
+                continue
+            populated.add(target)
+            if cast(str, vector["category"]) != expected[target]:
+                failures.append((family, identifier, "category-differs"))
+        for target in sorted(set(expected) - populated):
+            failures.append((family, target, "authority-entry-unpopulated"))
+    return sorted(failures)
+
+
+def _taxonomy_injectivity_failures(
+    authority: dict[str, dict[str, str]],
+) -> list[tuple[str, str]]:
+    """Injectivity is scoped to one family, never across families.
+
+    A category lexeme may legitimately recur in another family whose local
+    taxonomy says so, which is exactly what replay does for `changed-path`.
+    """
+    failures: list[tuple[str, str]] = []
+    for family in sorted(authority):
+        seen: dict[str, str] = {}
+        for target in sorted(authority[family]):
+            category = authority[family][target]
+            if category in seen:
+                failures.append((family, f"{category}<-{seen[category]}+{target}"))
+            seen[category] = target
+    return failures
+
+
+def test_every_vector_carries_the_category_its_family_target_requires() -> None:
+    """The reproduced finding, closed.
+
+    Exchanging the categories of `history.valid.merge-outcome.canonical` and
+    `history.valid.head-ref-deletion.canonical` satisfied every published check
+    the corpus had, because none of them related a category to a target.
+    """
+    sections = _sections(VALID, INVALID, REPLAY)
+
+    assert not _taxonomy_failures(sections, REQUIRED_CATEGORY_BY_FAMILY_TARGET)
+
+    authority = REQUIRED_CATEGORY_BY_FAMILY_TARGET
+    assert sorted(authority) == ["invalid", "replay", "valid"]
+    assert [len(authority[family]) for family in ("valid", "invalid", "replay")] == [
+        9,
+        9,
+        8,
+    ]
+    assert sum(len(rows) for rows in authority.values()) == 26
+    assert sum(len(section["vectors"]) for section in sections.values()) == 183
+
+
+def test_the_observed_taxonomy_relation_equals_the_authored_authority() -> None:
+    """Closure in both directions: no unauthorised pair, no unpopulated pair."""
+    observed = _observed_taxonomy(_sections(VALID, INVALID, REPLAY))
+    authored = _authored_taxonomy(REQUIRED_CATEGORY_BY_FAMILY_TARGET)
+
+    assert observed - authored == set(), "the corpus publishes an unauthorised pair"
+    assert authored - observed == set(), "the authority claims a pair no vector uses"
+    assert observed == authored
+    assert len(observed) == 26
+
+
+def test_each_family_taxonomy_is_one_to_one_within_that_family() -> None:
+    """Injective per family, and deliberately not injective across families."""
+    authority = REQUIRED_CATEGORY_BY_FAMILY_TARGET
+
+    assert not _taxonomy_injectivity_failures(authority)
+
+    lexemes = [category for rows in authority.values() for category in rows.values()]
+    assert len(lexemes) == 26
+    assert len(set(lexemes)) == 12, (
+        "category lexemes recur across families, so injectivity must stay family-scoped"
+    )
+    assert authority["replay"]["PullRequestChangeSet"] == "supplied-change-set"
+    assert authority["valid"]["PullRequestChangeSet"] == "change-set"
+
+
+def test_a_reciprocal_category_swap_breaks_only_the_taxonomy_rule() -> None:
+    """The reproduction, kept permanently.
+
+    Two same-family vectors exchange categories and partition prefixes. The
+    category multiset is unchanged, so every histogram still balances; the
+    prefixes are still consistent; the behaviour is untouched. Only the
+    authored relationship notices that both labels now name the wrong target.
+    """
+    valid = copy.deepcopy(VALID)
+    first = next(
+        v
+        for v in valid["vectors"]
+        if v["id"] == "history.valid.merge-outcome.canonical"
+    )
+    second = next(
+        v
+        for v in valid["vectors"]
+        if v["id"] == "history.valid.head-ref-deletion.canonical"
+    )
+    first["category"], second["category"] = second["category"], first["category"]
+    first["semantic_partition"], second["semantic_partition"] = (
+        second["semantic_partition"],
+        first["semantic_partition"],
+    )
+
+    assert _resealed_digest(valid) != next(
+        entry["sha256"]
+        for entry in MANIFEST["corpus_files"]
+        if entry["filename"] == "valid-vectors.json"
+    )
+
+    sections = _sections(valid, INVALID, REPLAY)
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    assert not _manifest_histogram_failures(MANIFEST, sections), "counts still balance"
+    assert not _markdown_histogram_failures(text, sections), "the table still matches"
+    assert not _family_collisions(valid, "valid"), "behaviour is unchanged"
+    partitions = [cast(str, v["semantic_partition"]) for v in valid["vectors"]]
+    assert len(set(partitions)) == 48
+    assert all(
+        cast(str, v["semantic_partition"]).split("/")[0] == v["category"]
+        for v in valid["vectors"]
+    ), "the prefix rule is still satisfied"
+
+    assert _taxonomy_failures(sections, REQUIRED_CATEGORY_BY_FAMILY_TARGET) == [
+        ("valid", "history.valid.head-ref-deletion.canonical", "category-differs"),
+        ("valid", "history.valid.merge-outcome.canonical", "category-differs"),
+    ]
+
+
+def test_a_single_mapping_drift_breaks_the_taxonomy_rule() -> None:
+    """One authority row repointed at another existing category."""
+    authority = copy.deepcopy(REQUIRED_CATEGORY_BY_FAMILY_TARGET)
+    authority["valid"]["PullRequestChangedPath"] = "change-set"
+
+    failures = _taxonomy_failures(_sections(VALID, INVALID, REPLAY), authority)
+    assert {reason for _, _, reason in failures} == {"category-differs"}
+    assert len(failures) == 4, "every changed-path vector reports the drift"
+    assert _taxonomy_injectivity_failures(authority) == [
+        ("valid", "change-set<-PullRequestChangeSet+PullRequestChangedPath")
+    ]
+
+
+def test_an_unknown_target_fails_closed_from_either_side() -> None:
+    """A target the authority never names, and one no vector ever uses."""
+    invalid = copy.deepcopy(INVALID)
+    stranger = invalid["vectors"][0]
+    assert stranger["id"] == "history.invalid.role-binding.non-pull-request-subject"
+    assert (
+        sum(1 for v in INVALID["vectors"] if v["target"] == stranger["target"]) == 11
+    ), "the vacated entry stays populated, so only the stranger is reported"
+    stranger["target"] = "PullRequestUnpublishedSymbol"
+
+    assert _taxonomy_failures(
+        _sections(VALID, invalid, REPLAY), REQUIRED_CATEGORY_BY_FAMILY_TARGET
+    ) == [
+        (
+            "invalid",
+            "history.invalid.role-binding.non-pull-request-subject",
+            "target-unknown-to-authority",
+        )
+    ]
+
+    authority = copy.deepcopy(REQUIRED_CATEGORY_BY_FAMILY_TARGET)
+    authority["valid"]["PullRequestUnpublishedSymbol"] = "unpublished-symbol"
+    assert _taxonomy_failures(_sections(VALID, INVALID, REPLAY), authority) == [
+        ("valid", "PullRequestUnpublishedSymbol", "authority-entry-unpopulated")
+    ]
+
+
+def test_a_missing_authority_entry_fails_the_taxonomy_rule() -> None:
+    """An existing family-target pair the authority forgot to name."""
+    authority = copy.deepcopy(REQUIRED_CATEGORY_BY_FAMILY_TARGET)
+    del authority["valid"]["PullRequestMergeRevisionOutcome"]
+
+    failures = _taxonomy_failures(_sections(VALID, INVALID, REPLAY), authority)
+    assert {reason for _, _, reason in failures} == {"target-unknown-to-authority"}
+    assert len(failures) == 3, "every orphaned vector is reported"
+
+    del authority["replay"]
+    assert (
+        "replay",
+        "*",
+        "family-absent-from-authority",
+    ) in _taxonomy_failures(_sections(VALID, INVALID, REPLAY), authority)
+
+
+def test_an_unpopulated_authority_entry_fails_the_taxonomy_rule() -> None:
+    """Replay does not exercise every published target, and may not pretend to."""
+    assert "ChangedPathStatus" not in REQUIRED_CATEGORY_BY_FAMILY_TARGET["replay"]
+
+    authority = copy.deepcopy(REQUIRED_CATEGORY_BY_FAMILY_TARGET)
+    authority["replay"]["ChangedPathStatus"] = "changed-path-status"
+
+    assert _taxonomy_failures(_sections(VALID, INVALID, REPLAY), authority) == [
+        ("replay", "ChangedPathStatus", "authority-entry-unpopulated")
+    ]
+
+
+def test_the_vector_id_cannot_supply_the_taxonomy() -> None:
+    """Ids stay durable identity; they are not a category oracle.
+
+    `history.replay.role-binding.base` carries the category
+    `revision-role-binding` and `history.valid.status.added` carries
+    `changed-path-status`. Twenty-three vectors across all three families spell
+    their id segment differently from their category, so deriving the pairing
+    from the id would contradict the corpus it claims to describe.
+    """
+    disagreeing = {
+        family: [
+            cast(str, vector["id"])
+            for vector in section["vectors"]
+            if cast(str, vector["id"]).split(".")[2] != vector["category"]
+        ]
+        for family, section in _sections(VALID, INVALID, REPLAY).items()
+    }
+
+    assert [len(disagreeing[family]) for family in ("valid", "invalid", "replay")] == [
+        6,
+        14,
+        3,
+    ]
+    assert "history.replay.role-binding.base" in disagreeing["replay"]
+    assert "history.valid.status.added" in disagreeing["valid"]
+
+
 # --- a partition label is not a partition -------------------------------------
 
 
