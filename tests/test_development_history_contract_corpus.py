@@ -5239,8 +5239,9 @@ def _render_non_goal_block() -> list[str]:
 
 
 def _actual_non_goal_block(text: str) -> list[str]:
-    lines = text.splitlines()
-    start = lines.index("## 8. Non-Generalizations") + 1
+    # bounded to section 8: an unterminated scan would find bullets anywhere
+    lines = _section_lines(text, "## 8. Non-Generalizations")
+    start = 0
     while start < len(lines) and not lines[start].startswith("- "):
         start += 1
     end = start
@@ -5519,7 +5520,8 @@ def _render_classification_block() -> list[str]:
 
 
 def _actual_classification_block(text: str) -> list[str]:
-    lines = text.splitlines()
+    # bounded to section 4, mirroring its retained-role sibling
+    lines = _section_lines(text, REPLAY_SUMMARY_SECTION)
     start = next(
         i for i, line in enumerate(lines) if line.startswith("- `caller_supplied_")
     )
@@ -5531,9 +5533,18 @@ def _actual_classification_block(text: str) -> list[str]:
 
 def test_the_classification_block_is_an_exact_projection() -> None:
     text = (CORPUS / "contract.md").read_text("utf-8")
+    rendered = _render_classification_block()
 
-    assert _actual_classification_block(text) == _render_classification_block()
-    assert len(_render_classification_block()) == 3
+    assert _actual_classification_block(text) == rendered
+    assert len(rendered) == 3
+    # bounding the slice to section 4 would otherwise stop watching the rest of
+    # the file, so every bullet naming a classification must be one of these
+    keys = tuple(cast(dict[str, str], MANIFEST["replay_contract"]["classifications"]))
+    assert [
+        line
+        for line in text.splitlines()
+        if any(line.startswith(f"- `{key}`") for key in keys)
+    ] == rendered
 
 
 # --- the retained-role implications are projected, not sampled ---------------
@@ -6208,7 +6219,7 @@ class ContractRegion(NamedTuple):
     authority_assurance: str
 
 
-CONTRACT_PROJECTION_REGISTRY: tuple[ContractRegion, ...] = (
+STEP_ONE_REGIONS: tuple[ContractRegion, ...] = (
     ContractRegion(
         "s1.scope-warning",
         SECTION_ONE,
@@ -6281,7 +6292,7 @@ def test_every_registered_region_resolves_and_projects() -> None:
         assert region.renderer is not None, region.region_id
 
         selected = region.selector(text)
-        assert len(selected) == 1, region.region_id
+        assert selected, region.region_id
         assert selected == region.renderer(), region.region_id
 
         for reference in region.authority:
@@ -6300,7 +6311,12 @@ def _drifted(value: Any) -> Any:
     if isinstance(value, str):
         return ""
     if isinstance(value, list):
-        return [*cast(list[Any], value), "drifted"]
+        items = cast(list[Any], value)
+        # duplicate the last entry: the length moves, the element shape does not
+        return [*items, items[-1]] if items else ["drifted"]
+    if isinstance(value, dict):
+        mapping = cast(dict[str, Any], value)
+        return {**mapping, next(iter(mapping)): ""} if mapping else {"drifted": ""}
     raise AssertionError(f"no drift defined for {type(value).__name__}")
 
 
@@ -6317,44 +6333,638 @@ def test_every_registered_renderer_depends_on_its_declared_authority(
     for region in CONTRACT_PROJECTION_REGISTRY:
         assert region.renderer is not None, region.region_id
         baseline = region.renderer()
+        # every declared authority must be able to move the render, whether it
+        # is a manifest leaf, a live observation, or a vector collection
         pointers = [ref for ref in region.authority if ref.startswith("/")]
-        assert pointers, region.region_id
+        named = [ref for ref in region.authority if not ref.startswith("/")]
+        assert pointers or named, region.region_id
+
+        for name in named:
+            monkeypatch.setitem(globals(), name, _drifted_authority(name))
+            try:
+                assert region.renderer() != baseline, (region.region_id, name)
+            finally:
+                monkeypatch.undo()
 
         for pointer in pointers:
             parent_path, _, leaf = pointer.rpartition("/")
             parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
             monkeypatch.setitem(parent, leaf, _drifted(parent[leaf]))
-            assert region.renderer() != baseline, (region.region_id, pointer)
-            monkeypatch.undo()
+            try:
+                assert region.renderer() != baseline, (region.region_id, pointer)
+            finally:
+                monkeypatch.undo()
 
         assert region.renderer() == baseline, region.region_id
 
 
 def test_every_registered_region_rejects_a_semantic_edit() -> None:
-    """A renderer that cannot discriminate is decoration, not a projection."""
+    """A selector that cannot see an edit inside its own region is decoration."""
     text = (CORPUS / "contract.md").read_text("utf-8")
-    probes = {
-        "s1.scope-warning": (
-            "is not a production schema",
-            "is a production schema",
+    for region in CONTRACT_PROJECTION_REGISTRY:
+        assert region.renderer is not None, region.region_id
+        # the last line, so a block anchored on its header row can still be
+        # located after the edit and fails by comparison rather than by raising
+        last = region.selector(text)[-1]
+        tampered = text.replace(last, f"{last} SENTINEL", 1)
+
+        assert tampered != text, region.region_id
+        assert region.selector(tampered) != region.renderer(), region.region_id
+
+
+# --- step 2: the bulk derived regions ----------------------------------------
+#
+# Step 1 landed the boundary, the heading authority and the two least-verified
+# sections. This is the bulk: every remaining prose claim in sections 2, 3, 4, 6,
+# 7 that restates a canonical value, rendered from that value and compared
+# exactly, plus the section tiling that closes the placement and completeness
+# claims -- a table or bullet block is no longer merely correct, it has to be
+# under its own heading with nothing else beside it.
+#
+# Steps 3 and 4 are not here. The deferred:22 reader, the owner-topology reader
+# and the S1.P09 deflection need authorities this corpus does not lock, and the
+# document-wide registry closure needs every region to exist first.
+
+SECTION_TWO = CONTRACT_HEADINGS[2]
+SECTION_THREE = CONTRACT_HEADINGS[3]
+SECTION_SIX = CONTRACT_HEADINGS[6]
+SECTION_SEVEN = CONTRACT_HEADINGS[7]
+SECTION_EIGHT = CONTRACT_HEADINGS[8]
+SECTION_NINE = CONTRACT_HEADINGS[9]
+
+
+def _target_slice(symbol: str) -> str:
+    return _target_entry(symbol)["slice_layer"]
+
+
+def _paragraph(text: str, heading: str, index: int) -> list[str]:
+    """One paragraph of a section, addressed by position within that section."""
+    return [_section_paragraphs(text, heading)[index]]
+
+
+def _derived_table(
+    label: str,
+) -> tuple[tuple[str, ...], Callable[[], list[tuple[str, ...]]]]:
+    entry = next(table for table in DERIVED_TABLES if table[0] == label)
+    return entry[1], entry[2]
+
+
+def _actual_table(text: str, heading: str, label: str) -> list[str]:
+    """A table taken from inside its own section rather than from the file."""
+    header, _ = _derived_table(label)
+    lines = _section_lines(text, heading)
+    start = lines.index(_md_row(header))
+    end = start
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    return lines[start:end]
+
+
+def _render_registered_table(label: str) -> list[str]:
+    header, render = _derived_table(label)
+    return _render_table(header, render())
+
+
+def _paragraph_selector(heading: str, index: int) -> Callable[[str], list[str]]:
+    def select(text: str) -> list[str]:
+        return _paragraph(text, heading, index)
+
+    return select
+
+
+def _table_selector(heading: str, label: str) -> Callable[[str], list[str]]:
+    def select(text: str) -> list[str]:
+        return _actual_table(text, heading, label)
+
+    return select
+
+
+def _table_renderer(label: str) -> Callable[[], list[str]]:
+    def render() -> list[str]:
+        return _render_registered_table(label)
+
+    return render
+
+
+def _sliced_renderer(
+    render: Callable[[], list[str]], start: int, stop: int | None
+) -> Callable[[], list[str]]:
+    def sliced() -> list[str]:
+        return render()[start:stop]
+
+    return sliced
+
+
+# --- section 2: how much surface is covered, and whose ------------------------
+
+
+def _render_surface_lead_in() -> list[str]:
+    scope = cast(dict[str, Any], MANIFEST["scope"])
+    modules = cast(list[str], scope["production_modules"])
+    targets = cast(list[Any], MANIFEST["target_symbols"])
+    return [
+        f"{_spelled(len(modules)).capitalize()} `{scope['phase']}` production"
+        f" modules and {_spelled(len(targets))} published product symbols:"
+    ]
+
+
+def _render_supporting_authorities() -> list[str]:
+    scope = cast(dict[str, Any], MANIFEST["scope"])
+    supporting = ", ".join(
+        f"`{module}`"
+        for module in cast(list[str], scope["supporting_authorities_not_owned"])
+    )
+    outside = " and ".join(f"`{module}`" for module in OUTSIDE_MODULES)
+    return [
+        f"Supporting authorities are consumed but not owned: {supporting}."
+        f" {outside} are outside this corpus: no `{scope['phase']}` value"
+        " consumes them."
+    ]
+
+
+# --- section 3: what the inventory totals to ---------------------------------
+
+
+def _render_inventory_summary() -> list[str]:
+    summary = cast(dict[str, Any], MANIFEST["vector_summary"])
+    partitions = [
+        cast(str, vector["semantic_partition"])
+        for section in SECTIONS.values()
+        for vector in section["vectors"]
+    ]
+    # observed, not declared: the partitions either collide or they do not
+    distinct = "distinct" if len(set(partitions)) == len(partitions) else "shared"
+    return [
+        f"{summary['total_vectors']} vectors over {summary['fixtures']} declared"
+        f" fixtures. Every vector occupies a {distinct} semantic partition."
+    ]
+
+
+# --- section 4: the two provenance sentences the bullets sit between ----------
+
+
+def _retained_roles_are_source_derived() -> bool:
+    """Observed: every retained role matches the position its digest came from."""
+    return not any(_role_implication_failures(vector) for vector in _SOURCED)
+
+
+def _caller_supplied_cite_no_retained_location() -> bool:
+    """Observed: a caller-supplied replay vector carries no source pointer."""
+    return all(
+        not vector["source_pointers"]
+        for vector in REPLAY["vectors"]
+        if cast(str, vector["evidence_classification"]).startswith("caller_supplied")
+    )
+
+
+def _render_role_lead_in() -> list[str]:
+    # a sentence about behaviour, rendered from the behaviour: if a swapped role
+    # ever stopped failing, the claim would have to read the other way
+    derived = _retained_roles_are_source_derived()
+    stance = (
+        "derived from the source position its revision digest was read from"
+        " rather than trusted from the vector"
+        if derived
+        else "trusted from the vector rather than derived from the source"
+        " position its revision digest was read from"
+    )
+    return [
+        f"Every retained `role` is {stance}, so a swapped role"
+        f" {'fails' if derived else 'passes'} even when every digest is re-sealed:"
+    ]
+
+
+def _render_embedded_provenance() -> list[str]:
+    bound = _caller_supplied_cite_no_retained_location()
+    return [
+        "A caller-supplied composition or association cites"
+        f" {'no retained location' if bound else 'a retained location'} of its"
+        " own; each embedded fact is instead bound to the retained vector it"
+        " reuses, so its nested values inherit that provenance."
+    ]
+
+
+# --- section 6: what a rejection locks, and what it refuses to ----------------
+
+
+def _render_rejection_oracle() -> list[str]:
+    rejection = cast(dict[str, Any], MANIFEST["rejection_contract"])
+    oracle = ", ".join(
+        f"`{field}`" for field in cast(list[str], rejection["error_oracle"])
+    )
+    locked = (
+        rejection["unstable_prose_locked"]
+        or rejection["internal_union_branch_labels_locked"]
+    )
+    # the carrier set is read off the vectors, not restated: which slice owns
+    # which union is the claim, and swapping the two must not survive
+    carriers = sorted(
+        {
+            (
+                _target_slice(cast(str, vector["target"])),
+                cast(list[str], vector["expected"]["error_location"])[0],
+            )
+            for vector in INVALID["vectors"]
+            if vector["expected"]["error_location_mode"] == "prefix"
+        }
+    )
+    unions = " and ".join(
+        f"the `{layer}` {location} union" for layer, location in carriers
+    )
+    return [
+        f"Invalid vectors lock {oracle}. Prose messages, Pydantic internal union"
+        " branch labels, and validator function names are deliberately"
+        f" {'locked' if locked else 'not locked'}. The `prefix` location mode is"
+        " used only where a discriminatorless union reports per-branch locations:"
+        f" {unions}."
+    ]
+
+
+def _render_forbidden_extra_prose() -> list[str]:
+    ledger = cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"])
+    pointer = next(entry for entry in ledger if entry["extra_key"] == "json_pointer")
+    # the three excluded spellings are skeleton: they are absent from the corpus
+    # by construction, so no canonical leaf can supply them
+    return [
+        f"The {_spelled(len(ledger))}"
+        f" `{_target_slice('PullRequestHistoryFactEvidenceLink')}` forbidden extras"
+        f" protect {_spelled(len({e['published_non_claim'] for e in ledger}))}"
+        " DIFFERENT published non-claims. Further spellings of one boundary earn"
+        " no partition: `field_path`, `semantic_path`, and `evidence_locator`"
+        " restate the localization non-claim"
+        f" `{pointer['extra_key']}` already carries."
+    ]
+
+
+# --- section 7: which artifacts govern, and how they are consumed -------------
+
+
+def _render_governance_prose() -> list[str]:
+    governance = cast(dict[str, Any], MANIFEST["effective_governance"])
+    correction = cast(list[dict[str, str]], MANIFEST["source_decisions"])[1]
+    append_only = correction["authority_role"].startswith("append_only")
+    return [
+        f"`S1.P05.S08` and its {'append-only' if append_only else 'regenerating'}"
+        " `S1.P05.S08.C01` correction are consumed as source authorities and are"
+        f" {'never' if not governance['vectorized_as_product_behavior'] else 'also'}"
+        " vectorized as product behaviour. The executor"
+        f" {'recomputes' if governance['recomputation_required'] else 'reads'} the"
+        " effective projection from both artifacts rather than trusting a stored"
+        " table:"
+    ]
+
+
+# --- step 2: register the regions and tile the sections they complete --------
+#
+# A region proves its own content. Tiling proves the section holds those regions
+# and nothing else -- which is what the placement and completeness claims come
+# to: the forbidden-extras table is section 6's table, section 8 is its bullets
+# with no softening prose beside them, section 9 publishes the authority table
+# and no count of it. Sections still register piecemeal; asserting every section
+# is registered, and covering the lines that fall outside all of them, is step 4.
+
+STEP_TWO_REGIONS: tuple[ContractRegion, ...] = (
+    ContractRegion(
+        "s2.surface-lead-in",
+        SECTION_TWO,
+        _paragraph_selector(SECTION_TWO, 0),
+        _render_surface_lead_in,
+        ("/scope/production_modules", "/scope/phase", "/target_symbols"),
+        "EXACT",
+        "OBJECTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s2.target-table",
+        SECTION_TWO,
+        _table_selector(SECTION_TWO, "target symbols"),
+        _table_renderer("target symbols"),
+        ("/target_symbols",),
+        "EXACT",
+        "OBJECTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s2.supporting-authorities",
+        SECTION_TWO,
+        _paragraph_selector(SECTION_TWO, -1),
+        _render_supporting_authorities,
+        ("/scope/supporting_authorities_not_owned", "/scope/phase"),
+        "EXACT",
+        "OBJECTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s3.inventory-table",
+        SECTION_THREE,
+        _table_selector(SECTION_THREE, "vector inventory"),
+        _table_renderer("vector inventory"),
+        ("SECTIONS",),
+        "EXACT",
+        "OBJECTIVE",
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    ContractRegion(
+        "s3.inventory-summary",
+        SECTION_THREE,
+        _paragraph_selector(SECTION_THREE, -1),
+        _render_inventory_summary,
+        ("/vector_summary/total_vectors", "/vector_summary/fixtures"),
+        "EXACT",
+        "OBJECTIVE",
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    ContractRegion(
+        "s4.replay-summary-opening",
+        REPLAY_SUMMARY_SECTION,
+        _paragraph_selector(REPLAY_SUMMARY_SECTION, 0),
+        _sliced_renderer(_render_replay_summary_block, 0, 1),
+        ("/replay_contract/flattened_evidence_derived_history_claimed",),
+        "EXACT",
+        "OBJECTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s4.classification-bullets",
+        REPLAY_SUMMARY_SECTION,
+        _actual_classification_block,
+        _render_classification_block,
+        ("/replay_contract/classifications",),
+        "EXACT",
+        "DESCRIPTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s4.deterministic-derivation",
+        REPLAY_SUMMARY_SECTION,
+        _paragraph_selector(REPLAY_SUMMARY_SECTION, 4),
+        _sliced_renderer(_render_replay_summary_block, 1, 2),
+        ("/replay_contract/deterministic_derivation_present", "/scope/phase"),
+        "EXACT",
+        "OBJECTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s4.linkable-facts",
+        REPLAY_SUMMARY_SECTION,
+        _paragraph_selector(REPLAY_SUMMARY_SECTION, 5),
+        _sliced_renderer(_render_replay_summary_block, 2, None),
+        (
+            "/replay_contract/evidence_limits/linkable_history_facts",
+            "/target_symbols/8/slice_layer",
         ),
-        "s5.epistemic-split": (
-            "has no independent source of truth",
-            "has an independent source of truth",
+        "EXACT",
+        "OBJECTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s4.role-lead-in",
+        REPLAY_SUMMARY_SECTION,
+        _paragraph_selector(REPLAY_SUMMARY_SECTION, 6),
+        _render_role_lead_in,
+        ("_retained_roles_are_source_derived",),
+        "EXACT",
+        "OBJECTIVE",
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    ContractRegion(
+        "s4.role-implications",
+        REPLAY_SUMMARY_SECTION,
+        _actual_role_implication_block,
+        _render_role_implication_block,
+        ("/replay_contract/retained_role_source_positions",),
+        "EXACT",
+        "OBJECTIVE",
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    ContractRegion(
+        "s4.embedded-provenance",
+        REPLAY_SUMMARY_SECTION,
+        _paragraph_selector(REPLAY_SUMMARY_SECTION, -1),
+        _render_embedded_provenance,
+        ("_caller_supplied_cite_no_retained_location",),
+        "EXACT",
+        "OBJECTIVE",
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    ContractRegion(
+        "s6.rejection-oracle",
+        SECTION_SIX,
+        _paragraph_selector(SECTION_SIX, 0),
+        _render_rejection_oracle,
+        (
+            "/rejection_contract/error_oracle",
+            "/rejection_contract/unstable_prose_locked",
+            "/rejection_contract/internal_union_branch_labels_locked",
+            "/target_symbols/7/slice_layer",
+            "/target_symbols/8/slice_layer",
         ),
-        # anchored inside section 5: "19 declared fixtures" also occurs in
-        # section 3, and a selector that could be fooled by that duplicate is
-        # exactly what this projection replaces
-        "s5.fixture-mechanism": (
-            "each of the 19 declared fixtures",
-            "each of the 20 declared fixtures",
+        "EXACT",
+        "OBJECTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s6.forbidden-extra-prose",
+        SECTION_SIX,
+        _paragraph_selector(SECTION_SIX, 1),
+        _render_forbidden_extra_prose,
+        ("/s07_forbidden_extra_ledger", "/target_symbols/8/slice_layer"),
+        "EXACT",
+        "OBJECTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s6.forbidden-extra-table",
+        SECTION_SIX,
+        _table_selector(SECTION_SIX, "forbidden extras"),
+        _table_renderer("forbidden extras"),
+        ("/s07_forbidden_extra_ledger",),
+        "EXACT",
+        "OBJECTIVE",
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    ContractRegion(
+        "s7.governance-prose",
+        SECTION_SEVEN,
+        _paragraph_selector(SECTION_SEVEN, 0),
+        _render_governance_prose,
+        (
+            "/effective_governance/vectorized_as_product_behavior",
+            "/effective_governance/recomputation_required",
+            "/source_decisions/1/authority_role",
         ),
+        "EXACT",
+        "OBJECTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+    ContractRegion(
+        "s7.governance-block",
+        SECTION_SEVEN,
+        _actual_governance_block,
+        _render_governance_block,
+        (
+            "/effective_governance/inherited_subject_count",
+            "/effective_governance/self_owned_open",
+            "/effective_governance/totals/disposition/split",
+            "/effective_governance/totals/immediate_owner/S5",
+            "/effective_governance/authority_totals/S1.P05.S08",
+        ),
+        "EXACT",
+        "OBJECTIVE",
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    ContractRegion(
+        "s8.non-goals",
+        SECTION_EIGHT,
+        _actual_non_goal_block,
+        _render_non_goal_block,
+        ("/non_goals",),
+        "EXACT",
+        "OBJECTIVE",
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    ContractRegion(
+        "s9.authority-table",
+        SECTION_NINE,
+        _table_selector(SECTION_NINE, "source authorities"),
+        _table_renderer("source authorities"),
+        ("/source_decisions",),
+        "EXACT",
+        "OBJECTIVE",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+)
+
+CONTRACT_PROJECTION_REGISTRY: tuple[ContractRegion, ...] = (
+    STEP_ONE_REGIONS + STEP_TWO_REGIONS
+)
+
+# heading -> the regions that must together account for every non-blank line in
+# that section, in document order
+TILED_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (SECTION_ONE, ("s1.scope-warning",)),
+    (
+        SECTION_TWO,
+        ("s2.surface-lead-in", "s2.target-table", "s2.supporting-authorities"),
+    ),
+    (SECTION_THREE, ("s3.inventory-table", "s3.inventory-summary")),
+    (
+        REPLAY_SUMMARY_SECTION,
+        (
+            "s4.replay-summary-opening",
+            "s4.classification-bullets",
+            "s4.deterministic-derivation",
+            "s4.linkable-facts",
+            "s4.role-lead-in",
+            "s4.role-implications",
+            "s4.embedded-provenance",
+        ),
+    ),
+    (SECTION_FIVE, ("s5.epistemic-split", "s5.fixture-mechanism")),
+    (
+        SECTION_SIX,
+        ("s6.rejection-oracle", "s6.forbidden-extra-prose", "s6.forbidden-extra-table"),
+    ),
+    (SECTION_SEVEN, ("s7.governance-prose", "s7.governance-block")),
+    (SECTION_EIGHT, ("s8.non-goals",)),
+    (SECTION_NINE, ("s9.authority-table",)),
+)
+
+
+def _drifted_authority(name: str) -> Any:
+    """A moved form of a named authority: a flipped observation, or a family
+    one vector short."""
+    value = globals()[name]
+    if callable(value):
+        observed = cast(Callable[[], bool], value)
+
+        def flipped() -> bool:
+            return not observed()
+
+        return flipped
+
+    if isinstance(value, tuple):
+        return cast(tuple[Any, ...], value)[:-1]
+
+    sections = cast(dict[str, Any], value)
+    family, document = next(iter(sections.items()))
+    shortened = cast(dict[str, Any], document)
+    return {
+        **sections,
+        family: {**shortened, "vectors": cast(list[Any], shortened["vectors"])[:-1]},
     }
 
-    assert set(probes) == {r.region_id for r in CONTRACT_PROJECTION_REGISTRY}
+
+def _descriptive_pointers(region: ContractRegion) -> list[str]:
+    """Declared pointers that reach a leaf the manifest calls descriptive."""
+    return [
+        pointer
+        for pointer in region.authority
+        if pointer.startswith("/")
+        and any(
+            path == pointer or path.startswith(f"{pointer}/")
+            for path in DESCRIPTIVE_PATHS
+        )
+    ]
+
+
+def test_no_region_claims_verification_it_reads_from_descriptive_data() -> None:
+    """The manifest forbids citing descriptive leaves as independently checked.
+
+    `descriptive_metadata.contract` says those paths "must not be cited by
+    contract.md or the pull request as independently checked". A region that
+    renders one is therefore a faithful projection of a declaration, never
+    evidence: the weakest assurance among a region's authorities is the one it
+    may claim.
+    """
     for region in CONTRACT_PROJECTION_REGISTRY:
-        original, replacement = probes[region.region_id]
-        tampered = text.replace(original, replacement, 1)
-        assert tampered != text, region.region_id
-        assert region.renderer is not None
-        assert region.selector(tampered) != region.renderer(), region.region_id
+        if _descriptive_pointers(region):
+            assert region.authority_assurance != "INDEPENDENTLY_VERIFIED", (
+                region.region_id,
+                _descriptive_pointers(region),
+            )
+
+
+def _region(region_id: str) -> ContractRegion:
+    return next(r for r in CONTRACT_PROJECTION_REGISTRY if r.region_id == region_id)
+
+
+@pytest.mark.parametrize(
+    ("heading", "region_ids"),
+    TILED_SECTIONS,
+    ids=[h.split(".")[0] for h, _ in TILED_SECTIONS],
+)
+def test_each_tiled_section_is_exactly_its_registered_regions(
+    heading: str, region_ids: tuple[str, ...]
+) -> None:
+    """Placement and completeness: these regions, this section, nothing else.
+
+    The section's whole non-blank content must equal what the registry renders
+    for it, so a block is no longer merely correct -- it has to be under its own
+    heading, in order, with no softening prose beside it.
+    """
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    rendered: list[str] = []
+    for region_id in region_ids:
+        renderer = _region(region_id).renderer
+        assert renderer is not None, region_id
+        rendered.extend(renderer())
+
+    assert _section_paragraphs(text, heading) == rendered, heading
+
+
+def test_a_paragraph_added_to_a_tiled_section_is_refused() -> None:
+    """Softening prose beside a published block must not pass unnoticed."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    smuggled = "In practice this boundary is advisory rather than published."
+
+    for heading, region_ids in TILED_SECTIONS:
+        rendered: list[str] = []
+        for region_id in region_ids:
+            renderer = _region(region_id).renderer
+            assert renderer is not None, region_id
+            rendered.extend(renderer())
+
+        tampered = text.replace(f"{heading}\n", f"{heading}\n\n{smuggled}\n", 1)
+        assert tampered != text, heading
+        assert _section_paragraphs(tampered, heading) != rendered, heading
