@@ -2079,6 +2079,1324 @@ def test_the_behavioural_signature_still_ignores_the_partition() -> None:
     assert not _family_collisions(relabelled, "valid")
 
 
+# --- a vector identity is attached to one behavioural identity ----------------
+#
+# Two relations already hold. Every vector id carries the partition identity
+# authored for it, and every behavioural signature is distinct inside its
+# family. Neither closes the identity itself.
+#
+# The partition authority is keyed BY the vector id, so when an id and its
+# partition move together the key and the value travel as a pair and the
+# mapping still agrees. The signature check only ever asked whether the 183
+# behaviours differ from one another, never which id selects which. So two
+# vectors could exchange `id` and `semantic_partition`, leave every executing
+# field in place, and publish each behaviour under the other's durable
+# identity with the whole suite green.
+#
+# The corpus-wide law is therefore stated directly: every one of the 183
+# vector ids is attached to exactly one family-scoped behavioural identity.
+# It is total on purpose. Requirement ledgers, fixture bindings and the
+# forbidden-extra ledger already pin many ids as a side effect of what they
+# check, but those are domain relationships, not the identity contract -- 32
+# vectors sat in same-category groups that no such authority reached, and a
+# refactor must not be able to move a vector into that residue silently.
+#
+# What this proves: a durable vector identity stays attached to the behaviour
+# already published for it. What it does not prove: that the behaviour is
+# semantically correct. Correctness still comes from product execution, the
+# expectation checks, the requirement and constraint ledgers, replay
+# provenance and the evidence authorities. This is canonical identity
+# attachment, and a wrong behaviour would still have to be rejected by those.
+
+
+def _behavioural_fingerprint(vector: dict[str, Any], family: str) -> str:
+    """A compact identity for the behaviour the signature already defines.
+
+    It reuses `_behavioural_signature` rather than re-selecting fields, so the
+    fingerprint inherits exactly one definition of behaviour and stays blind to
+    `id`, `purpose`, `semantic_partition`, `decision_references` and
+    `category`. If the id fed its own fingerprint the rule would be circular.
+    """
+    return hashlib.sha256(
+        _behavioural_signature(vector, family).encode("utf-8")
+    ).hexdigest()
+
+
+REQUIRED_BEHAVIOUR_BY_VECTOR_ID: dict[str, tuple[str, str]] = {
+    # -- 48 valid vectors -------------------------------------------------
+    "history.valid.role-binding.base-canonical": (
+        "valid",
+        "d959478b92cfed41bcff5e2a0537046921b2cec43413f914ff04516461dc40e0",
+    ),
+    "history.valid.role-binding.head-canonical": (
+        "valid",
+        "253c4cde777ac9994e40a7c7a43d74725ddebf20d28ea4a55c04036389a46754",
+    ),
+    "history.valid.role-binding.distinct-pull-request": (
+        "valid",
+        "580f72ebedf46e8759f58417b895745b3bab3754c5e869f59cd55da1496a78cf",
+    ),
+    "history.valid.role-binding.distinct-revision": (
+        "valid",
+        "a191bdfca0caa3b4dacdd769bc49ac572f3b0960db3ab376aa043014f25d5fab",
+    ),
+    "history.valid.role-binding.python-typed": (
+        "valid",
+        "74f0977277a6d470993903f31dfa1ec0d372a971d7e3beecada4d0e2fb556acd",
+    ),
+    "history.valid.status.added": (
+        "valid",
+        "90c0cb2148e428f3fa492d4834e8397f775a1852b77de66629d6082de02c8953",
+    ),
+    "history.valid.status.modified": (
+        "valid",
+        "a986e1efec92d4689696328438babfad7d6cf22d0c4f22ed2b00b3e3628ff6af",
+    ),
+    "history.valid.status.python-enum": (
+        "valid",
+        "5c26ff6fdfdd97a80d3a80ef0cc2eb1b7c04e36343b8e3b72f297c0ae66732f3",
+    ),
+    "history.valid.changed-path.added": (
+        "valid",
+        "cf6056cec1c6e8b9dcc46e8870839a558b1aff7064c87aae3cce58a4a2777b60",
+    ),
+    "history.valid.changed-path.modified": (
+        "valid",
+        "5d7b888ca23dfb63aad6ef42af1aca2c888b3d03d4ef320d74b2fd9cbc13faf4",
+    ),
+    "history.valid.changed-path.distinct-blob": (
+        "valid",
+        "6eec882ddfc6a3a5275325ff5158ce0bd2c66e6a8e62a8705767f0eeed5b9f6b",
+    ),
+    "history.valid.changed-path.python-typed": (
+        "valid",
+        "07db582978ab466c982738a23da157f39b25fde273a9a58abf1a69f0399f5820",
+    ),
+    "history.valid.change-set.canonical-three-paths": (
+        "valid",
+        "232c6c023528a10edefada0290160985ff6ff7930592de4d4addbbb8a07076fe",
+    ),
+    "history.valid.change-set.single-path-minimum": (
+        "valid",
+        "5724e6116dfe423413e53e87ba8f0feafb688d13e13e793ab855fc12e68b1660",
+    ),
+    "history.valid.change-set.supplied-order-preserved": (
+        "valid",
+        "bba07afc1378a81cd187fff9328a71ee2a041373c77f442e9250b28e4a25c7c6",
+    ),
+    "history.valid.change-set.maximum-changed-paths": (
+        "valid",
+        "3d45e5b90fa903620c8faa7c41aae20052a7c29ed993834ba23e278d07732fa2",
+    ),
+    "history.valid.change-set.python-typed": (
+        "valid",
+        "f375956928573d223353e38f8dfb475b41b42e9fbe948f63febd8fbe75dbdf9f",
+    ),
+    "history.valid.approval.canonical": (
+        "valid",
+        "6f3792f08fe6027432767c48f8b475403085a65810990b695f71e5b07bc7f91b",
+    ),
+    "history.valid.approval.revision-need-not-be-head": (
+        "valid",
+        "c17295779f35d91155ee6b7a9f1bca64a953fb34db192b77fc75ea91ca46476c",
+    ),
+    "history.valid.approval.python-typed": (
+        "valid",
+        "71ae804ee77a6b3f81348f1798c8395816221e91f32459c13b608a8b991f73e5",
+    ),
+    "history.valid.merge-outcome.canonical": (
+        "valid",
+        "cd21d875aef4b8fbf4d3f7bbdddf555ff2ffe995afee5a75ef94fb7129801a2d",
+    ),
+    "history.valid.merge-outcome.revision-independent-of-head": (
+        "valid",
+        "14f4cf845106287062c3585ea01b2476a6c86868a4b8f36b3f137091715edb9d",
+    ),
+    "history.valid.merge-outcome.python-typed": (
+        "valid",
+        "cccdaa84b721f5907fa56461a893c202ece6d32780a95f84b9440397f18e9157",
+    ),
+    "history.valid.head-ref-deletion.canonical": (
+        "valid",
+        "bf2bfbc8a47a92f3fc3eab4322ae42403ccafafb8672f209da3107131d5db868",
+    ),
+    "history.valid.head-ref-deletion.distinct-ref-name": (
+        "valid",
+        "6d6ca6f259d8c0640081ab6bf713b326955b89c02d78fab6afe2278847b8b2bd",
+    ),
+    "history.valid.head-ref-deletion.python-typed": (
+        "valid",
+        "ee86166d21c3799f6a4173dd3d13f09426a5305b6e08e17ba2ae86740000d7bf",
+    ),
+    "history.valid.occurrence-time.approval": (
+        "valid",
+        "d7a7f4e295299ae74a617302b009b4616db5738f959d53442dcb84b323d612ce",
+    ),
+    "history.valid.occurrence-time.merge": (
+        "valid",
+        "e3eedaf08bbdf1ae741a0762ec31e5943c2740af56d0255aa0186d6c3bc10ee1",
+    ),
+    "history.valid.occurrence-time.deletion": (
+        "valid",
+        "f54afe71f03c08a447c69825d4acdcdf13594a6fd7689ef21fe569cbb2a6074c",
+    ),
+    "history.valid.occurrence-time.offset-zero-form": (
+        "valid",
+        "db89c1cf0cceb7fb4fe63b62fe149cba05ce3b7e186b23c8394518e1b0427e85",
+    ),
+    "history.valid.occurrence-time.equal-instants-allowed": (
+        "valid",
+        "60adce6281b4ec8a4760c2e31f998a4146e43b475e56d1dd68ef469451dec503",
+    ),
+    "history.valid.occurrence-time.sub-second-preserved": (
+        "valid",
+        "d07291737f658659a3e6ea21214168aec295fec38ce94ac366554040cc6136a3",
+    ),
+    "history.valid.occurrence-time.python-typed": (
+        "valid",
+        "cae3f2eeb33eb5f0031ea2b1ea5dc86cebd986e648f098a81c1105c8c0bcf8de",
+    ),
+    "history.valid.evidence-link.role-binding-json": (
+        "valid",
+        "b1182d653fafd2e823c8b36e1a1dea4d82f23b4cef36e51c9cf5af21ae69ce9e",
+    ),
+    "history.valid.evidence-link.changed-path-json": (
+        "valid",
+        "1561f9c60ebff2b86581402f92f28d82066b07e6a642e8bb1e80860344780c9b",
+    ),
+    "history.valid.evidence-link.review-approval-json": (
+        "valid",
+        "e19b96a59ff09be3edcbd8b246e688c1826b468256fc93c6b768ecf96708e4cd",
+    ),
+    "history.valid.evidence-link.merge-outcome-json": (
+        "valid",
+        "fa66f1920aed2b68c2059316cec5a3596710419ce1e68f238945cf80a0f07fd7",
+    ),
+    "history.valid.evidence-link.head-ref-deletion-json": (
+        "valid",
+        "901395bc464960b828ad8c4e1b0b64cf97c19eaa516f0d2c46e18e3ba6c5ed52",
+    ),
+    "history.valid.evidence-link.occurrence-time-json": (
+        "valid",
+        "76ea16ea6bd1b83058df41585debedf24a4db8f39c94096bfb7867d9f442ae9b",
+    ),
+    "history.valid.evidence-link.role-binding-python": (
+        "valid",
+        "13eea52f4fd1e64b650de2de35b1c8014c91c842bf7df8ae87995c398871de40",
+    ),
+    "history.valid.evidence-link.changed-path-python": (
+        "valid",
+        "10956a898025aa51b21b4baf968eab82a2ed5bc8c1f8a7367e7324ba5e703591",
+    ),
+    "history.valid.evidence-link.review-approval-python": (
+        "valid",
+        "9889e1a617673a43fc4593229f54e9bfc09d34351319c6bf023b89f9ca3d8bb0",
+    ),
+    "history.valid.evidence-link.merge-outcome-python": (
+        "valid",
+        "a63f25865e6faf98856021f13f64b1be83a51bd98454d37f4fc651e00fcf618f",
+    ),
+    "history.valid.evidence-link.head-ref-deletion-python": (
+        "valid",
+        "902ef5790a1d9a157d1479aa7903daf52d1ffd1a88f4ed809ceae6cf7607a27f",
+    ),
+    "history.valid.evidence-link.occurrence-time-python": (
+        "valid",
+        "3b3aa365e5236681ec1dce0aaa2b4f1229993b3ee65da3992c3979019116849b",
+    ),
+    "history.valid.evidence-link.correction-record": (
+        "valid",
+        "416ae4caa595bc9a3f8079dfc315da12b7cf8d286a90e472ea0ba96e262cff36",
+    ),
+    "history.valid.evidence-link.synthetic-record": (
+        "valid",
+        "5806f1553652b417b5d2c21857167dbf7e6f6ba7b9bdec0ef7b413e078680524",
+    ),
+    "history.valid.evidence-link.second-fact-same-record": (
+        "valid",
+        "0c4ba7ecde4c56b3a4e5756f853e183f5f0c97ece8e41a2b91b91237814307a7",
+    ),
+    # -- 111 invalid vectors ----------------------------------------------
+    "history.invalid.role-binding.non-pull-request-subject": (
+        "invalid",
+        "7fdb532217499db2fe06473eb6e09569ed8b8a2914e20d58c90d7175249ebf40",
+    ),
+    "history.invalid.role-binding.disallowed-revision-role": (
+        "invalid",
+        "830a4845b5c96bcae1383a17c69d8d5376465632e62fdbfbcc8ea0702004edb4",
+    ),
+    "history.invalid.role-binding.missing-pull-request": (
+        "invalid",
+        "5ad9fba5ef81c6d224b309cce57bb309b565ef0b74e21c85a227136f500212a4",
+    ),
+    "history.invalid.role-binding.missing-role-assignment": (
+        "invalid",
+        "df7238e41891f4c884077a3a3b3f6bb9f377326023b6dbdfc07e9b51c20f7384",
+    ),
+    "history.invalid.role-binding.extra-observed-at": (
+        "invalid",
+        "db310e893aba711c33eab04962ee94ac4d2dccef45fe7c5fe808d027ce55468e",
+    ),
+    "history.invalid.role-binding.untyped-python-pull-request": (
+        "invalid",
+        "09070bceff5c5f336606743380b1e72d063d5565f085de83165856c46441f0fa",
+    ),
+    "history.invalid.role-binding.untyped-python-role-assignment": (
+        "invalid",
+        "9abcaedb46c69b442ea8c7017bd979689d9bfb0e98a6e838413e5e702cfa1cd8",
+    ),
+    "history.invalid.role-binding.dumped-mapping-python": (
+        "invalid",
+        "05c84563ca6fedc41eea7211cacd4144ee5799562fb2eb30f31d4b70e2bcf6e2",
+    ),
+    "history.invalid.role-binding.foreign-python-subject": (
+        "invalid",
+        "f9045622ffc99373e423629b1bd061b264efb08d52fe295cc123aed67c221037",
+    ),
+    "history.invalid.role-binding.swapped-members": (
+        "invalid",
+        "8fdbe0ec4007bd38c91307ba86432f1a69de178fb8b4bc3d792f2a305c794ef9",
+    ),
+    "history.invalid.role-binding.null-role-assignment": (
+        "invalid",
+        "12f00d23d7b7cc61fe236931e44155f73eddeeaba2909d168987d9abd584e86a",
+    ),
+    "history.invalid.status.removed": (
+        "invalid",
+        "40e0826e25565184efadd963d9d2aef08692be7544010962e02be59e715999ef",
+    ),
+    "history.invalid.status.renamed": (
+        "invalid",
+        "0c6863c96c2b9efc64e94f78cbe85b4793d252a151335b19e690c96ba4832cef",
+    ),
+    "history.invalid.status.copied": (
+        "invalid",
+        "c8c0e94cd93e083088aa3adaadf93a14ee96fbe16d2b0582be4b454058afe33d",
+    ),
+    "history.invalid.status.not-a-status": (
+        "invalid",
+        "72c6529b0d42d6b9d5ddc22d89b5ef283d74ea681e41c702d910059b08044e29",
+    ),
+    "history.invalid.changed-path.unknown-status": (
+        "invalid",
+        "e4ca9de8f820394e71d55985d56493e08c599a773b4469f76df6d3f30864db33",
+    ),
+    "history.invalid.changed-path.commit-as-head-object": (
+        "invalid",
+        "00e9c9c7f0327cf0ff46d539fe9d698641e61e1a55a08b0e322c1190cbab53b3",
+    ),
+    "history.invalid.changed-path.missing-path": (
+        "invalid",
+        "87e16053e052ffb9e7773be7258371099744646050cc3cf3adfd3a9b25c2ced2",
+    ),
+    "history.invalid.changed-path.missing-head-object": (
+        "invalid",
+        "a1d2f5b4a96a1bf7f9dd3952396f43b64b8fb9afd4da633b56e908133bda7168",
+    ),
+    "history.invalid.changed-path.missing-status": (
+        "invalid",
+        "5fdab6d415e52acf2ef05c4a2d2862dcff1e8279674a32192ac5f67040c237ce",
+    ),
+    "history.invalid.changed-path.extra-base-object": (
+        "invalid",
+        "3e8061852877cd5cd2e2161080facf36a610979914272be8af7fbbb67961a573",
+    ),
+    "history.invalid.changed-path.untyped-python-path": (
+        "invalid",
+        "6dc019e6e4c016943c373eb984b50173ee0573a670e5d1673914e65c80abda04",
+    ),
+    "history.invalid.changed-path.untyped-python-head-object": (
+        "invalid",
+        "716de82ee62d1dbb0c9d950ba3ca13979c39cd6405bc6d1b28748187d4045583",
+    ),
+    "history.invalid.changed-path.empty-path": (
+        "invalid",
+        "8ddefd221a03771d65468f5f5023bc008c898415c48b59bf29230c6aa77fedd1",
+    ),
+    "history.invalid.changed-path.raw-python-status": (
+        "invalid",
+        "d0bc71b7594ea9a0ccaaa8bd9d3bb04ac9760c6877d7a65a893ccbdc75c9e011",
+    ),
+    "history.invalid.change-set.empty-changed-paths": (
+        "invalid",
+        "b9fefb13e692f5937269534ff0ca920d96522f18ddf9c2d38a647859e2dd8e7c",
+    ),
+    "history.invalid.change-set.above-maximum-changed-paths": (
+        "invalid",
+        "031d7c7d8090fc2fb060949964f390f7e941fb4a960766b619220a545734dc5a",
+    ),
+    "history.invalid.change-set.duplicate-path": (
+        "invalid",
+        "867bcb5ed72bdb0d84490b2a4b687073edd594483b069ec2a4ab4fd2040e03c2",
+    ),
+    "history.invalid.change-set.equal-base-and-head-revision": (
+        "invalid",
+        "96e98e57cc45323845f5618d77b7afa50275699c1d3aac010247b1be052b1921",
+    ),
+    "history.invalid.change-set.mismatched-pull-requests": (
+        "invalid",
+        "6c58f71c96af3bd11424f7c998c15a47fec44e3f010d5e19cb21593cc431d412",
+    ),
+    "history.invalid.change-set.mixed-hash-algorithms": (
+        "invalid",
+        "6c7b30c7c6e70be5820f051abe3717576db9468d6937fc21d54721b301a2c4ef",
+    ),
+    "history.invalid.change-set.missing-base": (
+        "invalid",
+        "54bbb8087ea54f8dbd17924a025d539d9a1975f224c661a51601abf3042e74ba",
+    ),
+    "history.invalid.change-set.missing-head": (
+        "invalid",
+        "f3a91d3abc8c9825fae72c4e59e950bb66b3039996de6038710180a38ac02a49",
+    ),
+    "history.invalid.change-set.missing-changed-paths": (
+        "invalid",
+        "def4010839722f347da3647d68af08e343c8a75c011ff2b2daf26326f3edec1b",
+    ),
+    "history.invalid.change-set.extra-complete": (
+        "invalid",
+        "0a9654b78af419f90768cf7410e1806a402b32eaaa6b91a9c258376ad606971a",
+    ),
+    "history.invalid.change-set.python-list-not-tuple": (
+        "invalid",
+        "80c52e933b1f9a368db0161b5114aabb221240dabd4ef601e4d4f4a07a8f3a60",
+    ),
+    "history.invalid.change-set.untyped-python-base": (
+        "invalid",
+        "6f2274db3cbb66fb2f0200a8bb8589cac330a468d1bba5a669cd2a59b6a5ce52",
+    ),
+    "history.invalid.change-set.untyped-python-head": (
+        "invalid",
+        "20bed2e5d0ed1a956b219c887cd2bd5a407203c66c1fc73afb4d5060351dfa4c",
+    ),
+    "history.invalid.change-set.untyped-python-changed-path-element": (
+        "invalid",
+        "b3476d871b0d188a7e0e6a319e921972f93539115dab474fa483966aa367756b",
+    ),
+    "history.invalid.change-set.base-position-rejects-non-base-role": (
+        "invalid",
+        "0e07b5456f0ffe2cbfb64f5f8843f8e0a56dbb06f06b54f293491ebfe3f3232c",
+    ),
+    "history.invalid.change-set.head-position-rejects-non-head-role": (
+        "invalid",
+        "f95c94a0d42051515f6422d43e2eac1fb7ce2f605fda5961393b6580703f7431",
+    ),
+    "history.invalid.change-set.mismatched-revision-algorithms": (
+        "invalid",
+        "2802bf26e79f29dab03cebcf9859ebea862c8adcd04ef890d5f4730753b07161",
+    ),
+    "history.invalid.approval.non-review-subject": (
+        "invalid",
+        "6a82f9a2445e0cf92d492310246f5e0e5bb552ca470bebd9c143929156464664",
+    ),
+    "history.invalid.approval.non-pull-request-parent": (
+        "invalid",
+        "999f3b2d0101bf7fd4cb9f64411445c4677c5dd25fcf5441cca3d84112fd9cde",
+    ),
+    "history.invalid.approval.blob-as-approved-revision": (
+        "invalid",
+        "a12c9a1da4691496c0bd88fc473d9986a5a2c7601f16ba833683e0fbe37b68e2",
+    ),
+    "history.invalid.approval.missing-review": (
+        "invalid",
+        "8754f5c96aa523bd9fe1c79e78691c01f4a108e449a2224480a4b8cf879a94f0",
+    ),
+    "history.invalid.approval.missing-approved-revision": (
+        "invalid",
+        "4b06928472a9fea3b651d317e3e5463d7d585d0d3478d1a94ad42fdf6a8aaaee",
+    ),
+    "history.invalid.approval.extra-state": (
+        "invalid",
+        "663509013a75f601c6ed40145ccdcc2e128b42687d6cc4fb25a4fde7539bd99b",
+    ),
+    "history.invalid.approval.extra-submitted-at": (
+        "invalid",
+        "8dc47be0a9afcceefff8bad23af6a3302e8bad7084bf40142bb0cb0bd305d4b7",
+    ),
+    "history.invalid.approval.untyped-python-review": (
+        "invalid",
+        "51aa76555db2f13744fe17fb39abb9802d1c21b1c3290106b2532cb1db49a4f7",
+    ),
+    "history.invalid.approval.untyped-python-approved-revision": (
+        "invalid",
+        "65083d70cc27d7ae8b56a0ebe52a9f900a4000e646524d96251f2f743570abab",
+    ),
+    "history.invalid.approval.non-review-kind-subject": (
+        "invalid",
+        "2aeb70f53df96e217ba9515341baf3c0aaf0edd82ce03462e49c3e8638b5d87d",
+    ),
+    "history.invalid.merge-outcome.non-pull-request-subject": (
+        "invalid",
+        "218bd381b0b84e4ad47fd1702860ab13c031a96af3effddbd7d0dcdac19441b9",
+    ),
+    "history.invalid.merge-outcome.tree-as-merge-revision": (
+        "invalid",
+        "0fc00a39730ca684c5ddd0b4a5a2714007b5a7931f334751c47d7b8b0e10ddf4",
+    ),
+    "history.invalid.merge-outcome.missing-pull-request": (
+        "invalid",
+        "588e88e0990568af5809272747451764e0dd03b54af68c4f3f4488160e881b2d",
+    ),
+    "history.invalid.merge-outcome.missing-merge-revision": (
+        "invalid",
+        "c39a478d21182b62d028659b9d5df4012a6708a7b57a58c6c32dc0cf7ff916ec",
+    ),
+    "history.invalid.merge-outcome.extra-parents": (
+        "invalid",
+        "bf6fec6ba88010f000c5a3f8054335dec07f8005e3a685bf895988f74ee3a849",
+    ),
+    "history.invalid.merge-outcome.extra-strategy": (
+        "invalid",
+        "be1183874af813c125e3b68ead53118bb4d37af9defe97d9dcc1dd4e46cbda7c",
+    ),
+    "history.invalid.merge-outcome.untyped-python-pull-request": (
+        "invalid",
+        "e1f35c6aa5aa954616f1b1e702791df2ff6cb550787649ce0ec40eb80ceeead8",
+    ),
+    "history.invalid.merge-outcome.untyped-python-merge-revision": (
+        "invalid",
+        "e61f069142e6167d1ef02352d7cd92455e1f2afd69e309730d4253c0e28add7b",
+    ),
+    "history.invalid.head-ref-deletion.base-binding": (
+        "invalid",
+        "6d03674ed4f80d805625dd88e54b962a5a7ac9f714b344c7a4a10d9cdfc2efc8",
+    ),
+    "history.invalid.head-ref-deletion.refs-prefixed-name": (
+        "invalid",
+        "b11658cb15e4b23b5d2b9fd712be5ea419c246686aef64d72db99889b53fc612",
+    ),
+    "history.invalid.head-ref-deletion.empty-ref-name": (
+        "invalid",
+        "60bab71fc72200756082e6e09ad7e0ca85499343f2f612a1a4aae88267beff0a",
+    ),
+    "history.invalid.head-ref-deletion.missing-head": (
+        "invalid",
+        "1470d1c6326be9fc05c7839e1217b73e1097ebf694cbb89059c626ee8b2ce33d",
+    ),
+    "history.invalid.head-ref-deletion.missing-ref-name": (
+        "invalid",
+        "0dfc0227cea9cd9dbc02caeda058cad25ffe0836c2ef7185f3f3cbeb59949862",
+    ),
+    "history.invalid.head-ref-deletion.extra-namespace": (
+        "invalid",
+        "cdfd5df105799993fdf20f71f4012b3e39ea0d9019fc46f2b4f455e5a1d3f987",
+    ),
+    "history.invalid.head-ref-deletion.raw-python-ref-name": (
+        "invalid",
+        "c7e4a3beba197886d7aa724c39db322d4d206d95acb697e494d3ee12bd58208c",
+    ),
+    "history.invalid.head-ref-deletion.untyped-python-head": (
+        "invalid",
+        "2e0275b5e51b9d5a4de62b9c57b97159582acf62a304aa7296b84887a110de59",
+    ),
+    "history.invalid.occurrence-time.instant-naive": (
+        "invalid",
+        "1a8a4a03e4c8f06b88565ca407fea3ffaabf57516ae5a6cc07af4c298f8f2f51",
+    ),
+    "history.invalid.occurrence-time.instant-positive-offset": (
+        "invalid",
+        "bdb2f45875572b4317b3d57cfeed9fae6242e152e56bbafa289cf76bc8ed1c05",
+    ),
+    "history.invalid.occurrence-time.instant-negative-offset": (
+        "invalid",
+        "9a57e8a1f4a0823e1f32d7c5aa06a1f682f404a224d25952a32eacc00cad1dcf",
+    ),
+    "history.invalid.occurrence-time.instant-malformed": (
+        "invalid",
+        "2ea2501ad8ec710e2f0edb33ad31503ab387ea3e374900d447a4d290bf41f1ca",
+    ),
+    "history.invalid.occurrence-time.non-admitted-commit-identity": (
+        "invalid",
+        "c9a3be6fb6d9db53260ea3fa7f042e8b703b416fff2a6cef90399f4e6b03b6fc",
+    ),
+    "history.invalid.occurrence-time.non-admitted-changed-path-status": (
+        "invalid",
+        "ac194be7a7ed6415982893ac0dd71cc7a1b968d371bb87dc5cc17110075f770c",
+    ),
+    "history.invalid.occurrence-time.non-admitted-change-set": (
+        "invalid",
+        "8f41e12f98109ba7db5330a0c05df24b986cd98f3e140db28c07c0817c4511a9",
+    ),
+    "history.invalid.occurrence-time.non-admitted-role-binding": (
+        "invalid",
+        "a598dddce710402de317914f26992769e4ea5334fdcf088fd438c7a254ddd8c3",
+    ),
+    "history.invalid.occurrence-time.non-admitted-changed-path": (
+        "invalid",
+        "7d9e66d993b47f63e9966ef4e5507e25124d6a1dd82268a9412fc601332fbfc4",
+    ),
+    "history.invalid.occurrence-time.missing-occurred-at": (
+        "invalid",
+        "52e1fb1e1008c8e2494414641360e3e563e2efac4f483cea73b527e8b608cda8",
+    ),
+    "history.invalid.occurrence-time.extra-chronology": (
+        "invalid",
+        "7cc9121a9c66327c5912e7c931c95d59b15aeb8a5d6fdbeda9a8aaab4c21dc5f",
+    ),
+    "history.invalid.occurrence-time.untyped-python-occurrence": (
+        "invalid",
+        "06593b3df9cdfd488aa91c4f77c600bc4536856fc76d33b2d0fdabd5111eae9e",
+    ),
+    "history.invalid.occurrence-time.missing-occurrence": (
+        "invalid",
+        "21e24be2e768bee0abb034cfd0fb61b241d341b81ae9e214cac342e494c1f214",
+    ),
+    "history.invalid.occurrence-time.raw-python-instant": (
+        "invalid",
+        "5619831a2fd89e88db9a59f3ac3ee2533caa307b9bf18028e59c581d7b9da01a",
+    ),
+    "history.invalid.evidence-link.change-set-fact": (
+        "invalid",
+        "ce8defbae419c99193ebfa48ef49e2264cc1926aa150efa4fe4d8f1a3819412e",
+    ),
+    "history.invalid.evidence-link.changed-path-status-fact": (
+        "invalid",
+        "e8a2b90003e9f664e129a19aa751823e093357532c448e4391d9724408d82c9f",
+    ),
+    "history.invalid.evidence-link.hybrid-fact-json": (
+        "invalid",
+        "c7d9d9486e769d17fa2b0e7ac97d785a687ed6a88e1997e4d99dd4f6aa88397a",
+    ),
+    "history.invalid.evidence-link.empty-fact-json": (
+        "invalid",
+        "0d5c11b396bb5a7a6c9274ab8011634d699d23b5d7a947257f80912ddd490c22",
+    ),
+    "history.invalid.evidence-link.malformed-record": (
+        "invalid",
+        "7c7659b951abf06f4124e3605b3498d07322b7fbc6720008303a1f50c9c25e51",
+    ),
+    "history.invalid.evidence-link.missing-fact": (
+        "invalid",
+        "87dbc0711a732b612fbe6055d3a74ca8ee19d89c19372c119867891184517696",
+    ),
+    "history.invalid.evidence-link.missing-evidence-record": (
+        "invalid",
+        "8ba423bdeb5cfc04e00a3e2d692bcc0cd59ad4743626c4e6a744c8f547ed81e9",
+    ),
+    "history.invalid.evidence-link.extra-schema-version": (
+        "invalid",
+        "4f7175e7d0505d6f7df858050a51cbf7ab0c71f0785355673b70eac5fc62b205",
+    ),
+    "history.invalid.evidence-link.extra-json-pointer": (
+        "invalid",
+        "fc371a18b7f8480670a895698ef69c4e643585480112be852eb73bcd57c1cb18",
+    ),
+    "history.invalid.evidence-link.extra-support-role": (
+        "invalid",
+        "cf5aa81bfa02facf5d4a9905d6dbd3b17b93da78a7a129264f0acbe24f91f31a",
+    ),
+    "history.invalid.evidence-link.extra-strength": (
+        "invalid",
+        "14926c1db42d33eb39fcf35ac084698bad030bc8e7f1b8af8f47ea52cdc5669b",
+    ),
+    "history.invalid.evidence-link.extra-verification": (
+        "invalid",
+        "7d4196563b7e7281f044947835d2dbc3aa8a3c3eedb7e238350ce851e68f1a86",
+    ),
+    "history.invalid.evidence-link.extra-confidence": (
+        "invalid",
+        "8ec7970173d13aebbd543194bae936010db2f8513df95c48bfd108749d9a26b2",
+    ),
+    "history.invalid.evidence-link.extra-primary-evidence": (
+        "invalid",
+        "7d9fae8b13293a41355851a7038bbc9376201c38d342da01f42096b0f6122535",
+    ),
+    "history.invalid.evidence-link.extra-evidence-records": (
+        "invalid",
+        "e9462c3da082629d25784872241ed7f91f4df154c9684d4c25a5925feab8c72f",
+    ),
+    "history.invalid.evidence-link.extra-superseded": (
+        "invalid",
+        "6c26b63c1d97c181f7ebfd045fafcda4743ddd9323c15f8493cf236e6dc5560c",
+    ),
+    "history.invalid.evidence-link.extra-request-id": (
+        "invalid",
+        "11f5c5bf0b03e5843aaed1fb5613404377e8a07e20f586a7e74ddcf57bc0d225",
+    ),
+    "history.invalid.evidence-link.extra-artifact": (
+        "invalid",
+        "4750fabcf082158bcd06dce116de5df33eebd399191d0a5bf5913469da10a468",
+    ),
+    "history.invalid.evidence-link.nested-non-admitted-occurrence": (
+        "invalid",
+        "efb3c6f1369cb5f6e1dd098fd4e29a42323334eae84519f35f114e5220ed813b",
+    ),
+    "history.invalid.evidence-link.untyped-python-fact": (
+        "invalid",
+        "b10eb339b176a59f899cd9038d1b91cdee074daf0dda37d3e493b281445b07c5",
+    ),
+    "history.invalid.evidence-link.typed-children-mapping-python": (
+        "invalid",
+        "d18c837501c92267dc43926fa3b3aa19e301369184d5f7331be4b4f876adfbdd",
+    ),
+    "history.invalid.evidence-link.untyped-python-record": (
+        "invalid",
+        "a7850d8f71e5ce279298ae1dc9601d56007124e59f68f28be002aa74ab4b10dd",
+    ),
+    "history.invalid.evidence-link.change-set-fact-python": (
+        "invalid",
+        "9a01e21627e65e21117df84f41c00d4c421954d4a59857c572bc58f682f61bab",
+    ),
+    "history.invalid.evidence-link.status-fact-python": (
+        "invalid",
+        "6c98b31d1c688bb20435cdd94bf538608eca114110745e6b9dd54e7b0a195817",
+    ),
+    "history.invalid.evidence-link.instant-naive": (
+        "invalid",
+        "baec53d9f171b1e32d342dedf309444c49529e31c08686f06210f9965ce8ea5e",
+    ),
+    "history.invalid.evidence-link.instant-non-zero-offset": (
+        "invalid",
+        "2a3fb265bdbd2ea6ec91987abaa2391221cb8ceea598789c644bb77dc73cc7c5",
+    ),
+    "history.invalid.evidence-link.instant-week-date": (
+        "invalid",
+        "aa896d6511f3904f6625c7d23732e17ff0c46baf930a1034d9623cae772ac7bb",
+    ),
+    "history.invalid.evidence-link.instant-basic-format": (
+        "invalid",
+        "337a497938860e8d8a1613167d7c8f5d0198cda534e6e47770b2be7851f19a8b",
+    ),
+    "history.invalid.evidence-link.occurrence-time-fact-python": (
+        "invalid",
+        "e03597818c2033302ef91932ef80cd7d2196454bdbc00cd207539a93b11df8cf",
+    ),
+    # -- 24 replay vectors ------------------------------------------------
+    "history.replay.role-binding.base": (
+        "replay",
+        "f4c03ce09bc89982f62f98a0082b59786569f41adce6d41325fb99bf9073b41a",
+    ),
+    "history.replay.role-binding.head": (
+        "replay",
+        "15086dd5b3b7878d16f23b9756cdb40c4ae5d7dfc4e3dd07b49924a67e251d3d",
+    ),
+    "history.replay.changed-path.changelog": (
+        "replay",
+        "161f9696da7e15fc93b75ee409c0b3acb568cc46be728832ccf6ea7d9fb3dd53",
+    ),
+    "history.replay.changed-path.rewrite": (
+        "replay",
+        "6745b395cb905d2a513690e6c5ce18bf3297b9d4e54b26fdf438612d8b8e86c9",
+    ),
+    "history.replay.changed-path.assertrewrite": (
+        "replay",
+        "cea106e9c076b9612b57364674b949831877f4e7fd48f87b9e5f27f41a8714e3",
+    ),
+    "history.replay.change-set.supplied-three-paths": (
+        "replay",
+        "9f7b8b311858e63932b608575d6403c3fad1a6affae2ca1dbdb4b208a8d8f561",
+    ),
+    "history.replay.review-approval.canonical": (
+        "replay",
+        "a6674f75b7bcc39284121e42b635b9de25b64480393ef894acb4f8a9947ff611",
+    ),
+    "history.replay.merge-outcome.canonical": (
+        "replay",
+        "16f12f3bf82f35ef0705d118724bef49997d075dfe7d97ff3bd8b7bcf13f2ddf",
+    ),
+    "history.replay.head-ref-deletion.canonical": (
+        "replay",
+        "1dd5156ce733ff3a999bf52ff128926c8fd3ec2e2755dc23f68d1d16059c3f56",
+    ),
+    "history.replay.occurrence-time.approval": (
+        "replay",
+        "fd03fc0b2b247950a4340194f767a895753288e02942444bd0362a11bdb56daa",
+    ),
+    "history.replay.occurrence-time.merge": (
+        "replay",
+        "f4c3609d7cbbe889ea0ca3e5dd490b06da1cdd8237fad8d97e9c48b4fe0436ff",
+    ),
+    "history.replay.occurrence-time.deletion": (
+        "replay",
+        "4ca2382bc81c0f56b30b6590f29afb930f1216a4326bb067e6f7131b558ec98a",
+    ),
+    "history.replay.evidence-association.base-binding": (
+        "replay",
+        "2af61586d530f111b5aa21f73fadb25f7fc99ad23e599efa59bbf6790b1e03a6",
+    ),
+    "history.replay.evidence-association.head-binding": (
+        "replay",
+        "941df02fbfb8036631997ac33ddce199a6ab81c5210ad4309d158962b887b896",
+    ),
+    "history.replay.evidence-association.changed-path-changelog": (
+        "replay",
+        "f8d7c647c348380dc56d8d7c20f2984f9be0c6e26e223656bddd1dfe1ddec63f",
+    ),
+    "history.replay.evidence-association.changed-path-rewrite": (
+        "replay",
+        "4130da73c2ca67035702cb0b864128986085e17e91d32973984ff32bd905b95b",
+    ),
+    "history.replay.evidence-association.changed-path-assertrewrite": (
+        "replay",
+        "0a8a42897158759c53606f2717735fdb087ae2e0a5ed55bd8af13fbe5321de3f",
+    ),
+    "history.replay.evidence-association.review-approval": (
+        "replay",
+        "44e7355b6466602dc405531d2e28ff6655672008a914947e0527252f4ca29589",
+    ),
+    "history.replay.evidence-association.merge-outcome": (
+        "replay",
+        "475d0e34b03c6e2a87615a940b72426ccf0cc80ed00b39d6b62d51a335b9c6a9",
+    ),
+    "history.replay.evidence-association.head-ref-deletion": (
+        "replay",
+        "de705e479967f47b3de575763973d08ebb9b4a29c3efef854a3a43d45cc27a89",
+    ),
+    "history.replay.evidence-association.occurrence-approval": (
+        "replay",
+        "1785b990990fd5cab9a94b5f82bf0c7e3b385f7527b91d2021c2426944926b43",
+    ),
+    "history.replay.evidence-association.occurrence-merge": (
+        "replay",
+        "198943a483e0175698ab57025467340ed49f0e194c5d132705358704ae791a04",
+    ),
+    "history.replay.evidence-association.occurrence-deletion": (
+        "replay",
+        "a508c4a263a2469abe39449f20942b1d05bf7ae91eac5bd65acbd19616c04b69",
+    ),
+    "history.replay.evidence-association.approval-correction-record": (
+        "replay",
+        "4caa286644ee52430833cde6cfeff0ef036613abaddf8741e74c0155f6ad0930",
+    ),
+}
+
+
+def _behaviour_failures(
+    sections: dict[str, dict[str, Any]],
+    authority: dict[str, tuple[str, str]],
+) -> list[tuple[str, str, str]]:
+    """`(family, vector_id, reason)` for every disagreement, in both directions.
+
+    Each vector is looked up individually, repeated ids are named rather than
+    silently collapsed, and every authority entry must be reached, so equal
+    totals on the two sides can never stand in for the relation itself.
+    """
+    failures: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for family, section in sorted(sections.items()):
+        for vector in section["vectors"]:
+            identifier = cast(str, vector["id"])
+            if identifier in seen:
+                failures.append((family, identifier, "vector-id-repeated"))
+                continue
+            seen.add(identifier)
+            if identifier not in authority:
+                failures.append((family, identifier, "vector-absent-from-authority"))
+                continue
+            expected_family, expected_fingerprint = authority[identifier]
+            if family != expected_family:
+                failures.append((family, identifier, "family-differs"))
+                continue
+            if _behavioural_fingerprint(vector, family) != expected_fingerprint:
+                failures.append((family, identifier, "fingerprint-differs"))
+    for identifier in sorted(set(authority) - seen):
+        failures.append(
+            (authority[identifier][0], identifier, "authority-entry-unpopulated")
+        )
+    return sorted(failures)
+
+
+def _behaviour_detail(
+    identifier: str,
+    sections: dict[str, dict[str, Any]],
+    authority: dict[str, tuple[str, str]],
+) -> tuple[str, str, str, str, str]:
+    """`(family, id, expected family, actual fingerprint, expected fingerprint)`."""
+    for family, section in sorted(sections.items()):
+        for vector in section["vectors"]:
+            if vector["id"] == identifier:
+                expected = authority.get(identifier, ("<absent>", "<absent>"))
+                return (
+                    family,
+                    identifier,
+                    expected[0],
+                    _behavioural_fingerprint(vector, family),
+                    expected[1],
+                )
+    raise AssertionError(identifier)
+
+
+def test_every_vector_id_is_attached_to_the_behaviour_authored_for_it() -> None:
+    """The reported finding, closed.
+
+    Exchanging `id` and `semantic_partition` between two exposed vectors left
+    the partition attachment satisfied -- key and value moved together -- and
+    every other rule green, while each behaviour was published under the
+    other's durable identity.
+    """
+    sections = _sections(VALID, INVALID, REPLAY)
+
+    assert not _behaviour_failures(sections, REQUIRED_BEHAVIOUR_BY_VECTOR_ID)
+
+    authority = REQUIRED_BEHAVIOUR_BY_VECTOR_ID
+    assert len(authority) == 183
+    assert sum(len(section["vectors"]) for section in sections.values()) == 183
+    assert Counter(family for family, _ in authority.values()) == {
+        "valid": 48,
+        "invalid": 111,
+        "replay": 24,
+    }
+    assert len({fingerprint for _, fingerprint in authority.values()}) == 183
+
+
+def test_the_behaviour_authority_closes_against_the_corpus_both_ways() -> None:
+    """No vector without an entry, no entry without a vector, one family each."""
+    observed = {
+        cast(str, vector["id"]): family
+        for family, section in _sections(VALID, INVALID, REPLAY).items()
+        for vector in section["vectors"]
+    }
+    authority = REQUIRED_BEHAVIOUR_BY_VECTOR_ID
+
+    assert set(observed) - set(authority) == set(), "a vector the authority omits"
+    assert set(authority) - set(observed) == set(), "an entry no vector populates"
+    assert observed == {
+        identifier: family for identifier, (family, _) in authority.items()
+    }
+    assert len(observed) == 183
+
+
+def test_the_identity_law_is_total_and_not_the_current_residue() -> None:
+    """Indirect pinning is a side effect, not the identity contract.
+
+    The requirement ledger, the secondary-witness registry, the fixture
+    bindings and the forbidden-extra ledger all name vector ids while checking
+    something else. Between them they reach 132 of the 183, leaving 51 that no
+    such authority names at all, 43 of those with a same-family same-category
+    partner to be exchanged with. Their reach is incidental to what they check,
+    so authoring only the residue would let a later refactor drop a vector out
+    of an unrelated ledger and silently reopen this hole. The counts below are
+    asserted so the description cannot drift away from the code.
+    """
+    indirectly_pinned = (
+        {row[4] for row in REQUIREMENT_LEDGER}
+        | set(SECONDARY_WITNESS_REGISTRY)
+        | {binding[2] for binding in FIXTURE_BINDINGS}
+        | {
+            cast(str, entry["vector_id"])
+            for entry in cast(
+                list[dict[str, Any]], MANIFEST["s07_forbidden_extra_ledger"]
+            )
+        }
+    )
+    sections = _sections(VALID, INVALID, REPLAY)
+    residue = {
+        family: [
+            cast(str, vector["id"])
+            for vector in section["vectors"]
+            if vector["id"] not in indirectly_pinned
+        ]
+        for family, section in sections.items()
+    }
+    assert len(indirectly_pinned) == 132
+    assert indirectly_pinned <= set(REQUIRED_BEHAVIOUR_BY_VECTOR_ID), (
+        "every id those authorities name must also carry the identity law"
+    )
+    assert [len(residue[family]) for family in ("valid", "invalid", "replay")] == [
+        27,
+        0,
+        24,
+    ]
+    assert sum(len(names) for names in residue.values()) == 51
+
+    grouped = 0
+    for family, names in residue.items():
+        counts = Counter(
+            cast(str, vector["category"])
+            for vector in sections[family]["vectors"]
+            if cast(str, vector["id"]) in set(names)
+        )
+        grouped += sum(size for size in counts.values() if size >= 2)
+    assert grouped == 43, "residue vectors that have an exchangeable partner"
+
+    for family, section in sections.items():
+        for vector in section["vectors"]:
+            identifier = cast(str, vector["id"])
+            assert REQUIRED_BEHAVIOUR_BY_VECTOR_ID[identifier][0] == family
+
+
+def test_the_behaviour_authority_is_written_out_and_never_computed() -> None:
+    """A literal a comprehension could rebuild is not an authority.
+
+    The partition repair proved that inspecting only the annotated assignment
+    is not enough: a later `.update(...)`, rebinding or augmented assignment
+    leaves the literal in place for a reader while the module binds something
+    derived. The same standard applies here, plus the value shape.
+    """
+    name = "REQUIRED_BEHAVIOUR_BY_VECTOR_ID"
+    module = ast.parse(Path(__file__).read_text("utf-8"))
+    assigned = [
+        node
+        for node in module.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == name
+    ]
+
+    assert len(assigned) == 1
+    literal = assigned[0].value
+    assert isinstance(literal, ast.Dict)
+    assert len(literal.keys) == 183
+    for key, value in zip(literal.keys, literal.values, strict=True):
+        assert isinstance(key, ast.Constant) and isinstance(key.value, str)
+        assert isinstance(value, ast.Tuple)
+        assert len(value.elts) == 2
+        for element in value.elts:
+            assert isinstance(element, ast.Constant) and isinstance(element.value, str)
+
+    touching = [
+        node
+        for statement in module.body
+        if not isinstance(
+            statement, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        )
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Name) and node.id == name
+    ]
+    assert len(touching) == 1, "the authority is bound once and never rebound"
+    assert touching[0] is assigned[0].target
+    assert ast.literal_eval(literal) == REQUIRED_BEHAVIOUR_BY_VECTOR_ID
+
+    for identifier, entry in REQUIRED_BEHAVIOUR_BY_VECTOR_ID.items():
+        assert isinstance(identifier, str)
+        assert isinstance(entry, tuple) and len(entry) == 2
+        family, fingerprint = entry
+        assert family in ("valid", "invalid", "replay")
+        assert re.fullmatch(r"[0-9a-f]{64}", fingerprint), identifier
+
+    source = inspect.getsource(_behaviour_failures) + inspect.getsource(
+        _behavioural_fingerprint
+    )
+    for forbidden in ("VALID", "INVALID", "REPLAY", "MANIFEST", "CORPUS", "split"):
+        assert forbidden not in source, forbidden
+
+
+def test_an_id_and_partition_moved_together_break_only_the_identity_rule() -> None:
+    """The reproduction, kept permanently.
+
+    `history.valid.occurrence-time.offset-zero-form` and
+    `history.valid.occurrence-time.sub-second-preserved` exchange `id` and
+    `semantic_partition`. Because the partition authority is keyed by the id,
+    key and value travel together and it still agrees; the behaviours never
+    move, so the unlabelled signature set is unchanged.
+    """
+    valid = copy.deepcopy(VALID)
+    first = next(
+        v
+        for v in valid["vectors"]
+        if v["id"] == "history.valid.occurrence-time.offset-zero-form"
+    )
+    second = next(
+        v
+        for v in valid["vectors"]
+        if v["id"] == "history.valid.occurrence-time.sub-second-preserved"
+    )
+    before = sorted(_behavioural_signature(v, "valid") for v in valid["vectors"])
+    first["id"], second["id"] = second["id"], first["id"]
+    first["semantic_partition"], second["semantic_partition"] = (
+        second["semantic_partition"],
+        first["semantic_partition"],
+    )
+
+    assert _resealed_digest(valid) != next(
+        entry["sha256"]
+        for entry in MANIFEST["corpus_files"]
+        if entry["filename"] == "valid-vectors.json"
+    )
+
+    sections = _sections(valid, INVALID, REPLAY)
+    assert not _attachment_failures(
+        sections, REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID
+    ), "the completed partition rule cannot see an id and partition moving together"
+    assert (
+        sorted(_behavioural_signature(v, "valid") for v in valid["vectors"]) == before
+    )
+    assert not _family_collisions(valid, "valid")
+    assert not _taxonomy_failures(sections, REQUIRED_CATEGORY_BY_FAMILY_TARGET)
+    assert not _manifest_histogram_failures(MANIFEST, sections)
+
+    assert _behaviour_failures(sections, REQUIRED_BEHAVIOUR_BY_VECTOR_ID) == [
+        (
+            "valid",
+            "history.valid.occurrence-time.offset-zero-form",
+            "fingerprint-differs",
+        ),
+        (
+            "valid",
+            "history.valid.occurrence-time.sub-second-preserved",
+            "fingerprint-differs",
+        ),
+    ]
+
+
+def test_a_second_exposed_valid_pair_also_breaks_the_identity_rule() -> None:
+    """A different category: the rule is not tuned to occurrence-time."""
+    valid = copy.deepcopy(VALID)
+    first = next(
+        v
+        for v in valid["vectors"]
+        if v["id"] == "history.valid.change-set.canonical-three-paths"
+    )
+    second = next(
+        v
+        for v in valid["vectors"]
+        if v["id"] == "history.valid.change-set.single-path-minimum"
+    )
+    first["id"], second["id"] = second["id"], first["id"]
+    first["semantic_partition"], second["semantic_partition"] = (
+        second["semantic_partition"],
+        first["semantic_partition"],
+    )
+
+    sections = _sections(valid, INVALID, REPLAY)
+    assert not _attachment_failures(sections, REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID)
+    assert _behaviour_failures(sections, REQUIRED_BEHAVIOUR_BY_VECTOR_ID) == [
+        (
+            "valid",
+            "history.valid.change-set.canonical-three-paths",
+            "fingerprint-differs",
+        ),
+        (
+            "valid",
+            "history.valid.change-set.single-path-minimum",
+            "fingerprint-differs",
+        ),
+    ]
+
+
+def test_an_exposed_replay_pair_also_breaks_the_identity_rule() -> None:
+    """No replay id is named by any of those four ledgers at all."""
+    replay = copy.deepcopy(REPLAY)
+    first = next(
+        v
+        for v in replay["vectors"]
+        if v["id"] == "history.replay.evidence-association.base-binding"
+    )
+    second = next(
+        v
+        for v in replay["vectors"]
+        if v["id"] == "history.replay.evidence-association.head-binding"
+    )
+    first["id"], second["id"] = second["id"], first["id"]
+    first["semantic_partition"], second["semantic_partition"] = (
+        second["semantic_partition"],
+        first["semantic_partition"],
+    )
+
+    sections = _sections(VALID, INVALID, replay)
+    assert not _attachment_failures(sections, REQUIRED_SEMANTIC_PARTITION_BY_VECTOR_ID)
+    assert not _family_collisions(replay, "replay")
+    assert _behaviour_failures(sections, REQUIRED_BEHAVIOUR_BY_VECTOR_ID) == [
+        (
+            "replay",
+            "history.replay.evidence-association.base-binding",
+            "fingerprint-differs",
+        ),
+        (
+            "replay",
+            "history.replay.evidence-association.head-binding",
+            "fingerprint-differs",
+        ),
+    ]
+
+
+def test_the_identity_rule_is_total_over_the_invalid_family_too() -> None:
+    """Every invalid id is already held elsewhere, and still owes this law."""
+    first = "history.invalid.merge-outcome.extra-parents"
+    second = "history.invalid.merge-outcome.extra-strategy"
+    assert {first, second} <= set(SECONDARY_WITNESS_REGISTRY) | {
+        row[4] for row in REQUIREMENT_LEDGER
+    }, "both are already pinned by a requirement authority"
+
+    authority = copy.deepcopy(REQUIRED_BEHAVIOUR_BY_VECTOR_ID)
+    authority[first], authority[second] = authority[second], authority[first]
+
+    assert _behaviour_failures(_sections(VALID, INVALID, REPLAY), authority) == [
+        ("invalid", first, "fingerprint-differs"),
+        ("invalid", second, "fingerprint-differs"),
+    ]
+
+
+def test_a_changed_signature_field_moves_the_fingerprint() -> None:
+    """Not only a permutation detector: fresh behaviour under an old identity."""
+    valid = copy.deepcopy(VALID)
+    edited = next(
+        v
+        for v in valid["vectors"]
+        if v["id"] == "history.valid.occurrence-time.offset-zero-form"
+    )
+    held = {
+        field: copy.deepcopy(edited[field])
+        for field in ("id", "semantic_partition", "category", "purpose")
+    }
+    assert edited["input_mode"] == "json"
+    edited["input_mode"] = "python"
+
+    assert all(edited[field] == value for field, value in held.items())
+    assert (
+        _behavioural_fingerprint(edited, "valid")
+        != (
+            REQUIRED_BEHAVIOUR_BY_VECTOR_ID[
+                "history.valid.occurrence-time.offset-zero-form"
+            ][1]
+        )
+    )
+    assert _behaviour_failures(
+        _sections(valid, INVALID, REPLAY), REQUIRED_BEHAVIOUR_BY_VECTOR_ID
+    ) == [
+        (
+            "valid",
+            "history.valid.occurrence-time.offset-zero-form",
+            "fingerprint-differs",
+        )
+    ]
+
+
+def test_a_missing_behaviour_entry_fails_the_identity_rule() -> None:
+    authority = copy.deepcopy(REQUIRED_BEHAVIOUR_BY_VECTOR_ID)
+    del authority["history.replay.changed-path.rewrite"]
+
+    assert _behaviour_failures(_sections(VALID, INVALID, REPLAY), authority) == [
+        (
+            "replay",
+            "history.replay.changed-path.rewrite",
+            "vector-absent-from-authority",
+        )
+    ]
+
+
+def test_an_extra_behaviour_entry_fails_the_identity_rule() -> None:
+    authority = copy.deepcopy(REQUIRED_BEHAVIOUR_BY_VECTOR_ID)
+    authority["history.valid.change-set.never-published"] = ("valid", "0" * 64)
+
+    assert _behaviour_failures(_sections(VALID, INVALID, REPLAY), authority) == [
+        (
+            "valid",
+            "history.valid.change-set.never-published",
+            "authority-entry-unpopulated",
+        )
+    ]
+
+
+def test_a_wrong_family_fails_the_identity_rule() -> None:
+    """Family is declared by the authority, never read off the id text."""
+    identifier = "history.valid.change-set.python-typed"
+    authority = copy.deepcopy(REQUIRED_BEHAVIOUR_BY_VECTOR_ID)
+    authority[identifier] = ("replay", authority[identifier][1])
+
+    assert _behaviour_failures(_sections(VALID, INVALID, REPLAY), authority) == [
+        ("valid", identifier, "family-differs")
+    ]
+    assert _behaviour_detail(identifier, _sections(VALID, INVALID, REPLAY), authority)[
+        :3
+    ] == ("valid", identifier, "replay")
+
+
+def test_a_wrong_fingerprint_fails_the_identity_rule() -> None:
+    """A different but well-formed digest is still the wrong behaviour."""
+    identifier = "history.valid.role-binding.base-canonical"
+    replacement = hashlib.sha256(b"a behaviour this corpus never publishes").hexdigest()
+    authority = copy.deepcopy(REQUIRED_BEHAVIOUR_BY_VECTOR_ID)
+    authority[identifier] = ("valid", replacement)
+
+    sections = _sections(VALID, INVALID, REPLAY)
+    assert _behaviour_failures(sections, authority) == [
+        ("valid", identifier, "fingerprint-differs")
+    ]
+    family, named, expected_family, actual, expected = _behaviour_detail(
+        identifier, sections, authority
+    )
+    assert (family, named, expected_family) == ("valid", identifier, "valid")
+    assert expected == replacement
+    assert actual == REQUIRED_BEHAVIOUR_BY_VECTOR_ID[identifier][1]
+    assert actual != expected
+
+
+def test_a_repeated_vector_id_fails_the_identity_rule() -> None:
+    """Two records claiming one identity is a collision, not a match."""
+    valid = copy.deepcopy(VALID)
+    twin = copy.deepcopy(valid["vectors"][0])
+    twin["input_mode"] = "python"
+    valid["vectors"].append(twin)
+
+    failures = _behaviour_failures(
+        _sections(valid, INVALID, REPLAY), REQUIRED_BEHAVIOUR_BY_VECTOR_ID
+    )
+    assert (cast(str, twin["id"]), "vector-id-repeated") in [
+        (identifier, reason) for _, identifier, reason in failures
+    ]
+
+
+def test_the_fingerprint_ignores_every_authored_label() -> None:
+    """If the id fed its own fingerprint the rule would confirm itself.
+
+    This is the invariant the whole repair rests on, so it is checked over
+    every vector in every family rather than a sample. A family-conditional
+    extra input -- feeding `purpose` only for invalid, say -- would otherwise
+    sit entirely outside a valid-family probe, and for those vectors the
+    identity law would quietly degenerate into a statement about a label.
+    """
+    assert SIGNATURE_FIELDS == {
+        "valid": ("expected", "input", "input_mode", "operation", "target"),
+        "invalid": ("expected", "input", "input_mode", "operation", "target"),
+        "replay": (
+            "embedded_facts",
+            "evidence_classification",
+            "evidence_record_lock",
+            "expected",
+            "input",
+            "input_mode",
+            "operation",
+            "source_pointers",
+            "target",
+        ),
+    }
+
+    sections = _sections(VALID, INVALID, REPLAY)
+    labels: tuple[tuple[str, Any], ...] = (
+        ("id", "history.relabelled.probe.identifier"),
+        ("semantic_partition", "relabelled/probe/partition"),
+        ("purpose", "a sentence this corpus never publishes"),
+        ("category", "relabelled-probe-category"),
+        ("decision_references", ["decision:relabelled:probe"]),
+    )
+    checked = 0
+    for family, section in sections.items():
+        for vector in section["vectors"]:
+            # the definition is pinned per vector, so no family can carry a
+            # different one
+            baseline = _behavioural_fingerprint(vector, family)
+            assert (
+                baseline
+                == hashlib.sha256(
+                    _behavioural_signature(vector, family).encode("utf-8")
+                ).hexdigest()
+            ), vector["id"]
+            assert re.fullmatch(r"[0-9a-f]{64}", baseline)
+
+            for label, replacement in labels:
+                relabelled = copy.deepcopy(vector)
+                relabelled[label] = replacement
+                assert relabelled[label] != vector[label], (label, vector["id"])
+                assert _behavioural_fingerprint(relabelled, family) == baseline, (
+                    label,
+                    vector["id"],
+                )
+                checked += 1
+
+    assert checked == 183 * len(labels)
+
+    for family, section in sections.items():
+        behaviourally_changed = copy.deepcopy(
+            cast(dict[str, Any], section["vectors"][0])
+        )
+        assert behaviourally_changed["input_mode"] != "a-mode-the-corpus-never-uses"
+        behaviourally_changed["input_mode"] = "a-mode-the-corpus-never-uses"
+        assert _behavioural_fingerprint(
+            behaviourally_changed, family
+        ) != _behavioural_fingerprint(section["vectors"][0], family), family
+
+
 # --- the eleven forbidden extras protect eleven different non-claims ----------
 
 
