@@ -5400,6 +5400,9 @@ def _render_replay_summary_block() -> list[str]:
         int, cast(dict[str, Any], contract["evidence_limits"])["linkable_history_facts"]
     )
     phase = cast(dict[str, Any], MANIFEST["scope"])["phase"]
+    # the deferral is cited from the locked S08 register: the origin phase and
+    # subject id, not a claim about who owns that subject today
+    origin, subject = _deferred_ancestry_citation()
     change_set = _target_entry("PullRequestChangeSet")["symbol"]
     link_slice = _target_entry("PullRequestHistoryFactEvidenceLink")["slice_layer"]
 
@@ -5414,7 +5417,7 @@ def _render_replay_summary_block() -> list[str]:
             f"`deterministic_derivation` is {'present' if derivation else 'not present'}:"
             f" `{phase}` publishes no deterministic derivation, and the ahead, behind,"
             " and merge-base values the retained comparison carries remain deferred"
-            " with `S1.P02` `deferred:22`."
+            f" with `{origin}` `{subject}`."
         ),
         (
             f"{_spelled(linkable).capitalize()} history facts are individually linkable."
@@ -6381,9 +6384,9 @@ def test_every_registered_region_rejects_a_semantic_edit() -> None:
 # claims -- a table or bullet block is no longer merely correct, it has to be
 # under its own heading with nothing else beside it.
 #
-# Steps 3 and 4 are not here. The deferred:22 reader, the owner-topology reader
-# and the S1.P09 deflection need authorities this corpus does not lock, and the
-# document-wide registry closure needs every region to exist first.
+# Step 4 is not here. The document-wide registry closure needs every region to
+# exist first, and the S1.P09 deflection needs an authority this corpus does not
+# lock. The deferred:22 and owner-topology readers arrive in step 3, below.
 
 SECTION_TWO = CONTRACT_HEADINGS[2]
 SECTION_THREE = CONTRACT_HEADINGS[3]
@@ -6601,8 +6604,8 @@ def _render_forbidden_extra_prose() -> list[str]:
 
 def _render_governance_prose() -> list[str]:
     governance = cast(dict[str, Any], MANIFEST["effective_governance"])
-    correction = cast(list[dict[str, str]], MANIFEST["source_decisions"])[1]
-    append_only = correction["authority_role"].startswith("append_only")
+    # the correction's own structured flag, not the manifest's label for it
+    append_only = _correction_is_append_only()
     return [
         f"`S1.P05.S08` and its {'append-only' if append_only else 'regenerating'}"
         " `S1.P05.S08.C01` correction are consumed as source authorities and are"
@@ -6699,7 +6702,11 @@ STEP_TWO_REGIONS: tuple[ContractRegion, ...] = (
         REPLAY_SUMMARY_SECTION,
         _paragraph_selector(REPLAY_SUMMARY_SECTION, 4),
         _sliced_renderer(_render_replay_summary_block, 1, 2),
-        ("/replay_contract/deterministic_derivation_present", "/scope/phase"),
+        (
+            "/replay_contract/deterministic_derivation_present",
+            "/scope/phase",
+            "_deferred_ancestry_citation",
+        ),
         "EXACT",
         "OBJECTIVE",
         "CANONICAL_DECLARATION_ONLY",
@@ -6791,7 +6798,7 @@ STEP_TWO_REGIONS: tuple[ContractRegion, ...] = (
         (
             "/effective_governance/vectorized_as_product_behavior",
             "/effective_governance/recomputation_required",
-            "/source_decisions/1/authority_role",
+            "_correction_is_append_only",
         ),
         "EXACT",
         "OBJECTIVE",
@@ -6876,12 +6883,19 @@ def _drifted_authority(name: str) -> Any:
     one vector short."""
     value = globals()[name]
     if callable(value):
-        observed = cast(Callable[[], bool], value)
+        observed = cast(Callable[[], Any], value)
 
-        def flipped() -> bool:
-            return not observed()
+        def moved() -> Any:
+            result = observed()
+            if isinstance(result, bool):
+                return not result
+            if isinstance(result, tuple):
+                return tuple(
+                    f"{part}-drifted" for part in cast(tuple[Any, ...], result)
+                )
+            return f"{result}-drifted"
 
-        return flipped
+        return moved
 
     if isinstance(value, tuple):
         return cast(tuple[Any, ...], value)[:-1]
@@ -6968,3 +6982,403 @@ def test_a_paragraph_added_to_a_tiled_section_is_refused() -> None:
         tampered = text.replace(f"{heading}\n", f"{heading}\n\n{smuggled}\n", 1)
         assert tampered != text, heading
         assert _section_paragraphs(tampered, heading) != rendered, heading
+
+
+# --- step 3: the authorities this corpus locks but had never opened ----------
+#
+# Three claims in contract.md were true of artifacts outside the manifest, and
+# steps 1 and 2 could only project them from the manifest's own restatements.
+# The deferral citation was a frozen literal, the owner topology was read off
+# the non-goal string it is supposed to justify, and "append-only" came from a
+# manifest label naming itself rather than from the correction's own flag.
+#
+# The rule for reaching outside is narrow: an artifact is readable only if
+# `source_decisions` already locks it, and it is read through that lock -- the
+# reference names the entry, the entry names the path and the digest, and the
+# bytes must match before anything is parsed. A locked document may cite a
+# predecessor; citing is not opening. The S08 decision cites the S1.P02 closure
+# by path, pointer and digest, and that closure stays shut.
+
+GOVERNANCE_DECISION = "decision:s1-p05-s08:disposition"
+GOVERNANCE_CORRECTION = "correction:s1-p05-s08-c01:owner-topology"
+
+# the deferred subject the replay summary cites, and the owner-topology subjects
+# the generic-graph non-goal rests on
+DEFERRED_ANCESTRY = "deferred:22"
+GENERIC_GRAPH_SUBJECTS = (
+    "deferred:02",
+    "deferred:22",
+    "deferred:p01:p05-development-history-event-model",
+    "deferred:p01:p05-development-history-relationship-model",
+)
+FAULT_VOCABULARY_SUBJECT = "gap:s05-known:case-relationship-vocabulary-provisional"
+
+
+def _locked_source(decision_reference: str) -> dict[str, Any]:
+    """The structured body of an artifact `source_decisions` already locks."""
+    entries = cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+    matches = [e for e in entries if e["decision_reference"] == decision_reference]
+    assert len(matches) == 1, decision_reference
+
+    entry = matches[0]
+    raw = (REPOSITORY_ROOT / cast(str, entry["path"])).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == entry["sha256"], decision_reference
+    return cast(dict[str, Any], json.loads(raw))
+
+
+def _sole_record(records: list[dict[str, Any]], key: str, value: str) -> dict[str, Any]:
+    """Exactly one structured record: absent, duplicated and ambiguous all fail."""
+    found = [record for record in records if record.get(key) == value]
+    assert len(found) == 1, (key, value, len(found))
+    return found[0]
+
+
+def _inherited_subject(subject_id: str) -> dict[str, Any]:
+    """The S08 register entry for a subject, keyed on its origin citation."""
+    items = cast(
+        list[dict[str, Any]],
+        _locked_source(GOVERNANCE_DECISION)["inherited_subject_register"]["items"],
+    )
+    found = [
+        item
+        for item in items
+        if cast(dict[str, Any], item["source"])["subject_id"] == subject_id
+    ]
+    assert len(found) == 1, (subject_id, len(found))
+    return found[0]
+
+
+def _effective_subject(subject_id: str) -> dict[str, Any]:
+    """The C01 effective projection for a subject: the owner that stands now."""
+    items = cast(
+        list[dict[str, Any]],
+        _locked_source(GOVERNANCE_CORRECTION)["effective_projection"]["items"],
+    )
+    return _sole_record(items, "subject_id", subject_id)
+
+
+def _deferred_ancestry_citation() -> tuple[str, str]:
+    """The origin phase and subject id the replay summary cites, not its owner."""
+    source = cast(dict[str, Any], _inherited_subject(DEFERRED_ANCESTRY)["source"])
+    origin = cast(str, source["source_artifact"]).split("_")[0]
+    return origin, cast(str, source["subject_id"])
+
+
+def _generic_graph_owner() -> str:
+    """The single owner the correction gives every generic-graph subject."""
+    owners = {
+        cast(str, _effective_subject(subject)["immediate_owner"])
+        for subject in GENERIC_GRAPH_SUBJECTS
+    }
+    assert len(owners) == 1, owners
+    return owners.pop()
+
+
+def _subjects_owned_by(owner: str) -> set[str]:
+    """Every subject the correction leaves with one owner."""
+    items = cast(
+        list[dict[str, Any]],
+        _locked_source(GOVERNANCE_CORRECTION)["effective_projection"]["items"],
+    )
+    return {
+        cast(str, item["subject_id"])
+        for item in items
+        if item["immediate_owner"] == owner
+    }
+
+
+def _correction_is_append_only() -> bool:
+    identity = cast(
+        dict[str, Any], _locked_source(GOVERNANCE_CORRECTION)["correction_identity"]
+    )
+    return identity["append_only"] is True
+
+
+def test_the_deferred_ancestry_subject_reads_from_its_locked_register() -> None:
+    """Origin and current owner are different facts and stay different.
+
+    The decision carries the subject forward from `S1.P02` and, at the time it
+    was written, left it with `S1.P06`. The correction moved it to `S5`. The
+    sentence in section 4 cites the origin; it does not say who owns it now.
+    """
+    inherited = _inherited_subject(DEFERRED_ANCESTRY)
+    source = cast(dict[str, Any], inherited["source"])
+    carried = cast(dict[str, Any], inherited["carried_forward"])
+    effective = _effective_subject(DEFERRED_ANCESTRY)
+
+    assert source["subject_id"] == DEFERRED_ANCESTRY
+    assert source["source_artifact"].startswith("S1.P02")
+    assert inherited["subject"] == "ancestry and reachability"
+    assert inherited["disposition"] == "carried_forward"
+
+    # the decision's own owner is superseded, so reading it as current would be
+    # wrong in exactly the way the correction exists to fix
+    assert carried["immediate_owner"] == "S1.P06"
+    assert effective["immediate_owner"] == "S5"
+    assert effective["preserved_long_term_owner"] == "S5"
+    assert effective["subject"] == inherited["subject"]
+
+    assert _deferred_ancestry_citation() == ("S1.P02", DEFERRED_ANCESTRY)
+
+
+def test_the_generic_graph_owner_topology_reads_from_the_locked_correction() -> None:
+    """S5 owns the generic graph; S1.P06 keeps the fault-specific vocabulary."""
+    for subject in GENERIC_GRAPH_SUBJECTS:
+        entry = _effective_subject(subject)
+        assert entry["immediate_owner"] == "S5", subject
+        assert entry["preserved_long_term_owner"] == "S5", subject
+
+    # positive control: the correction moved the generic graph, not everything
+    # that mentions relationships
+    fault = _effective_subject(FAULT_VOCABULARY_SUBJECT)
+    assert fault["immediate_owner"] == "S1.P06"
+    assert fault["preserved_long_term_owner"] == "S1.P06"
+    assert _generic_graph_owner() == "S5"
+
+    # closed from the other side too: S1.P06 keeps that subject and no other, so
+    # the correction cannot be read as moving all relationship semantics to S5
+    assert _subjects_owned_by("S1.P06") == {FAULT_VOCABULARY_SUBJECT}
+    assert set(GENERIC_GRAPH_SUBJECTS) <= _subjects_owned_by("S5")
+
+
+def test_the_generic_graph_non_goal_matches_the_locked_owner_topology() -> None:
+    """The published bullet is rendered from the topology, not trusted beside it."""
+    owner = _generic_graph_owner()
+    fault_owner = cast(
+        str, _effective_subject(FAULT_VOCABULARY_SUBJECT)["immediate_owner"]
+    )
+    assert owner != fault_owner
+
+    declared = [
+        goal
+        for goal in cast(list[str], MANIFEST["non_goals"])
+        if "evolution graph" in goal
+    ]
+    assert declared == [
+        f"generic repository or evolution graph is {owner}-owned,"
+        f" not {fault_owner}-owned"
+    ]
+
+
+def test_the_correction_append_only_flag_is_the_artifacts_own() -> None:
+    """The manifest labels itself; only the correction can vouch for itself."""
+    identity = cast(
+        dict[str, Any], _locked_source(GOVERNANCE_CORRECTION)["correction_identity"]
+    )
+
+    assert identity["append_only"] is True
+    assert type(identity["append_only"]) is bool
+    assert identity["corrects_slice"] == "S1.P05.S08"
+    assert identity["slice"] == "S1.P05.S08.C01"
+    assert _correction_is_append_only() is True
+
+    # the manifest's own role string is declared descriptive, so it could never
+    # have been the independent authority step 2 needed -- but reading it to
+    # check for contradiction is not citing it as verification, and step 2 was
+    # the only thing pinning its value
+    entry = _sole_record(
+        cast(list[dict[str, Any]], MANIFEST["source_decisions"]),
+        "decision_reference",
+        GOVERNANCE_CORRECTION,
+    )
+    assert "/source_decisions/1/authority_role" in DESCRIPTIVE_PATHS
+    assert (
+        cast(str, entry["authority_role"]).startswith("append_only")
+        is (identity["append_only"])
+    )
+
+    # the artifact also says its predecessor was never rewritten, and that is
+    # checkable rather than merely asserted: the decision digest it locks is the
+    # one this corpus locks, so no new file is opened to confirm it
+    integrity = cast(
+        dict[str, Any], _locked_source(GOVERNANCE_CORRECTION)["predecessor_integrity"]
+    )
+    assert integrity["append_only"] is True
+    assert integrity["predecessor_artifact_regenerated"] is False
+
+    cited = _sole_record(
+        cast(
+            list[dict[str, Any]],
+            _locked_source(GOVERNANCE_CORRECTION)["source_locks"]["cited_artifacts"],
+        ),
+        "role",
+        "corrected_predecessor_decision",
+    )
+    decision = _sole_record(
+        cast(list[dict[str, Any]], MANIFEST["source_decisions"]),
+        "decision_reference",
+        GOVERNANCE_DECISION,
+    )
+    assert cited["path"] == decision["path"]
+    assert cited["sha256"] == decision["sha256"]
+
+
+def test_no_unlocked_predecessor_is_opened_as_authority() -> None:
+    """A locked document may cite a predecessor; the citation is not a door.
+
+    The S08 decision names the `S1.P02` closure by path, pointer and digest.
+    That closure is not in `source_decisions`, so this module must never open
+    it -- reading the citation is the whole of what step 3 is allowed to do.
+    """
+    locked = {
+        cast(str, entry["path"])
+        for entry in cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+    }
+    # every path either locked document cites, wherever it sits: harvesting one
+    # collection would leave the blocklist complete only by luck
+    cited: set[str] = set()
+
+    def collect(node: Any) -> None:
+        if isinstance(node, dict):
+            mapping = cast(dict[str, Any], node)
+            value = mapping.get("path")
+            if isinstance(value, str):
+                cited.add(value)
+            for child in mapping.values():
+                collect(child)
+        elif isinstance(node, list):
+            for child in cast(list[Any], node):
+                collect(child)
+
+    for reference in (GOVERNANCE_DECISION, GOVERNANCE_CORRECTION):
+        collect(_locked_source(reference))
+
+    unlocked = sorted(cited - locked)
+    assert len(unlocked) >= 3, unlocked
+    assert any("s1-p02-phase-closure" in path for path in unlocked)
+
+    # A source-text scan cannot stop a path assembled at runtime; what it does
+    # stop is the ordinary way one gets opened, which is by being written down.
+    module = Path(__file__).read_text("utf-8")
+    for path in unlocked:
+        assert path not in module, path
+
+
+# --- step 3: claim-level assurance, because regions are coarser than claims --
+#
+# A region carries several claims and may only advertise the weakest assurance
+# among them, so upgrading a whole region because one sentence inside it gained
+# an external authority would overclaim the rest. The three claims that now rest
+# on a locked artifact are recorded individually, alongside the one that does
+# not: the S1.P09 deflection is projected exactly and verified by nobody, and
+# saying so is the point of keeping the axes apart.
+
+EXTERNAL_CLAIMS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "s4.deferred-ancestry-citation",
+        "s4.deterministic-derivation",
+        GOVERNANCE_DECISION,
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    (
+        "s7.correction-append-only",
+        "s7.governance-prose",
+        GOVERNANCE_CORRECTION,
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    (
+        "s8.generic-graph-owner",
+        "s8.non-goals",
+        GOVERNANCE_CORRECTION,
+        "INDEPENDENTLY_VERIFIED",
+    ),
+    # S8-U12: the bullet projects `/non_goals/22` exactly, but the slice that
+    # owns confidence and review publishes no structured authority this corpus
+    # locks. Verifying it would mean opening the roadmap or another phase's
+    # closure, which step 3 is not allowed to do.
+    ("s8.p09-deflection", "s8.non-goals", "", "EXTERNAL_AUTHORITY_DEFERRED"),
+)
+
+
+# the reader each claim rests on, where the region's own renderer reads it.
+# `s8.generic-graph-owner` is absent on purpose: the non-goal bullet renders from
+# `/non_goals`, and its binding to the topology is the equality assertion in
+# `test_the_generic_graph_non_goal_matches_the_locked_owner_topology`.
+CLAIM_READERS = {
+    "s4.deferred-ancestry-citation": "_deferred_ancestry_citation",
+    "s7.correction-append-only": "_correction_is_append_only",
+}
+
+
+def test_the_external_claim_ledger_is_the_set_step_three_closed() -> None:
+    """Listing well-formed rows proves nothing if a row can simply vanish."""
+    verified = {c for c, _, _, s in EXTERNAL_CLAIMS if s == "INDEPENDENTLY_VERIFIED"}
+    deferred = {
+        c for c, _, _, s in EXTERNAL_CLAIMS if s == "EXTERNAL_AUTHORITY_DEFERRED"
+    }
+
+    assert verified == {
+        "s4.deferred-ancestry-citation",
+        "s7.correction-append-only",
+        "s8.generic-graph-owner",
+    }
+    assert deferred == {"s8.p09-deflection"}
+
+    # a claim whose region renders its reader must say so in that region's
+    # authority, or the two could drift apart unnoticed
+    for claim_id, region_id, _, _ in EXTERNAL_CLAIMS:
+        reader = CLAIM_READERS.get(claim_id)
+        if reader is not None:
+            assert reader in _region(region_id).authority, claim_id
+
+
+def test_every_external_claim_names_a_registered_region_and_authority() -> None:
+    registered = {region.region_id for region in CONTRACT_PROJECTION_REGISTRY}
+    references = {
+        cast(str, entry["decision_reference"])
+        for entry in cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+    }
+    seen: set[str] = set()
+
+    for claim_id, region_id, authority, assurance in EXTERNAL_CLAIMS:
+        assert claim_id not in seen, claim_id
+        seen.add(claim_id)
+        assert region_id in registered, claim_id
+        assert assurance in AUTHORITY_ASSURANCES, claim_id
+        # verified means a locked artifact vouches for it; deferred means none does
+        if assurance == "INDEPENDENTLY_VERIFIED":
+            assert authority in references, claim_id
+        else:
+            assert authority == "", claim_id
+
+
+def test_a_claim_may_not_outrank_the_region_that_carries_it() -> None:
+    """A verified claim inside a declaration-only region does not lift the region.
+
+    `s7.governance-prose` also restates `recomputation_required`, which is
+    descriptive, so the region stays where step 2 left it even though the
+    append-only half is now vouched for by the correction itself.
+    """
+    for _, region_id, _, assurance in EXTERNAL_CLAIMS:
+        region = _region(region_id)
+        if assurance != "INDEPENDENTLY_VERIFIED":
+            continue
+        if _descriptive_pointers(region):
+            assert region.authority_assurance == "CANONICAL_DECLARATION_ONLY", region_id
+
+
+def test_the_p09_deflection_is_never_reported_as_verified() -> None:
+    """Step 3 must not be able to claim S8-U12 was independently checked."""
+    claim = _sole_record(
+        [
+            {"id": c, "region": r, "authority": a, "assurance": s}
+            for c, r, a, s in EXTERNAL_CLAIMS
+        ],
+        "id",
+        "s8.p09-deflection",
+    )
+
+    assert claim["assurance"] == "EXTERNAL_AUTHORITY_DEFERRED"
+    assert claim["authority"] == ""
+
+    # nothing this corpus locks could supply the deflected slice's ownership
+    locked = {
+        cast(str, entry["path"]).lower()
+        for entry in cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+    }
+    assert not [path for path in locked if "roadmap" in path or "p09" in path]
+
+    # and the bullet it refers to is still exactly projected
+    assert "no S1.P09 confidence or review interpretation" in cast(
+        list[str], MANIFEST["non_goals"]
+    )
