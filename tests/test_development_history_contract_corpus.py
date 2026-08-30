@@ -4447,6 +4447,432 @@ def test_an_unresolvable_authority_id_is_refused() -> None:
     assert not set(entry["authority_ids"]) <= _declared_authority_ids(entry)
 
 
+# --- a decision reference names one authored source record --------------------
+#
+# Every source-decision entry is checked against whichever artifact it names:
+# the path must exist, the digest must match those live bytes, and the declared
+# authority ids must resolve through the declared id-source. All of that is
+# internal agreement. None of it asks whether the reference names the artifact
+# it is supposed to name.
+#
+# So `closure:s1-p03:evidence-envelope` can be repointed at the already-locked
+# S08 decision -- path, digest, id-source, ids and role all moved together --
+# and every per-entry source-decision check still passes. What noticed the
+# corpus-level version of that edit was a stale Section-9 projection and two
+# declaration-path counts: consumers reacting to a side effect, not an
+# authority asserting the mapping. A reordering of the entries, or a target
+# whose id-source happens to have the same shape, would leave less behind.
+#
+# The mapping is therefore authored here, and it stays deliberately small. The
+# digest is not copied into it, because the stronger chain already exists --
+# authored reference to authored path to live bytes to observed SHA-256 -- and
+# neither are the authority ids, which resolve out of the attached artifact
+# through the attached id-source. Duplicating either here would re-state the
+# sealed address rather than bind anything new.
+#
+# `authority_role` is descriptive metadata and stays that way. Pinning it fixes
+# which role declaration belongs to this reference; it is not evidence that the
+# role prose is independently true, and this repair adds no objective
+# validator for it.
+
+REQUIRED_SOURCE_DECISION_BY_REFERENCE: dict[str, tuple[str, str, str, str]] = {
+    "acquisition:run-0001": (
+        "reference_corpus/pytest-4412/acquisitions/"
+        "run-0001-s04-v1-base-4c9cde74-head-690a63b9/acquisition.json",
+        "retained_replay_evidence",
+        "/run",
+        "run_id",
+    ),
+    "closure:s1-p03:evidence-envelope": (
+        "reference_corpus/contracts/evidence-envelope/closures/"
+        "s1-p03-phase-closure/closure.json",
+        "originating_development_history_model_reservation",
+        "/deferred_register/entries",
+        "deferred_id",
+    ),
+    "correction:s04-c01-acquisition-closure": (
+        "reference_corpus/pytest-4412/corrections/"
+        "s04-c01-acquisition-closure/correction.json",
+        "retained_additive_correction_evidence",
+        "/correction",
+        "id",
+    ),
+    "correction:s1-p05-s08-c01:owner-topology": (
+        "reference_corpus/contracts/development-history/corrections/"
+        "s08-c01-deferred-subject-owner-topology/correction.json",
+        "append_only_owner_topology_correction",
+        "/superseded_dispositions/items",
+        "correction_id",
+    ),
+    "decision:s1-p05-s08:disposition": (
+        "reference_corpus/contracts/development-history/decisions/"
+        "s08-deferred-subject-disposition/decision.json",
+        "governance_disposition_not_vectorized",
+        "/inherited_subject_register/items",
+        "disposition_id",
+    ),
+}
+
+SOURCE_DECISION_FIELDS = (
+    "authority_id_source",
+    "authority_ids",
+    "authority_role",
+    "decision_reference",
+    "path",
+    "sha256",
+)
+
+
+def _source_attachment_failures(
+    entries: list[dict[str, Any]],
+    authority: dict[str, tuple[str, str, str, str]],
+) -> list[tuple[str, str]]:
+    """`(decision_reference, reason)` for every disagreement, in both directions.
+
+    The collection is a list, but the identity relation is not positional, so
+    every entry is looked up by its own reference and a reordering must read as
+    no change at all.
+    """
+    failures: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for entry in entries:
+        reference = cast(str, entry["decision_reference"])
+        if reference in seen:
+            failures.append((reference, "duplicate-reference"))
+            continue
+        seen.add(reference)
+        if reference not in authority:
+            failures.append((reference, "manifest-reference-absent-from-authority"))
+            continue
+        path, role, collection, field = authority[reference]
+        source = cast(dict[str, str], entry["authority_id_source"])
+        if entry["path"] != path:
+            failures.append((reference, "path-differs"))
+        if entry["authority_role"] != role:
+            failures.append((reference, "role-differs"))
+        if source.get("collection") != collection:
+            failures.append((reference, "collection-differs"))
+        if source.get("id_field") != field:
+            failures.append((reference, "id-field-differs"))
+    for reference in sorted(set(authority) - seen):
+        failures.append((reference, "authority-entry-unpopulated"))
+    return sorted(failures)
+
+
+def _live_source_decisions() -> list[dict[str, Any]]:
+    return cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+
+
+def _set_path(entry: dict[str, Any]) -> None:
+    entry["path"] = (
+        "reference_corpus/contracts/development-history/decisions/"
+        "s08-deferred-subject-disposition/decision.json"
+    )
+
+
+def _set_role(entry: dict[str, Any]) -> None:
+    entry["authority_role"] = "governance_disposition_not_vectorized"
+
+
+def _set_collection(entry: dict[str, Any]) -> None:
+    entry["authority_id_source"] = {
+        "collection": "/inherited_subject_register/items",
+        "id_field": cast(dict[str, str], entry["authority_id_source"])["id_field"],
+    }
+
+
+def _set_id_field(entry: dict[str, Any]) -> None:
+    entry["authority_id_source"] = {
+        "collection": cast(dict[str, str], entry["authority_id_source"])["collection"],
+        "id_field": "disposition_id",
+    }
+
+
+def test_every_source_decision_names_the_record_authored_for_it() -> None:
+    """The reported finding, closed.
+
+    A reference repointed at another already-locked artifact satisfied every
+    per-entry check, because each of them asks only whether the record agrees
+    with the file it happens to name.
+    """
+    assert not _source_attachment_failures(
+        _live_source_decisions(), REQUIRED_SOURCE_DECISION_BY_REFERENCE
+    )
+
+    assert len(REQUIRED_SOURCE_DECISION_BY_REFERENCE) == 5
+    assert len(_live_source_decisions()) == 5
+    paths = {row[0] for row in REQUIRED_SOURCE_DECISION_BY_REFERENCE.values()}
+    assert len(paths) == 5, "five references, five distinct artifacts"
+
+
+def test_the_source_attachment_closes_against_the_manifest_both_ways() -> None:
+    observed = {
+        cast(str, entry["decision_reference"]) for entry in _live_source_decisions()
+    }
+    authored = set(REQUIRED_SOURCE_DECISION_BY_REFERENCE)
+
+    assert observed - authored == set(), "a reference the authority omits"
+    assert authored - observed == set(), "an entry the manifest never publishes"
+    assert observed == authored
+    assert len(observed) == 5
+
+
+def test_the_source_attachment_authority_is_written_out_and_never_computed() -> None:
+    """The manifest may not authorise its own reference-to-artifact mapping."""
+    name = "REQUIRED_SOURCE_DECISION_BY_REFERENCE"
+    module = ast.parse(Path(__file__).read_text("utf-8"))
+    assigned = [
+        node
+        for node in module.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == name
+    ]
+
+    assert len(assigned) == 1
+    literal = assigned[0].value
+    assert isinstance(literal, ast.Dict)
+    assert len(literal.keys) == 5
+    for key, value in zip(literal.keys, literal.values, strict=True):
+        assert isinstance(key, ast.Constant) and isinstance(key.value, str)
+        assert isinstance(value, ast.Tuple)
+        assert len(value.elts) == 4
+        for element in value.elts:
+            # a path is written as an implicitly concatenated literal, which
+            # parses to a single constant, so every element must still be one
+            assert isinstance(element, ast.Constant) and isinstance(element.value, str)
+
+    touching = [
+        node
+        for statement in module.body
+        if not isinstance(
+            statement, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        )
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Name) and node.id == name
+    ]
+    assert len(touching) == 1, "the authority is bound once and never rebound"
+    assert touching[0] is assigned[0].target
+    assert ast.literal_eval(literal) == REQUIRED_SOURCE_DECISION_BY_REFERENCE
+
+    for reference, row in REQUIRED_SOURCE_DECISION_BY_REFERENCE.items():
+        assert isinstance(reference, str) and reference
+        assert isinstance(row, tuple) and len(row) == 4
+        assert all(isinstance(element, str) and element for element in row)
+        assert row[2].startswith("/")
+
+    source = inspect.getsource(_source_attachment_failures)
+    for forbidden in ("MANIFEST", "CORPUS", "VALID", "INVALID", "REPLAY"):
+        assert forbidden not in source, forbidden
+
+
+def test_repointing_a_reference_at_another_locked_artifact_fails() -> None:
+    """The reproduction, kept permanently.
+
+    `closure:s1-p03:evidence-envelope` is given the S08 decision's path, role
+    and id-source. Every per-entry source-decision check still passes -- the
+    digest matches those bytes and the ids resolve in that document -- and only
+    the attachment notices the reference now names the wrong record.
+    """
+    entries = copy.deepcopy(_live_source_decisions())
+    repointed = next(
+        e
+        for e in entries
+        if e["decision_reference"] == "closure:s1-p03:evidence-envelope"
+    )
+    s08 = next(
+        e
+        for e in entries
+        if e["decision_reference"] == "decision:s1-p05-s08:disposition"
+    )
+    for field in ("path", "sha256", "authority_role"):
+        repointed[field] = copy.deepcopy(s08[field])
+    repointed["authority_id_source"] = copy.deepcopy(s08["authority_id_source"])
+    repointed["authority_ids"] = list(cast(list[str], s08["authority_ids"]))
+
+    # every existing per-entry check the corpus already runs still passes
+    raw = (REPOSITORY_ROOT / cast(str, repointed["path"])).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == repointed["sha256"]
+    assert set(repointed["authority_ids"]) == _declared_authority_ids(repointed)
+
+    assert _source_attachment_failures(
+        entries, REQUIRED_SOURCE_DECISION_BY_REFERENCE
+    ) == [
+        ("closure:s1-p03:evidence-envelope", "collection-differs"),
+        ("closure:s1-p03:evidence-envelope", "id-field-differs"),
+        ("closure:s1-p03:evidence-envelope", "path-differs"),
+        ("closure:s1-p03:evidence-envelope", "role-differs"),
+    ]
+
+
+def test_two_references_exchanging_their_whole_identity_tuple_fail() -> None:
+    """The tuple multiset is preserved, so nothing counted changes."""
+    entries = copy.deepcopy(_live_source_decisions())
+    first = next(
+        e for e in entries if e["decision_reference"] == "acquisition:run-0001"
+    )
+    second = next(
+        e
+        for e in entries
+        if e["decision_reference"] == "correction:s04-c01-acquisition-closure"
+    )
+    for field in ("path", "sha256", "authority_role", "authority_id_source"):
+        first[field], second[field] = (
+            copy.deepcopy(second[field]),
+            copy.deepcopy(first[field]),
+        )
+    first["authority_ids"], second["authority_ids"] = (
+        list(second["authority_ids"]),
+        list(first["authority_ids"]),
+    )
+
+    for entry in (first, second):
+        raw = (REPOSITORY_ROOT / cast(str, entry["path"])).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == entry["sha256"], "still coherent"
+        assert set(cast(list[str], entry["authority_ids"])) <= _declared_authority_ids(
+            entry
+        )
+
+    assert _source_attachment_failures(
+        entries, REQUIRED_SOURCE_DECISION_BY_REFERENCE
+    ) == [
+        ("acquisition:run-0001", "collection-differs"),
+        ("acquisition:run-0001", "id-field-differs"),
+        ("acquisition:run-0001", "path-differs"),
+        ("acquisition:run-0001", "role-differs"),
+        ("correction:s04-c01-acquisition-closure", "collection-differs"),
+        ("correction:s04-c01-acquisition-closure", "id-field-differs"),
+        ("correction:s04-c01-acquisition-closure", "path-differs"),
+        ("correction:s04-c01-acquisition-closure", "role-differs"),
+    ]
+
+
+def test_each_attached_field_drifts_on_its_own() -> None:
+    """One field at a time, so no probe can pass for a neighbour's reason."""
+    reference = "correction:s1-p05-s08-c01:owner-topology"
+    drifts: tuple[tuple[str, Callable[[dict[str, Any]], None], str], ...] = (
+        ("path", _set_path, "path-differs"),
+        ("authority_role", _set_role, "role-differs"),
+        ("collection", _set_collection, "collection-differs"),
+        ("id_field", _set_id_field, "id-field-differs"),
+    )
+
+    for _, mutate, reason in drifts:
+        entries = copy.deepcopy(_live_source_decisions())
+        mutate(next(e for e in entries if e["decision_reference"] == reference))
+        assert _source_attachment_failures(
+            entries, REQUIRED_SOURCE_DECISION_BY_REFERENCE
+        ) == [(reference, reason)]
+
+
+def test_missing_extra_and_duplicate_references_fail() -> None:
+    absent = copy.deepcopy(_live_source_decisions())
+    renamed = next(
+        e for e in absent if e["decision_reference"] == "acquisition:run-0001"
+    )
+    renamed["decision_reference"] = "closure:s1-p99:never-registered"
+    assert _source_attachment_failures(
+        absent, REQUIRED_SOURCE_DECISION_BY_REFERENCE
+    ) == [
+        ("acquisition:run-0001", "authority-entry-unpopulated"),
+        ("closure:s1-p99:never-registered", "manifest-reference-absent-from-authority"),
+    ]
+
+    authority = copy.deepcopy(REQUIRED_SOURCE_DECISION_BY_REFERENCE)
+    authority["decision:s1-p05-s99:never-published"] = (
+        "reference_corpus/contracts/development-history/decisions/nowhere/decision.json",
+        "a_role_the_manifest_never_declares",
+        "/nowhere/items",
+        "nowhere_id",
+    )
+    assert _source_attachment_failures(_live_source_decisions(), authority) == [
+        ("decision:s1-p05-s99:never-published", "authority-entry-unpopulated")
+    ]
+
+    doubled = copy.deepcopy(_live_source_decisions())
+    doubled.append(
+        copy.deepcopy(
+            next(
+                e
+                for e in doubled
+                if e["decision_reference"] == "decision:s1-p05-s08:disposition"
+            )
+        )
+    )
+    assert _source_attachment_failures(
+        doubled, REQUIRED_SOURCE_DECISION_BY_REFERENCE
+    ) == [("decision:s1-p05-s08:disposition", "duplicate-reference")]
+
+
+def test_reordering_the_source_decisions_is_not_a_change() -> None:
+    """Identity is keyed by the reference, never by the slot it sits in."""
+    reversed_entries = list(reversed(copy.deepcopy(_live_source_decisions())))
+
+    assert [e["decision_reference"] for e in reversed_entries] != [
+        e["decision_reference"] for e in _live_source_decisions()
+    ]
+    assert not _source_attachment_failures(
+        reversed_entries, REQUIRED_SOURCE_DECISION_BY_REFERENCE
+    )
+
+
+def test_every_published_source_decision_field_has_an_owner() -> None:
+    """Every published field has a consumer, and they are not equally strong.
+
+    `decision_reference` is the attachment key. `path`, `authority_role` and
+    `authority_id_source` are authored here. `sha256` is recomputed from the
+    bytes at the attached path, which is why no digest is copied into the
+    mapping.
+
+    `authority_ids` is resolved out of the attached artifact through the
+    attached id-source, but the strength of that varies and the test says so
+    rather than implying otherwise. The two governance entries are pinned to
+    the complete published set by
+    `test_the_governance_authorities_declare_their_complete_id_sets`, and the
+    two pytest-4412 entries resolve a single object, so subset and equality
+    coincide. The closure entry declares one id out of fourteen resolvable
+    ones, and only subset membership constrains which: substituting another
+    real `deferred_id` there is not caught today. That residue is recorded
+    here deliberately, not closed by authoring the id into the mapping above.
+    """
+    for entry in _live_source_decisions():
+        assert tuple(sorted(entry)) == SOURCE_DECISION_FIELDS
+
+    for entry in _live_source_decisions():
+        reference = cast(str, entry["decision_reference"])
+        path, role, collection, field = REQUIRED_SOURCE_DECISION_BY_REFERENCE[reference]
+
+        # authored attachment
+        assert entry["path"] == path
+        assert entry["authority_role"] == role
+        assert entry["authority_id_source"] == {
+            "collection": collection,
+            "id_field": field,
+        }
+        # derived from the attached artifact, never authored here
+        raw = (REPOSITORY_ROOT / path).read_bytes()
+        assert entry["sha256"] == hashlib.sha256(raw).hexdigest()
+        resolved = _declared_authority_ids(entry)
+        declared = set(cast(list[str], entry["authority_ids"]))
+        assert declared and declared <= resolved
+        if reference == "closure:s1-p03:evidence-envelope":
+            assert len(declared) == 1 and len(resolved) == 14, (
+                "the one entry whose declared id is not pinned to a unique choice"
+            )
+        else:
+            assert declared == resolved, reference
+
+        # the role stays descriptive; this repair adds no objective validator
+        index = _live_source_decisions().index(entry)
+        assert f"/source_decisions/{index}/authority_role" in DESCRIPTIVE_PATHS
+
+    for row in REQUIRED_SOURCE_DECISION_BY_REFERENCE.values():
+        for column in row:
+            assert not re.fullmatch(r"[0-9a-f]{64}", column), (
+                "no digest may be authored into any column of the mapping"
+            )
+
+
 def test_every_vector_reference_names_a_registered_authority() -> None:
     """A vector could otherwise cite an authority this corpus never locked."""
     registered = {
