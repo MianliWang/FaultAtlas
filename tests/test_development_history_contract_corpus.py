@@ -4825,15 +4825,10 @@ def test_every_published_source_decision_field_has_an_owner() -> None:
     mapping.
 
     `authority_ids` is resolved out of the attached artifact through the
-    attached id-source, but the strength of that varies and the test says so
-    rather than implying otherwise. The two governance entries are pinned to
-    the complete published set by
-    `test_the_governance_authorities_declare_their_complete_id_sets`, and the
-    two pytest-4412 entries resolve a single object, so subset and equality
-    coincide. The closure entry declares one id out of fourteen resolvable
-    ones, and only subset membership constrains which: substituting another
-    real `deferred_id` there is not caught today. That residue is recorded
-    here deliberately, not closed by authoring the id into the mapping above.
+    attached id-source. Four entries publish the complete resolved set; the
+    P03 closure selects one reservation of fourteen, settled by the structured
+    selector rather than by subset membership. `AUTHORITY_ID_OWNERSHIP` names
+    which discipline each entry uses and is enforced separately.
     """
     for entry in _live_source_decisions():
         assert tuple(sorted(entry)) == SOURCE_DECISION_FIELDS
@@ -4855,12 +4850,9 @@ def test_every_published_source_decision_field_has_an_owner() -> None:
         resolved = _declared_authority_ids(entry)
         declared = set(cast(list[str], entry["authority_ids"]))
         assert declared and declared <= resolved
-        if reference == "closure:s1-p03:evidence-envelope":
-            assert len(declared) == 1 and len(resolved) == 14, (
-                "the one entry whose declared id is not pinned to a unique choice"
-            )
-        else:
-            assert declared == resolved, reference
+        # which discipline settles the list is asserted by
+        # test_every_authority_id_list_is_owned_and_none_is_subset_only
+        assert reference in AUTHORITY_ID_OWNERSHIP
 
         # the role stays descriptive; this repair adds no objective validator
         index = _live_source_decisions().index(entry)
@@ -4871,6 +4863,385 @@ def test_every_published_source_decision_field_has_an_owner() -> None:
             assert not re.fullmatch(r"[0-9a-f]{64}", column), (
                 "no digest may be authored into any column of the mapping"
             )
+
+
+# --- one deferred reservation, selected by what it is about -------------------
+#
+# The attachment above fixes which artifact a reference names. Inside that
+# artifact the P03 closure publishes fourteen deferred reservations, and the
+# manifest cites exactly one of them. The only rule over that citation was
+# subset membership -- is this a real deferred id? -- which fourteen different
+# answers satisfy. Substituting `deferred:03` re-sealed to a green module while
+# the manifest declared this development-history corpus to originate from the
+# fault-instance reservation.
+#
+# The missing relation is not whether the id is real. It is which record is the
+# semantic authority for this reference. That is answered from the structured
+# source: the register carries `subject` and `owner` per entry, so the
+# reservation is selected by what it is about and who owns it, and the id is
+# then read through the id-source the attachment already binds. Nothing parses
+# the role, the reference, the path or any prose.
+#
+# `owner` is not decoration here. `subject` alone names the reservation, and
+# `owner` independently establishes that it is the S1.P05 one rather than a
+# similarly-subjected entry filed under another phase.
+#
+# The expected id is deliberately absent from the selector. Authoring
+# `deferred:02` would restate the manifest's own answer in a second place;
+# authoring the semantics makes the corpus derive it, and a register that
+# renumbered its entries would still resolve.
+#
+# What this proves: the P03 source decision cites the development-history
+# reservation that the structured source selects. It does not prove that the
+# other thirteen reservations belong to S1.P05, that P03 created the
+# development-history model, or anything about future phase ownership.
+
+REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE: dict[str, tuple[str, str]] = {
+    "closure:s1-p03:evidence-envelope": (
+        "development_history_model",
+        "S1.P05",
+    ),
+}
+
+SELECTION_SUBJECT_FIELD = "subject"
+SELECTION_OWNER_FIELD = "owner"
+
+AUTHORITY_ID_OWNERSHIP: dict[str, str] = {
+    "acquisition:run-0001": "complete-resolved-set",
+    "closure:s1-p03:evidence-envelope": "structured-semantic-selection",
+    "correction:s04-c01-acquisition-closure": "complete-resolved-set",
+    "correction:s1-p05-s08-c01:owner-topology": "complete-resolved-set",
+    "decision:s1-p05-s08:disposition": "complete-resolved-set",
+}
+
+
+def _selection_records(
+    reference: str, document: dict[str, Any] | None = None
+) -> tuple[list[dict[str, Any]], str]:
+    """The candidate records and the id field, both read from the attachment.
+
+    The address comes from `REQUIRED_SOURCE_DECISION_BY_REFERENCE`, not from the
+    manifest entry, so a repointed entry cannot redirect the selection.
+    """
+    path, _role, collection, id_field = REQUIRED_SOURCE_DECISION_BY_REFERENCE[reference]
+    if document is None:
+        document = json.loads((REPOSITORY_ROOT / path).read_text("utf-8"))
+    node = _resolve_pointer(document, collection)
+    records = (
+        [cast(dict[str, Any], node)]
+        if isinstance(node, dict)
+        else cast(list[dict[str, Any]], node)
+    )
+    return records, id_field
+
+
+def _authority_selection_failures(
+    entries: list[dict[str, Any]],
+    selections: dict[str, tuple[str, str]],
+    documents: dict[str, dict[str, Any]] | None = None,
+) -> list[tuple[str, str]]:
+    """`(decision_reference, reason)` for every selection that does not hold.
+
+    The document may be supplied in memory so the selector itself is exercised,
+    rather than a digest mismatch standing in for it.
+    """
+    documents = documents or {}
+    failures: list[tuple[str, str]] = []
+    published = {cast(str, entry["decision_reference"]): entry for entry in entries}
+    for reference in sorted(selections):
+        if reference not in published:
+            failures.append((reference, "selection-reference-absent-from-manifest"))
+            continue
+        subject, owner = selections[reference]
+        records, id_field = _selection_records(reference, documents.get(reference))
+        matched = [
+            record
+            for record in records
+            if record.get(SELECTION_SUBJECT_FIELD) == subject
+            and record.get(SELECTION_OWNER_FIELD) == owner
+        ]
+        if not matched:
+            failures.append((reference, "no-record-matches-the-selector"))
+            continue
+        if len(matched) > 1:
+            failures.append((reference, "selector-matches-more-than-one-record"))
+            continue
+        declared = cast(list[str], published[reference]["authority_ids"])
+        if not declared:
+            failures.append((reference, "declared-ids-empty"))
+            continue
+        if len(declared) != 1:
+            failures.append((reference, "declared-ids-not-a-singleton"))
+            continue
+        if declared[0] != matched[0][id_field]:
+            failures.append((reference, "declared-id-differs"))
+    return sorted(failures)
+
+
+def test_the_p03_reservation_is_selected_by_subject_and_owner() -> None:
+    """The reported finding, closed.
+
+    Fourteen reservations resolve from the bound collection, so subset
+    membership accepted any of them. The selector names one by what it is
+    about and who owns it, and the id is then read through the bound id-field.
+    """
+    assert not _authority_selection_failures(
+        _live_source_decisions(), REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE
+    )
+
+    reference = "closure:s1-p03:evidence-envelope"
+    records, id_field = _selection_records(reference)
+    subject, owner = REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE[reference]
+    matched = [
+        record
+        for record in records
+        if record.get(SELECTION_SUBJECT_FIELD) == subject
+        and record.get(SELECTION_OWNER_FIELD) == owner
+    ]
+
+    assert len(records) == 14, "the choice really is one of fourteen"
+    assert len(matched) == 1, "the selector resolves exactly one record"
+    assert matched[0][SELECTION_SUBJECT_FIELD] == "development_history_model"
+    assert matched[0][SELECTION_OWNER_FIELD] == "S1.P05"
+    assert id_field == "deferred_id"
+
+    entry = next(
+        e for e in _live_source_decisions() if e["decision_reference"] == reference
+    )
+    assert entry["authority_ids"] == [matched[0][id_field]]
+
+
+def test_the_selector_does_not_embed_the_id_it_is_meant_to_derive() -> None:
+    """Authoring the answer would restate the manifest, not bind it."""
+    name = "REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE"
+    module = ast.parse(Path(__file__).read_text("utf-8"))
+    assigned = [
+        node
+        for node in module.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == name
+    ]
+
+    assert len(assigned) == 1
+    literal = assigned[0].value
+    assert isinstance(literal, ast.Dict)
+    assert len(literal.keys) == 1
+    for key, value in zip(literal.keys, literal.values, strict=True):
+        assert isinstance(key, ast.Constant) and isinstance(key.value, str)
+        assert isinstance(value, ast.Tuple)
+        assert len(value.elts) == 2
+        for element in value.elts:
+            assert isinstance(element, ast.Constant) and isinstance(element.value, str)
+
+    touching = [
+        node
+        for statement in module.body
+        if not isinstance(
+            statement, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        )
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Name) and node.id == name
+    ]
+    assert len(touching) == 1, "the selector is bound once and never rebound"
+    assert touching[0] is assigned[0].target
+    assert ast.literal_eval(literal) == REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE
+
+    # the derived answer must appear nowhere in the authored selector
+    for reference, selection in REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE.items():
+        records, id_field = _selection_records(reference)
+        derived = next(
+            record[id_field]
+            for record in records
+            if record.get(SELECTION_SUBJECT_FIELD) == selection[0]
+            and record.get(SELECTION_OWNER_FIELD) == selection[1]
+        )
+        assert derived.startswith("deferred:"), "the id-field really yields an id"
+        assert derived not in selection, "the id must be derived, never authored"
+        assert derived != reference
+    authored = {
+        text
+        for selection in REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE.values()
+        for text in selection
+    } | set(REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE)
+    assert not any(text.startswith("deferred:") for text in authored)
+
+    source = inspect.getsource(_authority_selection_failures) + inspect.getsource(
+        _selection_records
+    )
+    for forbidden in ("MANIFEST", "deferred:", "CORPUS"):
+        assert forbidden not in source, forbidden
+
+
+def test_a_different_real_reservation_fails_the_selection() -> None:
+    """The reproduction, kept permanently.
+
+    `deferred:03` is the fault-instance reservation owned by S1.P06. It
+    resolves in the same collection, so subset membership accepted it.
+    """
+    for wrong in ("deferred:03", "deferred:01"):
+        entries = copy.deepcopy(_live_source_decisions())
+        entry = next(
+            e
+            for e in entries
+            if e["decision_reference"] == "closure:s1-p03:evidence-envelope"
+        )
+        entry["authority_ids"] = [wrong]
+
+        assert set(entry["authority_ids"]) <= _declared_authority_ids(entry), (
+            "subset membership is still satisfied, which is the whole problem"
+        )
+        assert _authority_selection_failures(
+            entries, REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE
+        ) == [("closure:s1-p03:evidence-envelope", "declared-id-differs")]
+
+
+def test_a_malformed_declared_id_list_fails_the_selection() -> None:
+    """Empty, plural, duplicated and unknown are each refused."""
+    cases: tuple[tuple[list[str], str], ...] = (
+        ([], "declared-ids-empty"),
+        (["deferred:02", "deferred:03"], "declared-ids-not-a-singleton"),
+        (["deferred:02", "deferred:02"], "declared-ids-not-a-singleton"),
+        (["deferred:99"], "declared-id-differs"),
+    )
+    for declared, reason in cases:
+        entries = copy.deepcopy(_live_source_decisions())
+        entry = next(
+            e
+            for e in entries
+            if e["decision_reference"] == "closure:s1-p03:evidence-envelope"
+        )
+        entry["authority_ids"] = declared
+
+        assert _authority_selection_failures(
+            entries, REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE
+        ) == [("closure:s1-p03:evidence-envelope", reason)], declared
+
+
+def test_a_drifted_selector_no_longer_names_the_canonical_reservation() -> None:
+    """Both halves of the selector carry weight.
+
+    The register gives every reservation a distinct subject and a distinct
+    owner, so a drift in either half alone pairs with nothing and fails
+    closed. Only moving both halves onto another real pairing resolves a
+    record, and then it is the wrong reservation.
+    """
+    reference = "closure:s1-p03:evidence-envelope"
+
+    # both halves moved onto another real pairing: the fault-instance
+    # reservation resolves, and it is not the one this reference cites
+    other_reservation = {reference: ("fault_instance_model", "S1.P06")}
+    assert _authority_selection_failures(
+        _live_source_decisions(), other_reservation
+    ) == [(reference, "declared-id-differs")]
+
+    # subject alone moved: no record pairs that subject with this owner
+    drifted_subject = {reference: ("fault_instance_model", "S1.P05")}
+    assert _authority_selection_failures(_live_source_decisions(), drifted_subject) == [
+        (reference, "no-record-matches-the-selector")
+    ]
+
+    # owner alone moved: likewise nothing matches, so it fails closed
+    drifted_owner = {reference: ("development_history_model", "S1.P06")}
+    assert _authority_selection_failures(_live_source_decisions(), drifted_owner) == [
+        (reference, "no-record-matches-the-selector")
+    ]
+
+
+def test_a_missing_or_ambiguous_reservation_fails_closed() -> None:
+    """Exercised on an in-memory artifact, not through a digest mismatch."""
+    reference = "closure:s1-p03:evidence-envelope"
+    path = REQUIRED_SOURCE_DECISION_BY_REFERENCE[reference][0]
+    original = json.loads((REPOSITORY_ROOT / path).read_text("utf-8"))
+
+    without = copy.deepcopy(original)
+    without["deferred_register"]["entries"] = [
+        record
+        for record in without["deferred_register"]["entries"]
+        if record[SELECTION_SUBJECT_FIELD] != "development_history_model"
+    ]
+    assert len(without["deferred_register"]["entries"]) == 13
+    assert _authority_selection_failures(
+        _live_source_decisions(),
+        REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE,
+        {reference: without},
+    ) == [(reference, "no-record-matches-the-selector")]
+
+    doubled = copy.deepcopy(original)
+    twin = copy.deepcopy(
+        next(
+            record
+            for record in doubled["deferred_register"]["entries"]
+            if record[SELECTION_SUBJECT_FIELD] == "development_history_model"
+        )
+    )
+    twin["deferred_id"] = "deferred:15"
+    doubled["deferred_register"]["entries"].append(twin)
+    assert _authority_selection_failures(
+        _live_source_decisions(),
+        REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE,
+        {reference: doubled},
+    ) == [(reference, "selector-matches-more-than-one-record")]
+
+    assert (REPOSITORY_ROOT / path).read_bytes() == json.dumps(
+        original, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8") + b"\n", "the locked artifact was only ever read"
+
+
+def test_a_selector_for_an_unpublished_reference_fails() -> None:
+    assert _authority_selection_failures(
+        _live_source_decisions(),
+        {"closure:s1-p99:never-registered": ("development_history_model", "S1.P05")},
+    ) == [
+        ("closure:s1-p99:never-registered", "selection-reference-absent-from-manifest")
+    ]
+
+
+def test_every_authority_id_list_is_owned_and_none_is_subset_only() -> None:
+    """Each entry publishes ids under exactly one declared discipline.
+
+    Four entries publish the complete resolved set, so no choice is being
+    made. The P03 closure deliberately selects one reservation out of
+    fourteen, and that choice is now settled by the structured selector. No
+    entry is left where picking a different real id would change the meaning
+    without failing.
+    """
+    entries = _live_source_decisions()
+    assert set(AUTHORITY_ID_OWNERSHIP) == {
+        cast(str, entry["decision_reference"]) for entry in entries
+    }
+    assert set(AUTHORITY_ID_OWNERSHIP.values()) == {
+        "complete-resolved-set",
+        "structured-semantic-selection",
+    }
+    assert set(REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE) == {
+        reference
+        for reference, kind in AUTHORITY_ID_OWNERSHIP.items()
+        if kind == "structured-semantic-selection"
+    }
+
+    for entry in entries:
+        reference = cast(str, entry["decision_reference"])
+        declared = set(cast(list[str], entry["authority_ids"]))
+        resolved = _declared_authority_ids(entry)
+        assert declared, reference
+        if AUTHORITY_ID_OWNERSHIP[reference] == "complete-resolved-set":
+            assert declared == resolved, reference
+        else:
+            assert declared < resolved, reference
+            assert not _authority_selection_failures(
+                [entry], REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE
+            ), reference
+
+    unsettled = [
+        cast(str, entry["decision_reference"])
+        for entry in entries
+        if set(cast(list[str], entry["authority_ids"]))
+        != _declared_authority_ids(entry)
+        and cast(str, entry["decision_reference"])
+        not in REQUIRED_AUTHORITY_ID_SELECTION_BY_REFERENCE
+    ]
+    assert not unsettled, unsettled
 
 
 def test_every_vector_reference_names_a_registered_authority() -> None:
