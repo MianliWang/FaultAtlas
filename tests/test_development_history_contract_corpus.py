@@ -5424,11 +5424,26 @@ def _render_replay_summary_block() -> list[str]:
     ]
 
 
+# CommonMark heading forms, shared by the section slicer and the heading oracle
+# so the two can never disagree about what a heading is. An ATX opening sequence
+# may be indented up to three spaces and may be followed by a space, a tab, or
+# the end of the line -- `##` alone is a real, empty level-two heading. A
+# paragraph underlined with `=` or `-` is a heading carrying no `#` at all, and
+# a single `-` underlines just as well as a row of them. Matching only `"## "`
+# at column zero misses all of it, which is enough to append a whole fabricated
+# section unnoticed. A blank line above disqualifies the underline -- that is an
+# empty list item or a thematic break, not a heading -- so `_actual_headings`
+# checks the preceding line rather than widening the pattern to compensate.
+ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
+SECTION_HEADING = re.compile(r"^ {0,3}#{2}(?:[ \t]|$)")
+SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
+
+
 def _section_lines(text: str, heading: str) -> list[str]:
     lines = text.splitlines()
     start = lines.index(heading) + 1
     end = start
-    while end < len(lines) and not lines[end].startswith("## "):
+    while end < len(lines) and not SECTION_HEADING.match(lines[end]):
         end += 1
     return lines[start:end]
 
@@ -5961,13 +5976,6 @@ CONTRACT_HEADINGS = (
 SECTION_ONE, SECTION_FIVE = CONTRACT_HEADINGS[1], CONTRACT_HEADINGS[5]
 
 
-# CommonMark lets an ATX heading carry up to three leading spaces, and lets a
-# paragraph become a heading by underlining it. Matching only column-zero `#`
-# would let a whole fabricated section be appended without notice.
-ATX_HEADING = re.compile(r"^ {0,3}#{1,6} ")
-SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-{2,})[ \t]*$")
-
-
 def _actual_headings(text: str) -> list[str]:
     lines = text.splitlines()
     found: list[str] = []
@@ -6002,6 +6010,12 @@ def test_a_drifting_heading_sequence_is_refused() -> None:
         # a fabricated section may not enter by an indented or underlined heading
         ("indented", "## 6. Rejection Contract", "   ## 10. Extra Guarantees"),
         ("setext", "## 6. Rejection Contract", "10. Extra Guarantees\n---------"),
+        # an opening sequence may end the line: `##` is an empty heading, and
+        # `#` an empty top-level one
+        ("empty atx", "## 6. Rejection Contract", "##"),
+        ("empty h1", "## 6. Rejection Contract", "#"),
+        ("tab after hashes", "## 6. Rejection Contract", "##\t6. Rejection Contract"),
+        ("single-dash setext", "## 6. Rejection Contract", "Extra Guarantees\n-"),
     ):
         tampered = text.replace(original, replacement, 1)
         assert tampered != text, label
