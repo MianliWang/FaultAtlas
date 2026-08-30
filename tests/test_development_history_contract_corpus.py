@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib
+import inspect
 import json
 import re
 import stat as stat_module
@@ -11,7 +12,8 @@ from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from types import UnionType
+from typing import Any, NamedTuple, Union, cast, get_origin
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -4845,17 +4847,29 @@ SECONDARY_WITNESS_REGISTRY: dict[str, str] = {
     "history.invalid.occurrence-time.instant-naive": "occurred_at refuses this published boundary",
     "history.invalid.occurrence-time.instant-negative-offset": "occurred_at refuses this published boundary",
     "history.invalid.occurrence-time.instant-malformed": "occurred_at refuses this published boundary",
-    "history.invalid.occurrence-time.non-admitted-commit-identity": "occurrence is required",
+    "history.invalid.occurrence-time.non-admitted-commit-identity": (
+        "occurrence admits only its published union members"
+    ),
     "history.invalid.occurrence-time.non-admitted-changed-path-status": "occurrence refuses this published boundary",
-    "history.invalid.occurrence-time.non-admitted-change-set": "occurrence is required",
-    "history.invalid.occurrence-time.non-admitted-role-binding": "occurrence is required",
-    "history.invalid.occurrence-time.non-admitted-changed-path": "occurrence is required",
+    "history.invalid.occurrence-time.non-admitted-change-set": (
+        "occurrence admits only its published union members"
+    ),
+    "history.invalid.occurrence-time.non-admitted-role-binding": (
+        "occurrence admits only its published union members"
+    ),
+    "history.invalid.occurrence-time.non-admitted-changed-path": (
+        "occurrence admits only its published union members"
+    ),
     "history.invalid.occurrence-time.missing-occurred-at": "occurred_at is required",
     "history.invalid.occurrence-time.extra-chronology": "no chronology is published",
     "history.invalid.occurrence-time.missing-occurrence": "occurrence is required",
     "history.invalid.occurrence-time.raw-python-instant": "occurred_at refuses this published boundary",
-    "history.invalid.evidence-link.hybrid-fact-json": "fact is required",
-    "history.invalid.evidence-link.empty-fact-json": "fact is required",
+    "history.invalid.evidence-link.hybrid-fact-json": (
+        "fact admits only its published union members"
+    ),
+    "history.invalid.evidence-link.empty-fact-json": (
+        "fact admits only its published union members"
+    ),
     "history.invalid.evidence-link.malformed-record": "evidence_record is refused by its published nested contract",
     "history.invalid.evidence-link.missing-fact": "fact is required",
     "history.invalid.evidence-link.missing-evidence-record": "evidence_record is required",
@@ -4870,14 +4884,24 @@ SECONDARY_WITNESS_REGISTRY: dict[str, str] = {
     "history.invalid.evidence-link.extra-superseded": "no superseded is published",
     "history.invalid.evidence-link.extra-request-id": "no request_id is published",
     "history.invalid.evidence-link.extra-artifact": "no artifact is published",
-    "history.invalid.evidence-link.nested-non-admitted-occurrence": "fact is required",
+    "history.invalid.evidence-link.nested-non-admitted-occurrence": (
+        "fact admits only its published union members"
+    ),
     "history.invalid.evidence-link.typed-children-mapping-python": "fact refuses this published boundary",
     "history.invalid.evidence-link.change-set-fact-python": "fact refuses this published boundary",
     "history.invalid.evidence-link.status-fact-python": "fact refuses this published boundary",
-    "history.invalid.evidence-link.instant-naive": "fact is required",
-    "history.invalid.evidence-link.instant-non-zero-offset": "fact is required",
-    "history.invalid.evidence-link.instant-week-date": "fact is required",
-    "history.invalid.evidence-link.instant-basic-format": "fact is required",
+    "history.invalid.evidence-link.instant-naive": (
+        "fact admits only its published union members"
+    ),
+    "history.invalid.evidence-link.instant-non-zero-offset": (
+        "fact admits only its published union members"
+    ),
+    "history.invalid.evidence-link.instant-week-date": (
+        "fact admits only its published union members"
+    ),
+    "history.invalid.evidence-link.instant-basic-format": (
+        "fact admits only its published union members"
+    ),
 }
 
 
@@ -4892,6 +4916,43 @@ def test_every_invalid_vector_is_registered_or_primary() -> None:
     assert all(SECONDARY_WITNESS_REGISTRY.values())
 
 
+TRUE_OMISSION = "TRUE_REQUIRED_FIELD_OMISSION"
+UNION_REJECTION = "CLOSED_UNION_REJECTION"
+
+
+def _missing_shape(vector: dict[str, Any]) -> str | None:
+    """What a `missing` error actually witnesses, read from the supplied input.
+
+    Requiredness is a property of what was supplied, never of an error code. A
+    discriminatorless union reports `missing` at its own field when no branch
+    matches, with the value sitting right there in the input, so reading the
+    code alone turns twelve closed-union refusals into false requiredness
+    claims. Presence, published union membership and the prefix normalization
+    must all hold; anything else stays unclassified rather than assumed.
+    """
+    expected = cast(dict[str, Any], vector["expected"])
+    if expected.get("error_type") != "missing":
+        return None
+
+    location = cast(list[str], expected.get("error_location") or [])
+    if len(location) != 1:
+        return None
+
+    field, target = location[0], cast(str, vector["target"])
+    raw = vector["input"]
+    supplied = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
+    if field not in _model_fields_of(target):
+        return None
+    if field not in supplied:
+        return TRUE_OMISSION
+    if (
+        field in _union_fields_of(target)
+        and expected.get("error_location_mode") == "prefix"
+    ):
+        return UNION_REJECTION
+    return None
+
+
 def _derived_requirement(vector: dict[str, Any]) -> str:
     """The requirement a vector witnesses, read off its validated properties."""
     expected = cast(dict[str, Any], vector["expected"])
@@ -4899,7 +4960,11 @@ def _derived_requirement(vector: dict[str, Any]) -> str:
     if len(location) > 1:
         return f"{location[0]} is refused by its published nested contract"
     if expected["error_type"] == "missing":
-        return f"{location[0]} is required"
+        shape = _missing_shape(vector)
+        if shape == TRUE_OMISSION:
+            return f"{location[0]} is required"
+        if shape == UNION_REJECTION:
+            return f"{location[0]} admits only its published union members"
     if expected["error_type"] == "extra_forbidden":
         return f"no {location[0]} is published"
     if expected.get("failure_category") == "vocabulary_error":
@@ -7381,4 +7446,180 @@ def test_the_p09_deflection_is_never_reported_as_verified() -> None:
     # and the bullet it refers to is still exactly projected
     assert "no S1.P09 confidence or review interpretation" in cast(
         list[str], MANIFEST["non_goals"]
+    )
+
+
+# --- every `missing` error, partitioned by what the input actually says ------
+#
+# `error_type == "missing"` was read as proof that a field was absent, so the
+# twelve vectors where a discriminatorless union reports `missing` at its own
+# supplied field derived "<field> is required". The registry repeated the same
+# sentence, and the comparison between them agreed with itself. The partition
+# below is over the input rather than the code, and it is exhaustive, so a new
+# `missing` shape cannot slip in unclassified.
+
+
+def _missing_vectors() -> list[dict[str, Any]]:
+    return [
+        vector
+        for vector in INVALID["vectors"]
+        if cast(dict[str, Any], vector["expected"]).get("error_type") == "missing"
+    ]
+
+
+def test_every_missing_error_is_classified_by_its_input() -> None:
+    """Three shapes, disjoint and exhaustive, and none of them from the code."""
+    nested: list[str] = []
+    omissions: list[str] = []
+    unions: list[str] = []
+
+    for vector in _missing_vectors():
+        vector_id = cast(str, vector["id"])
+        expected = cast(dict[str, Any], vector["expected"])
+        location = cast(list[str], expected.get("error_location") or [])
+        shape = _missing_shape(vector)
+
+        if len(location) > 1:
+            # already routed to the nested-contract rule before requiredness is
+            # ever considered, and untouched by this repair
+            assert shape is None, vector_id
+            nested.append(vector_id)
+        elif shape == TRUE_OMISSION:
+            omissions.append(vector_id)
+        elif shape == UNION_REJECTION:
+            unions.append(vector_id)
+        else:
+            raise AssertionError(f"unclassified missing shape: {vector_id}")
+
+    assert len(nested) + len(omissions) + len(unions) == len(_missing_vectors()) == 32
+    assert not (set(nested) & set(omissions) & set(unions))
+    assert len(omissions) == 18 and len(unions) == 12 and len(nested) == 2
+
+    for vector_id in omissions:
+        vector = next(v for v in INVALID["vectors"] if v["id"] == vector_id)
+        field = cast(list[str], vector["expected"]["error_location"])[0]
+        assert field not in cast(dict[str, Any], vector["input"]), vector_id
+
+    for vector_id in unions:
+        vector = next(v for v in INVALID["vectors"] if v["id"] == vector_id)
+        expected = cast(dict[str, Any], vector["expected"])
+        field = cast(list[str], expected["error_location"])[0]
+        assert field in cast(dict[str, Any], vector["input"]), vector_id
+        assert field in _union_fields_of(cast(str, vector["target"])), vector_id
+        assert expected["error_location_mode"] == "prefix", vector_id
+
+
+def test_the_union_coordinates_are_published_discriminatorless_unions() -> None:
+    """The union set is read off the live models, not asserted from prefix mode."""
+    coordinates = {
+        (
+            cast(str, vector["target"]),
+            cast(list[str], vector["expected"]["error_location"])[0],
+        )
+        for vector in _missing_vectors()
+        if _missing_shape(vector) == UNION_REJECTION
+    }
+
+    assert coordinates == {
+        ("PullRequestHistoricalOccurrenceTime", "occurrence"),
+        ("PullRequestHistoryFactEvidenceLink", "fact"),
+    }
+    for target, field in coordinates:
+        model = cast(Any, RESOLVABLE[target])
+        info = cast(dict[str, Any], model.model_fields)[field]
+        # a real union, and no discriminator that would change the reading
+        assert get_origin(info.annotation) in (Union, UnionType), (target, field)
+        assert getattr(info, "discriminator", None) is None, (target, field)
+        assert field in _union_fields_of(target), (target, field)
+
+    # the published union-membership requirement already owns these two
+    owned = {
+        row[1] for row in FRAMEWORK_CONSTRAINT_LEDGER if row[2] == "union membership"
+    }
+    assert owned == {f"{t}.{f}" for t, f in coordinates}
+
+
+def test_requiredness_and_union_rejection_agree_with_the_omission_matrix() -> None:
+    """A supplied union value may never count as a true-omission witness."""
+    for vector in _missing_vectors():
+        shape = _missing_shape(vector)
+        if shape is None:
+            continue
+        field = cast(list[str], vector["expected"]["error_location"])[0]
+        omitted = _omits(vector, field)
+        assert omitted is (shape == TRUE_OMISSION), vector["id"]
+
+    # the genuine omission witnesses survive alongside their supplied siblings
+    for vector_id in (
+        "history.invalid.occurrence-time.missing-occurrence",
+        "history.invalid.evidence-link.missing-fact",
+    ):
+        vector = next(v for v in INVALID["vectors"] if v["id"] == vector_id)
+        assert _missing_shape(vector) == TRUE_OMISSION, vector_id
+
+
+def test_the_change_set_fact_primary_witness_is_unchanged() -> None:
+    """EL-04 was already right: its shape is a union case, its wording is not.
+
+    It is the control against a blanket rewrite of every prefix/missing vector.
+    """
+    vector_id = "history.invalid.evidence-link.change-set-fact"
+    rows = [row for row in REQUIREMENT_LEDGER if row[4] == vector_id]
+
+    assert len(rows) == 1
+    assert rows[0][0] == "EL-04"
+    assert rows[0][2] == "a change set is not an admitted fact"
+    assert vector_id not in SECONDARY_WITNESS_REGISTRY
+
+    vector = next(v for v in INVALID["vectors"] if v["id"] == vector_id)
+    assert _missing_shape(vector) == UNION_REJECTION
+
+
+def test_the_missing_classifier_reads_no_authored_prose() -> None:
+    """The derived side must not consult the text it is checking."""
+    source = inspect.getsource(_missing_shape) + inspect.getsource(_derived_requirement)
+
+    for forbidden in ("SECONDARY_WITNESS_REGISTRY", "purpose", "semantic_partition"):
+        assert forbidden not in source, forbidden
+
+
+def test_a_missing_shape_is_refused_unless_every_condition_holds() -> None:
+    """Neither the error code nor the prefix mode may decide this on its own."""
+    union = next(
+        v
+        for v in INVALID["vectors"]
+        if v["id"] == "history.invalid.occurrence-time.non-admitted-change-set"
+    )
+    omission = next(
+        v
+        for v in INVALID["vectors"]
+        if v["id"] == "history.invalid.occurrence-time.missing-occurrence"
+    )
+
+    assert _missing_shape(union) == UNION_REJECTION
+    assert _missing_shape(omission) == TRUE_OMISSION
+
+    # prefix mode on a field that is not a published union proves nothing
+    not_a_union = copy.deepcopy(union)
+    cast(dict[str, Any], not_a_union["expected"])["error_location"] = ["occurred_at"]
+    cast(dict[str, Any], not_a_union["input"])["occurred_at"] = "supplied"
+    assert _missing_shape(not_a_union) is None
+
+    # a supplied union field whose normalization is not the published prefix
+    wrong_mode = copy.deepcopy(union)
+    cast(dict[str, Any], wrong_mode["expected"])["error_location_mode"] = "exact"
+    assert _missing_shape(wrong_mode) is None
+
+    # an unknown field cannot be either shape
+    unknown = copy.deepcopy(union)
+    cast(dict[str, Any], unknown["expected"])["error_location"] = ["invented"]
+    assert _missing_shape(unknown) is None
+
+    # removing the supplied value turns the same vector into a real omission
+    emptied = copy.deepcopy(union)
+    cast(dict[str, Any], emptied["input"]).pop("occurrence")
+    assert _missing_shape(emptied) == TRUE_OMISSION
+    assert _derived_requirement(emptied) == "occurrence is required"
+    assert _derived_requirement(union) == (
+        "occurrence admits only its published union members"
     )
