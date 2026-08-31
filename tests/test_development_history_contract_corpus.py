@@ -13446,7 +13446,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:second_independent_correction_link",
-            "manifest:/source_decisions/4/authority_role",
+            "source-decision-role:correction:s04-c01-acquisition-closure",
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
@@ -13552,8 +13552,38 @@ def _purpose_authority_failures(
         pointer = authority.split(":", 1)[1]
         if pointer not in cast(dict[str, Any], vector.get("embedded_facts") or {}):
             reasons.append("embedded-fact-not-declared")
+    elif authority.startswith("source-decision-role:"):
+        # the reference is the whole tail: it carries a colon of its own
+        reference = authority.split(":", 1)[1]
+        if reference not in REQUIRED_SOURCE_DECISION_BY_REFERENCE:
+            reasons.append("source-decision-reference-unknown")
+        else:
+            matching = [
+                entry
+                for entry in _live_source_decisions()
+                if entry["decision_reference"] == reference
+            ]
+            if len(matching) != 1:
+                reasons.append("source-decision-reference-not-unique")
+            else:
+                # the completed attachment already owns path, role and id-source
+                attachment = _source_attachment_failures(
+                    matching,
+                    {reference: REQUIRED_SOURCE_DECISION_BY_REFERENCE[reference]},
+                )
+                if attachment:
+                    reasons.append("source-decision-identity-differs")
+            lock = cast(str, vector.get("evidence_record_lock") or "")
+            if lock and lock != reference:
+                reasons.append("claim-cites-another-source-than-the-renderer")
     elif authority.startswith("manifest:"):
         pointer = authority.split(":", 1)[1]
+        # `source_decisions` ordering is semantically neutral, so a numeric slot
+        # into it names whichever record happens to sit there
+        if pointer.startswith("/source_decisions/") and any(
+            segment.isdigit() for segment in pointer.split("/")
+        ):
+            reasons.append("positional-source-decision-authority-forbidden")
         try:
             _resolve_pointer(MANIFEST, pointer)
         except (KeyError, IndexError, TypeError):
@@ -13707,6 +13737,7 @@ REQUIRED_ASSURANCE_BY_AUTHORITY_FORM: dict[str, str] = {
     "manifest": CANONICAL_DECLARATION_ONLY,
     "requirement": REQUIREMENT_DERIVED,
     "secondary-witness": REQUIREMENT_DERIVED,
+    "source-decision-role": CANONICAL_DECLARATION_ONLY,
     "source-pointer": PROVENANCE_DERIVED,
     "target": CANONICAL_DECLARATION_ONLY,
 }
@@ -13921,6 +13952,156 @@ def test_a_derived_claim_moves_when_the_field_it_cites_moves() -> None:
                 if moved == vector["purpose"]:
                     inert.append((identifier, claim.authority))
     assert not inert, inert[:5]
+
+
+CORRECTION_PURPOSE_VECTOR = (
+    "history.replay.evidence-association.approval-correction-record"
+)
+CORRECTION_PURPOSE_REFERENCE = "correction:s04-c01-acquisition-closure"
+
+
+def _correction_purpose_claim() -> tuple[dict[str, Any], PurposeClaim]:
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == CORRECTION_PURPOSE_VECTOR)
+    claim = next(
+        c
+        for c in PURPOSE_SEMANTICS[CORRECTION_PURPOSE_VECTOR]
+        if c.authority.startswith("source-decision-role:")
+    )
+    return cast(dict[str, Any], vector), claim
+
+
+def test_no_purpose_claim_addresses_a_source_decision_by_slot() -> None:
+    """Ordering there is neutral, so a slot names whichever record sits in it.
+
+    The prohibition is scoped to `source_decisions`. Numeric segments elsewhere
+    stay legal: the eight replay claims that cite
+    `/observations/pr/timeline/items/4` and its siblings are addressing the
+    retained acquisition, where the position IS the source coordinate.
+    """
+    positional = [
+        (identifier, claim.authority)
+        for identifier, claims in PURPOSE_SEMANTICS.items()
+        for claim in claims
+        if claim.authority.startswith("manifest:/source_decisions/")
+    ]
+    assert not positional, positional
+
+    retained = [
+        claim.authority
+        for claims in PURPOSE_SEMANTICS.values()
+        for claim in claims
+        if claim.authority.startswith("source-pointer:")
+        and any(segment.isdigit() for segment in claim.authority.split("/"))
+    ]
+    assert len(retained) == 8, "retained source coordinates keep their positions"
+
+    vector, claim = _correction_purpose_claim()
+    assert claim.assurance == CANONICAL_DECLARATION_ONLY
+    assert claim.authority == (f"source-decision-role:{CORRECTION_PURPOSE_REFERENCE}")
+    assert _purpose_authority_failures(vector, "replay", claim) == []
+
+
+def test_reordering_source_decisions_leaves_the_purpose_claim_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reorder law is kept, and the claim now survives it.
+
+    Before this repair the claim cited `/source_decisions/4/authority_role`.
+    Reversing the list is a semantically neutral edit the corpus explicitly
+    permits, and it silently moved that slot onto another decision while every
+    test stayed green.
+    """
+    live = _live_source_decisions()
+    before = [entry["decision_reference"] for entry in live].index(
+        CORRECTION_PURPOSE_REFERENCE
+    )
+    reordered = list(reversed(live))
+    after = [entry["decision_reference"] for entry in reordered].index(
+        CORRECTION_PURPOSE_REFERENCE
+    )
+    monkeypatch.setitem(MANIFEST, "source_decisions", reordered)
+
+    assert before != after, "the correction sits in a different slot either way"
+    assert not _source_attachment_failures(
+        reordered, REQUIRED_SOURCE_DECISION_BY_REFERENCE
+    ), "the completed identity relation is order-free"
+    assert not _purpose_failures(_purpose_sections(), PURPOSE_SEMANTICS)
+
+    vector, _claim = _correction_purpose_claim()
+    assert _render_purpose(vector, "replay") == vector["purpose"]
+    assert (
+        _pR_authority_role(CORRECTION_PURPOSE_REFERENCE)
+        == "retained_additive_correction_evidence"
+    )
+
+
+def test_the_old_positional_authority_form_is_refused() -> None:
+    vector, claim = _correction_purpose_claim()
+    positional = PurposeClaim(
+        claim.assurance, claim.renderer, "manifest:/source_decisions/4/authority_role"
+    )
+
+    assert _purpose_authority_failures(vector, "replay", positional) == [
+        "positional-source-decision-authority-forbidden"
+    ]
+
+
+def test_a_purpose_claim_citing_another_source_decision_is_refused() -> None:
+    """The claim must name the source the renderer actually reads."""
+    vector, claim = _correction_purpose_claim()
+
+    other = PurposeClaim(
+        claim.assurance,
+        claim.renderer,
+        "source-decision-role:decision:s1-p05-s08:disposition",
+    )
+    assert _purpose_authority_failures(vector, "replay", other) == [
+        "claim-cites-another-source-than-the-renderer"
+    ]
+
+    unknown = PurposeClaim(
+        claim.assurance, claim.renderer, "source-decision-role:closure:s1-p99:nowhere"
+    )
+    assert _purpose_authority_failures(vector, "replay", unknown) == [
+        "source-decision-reference-unknown"
+    ]
+
+    moved = copy.deepcopy(vector)
+    moved["evidence_record_lock"] = "acquisition:run-0001"
+    assert _purpose_authority_failures(moved, "replay", claim) == [
+        "claim-cites-another-source-than-the-renderer"
+    ]
+
+
+def test_a_duplicated_or_drifted_source_decision_refuses_the_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Identity addressing needs exactly one record, and it must still match."""
+    vector, claim = _correction_purpose_claim()
+    live = _live_source_decisions()
+    cited = next(
+        entry
+        for entry in live
+        if entry["decision_reference"] == CORRECTION_PURPOSE_REFERENCE
+    )
+
+    doubled = [*live, copy.deepcopy(cited)]
+    monkeypatch.setitem(MANIFEST, "source_decisions", doubled)
+    assert _purpose_authority_failures(vector, "replay", claim) == [
+        "source-decision-reference-not-unique"
+    ]
+    monkeypatch.undo()
+
+    drifted = copy.deepcopy(live)
+    next(
+        entry
+        for entry in drifted
+        if entry["decision_reference"] == CORRECTION_PURPOSE_REFERENCE
+    )["authority_role"] = "retained_replay_evidence"
+    monkeypatch.setitem(MANIFEST, "source_decisions", drifted)
+    assert _purpose_authority_failures(vector, "replay", claim) == [
+        "source-decision-identity-differs"
+    ]
 
 
 def test_the_purpose_ledger_is_bound_once_anywhere_in_the_module() -> None:
