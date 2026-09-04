@@ -5486,8 +5486,8 @@ DESCRIPTIVE_PATHS = frozenset(
 #
 # `/descriptive_metadata` is not a declaration about the corpus; it is the rule
 # that sorts declarations into two kinds. It cannot be inside the partition it
-# defines: as a descriptive entry it would have to enumerate its own 83 leaves,
-# which creates 83 more leaves to enumerate and never terminates, and as an
+# defines: as a descriptive entry it would have to enumerate its own leaves,
+# which creates that many more leaves to enumerate and never terminates, and as an
 # objective entry it would need a consumer proving the classification true by
 # consulting the classification. The exclusion is named once here and reused, so
 # it reads as a decision rather than a repeated `startswith`.
@@ -8223,15 +8223,21 @@ def test_every_target_class_is_derived_from_its_live_symbol() -> None:
         MANIFEST["target_symbols"] = original
     _v_target_symbols()
 
-    # neither kind, and both kinds, are refused rather than defaulted
+    # a symbol of neither kind is refused rather than defaulted
     for unclassifiable in (str, int, object()):
         with pytest.raises(AssertionError):
             _derived_target_class(unclassifiable)
 
-    class _Both(BaseModel):
+    # the "both kinds" arm is unreachable with these two bases rather than
+    # untested: Python refuses the class, so the rule is total over what can
+    # exist, and the arm stands for a third base being added carelessly later
+    with pytest.raises(TypeError):
+        type("_Both", (BaseModel, Enum), {})
+
+    class _OnlyModel(BaseModel):
         pass
 
-    assert _derived_target_class(_Both) == "record_model_target"
+    assert _derived_target_class(_OnlyModel) == "record_model_target"
 
 
 def test_the_target_class_leaves_are_covered_by_the_objective_validator() -> None:
