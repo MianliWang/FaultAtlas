@@ -7705,12 +7705,125 @@ def test_the_python_instant_witness_isolates_its_field() -> None:
 # and a closure check requires every table in the document to be one of them.
 
 
+# --- one Markdown interpolation boundary ------------------------------------
+#
+# Region renderers put canonical values into Markdown, and two structures can be
+# broken from inside a value. A backtick closes the code span around it; a pipe
+# opens another table cell. Both were guarded by counting rather than by grammar
+# -- backtick PARITY, and a wholesale exemption for any region that emits a
+# table -- and neither is a rule. Two injected backticks keep the total even
+# while closing and reopening the intended span, and a pipe in a cell was simply
+# allowed.
+#
+# These are the only two ways a value reaches the document. They make the unsafe
+# structure impossible to write rather than detectable afterwards, and the
+# guards below check the rendered result against the same grammar.
+
+_BACKTICK_RUN = re.compile(r"`+")
+
+
+def _markdown_code_span(value: object) -> str:
+    """A code span no value can close from inside.
+
+    CommonMark ends a span at the first backtick run of exactly the opening
+    length, so the delimiter has to be longer than the longest run the content
+    carries. Content that begins or ends with a backtick -- or with a space at
+    both ends -- also needs one space of padding at each end, which CommonMark
+    strips again when it renders, so the published text is the value itself.
+    """
+    text = str(value)
+    assert "\n" not in text and "\r" not in text, text
+    longest = max((len(run) for run in _BACKTICK_RUN.findall(text)), default=0)
+    delimiter = "`" * (longest + 1)
+    padded = text.startswith("`") or text.endswith("`")
+    stripped = text.startswith(" ") and text.endswith(" ") and bool(text.strip())
+    pad = " " if padded or stripped else ""
+    return f"{delimiter}{pad}{text}{pad}{delimiter}"
+
+
+def _markdown_cell(value: object) -> str:
+    """One table cell: a pipe in the data may not become a separator."""
+    text = str(value)
+    assert "\n" not in text and "\r" not in text, text
+    return text.replace("\\", "\\\\").replace("|", "\\|")
+
+
+def _markdown_row_cells(row: str) -> list[str]:
+    """The cells a rendered row actually publishes, unescaped.
+
+    Splitting on every `|` would count an escaped pipe as a separator, which is
+    the reading that let a forged cell hide. This honours the escape, so the
+    cell count below is the count a Markdown renderer would produce.
+    """
+    assert row.startswith("| ") and row.endswith(" |"), row
+    cells: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for character in row[2:-2]:
+        if escaped:
+            current.append(character)
+            escaped = False
+        elif character == "\\":
+            escaped = True
+        elif character == "|":
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(character)
+    assert not escaped, row
+    cells.append("".join(current).strip())
+    return cells
+
+
+def _code_span_content(span: str) -> str:
+    """What a CommonMark renderer publishes for a whole-line code span.
+
+    The delimiter is the opening run; a run of the same length inside the
+    content would have closed the span earlier, so finding one means the span
+    is not the one it was written to be. A leading and trailing space pair is
+    stripped, which is what makes the padding above invisible.
+    """
+    opening = _BACKTICK_RUN.match(span)
+    assert opening is not None, span
+    delimiter = opening.group()
+    assert span.endswith(delimiter) and len(span) > 2 * len(delimiter), span
+    content = span[len(delimiter) : -len(delimiter)]
+    assert delimiter not in _BACKTICK_RUN.findall(content), span
+    if content.startswith(" ") and content.endswith(" ") and content.strip():
+        content = content[1:-1]
+    return content
+
+
+def _unmatched_code_span_runs(line: str) -> list[str]:
+    """Backtick runs a CommonMark scanner would leave as literal text.
+
+    A run opens a span and the FIRST later run of the same length closes it.
+    Whatever is left over never paired -- which is exactly what an injected
+    backtick produces, and exactly what parity could not see, because an even
+    total is as easily two unmatched runs as one matched pair.
+    """
+    runs = [(match.start(), match.group()) for match in _BACKTICK_RUN.finditer(line)]
+    unmatched: list[str] = []
+    index = 0
+    while index < len(runs):
+        opener = runs[index][1]
+        closer = next(
+            (j for j in range(index + 1, len(runs)) if runs[j][1] == opener), None
+        )
+        if closer is None:
+            unmatched.append(opener)
+            index += 1
+        else:
+            index = closer + 1
+    return unmatched
+
+
 def _md_row(cells: tuple[str, ...]) -> str:
-    return "| " + " | ".join(cells) + " |"
+    return "| " + " | ".join(_markdown_cell(cell) for cell in cells) + " |"
 
 
 def _tick(value: object) -> str:
-    return f"`{value}`"
+    return _markdown_code_span(value)
 
 
 def _render_targets() -> list[tuple[str, ...]]:
@@ -8828,14 +8941,16 @@ def _render_replay_summary_block() -> list[str]:
         ),
         (
             f"`deterministic_derivation` is {'present' if derivation else 'not present'}:"
-            f" `{phase}` publishes no deterministic derivation, and the ahead, behind,"
-            " and merge-base values the retained comparison carries remain deferred"
-            f" with `{origin}` `{subject}`."
+            f" {_markdown_code_span(phase)} publishes no deterministic derivation,"
+            " and the ahead, behind, and merge-base values the retained comparison"
+            " carries remain deferred with"
+            f" {_markdown_code_span(origin)} {_markdown_code_span(subject)}."
         ),
         (
             f"{_spelled(linkable).capitalize()} history facts are individually linkable."
-            f" `{change_set}` is a published product fact and is replayed as a"
-            f" caller-supplied composition, but `{link_slice}` does not admit it as an"
+            f" {_markdown_code_span(change_set)} is a published product fact and is"
+            " replayed as a caller-supplied composition, but"
+            f" {_markdown_code_span(link_slice)} does not admit it as an"
             " evidence-link fact, and the replay preserves that asymmetry."
         ),
     ]
@@ -9096,7 +9211,10 @@ def _render_classification_block() -> list[str]:
     classifications = cast(
         dict[str, str], MANIFEST["replay_contract"]["classifications"]
     )
-    return [f"- `{key}` — {value}" for key, value in sorted(classifications.items())]
+    return [
+        f"- {_markdown_code_span(key)} — {value}"
+        for key, value in sorted(classifications.items())
+    ]
 
 
 def _actual_classification_block(text: str) -> list[str]:
@@ -9144,7 +9262,10 @@ def _render_role_implication_block() -> list[str]:
     positions = cast(
         dict[str, str], MANIFEST["replay_contract"]["retained_role_source_positions"]
     )
-    return [f"- `{position}` implies `{role}`" for position, role in positions.items()]
+    return [
+        f"- {_markdown_code_span(position)} implies {_markdown_code_span(role)}"
+        for position, role in positions.items()
+    ]
 
 
 def _actual_role_implication_block(text: str) -> list[str]:
@@ -9850,14 +9971,14 @@ def _render_scope_warning() -> list[str]:
         (
             f"This {cast(str, identity['classification']).split('_')[0]},"
             f" {'source-only' if scope['source_only'] else 'production'}"
-            f" `{identity['originating_slice']}` contract corpus is not a"
+            f" {_markdown_code_span(identity['originating_slice'])} contract corpus is not a"
             " production schema, class, adapter, reader, writer, migration,"
             " persistence contract, or public API."
             f" The {_spelled(cast(int, assurance['canonical_json_files']))}"
             " canonical JSON files are the semantic authority; this Markdown is"
             f" {'derived' if derived else 'authoritative'}."
             " The corpus is executed only by"
-            f" `{execution['test_only_executor']}` and is excluded from"
+            f" {_markdown_code_span(execution['test_only_executor'])} and is excluded from"
             f" {'the wheel and the sdist' if scope['package_exclusion_required'] else 'nothing'}."
         )
     ]
@@ -9940,7 +10061,8 @@ def _render_fixture_mechanism() -> list[str]:
         (
             "Fixture values are"
             f" {'inlined in the vectors rather than referenced by marker' if inlined else 'referenced by marker rather than inlined in the vectors'}."
-            f" The manifest records that mechanism as `{mechanism}`: the corpus"
+            " The manifest records that mechanism as"
+            f" {_markdown_code_span(mechanism)}: the corpus"
             f" carries the values, and the oracle resolves each of the {fixtures}"
             " declared fixtures to an exact vector, side, and JSON pointer rather"
             " than searching for an equal value."
@@ -10512,7 +10634,8 @@ def _render_surface_lead_in() -> list[str]:
     modules = cast(list[str], scope["production_modules"])
     targets = cast(list[Any], MANIFEST["target_symbols"])
     return [
-        f"{_spelled(len(modules)).capitalize()} `{scope['phase']}` production"
+        f"{_spelled(len(modules)).capitalize()}"
+        f" {_markdown_code_span(scope['phase'])} production"
         f" modules and {_spelled(len(targets))} published product symbols:"
     ]
 
@@ -10520,14 +10643,14 @@ def _render_surface_lead_in() -> list[str]:
 def _render_supporting_authorities() -> list[str]:
     scope = cast(dict[str, Any], MANIFEST["scope"])
     supporting = ", ".join(
-        f"`{module}`"
+        _markdown_code_span(module)
         for module in cast(list[str], scope["supporting_authorities_not_owned"])
     )
-    outside = " and ".join(f"`{module}`" for module in OUTSIDE_MODULES)
+    outside = " and ".join(_markdown_code_span(module) for module in OUTSIDE_MODULES)
     return [
         f"Supporting authorities are consumed but not owned: {supporting}."
-        f" {outside} are outside this corpus: no `{scope['phase']}` value"
-        " consumes them."
+        f" {outside} are outside this corpus: no"
+        f" {_markdown_code_span(scope['phase'])} value consumes them."
     ]
 
 
@@ -10599,7 +10722,8 @@ def _render_embedded_provenance() -> list[str]:
 def _render_rejection_oracle() -> list[str]:
     rejection = cast(dict[str, Any], MANIFEST["rejection_contract"])
     oracle = ", ".join(
-        f"`{field}`" for field in cast(list[str], rejection["error_oracle"])
+        _markdown_code_span(field)
+        for field in cast(list[str], rejection["error_oracle"])
     )
     locked = (
         rejection["unstable_prose_locked"]
@@ -10618,7 +10742,8 @@ def _render_rejection_oracle() -> list[str]:
         }
     )
     unions = " and ".join(
-        f"the `{layer}` {location} union" for layer, location in carriers
+        f"the {_markdown_code_span(layer)} {location} union"
+        for layer, location in carriers
     )
     return [
         f"Invalid vectors lock {oracle}. Prose messages, Pydantic internal union"
@@ -10636,12 +10761,13 @@ def _render_forbidden_extra_prose() -> list[str]:
     # by construction, so no canonical leaf can supply them
     return [
         f"The {_spelled(len(ledger))}"
-        f" `{_target_slice('PullRequestHistoryFactEvidenceLink')}` forbidden extras"
+        f" {_markdown_code_span(_target_slice('PullRequestHistoryFactEvidenceLink'))}"
+        " forbidden extras"
         f" protect {_spelled(len({e['published_non_claim'] for e in ledger}))}"
         " DIFFERENT published non-claims. Further spellings of one boundary earn"
         " no partition: `field_path`, `semantic_path`, and `evidence_locator`"
         " restate the localization non-claim"
-        f" `{pointer['extra_key']}` already carries."
+        f" {_markdown_code_span(pointer['extra_key'])} already carries."
     ]
 
 
@@ -11621,45 +11747,180 @@ def test_the_contract_document_is_exactly_what_the_registry_projects() -> None:
     assert raw.replace(b"\n", b"\r\n").decode("utf-8").replace("\r", "") == text
 
 
+def _table_headers_by_owner() -> dict[str, tuple[str, ...]]:
+    """The header each table-owning region publishes, from the derived tables."""
+    owners: dict[str, tuple[str, ...]] = {}
+    for _label, header, _render in DERIVED_TABLES:
+        rendered = _render_table(header, [])
+        for region in CONTRACT_PROJECTION_REGISTRY:
+            if _region_lines(region)[:1] == rendered[:1]:
+                owners[region.region_id] = header
+    assert len(owners) == len(DERIVED_TABLES), sorted(owners)
+    return owners
+
+
 def test_no_projected_line_breaks_out_of_its_own_markup() -> None:
     """A rendered value may not become structure it was not meant to be.
 
-    Region renderers interpolate canonical values into Markdown -- inside code
-    spans, inside table cells -- without escaping. A value carrying a backtick
-    would close the span around it and turn the rest of the sentence into
-    ordinary prose; one carrying a pipe would split a table cell; one carrying a
-    newline would become a line of its own. The document is compared against the
-    projection either way, so the projection has to refuse the shape rather than
-    project it faithfully into a different document.
+    Every value now reaches the document through `_markdown_code_span` or
+    `_markdown_cell`, so this checks the RESULT against the same grammar those
+    two implement: no unmatched backtick run, no line break, and a table row
+    with exactly the cells its header declares. The previous rule counted --
+    backtick parity, and any table-owning region exempted from pipe safety --
+    and both counts had a hole a value could walk through.
     """
-    unbalanced: list[tuple[str, str]] = []
+    headers = _table_headers_by_owner()
+    unmatched: list[tuple[str, str]] = []
     split: list[tuple[str, str]] = []
-    table_owners = {
-        owner
-        for line, kind, owner in _document_partition()
-        if kind == "REGION" and line.startswith("|")
-    }
+    miscounted: list[tuple[str, str, int, int]] = []
+
     for region in CONTRACT_PROJECTION_REGISTRY:
         for line in _region_lines(region):
-            if line.count("`") % 2:
-                unbalanced.append((region.region_id, line))
+            if _unmatched_code_span_runs(line):
+                unmatched.append((region.region_id, line))
             if "\n" in line or "\r" in line:
                 split.append((region.region_id, line))
-            if "|" in line and region.region_id not in table_owners:
+            if line.startswith("|"):
+                header = headers.get(region.region_id)
+                if header is None:
+                    split.append((region.region_id, line))
+                    continue
+                cells = _markdown_row_cells(line)
+                if len(cells) != len(header):
+                    miscounted.append((region.region_id, line, len(cells), len(header)))
+            elif "|" in line:
+                # a pipe outside a table is prose, and prose is not a table
                 split.append((region.region_id, line))
-    assert not unbalanced, unbalanced
+    assert not unmatched, unmatched
     assert not split, split
+    assert not miscounted, miscounted
 
-    # and the guard is not vacuous: a value that closes its own span is caught
-    escaped = "inlined_values` and the rest of this sentence is ordinary prose"
+
+def test_a_pipe_in_a_canonical_value_stays_one_table_cell() -> None:
+    """The forged cell, closed at the boundary rather than exempted.
+
+    `slice_layer` is a descriptive column, so a resealed corpus could publish
+    `domain | forged` in it. The cell escapes the pipe, the row still has four
+    cells, and the value comes back out of the row unchanged.
+    """
+    header = next(h for label, h, _r in DERIVED_TABLES if label == "target symbols")
+    assert len(header) == 4
+
+    hostile = (
+        "domain | forged",
+        "|leading",
+        "trailing|",
+        "a|b|c|d",
+        "back\\slash",
+        "escaped\\|pipe",
+        "S1.P05.S02",
+    )
+    targets = cast(list[dict[str, Any]], MANIFEST["target_symbols"])
+    original = targets[1]["slice_layer"]
+    try:
+        for value in hostile:
+            targets[1]["slice_layer"] = value
+            rows = _render_table(header, _render_targets())
+            row = rows[3]
+            cells = _markdown_row_cells(row)
+            assert len(cells) == 4, (value, row, cells)
+            # the published cell is the value inside its code span, intact
+            assert cells[2] == _markdown_code_span(value), (value, cells[2])
+            assert "\n" not in row and "\r" not in row, value
+    finally:
+        targets[1]["slice_layer"] = original
+
+    # a value carrying a line break is refused outright rather than rendered
+    for breaking in ("two\nlines", "carriage\rreturn"):
+        with pytest.raises(AssertionError):
+            _markdown_cell(breaking)
+        with pytest.raises(AssertionError):
+            _markdown_code_span(breaking)
+
+    # the round trip is exact for every cell the document actually publishes
+    for _label, table_header, render in DERIVED_TABLES:
+        for row_cells in render():
+            assert _markdown_row_cells(_md_row(row_cells)) == list(row_cells)
+        assert _markdown_row_cells(_md_row(table_header)) == list(table_header)
+
+
+def test_a_backtick_in_a_canonical_value_stays_inside_its_span() -> None:
+    """Parity was not a grammar: two injected backticks kept the total even.
+
+    A value carrying one backtick closes the span; a value carrying two closes
+    and reopens it while the total stays even, which is what the parity rule
+    could not see. The delimiter is now longer than the longest run the value
+    carries, so no content can end the span it sits in.
+    """
     execution = cast(dict[str, Any], MANIFEST["execution_contract"])
     original = execution["fixture_references"]
-    execution["fixture_references"] = escaped
+    hostile = (
+        "inlined_values",
+        "one`tick",
+        "two`separate`ticks",
+        "``double``",
+        "```triple```",
+        "````quadruple````",
+        "`leading",
+        "trailing`",
+        "`both`",
+        "`",
+        "``",
+    )
     try:
-        broken = _render_fixture_mechanism()
+        for value in hostile:
+            execution["fixture_references"] = value
+            for line in _render_fixture_mechanism():
+                assert _unmatched_code_span_runs(line) == [], (value, line)
+            span = _markdown_code_span(value)
+            assert _unmatched_code_span_runs(span) == [], value
+            # the delimiter outruns the content, so the content cannot close it
+            longest = max((len(run) for run in _BACKTICK_RUN.findall(value)), default=0)
+            assert span.startswith("`" * (longest + 1)), value
+            assert not span.startswith("`" * (longest + 2)), value
     finally:
         execution["fixture_references"] = original
-    assert any(line.count("`") % 2 for line in broken), broken
+
+    # The span publishes the value and nothing else -- which is the property
+    # parity never checked. `two`separate`ticks` has an EVEN backtick total and
+    # pairs cleanly, so no count could tell that the span around it had been
+    # closed after "two" and reopened before "ticks".
+    for value in hostile:
+        assert _code_span_content(_markdown_code_span(value)) == value, value
+
+    naive = "`two`separate`ticks`"
+    assert naive.count("`") % 2 == 0
+    assert _unmatched_code_span_runs(naive) == []
+    assert _code_span_content("`two`") == "two"
+    assert _code_span_content("`two`") != "two`separate`ticks"
+    with pytest.raises(AssertionError):
+        _code_span_content(naive)
+
+    # a backtick-free value renders exactly as it always did
+    assert _markdown_code_span("S1.P05.S09") == "`S1.P05.S09`"
+    assert _tick("S1.P05.S09") == "`S1.P05.S09`"
+
+
+def test_the_code_span_padding_publishes_the_value_itself() -> None:
+    """Padding is what CommonMark strips again, not extra published text."""
+    for value, expected in (
+        ("plain", "`plain`"),
+        ("`edge", "`` `edge ``"),
+        ("edge`", "`` edge` ``"),
+        ("`both`", "`` `both` ``"),
+        ("``run``", "``` ``run`` ```"),
+        (" spaced ", "`  spaced  `"),
+    ):
+        assert _markdown_code_span(value) == expected, value
+        assert _unmatched_code_span_runs(expected) == [], value
+        assert _code_span_content(expected) == value, value
+
+    # every value the document publishes today is unpadded and single-delimited
+    for _label, header, render in DERIVED_TABLES:
+        for row in render():
+            for cell in row:
+                assert "``" not in cell, cell
+        assert all("`" not in column for column in header), header
 
 
 def test_every_document_line_has_exactly_one_structural_disposition() -> None:
