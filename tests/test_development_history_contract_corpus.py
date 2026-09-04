@@ -11936,6 +11936,45 @@ def _pR_primary(vector: dict[str, Any]) -> dict[str, Any]:
     return vector["source_pointers"][0]
 
 
+# The retained coordinate each provenance renderer actually reads. A vector
+# cites several -- the comparison, the pull request bracket, the repository --
+# and only one of them is the node a given sentence is about. These selections
+# are the renderers' own, called from the renderers below and reused by the
+# claim resolver, so the declared authority and the executed code cannot
+# describe different coordinates.
+
+
+def _pR_role_implication_pointer(vector: dict[str, Any]) -> dict[str, Any]:
+    """The retained coordinate whose own mapping implies the replayed role."""
+    return next(p for p in vector["source_pointers"] if p.get("role_implications"))
+
+
+def _pR_instant_target(pointer: dict[str, Any], vector: dict[str, Any]) -> str:
+    """The top-level replayed target a retained coordinate fills, if it fills one."""
+    return next(
+        target
+        for target in cast(dict[str, str], pointer["source_fields"]).values()
+        if "/" not in target.strip("/")
+        and isinstance(_pR_replayed(vector, target), str)
+    )
+
+
+def _pR_instant_pointer(vector: dict[str, Any]) -> dict[str, Any]:
+    """The retained coordinate the replayed occurrence instant is read from."""
+    for pointer in cast(list[dict[str, Any]], vector["source_pointers"]):
+        try:
+            _pR_instant_target(pointer, vector)
+        except StopIteration:
+            continue
+        return pointer
+    raise LookupError("no retained coordinate carries the replayed instant")
+
+
+def _pR_composed_bindings(vector: dict[str, Any]) -> list[str]:
+    """The embedded facts a caller composition binds, in declared order."""
+    return [key for key in vector["embedded_facts"] if key.count("/") == 1]
+
+
 def _pR_replayed_targets(vector: dict[str, Any]) -> list[str]:
     return [
         target
@@ -11963,7 +12002,7 @@ def _pR_authority_role(reference: str) -> str:
 
 def _PR_retained_role_binding_fact(vector: dict[str, Any], family: str) -> str:
     """Retained comparison node, the role it implies, its revision and the PR."""
-    pointer = next(p for p in vector["source_pointers"] if p.get("role_implications"))
+    pointer = _pR_role_implication_pointer(vector)
     noun = _PR_RETAINED_NODE_NOUNS[_pR_source_position(pointer)]
     role = _pR_replayed(vector, next(iter(pointer["role_implications"].values())))
     revision = _pR_replayed(
@@ -12009,11 +12048,8 @@ def _PR_retained_merge_event_fact(vector: dict[str, Any], family: str) -> str:
 def _PR_retained_occurrence_instant_fact(vector: dict[str, Any], family: str) -> str:
     """Retained instant and the published history fact it is attached to."""
     roots = sorted({t.strip("/").split("/")[0] for t in _pR_replayed_targets(vector)})
-    instant = next(
-        _pR_replayed(vector, f"/{r}")
-        for r in roots
-        if isinstance(_pR_replayed(vector, f"/{r}"), str)
-    )
+    coordinate = _pR_instant_pointer(vector)
+    instant = _pR_replayed(vector, _pR_instant_target(coordinate, vector))
     occurrence = next(
         _pR_replayed(vector, f"/{r}")
         for r in roots
@@ -12031,8 +12067,7 @@ def _PR_retained_target_declaration(vector: dict[str, Any], family: str) -> str:
 def _PR_caller_composed_change_set(vector: dict[str, Any], family: str) -> str:
     """Caller composition: the bound role bindings plus a choice of paths."""
     verb = _PR_CALLER_VERBS[vector["evidence_classification"]]
-    bindings = [key for key in vector["embedded_facts"] if key.count("/") == 1]
-    count = _PR_CARDINAL_WORDS[len(bindings)]
+    count = _PR_CARDINAL_WORDS[len(_pR_composed_bindings(vector))]
     return f"A caller {verb} the {count} bindings with a selection of retained paths"
 
 
@@ -13494,6 +13529,31 @@ PURPOSE_RENDERERS: dict[str, Callable[[dict[str, Any], str], str]] = {
 }
 
 
+# Which retained coordinate each provenance renderer consumes. A replay vector
+# cites several source pointers, so "the claimed coordinate is cited somewhere"
+# accepted a coordinate the sentence was never read from -- the role-binding
+# claim could name `/observations/repository` while the renderer went on
+# deriving the role and the revision from the comparison. The values here are
+# the renderers' own selections, so the two cannot disagree; a renderer with no
+# entry may not carry a coordinate claim at all.
+PURPOSE_SOURCE_POINTER_SELECTORS: dict[
+    str, Callable[[dict[str, Any]], dict[str, Any]]
+] = {
+    "replay:retained_changed_path_fact": _pR_primary,
+    "replay:retained_merge_event_fact": _pR_primary,
+    "replay:retained_occurrence_instant_fact": _pR_instant_pointer,
+    "replay:retained_review_approval_fact": _pR_primary,
+    "replay:retained_role_binding_fact": _pR_role_implication_pointer,
+}
+
+# The same rule for embedded facts. A composition binds its role bindings and
+# counts them; the paths it selects are not bindings, so citing one of those
+# would name a key the sentence does not rest on.
+PURPOSE_EMBEDDED_FACT_SELECTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
+    "replay:caller_composed_change_set": _pR_composed_bindings,
+}
+
+
 def _render_purpose(
     vector: dict[str, Any],
     family: str,
@@ -13547,11 +13607,31 @@ def _purpose_authority_failures(
         }
         if pointer not in cited:
             reasons.append("source-pointer-not-cited")
+        else:
+            # being cited is not enough: the coordinate must be the one this
+            # renderer reads, or the ledger publishes an unrelated provenance
+            select = PURPOSE_SOURCE_POINTER_SELECTORS.get(claim.renderer)
+            if select is None:
+                reasons.append("renderer-reads-no-source-pointer")
+            else:
+                try:
+                    consumed = cast(str, select(vector)["json_pointer"])
+                except (StopIteration, LookupError):
+                    reasons.append("renderer-input-coordinate-unresolvable")
+                else:
+                    if consumed != pointer:
+                        reasons.append("source-pointer-is-not-the-renderer-input")
     elif authority.startswith("embedded-fact:"):
         # `embedded_facts` is keyed by pointer strings, so this is membership
         pointer = authority.split(":", 1)[1]
         if pointer not in cast(dict[str, Any], vector.get("embedded_facts") or {}):
             reasons.append("embedded-fact-not-declared")
+        else:
+            bind = PURPOSE_EMBEDDED_FACT_SELECTORS.get(claim.renderer)
+            if bind is None:
+                reasons.append("renderer-reads-no-embedded-fact")
+            elif pointer not in bind(vector):
+                reasons.append("embedded-fact-is-not-the-renderer-input")
     elif authority.startswith("source-decision-role:"):
         # the reference is the whole tail: it carries a colon of its own
         reference = authority.split(":", 1)[1]
@@ -14102,6 +14182,234 @@ def test_a_duplicated_or_drifted_source_decision_refuses_the_claim(
     assert _purpose_authority_failures(vector, "replay", claim) == [
         "source-decision-identity-differs"
     ]
+
+
+# --- a coordinate claim names the coordinate the sentence was read from ------
+#
+# A replay vector cites several retained coordinates -- the comparison, the
+# pull request bracket, the repository -- and the resolver asked only whether
+# the claimed one appeared among them. So the role-binding claim could name
+# `/observations/repository`, a node the sentence never touches, while the
+# renderer went on reading the role and the revision from the comparison, and
+# the purpose ledger published an unrelated coordinate as its provenance.
+#
+# The repair is the same shape as the source-decision one above: the claim is
+# addressed by the coordinate the renderer consumes, and the selection is the
+# renderer's own function rather than a second description of it, so the
+# declaration and the code cannot drift apart.
+
+
+def _coordinate_claims() -> list[tuple[str, str, dict[str, Any], PurposeClaim]]:
+    """`(vector id, family, vector, claim)` for every coordinate-addressed claim."""
+    return [
+        (identifier, family, vector, claim)
+        for family, section in sorted(_purpose_sections().items())
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+        for identifier in [cast(str, vector["id"])]
+        for claim in PURPOSE_SEMANTICS[identifier]
+        if claim.authority.startswith(("source-pointer:", "embedded-fact:"))
+    ]
+
+
+def test_every_coordinate_claim_names_the_input_its_renderer_reads() -> None:
+    """The reported finding, closed, and the selection is not restated.
+
+    Eleven claims address a retained coordinate. Each must name the pointer the
+    registered renderer actually selects, and that selection must be a function
+    the renderer really calls -- otherwise the ledger and the renderer would be
+    two descriptions of the same thing, free to disagree.
+    """
+    claims = _coordinate_claims()
+    pointers = [c for *_, c in claims if c.authority.startswith("source-pointer:")]
+    facts = [c for *_, c in claims if c.authority.startswith("embedded-fact:")]
+    assert len(pointers) == 10
+    assert len(facts) == 1
+
+    for identifier, family, vector, claim in claims:
+        assert _purpose_authority_failures(vector, family, claim) == [], identifier
+        cited = claim.authority.split(":", 1)[1]
+        if claim.authority.startswith("source-pointer:"):
+            select = PURPOSE_SOURCE_POINTER_SELECTORS[claim.renderer]
+            assert select(vector)["json_pointer"] == cited, identifier
+        else:
+            assert cited in PURPOSE_EMBEDDED_FACT_SELECTORS[claim.renderer](vector), (
+                identifier
+            )
+
+    # every renderer that carries such a claim declares a selection, and no
+    # selection row is dead
+    assert {c.renderer for *_, c in claims if c.authority.startswith("source-")} == set(
+        PURPOSE_SOURCE_POINTER_SELECTORS
+    )
+    assert {
+        c.renderer for *_, c in claims if c.authority.startswith("embedded")
+    } == set(PURPOSE_EMBEDDED_FACT_SELECTORS)
+
+
+def test_every_declared_selection_is_code_its_renderer_runs() -> None:
+    """A selection the renderer never calls would be a parallel description."""
+    module = ast.parse(Path(__file__).read_text("utf-8"))
+    defined = {
+        node.name: node for node in module.body if isinstance(node, ast.FunctionDef)
+    }
+
+    def reaches(root: str, helper: str) -> bool:
+        frontier, seen = {root}, set[str]()
+        while frontier:
+            name = frontier.pop()
+            if name in seen:
+                continue
+            seen.add(name)
+            node = defined.get(name)
+            if node is None:
+                continue
+            for call in ast.walk(node):
+                if isinstance(call, ast.Call) and isinstance(call.func, ast.Name):
+                    if call.func.id in defined:
+                        frontier.add(call.func.id)
+        return helper in seen
+
+    selections: dict[str, Callable[..., Any]] = {
+        **PURPOSE_SOURCE_POINTER_SELECTORS,
+        **PURPOSE_EMBEDDED_FACT_SELECTORS,
+    }
+    for renderer, select in sorted(selections.items()):
+        root = PURPOSE_RENDERERS[renderer].__name__
+        assert reaches(root, select.__name__), (renderer, select.__name__)
+    # and the guard itself is not vacuous
+    assert not reaches("_PR_retained_changed_path_fact", "_pR_instant_pointer")
+
+
+def test_a_coordinate_the_renderer_never_reads_is_refused() -> None:
+    """Cited-somewhere was the whole rule; now the sentence has to read it.
+
+    `/observations/repository` is cited by the role-binding vector and ignored
+    by its renderer. `/observations/pr/attempts/0/bracket_a` is read -- it
+    supplies the pull request number -- but it is not the node the sentence is
+    about, and naming it would still misreport the provenance.
+    """
+    identifier = "history.replay.role-binding.base"
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == identifier)
+    claim = PURPOSE_SEMANTICS[identifier][0]
+    assert claim.authority == "source-pointer:/observations/comparison"
+
+    for coordinate in (
+        "/observations/repository",
+        "/observations/pr/attempts/0/bracket_a",
+    ):
+        moved = PurposeClaim(
+            claim.assurance, claim.renderer, f"source-pointer:{coordinate}"
+        )
+        assert _purpose_authority_failures(vector, "replay", moved) == [
+            "source-pointer-is-not-the-renderer-input"
+        ], coordinate
+
+    uncited = PurposeClaim(
+        claim.assurance, claim.renderer, "source-pointer:/observations/pr/nowhere"
+    )
+    assert _purpose_authority_failures(vector, "replay", uncited) == [
+        "source-pointer-not-cited"
+    ]
+
+    # a renderer that reads no coordinate may not carry a coordinate claim
+    orphan = PurposeClaim(
+        claim.assurance, "replay:retained_target_declaration", claim.authority
+    )
+    assert _purpose_authority_failures(vector, "replay", orphan) == [
+        "renderer-reads-no-source-pointer"
+    ]
+
+    # and a vector whose selected coordinate is gone fails rather than passing
+    stripped = copy.deepcopy(vector)
+    stripped["source_pointers"] = [
+        p
+        for p in cast(list[dict[str, Any]], stripped["source_pointers"])
+        if not p.get("role_implications")
+    ]
+    assert _purpose_authority_failures(stripped, "replay", claim) == [
+        "source-pointer-not-cited"
+    ]
+
+
+def test_a_composed_binding_claim_may_not_name_a_selected_path() -> None:
+    """The composition counts its bindings; the paths it chose are not those."""
+    identifier = "history.replay.change-set.supplied-three-paths"
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == identifier)
+    claim = next(
+        c
+        for c in PURPOSE_SEMANTICS[identifier]
+        if c.authority.startswith("embedded-fact:")
+    )
+    assert claim.authority == "embedded-fact:/base"
+
+    path = PurposeClaim(
+        claim.assurance, claim.renderer, "embedded-fact:/changed_paths/0"
+    )
+    assert _purpose_authority_failures(vector, "replay", path) == [
+        "embedded-fact-is-not-the-renderer-input"
+    ]
+
+    absent = PurposeClaim(claim.assurance, claim.renderer, "embedded-fact:/nowhere")
+    assert _purpose_authority_failures(vector, "replay", absent) == [
+        "embedded-fact-not-declared"
+    ]
+
+    orphan = PurposeClaim(
+        claim.assurance, "replay:retained_changed_path_fact", claim.authority
+    )
+    assert _purpose_authority_failures(vector, "replay", orphan) == [
+        "renderer-reads-no-embedded-fact"
+    ]
+
+
+def test_removing_a_claimed_coordinate_moves_the_sentence_it_carries() -> None:
+    """A cited coordinate the renderer ignores is decoration, not provenance.
+
+    The structural check above says the claim names the renderer's own
+    selection. This says the same thing from the other side, behaviourally:
+    delete the claimed coordinate and the fragment must move or stop rendering.
+    Both directions are kept because either alone could be satisfied by a
+    selection that has quietly stopped being read.
+    """
+    inert: list[tuple[str, str]] = []
+    for identifier, _family, vector, claim in _coordinate_claims():
+        kind, cited = claim.authority.split(":", 1)
+        render = PURPOSE_RENDERERS[claim.renderer]
+        edited = copy.deepcopy(vector)
+        if kind == "source-pointer":
+            edited["source_pointers"] = [
+                p
+                for p in cast(list[dict[str, Any]], edited["source_pointers"])
+                if p["json_pointer"] != cited
+            ]
+        else:
+            edited["embedded_facts"] = {
+                key: value
+                for key, value in cast(dict[str, Any], edited["embedded_facts"]).items()
+                if key != cited
+            }
+        try:
+            moved = render(edited, "replay") != render(vector, "replay")
+        except Exception:  # noqa: BLE001 - a renderer that cannot run did notice
+            moved = True
+        if not moved:
+            inert.append((identifier, claim.authority))
+    assert not inert, inert
+
+    # the probe is not vacuous: removing the coordinate the finding proposed
+    # leaves the sentence exactly as it was
+    vector = next(
+        v for v in REPLAY["vectors"] if v["id"] == "history.replay.role-binding.base"
+    )
+    ignored = copy.deepcopy(vector)
+    ignored["source_pointers"] = [
+        p
+        for p in cast(list[dict[str, Any]], ignored["source_pointers"])
+        if p["json_pointer"] != "/observations/repository"
+    ]
+    assert _PR_retained_role_binding_fact(
+        ignored, "replay"
+    ) == _PR_retained_role_binding_fact(vector, "replay")
 
 
 def test_the_purpose_ledger_is_bound_once_anywhere_in_the_module() -> None:
