@@ -16891,11 +16891,19 @@ PURPOSE_MANIFEST_POINTERS: dict[str, str] = {
 #
 # Coordinates are the smallest stable semantic address of what was consumed.
 # A leaf read records the leaf; a collection consumed as a unit -- counted,
-# iterated, tested for membership -- records the collection, and is dropped
-# again if something under it was also read. Entries in an addressed collection
-# are named by their own identity rather than by position, because
-# `source_pointers`, `source_decisions` and `target_symbols` are searched by
-# identity and their order carries no meaning.
+# iterated, tested for membership, or written into a sentence -- records the
+# collection, and is dropped again if something under it was also read.
+#
+# One deliberate exception: inside an ENTRY of an addressed collection every
+# field collapses to the entry's own coordinate, because a source pointer, a
+# source decision and a target symbol are each consumed as one record rather
+# than field by field. The entry is named by its identity -- json pointer,
+# decision reference, symbol -- rather than by position, so a reordering of
+# `source_decisions` or `target_symbols` cannot move it. `source_pointers` is
+# addressed by identity for the same reason, though `_pR_primary` does select
+# the first entry by position, so that ONE collection's order is load-bearing
+# for which pointer a renderer picks even though the coordinate it produces is
+# not positional.
 #
 # The traced universe is the two structured corpus surfaces: the vector and the
 # manifest. The requirement ledger and the secondary-witness registry are
@@ -17044,6 +17052,18 @@ class _TracedMapping(dict[str, Any]):
     def __ne__(self, other: object) -> bool:
         return not self == other
 
+    def __repr__(self) -> str:
+        self._record()
+        return repr(self._raw)
+
+    def __str__(self) -> str:
+        self._record()
+        return str(self._raw)
+
+    def __format__(self, specification: str) -> str:
+        self._record()
+        return format(self._raw, specification)
+
     def __or__(self, other: Any) -> Any:
         return dict(self.items()) | other
 
@@ -17140,6 +17160,18 @@ class _TracedSequence(list[Any]):
     def __ne__(self, other: object) -> bool:
         return not self == other
 
+    def __repr__(self) -> str:
+        self._record()
+        return repr(self._raw)
+
+    def __str__(self) -> str:
+        self._record()
+        return str(self._raw)
+
+    def __format__(self, specification: str) -> str:
+        self._record()
+        return format(self._raw, specification)
+
     def __add__(self, other: Any) -> Any:
         return list(self) + other
 
@@ -17217,6 +17249,28 @@ _TRACED_UNGUARDED = {
 }
 
 
+def test_no_renderer_reaches_around_the_recorder() -> None:
+    """The proxies are only a boundary if renderer code goes through them.
+
+    An unbound base-class call -- `dict.__getitem__(node, key)` -- or a touch of
+    the proxy's own `_raw` would hand back the corpus with nothing recorded. No
+    accessor can defend against that, so the renderer closure is read instead:
+    the same call graph the purpose-blindness guards walk, checked for the two
+    shapes that reach past the recorder.
+    """
+    reachable = _reachable_purpose_functions()
+    assert len(reachable) >= len(PURPOSE_RENDERERS)
+    for name, node in sorted(reachable.items()):
+        for used in ast.walk(node):
+            if isinstance(used, ast.Attribute):
+                assert used.attr != "_raw", f"{name} reaches past the recorder"
+                if isinstance(used.value, ast.Name) and used.value.id in (
+                    "dict",
+                    "list",
+                ):
+                    raise AssertionError(f"{name} calls {used.value.id}.{used.attr}")
+
+
 def test_no_container_accessor_can_hand_out_an_untraced_value() -> None:
     """A recorder with an unguarded accessor is a recorder with a hole.
 
@@ -17249,6 +17303,11 @@ def test_no_container_accessor_can_hand_out_an_untraced_value() -> None:
         "__le__",
         "__gt__",
         "__ge__",
+        # a container written into a sentence is read whole, and the base
+        # storage holds the raw children, so these three leaked everything
+        "__repr__",
+        "__str__",
+        "__format__",
     }
     for base, proxy in ((dict, _TracedMapping), (list, _TracedSequence)):
         names = {
@@ -17280,11 +17339,16 @@ def test_no_container_accessor_can_hand_out_an_untraced_value() -> None:
         read(_TracedMapping(vector, None, seen))
         assert comparison in _smallest_coordinates(seen), label
 
-    # a container read as a whole records the container, not nothing
+    # a container read as a whole records the container, not nothing --
+    # including the three conversions that walk it into a sentence
     whole: tuple[tuple[str, Callable[[Any], Any]], ...] = (
         ("equality", lambda w: w["input"] == {}),
         ("length", lambda w: len(w["input"])),
         ("membership", lambda w: "role_assignment" in w["input"]),
+        ("interpolation", lambda w: f"{w['input']}"),
+        ("str", lambda w: str(w["input"])),
+        ("repr", lambda w: repr(w["input"])),
+        ("format", lambda w: format(w["input"], "")),
     )
     for label, read in whole:
         seen = set()
