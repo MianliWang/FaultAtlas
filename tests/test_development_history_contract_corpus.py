@@ -8,6 +8,7 @@ import inspect
 import json
 import re
 import stat as stat_module
+import struct
 from collections import Counter
 from collections.abc import Callable
 from datetime import datetime
@@ -5571,27 +5572,192 @@ def _v_corpus_identity() -> None:
     assert CORPUS.name == f"v{identity_block['version']}"
 
 
+# --- what Git tracks, not what the filesystem reports -----------------------
+#
+# `Path.stat()` follows symlinks, so a corpus file replaced by a link to a
+# resealed file elsewhere still reported a regular 0644 node: the digest, the
+# byte length, the sidecar and the followed mode all agreed while Git recorded
+# `120000` and the supposedly immutable snapshot depended on mutable bytes
+# outside the corpus. Git mode was also INFERRED from filesystem permissions,
+# which cannot express the difference at all.
+#
+# The Git index is parsed instead. It is the record of what is tracked, it is
+# read rather than shelled out to, and no repository code is executed. Version 4
+# prefix compression is refused rather than guessed at; this repository's index
+# is version 2. These are repository-tracked corpus files, so a checkout is the
+# only mode this corpus oracle supports, and an absent index fails loudly.
+
+_INDEX_ENTRY_HEADER = struct.Struct(">10I20sH")
+
+
+def _git_directory() -> Path:
+    """`.git`, following the one indirection a worktree or submodule adds."""
+    marker = REPOSITORY_ROOT / ".git"
+    assert marker.exists(), "the corpus oracle requires a Git checkout"
+    if marker.is_dir():
+        return marker
+    pointer = marker.read_text("utf-8").strip()
+    assert pointer.startswith("gitdir:"), pointer
+    return (REPOSITORY_ROOT / pointer.split(":", 1)[1].strip()).resolve()
+
+
+def _tracked_git_entries() -> list[tuple[str, str]]:
+    """`(repository-relative path, Git mode)` for every entry Git tracks."""
+    raw = (_git_directory() / "index").read_bytes()
+    signature, version, count = struct.unpack(">4sII", raw[:12])
+    assert signature == b"DIRC", signature
+    assert version in (2, 3), f"unsupported Git index version {version}"
+
+    entries: list[tuple[str, str]] = []
+    offset = 12
+    for _ in range(count):
+        start = offset
+        fields = _INDEX_ENTRY_HEADER.unpack_from(raw, offset)
+        mode, flags = fields[6], fields[11]
+        offset += _INDEX_ENTRY_HEADER.size
+        if version >= 3 and flags & 0x4000:
+            offset += 2
+        length = flags & 0xFFF
+        if length < 0xFFF:
+            name = raw[offset : offset + length]
+            offset += length
+        else:
+            end = raw.index(b"\x00", offset)
+            name = raw[offset:end]
+            offset = end
+        offset = start + (offset - start + 8) // 8 * 8
+        entries.append((name.decode("utf-8"), f"{mode:06o}"))
+    return entries
+
+
+def _corpus_node_failures(
+    path: Path, entry: dict[str, Any], tracked: list[tuple[str, str]], relative: str
+) -> list[str]:
+    """Every way a corpus path is not the tracked regular file it claims to be."""
+    reasons: list[str] = []
+    if not path.exists() and not path.is_symlink():
+        return ["corpus-file-absent"]
+    if path.is_symlink():
+        reasons.append("symlink-is-not-a-corpus-file")
+    info = path.lstat()
+    if not stat_module.S_ISREG(info.st_mode):
+        reasons.append("not-a-regular-file")
+    if f"0{info.st_mode & 0o777:o}" != entry["filesystem_mode"]:
+        reasons.append("filesystem-mode-differs")
+    matches = [mode for name, mode in tracked if name == relative]
+    if len(matches) != 1:
+        reasons.append("not-tracked-exactly-once")
+    elif matches[0] != entry["git_mode"]:
+        reasons.append("git-mode-differs")
+    return reasons
+
+
 def _v_corpus_files() -> None:
     """Declared file state is compared with the filesystem, not with itself."""
     declared = cast(list[dict[str, Any]], MANIFEST["corpus_files"])
     assert tuple(sorted(cast(str, e["filename"]) for e in declared)) == CORPUS_FILES
     assert {p.name for p in CORPUS.iterdir()} == set(CORPUS_FILES)
+    tracked = _tracked_git_entries()
     for entry in declared:
-        path = CORPUS / cast(str, entry["filename"])
-        info = path.stat()
-        assert entry["required"] is True, entry["filename"]
-        assert stat_module.S_ISREG(info.st_mode), entry["filename"]
-        assert f"0{info.st_mode & 0o777:o}" == entry["filesystem_mode"], entry[
-            "filename"
-        ]
-        executable = bool(info.st_mode & 0o111)
-        assert entry["git_mode"] == ("100755" if executable else "100644"), entry[
-            "filename"
-        ]
+        filename = cast(str, entry["filename"])
+        path = CORPUS / filename
+        assert entry["required"] is True, filename
+        relative = path.relative_to(REPOSITORY_ROOT).as_posix()
+        assert _corpus_node_failures(path, entry, tracked, relative) == [], filename
         if "sha256" in entry:
             raw = path.read_bytes()
-            assert hashlib.sha256(raw).hexdigest() == entry["sha256"], entry["filename"]
-            assert len(raw) == entry["byte_length"], entry["filename"]
+            assert hashlib.sha256(raw).hexdigest() == entry["sha256"], filename
+            assert len(raw) == entry["byte_length"], filename
+
+
+def test_the_index_parser_agrees_with_the_tracked_corpus() -> None:
+    """The parse is real: every corpus file is tracked once, as a regular blob."""
+    tracked = _tracked_git_entries()
+    assert len(tracked) == len({name for name, _mode in tracked}), "duplicate entry"
+
+    for filename in CORPUS_FILES:
+        relative = (CORPUS / filename).relative_to(REPOSITORY_ROOT).as_posix()
+        modes = [mode for name, mode in tracked if name == relative]
+        assert modes == ["100644"], (filename, modes)
+
+    # a Git mode is not a permission bit: these are the four Git can record, and
+    # the inference this replaces could only ever produce the first two
+    assert {mode for _name, mode in tracked} <= {
+        "100644",
+        "100755",
+        "120000",
+        "160000",
+    }
+
+
+def test_a_symlinked_corpus_file_is_refused(tmp_path: Path) -> None:
+    """Correct bytes through a link are not the tracked immutable snapshot.
+
+    `Path.stat()` follows the link, so the digest, the byte length, the sidecar
+    and the followed mode all agree while Git records `120000` and the corpus
+    depends on bytes outside itself. The node is inspected with `lstat` now, and
+    the mode is read from the index rather than inferred from permissions.
+    """
+    entry = next(
+        e
+        for e in cast(list[dict[str, Any]], MANIFEST["corpus_files"])
+        if e["filename"] == "valid-vectors.json"
+    )
+    relative = "reference_corpus/contracts/development-history/v1/valid-vectors.json"
+    tracked = [(relative, "100644")]
+    real = tmp_path / "valid-vectors.json"
+    real.write_bytes((CORPUS / "valid-vectors.json").read_bytes())
+    real.chmod(0o644)
+
+    # the control: an ordinary regular file with the tracked mode passes
+    assert _corpus_node_failures(real, entry, tracked, relative) == []
+
+    outside = tmp_path / "outside" / "resealed.json"
+    outside.parent.mkdir()
+    outside.write_bytes(real.read_bytes())
+    sibling = tmp_path / "sidecar-target"
+    sibling.write_bytes(b"another corpus file\n")
+
+    for label, target in (
+        ("external byte-identical file", outside),
+        ("another corpus file", sibling),
+        ("dangling", tmp_path / "does-not-exist"),
+    ):
+        link = tmp_path / f"link-{label.split()[0]}.json"
+        link.symlink_to(target)
+        reasons = _corpus_node_failures(link, entry, tracked, relative)
+        assert "symlink-is-not-a-corpus-file" in reasons, (label, reasons)
+        # the followed bytes are irrelevant: the node is refused for what it is
+        if target.exists():
+            assert hashlib.sha256(link.read_bytes()) is not None
+
+    # and Git's own mode is what decides, not the permission bits
+    tracked_as_link = [(relative, "120000")]
+    assert _corpus_node_failures(real, entry, tracked_as_link, relative) == [
+        "git-mode-differs"
+    ]
+    assert _corpus_node_failures(real, entry, [], relative) == [
+        "not-tracked-exactly-once"
+    ]
+    assert _corpus_node_failures(
+        real, entry, [(relative, "100644"), (relative, "100644")], relative
+    ) == ["not-tracked-exactly-once"]
+
+    # an executable bit is a real difference, and it is now reported as one
+    real.chmod(0o755)
+    assert set(_corpus_node_failures(real, entry, tracked, relative)) == {
+        "filesystem-mode-differs"
+    }
+
+    # a directory in a corpus file's place is not a corpus file
+    directory = tmp_path / "directory.json"
+    directory.mkdir()
+    assert "not-a-regular-file" in _corpus_node_failures(
+        directory, entry, tracked, relative
+    )
+    assert _corpus_node_failures(
+        tmp_path / "absent.json", entry, tracked, relative
+    ) == ["corpus-file-absent"]
 
 
 def _v_scope() -> None:
