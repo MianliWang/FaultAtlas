@@ -5614,12 +5614,43 @@ def _v_scope() -> None:
     )
 
 
+# The technical class of a published target is a property of the symbol, not a
+# note about it: a Pydantic model and an enum are different runtime kinds and
+# the imported object says which. `target_class` was declared descriptive, so
+# swapping a vocabulary row with a model row and resealing published both with
+# the wrong kind while every check stayed green. The classification is derived
+# from the live symbol here, and the leaf is no longer exempt.
+TARGET_RUNTIME_KINDS: tuple[tuple[str, type], ...] = (
+    ("vocabulary_enum_target", Enum),
+    ("record_model_target", BaseModel),
+)
+
+
+def _derived_target_class(symbol: object) -> str:
+    """The published target's technical class, read from the imported symbol.
+
+    Neither the manifest's own `target_class`, the execution contract's
+    aggregate counts, `contract.md`, nor the symbol's spelling is consulted.
+    A target that is neither kind, or both, has no derivable class and fails
+    rather than defaulting.
+    """
+    kinds = [
+        name
+        for name, base in TARGET_RUNTIME_KINDS
+        if isinstance(symbol, type) and issubclass(symbol, base)
+    ]
+    assert len(kinds) == 1, (symbol, kinds)
+    return kinds[0]
+
+
 def _v_target_symbols() -> None:
     declared = cast(list[dict[str, Any]], MANIFEST["target_symbols"])
     assert {cast(str, e["symbol"]) for e in declared} == set(OWNED)
     for entry in declared:
         module = importlib.import_module(cast(str, entry["module"]))
         assert entry["symbol"] in module.__all__, entry["symbol"]
+        symbol = getattr(module, cast(str, entry["symbol"]))
+        assert entry["target_class"] == _derived_target_class(symbol), entry["symbol"]
 
 
 def _v_execution_contract() -> None:
@@ -5877,7 +5908,7 @@ def test_the_meta_schema_is_exactly_the_classifier_and_its_paths() -> None:
     ]
 
     assert sorted(_meta_schema_leaf_paths()) == sorted(expected)
-    assert len(_meta_schema_leaf_paths()) == len(declared) + 1 == 84
+    assert len(_meta_schema_leaf_paths()) == len(declared) + 1 == 75
 
 
 def test_the_declaration_universe_excludes_the_meta_schema() -> None:
@@ -5887,13 +5918,15 @@ def test_the_declaration_universe_excludes_the_meta_schema() -> None:
 
     assert universe == every - meta
     assert not universe & meta
-    assert len(every) == 470
-    assert len(meta) == 84
+    # the classifier's own path list is manifest data, so shortening it moves
+    # the total and the meta-schema together; the universe it classifies does not
+    assert len(every) == 461
+    assert len(meta) == 75
     assert len(universe) == 386
 
 
 def test_the_declaration_universe_is_partitioned_in_two_kinds() -> None:
-    """386 = 303 + 83, with nothing unclassified and nothing counted twice."""
+    """386 = 312 + 74, with nothing unclassified and nothing counted twice."""
     universe = set(_declaration_universe())
     objective = set(_objective_leaf_paths())
     descriptive = set(DESCRIPTIVE_PATHS)
@@ -5902,8 +5935,8 @@ def test_the_declaration_universe_is_partitioned_in_two_kinds() -> None:
     assert universe == objective | descriptive
     assert not objective & descriptive
     assert len(universe) == len(objective) + len(descriptive)
-    assert len(objective) == 303
-    assert len(descriptive) == 83
+    assert len(objective) == 312
+    assert len(descriptive) == 74
     # no meta-schema leaf reaches either side of the accounting
     assert not (objective | descriptive) & set(_meta_schema_leaf_paths())
 
@@ -7853,15 +7886,95 @@ def test_a_changed_markdown_cell_is_refused() -> None:
         assert sorted(tables) != sorted(rendered), original
 
 
-def test_the_target_row_columns_stay_descriptive() -> None:
-    """Rendering them faithfully must not promote them to verified claims."""
+def test_the_target_row_columns_carry_their_own_epistemics() -> None:
+    """One row, four columns, and not one classification between them.
+
+    `symbol` and `module` are compared with the live `__all__`. `target_class`
+    is derived from the imported object, so it is objective too. `slice_layer`
+    is the phase coordinate this corpus publishes and no independent authority
+    confirms it, so it stays descriptive -- rendering the row faithfully must
+    not promote the column that nothing checks.
+    """
     for index in range(len(cast(list[Any], MANIFEST["target_symbols"]))):
-        for column in ("slice_layer", "target_class"):
-            assert f"/target_symbols/{index}/{column}" in DESCRIPTIVE_PATHS
-        for column in ("symbol", "module"):
+        assert f"/target_symbols/{index}/slice_layer" in DESCRIPTIVE_PATHS
+        for column in ("symbol", "module", "target_class"):
             assert f"/target_symbols/{index}/{column}" not in DESCRIPTIVE_PATHS
     for index in range(len(cast(list[Any], MANIFEST["source_decisions"]))):
         assert f"/source_decisions/{index}/authority_role" in DESCRIPTIVE_PATHS
+
+
+def test_every_target_class_is_derived_from_its_live_symbol() -> None:
+    """Nine published targets, nine live derivations, and no other source.
+
+    The derivation reads the imported object. Swapping the enum row's class
+    with a model row's -- the mutation this closes -- is refused even when the
+    manifest is resealed and the Markdown regenerated to agree with it.
+    """
+    declared = cast(list[dict[str, Any]], MANIFEST["target_symbols"])
+    assert len(declared) == 9
+
+    derived: list[str] = []
+    for entry in declared:
+        module = importlib.import_module(cast(str, entry["module"]))
+        derived.append(
+            _derived_target_class(getattr(module, cast(str, entry["symbol"])))
+        )
+    assert derived == [cast(str, entry["target_class"]) for entry in declared]
+    assert Counter(derived) == {"record_model_target": 8, "vocabulary_enum_target": 1}
+
+    # the enum is the enum because the class says so, not because of its name
+    status = getattr(history_module, "ChangedPathStatus")
+    assert issubclass(status, Enum) and not issubclass(status, BaseModel)
+    assert _derived_target_class(status) == "vocabulary_enum_target"
+
+    # a swap is refused: the validator reads the symbol, never the declaration
+    swapped = copy.deepcopy(declared)
+    enum_row = next(r for r in swapped if r["target_class"] == "vocabulary_enum_target")
+    model_row = next(r for r in swapped if r["target_class"] == "record_model_target")
+    enum_row["target_class"], model_row["target_class"] = (
+        model_row["target_class"],
+        enum_row["target_class"],
+    )
+    original = MANIFEST["target_symbols"]
+    MANIFEST["target_symbols"] = swapped
+    try:
+        with pytest.raises(AssertionError):
+            _v_target_symbols()
+    finally:
+        MANIFEST["target_symbols"] = original
+    _v_target_symbols()
+
+    # neither kind, and both kinds, are refused rather than defaulted
+    for unclassifiable in (str, int, object()):
+        with pytest.raises(AssertionError):
+            _derived_target_class(unclassifiable)
+
+    class _Both(BaseModel):
+        pass
+
+    assert _derived_target_class(_Both) == "record_model_target"
+
+
+def test_the_target_class_leaves_are_covered_by_the_objective_validator() -> None:
+    """Objective means a consumer exists, and it must be this one."""
+    leaves = [
+        f"/target_symbols/{index}/target_class"
+        for index in range(len(cast(list[Any], MANIFEST["target_symbols"])))
+    ]
+    assert len(leaves) == 9
+    objective = set(_objective_leaf_paths())
+    for leaf in leaves:
+        assert leaf in objective, leaf
+        assert leaf not in DESCRIPTIVE_PATHS, leaf
+    assert _unowned_objective_paths() == []
+    # the prefix that claims them is the target-symbol validator, and only it
+    owners = {
+        prefix
+        for leaf in leaves
+        for prefix, _validator in OBJECTIVE_VALIDATORS
+        if leaf.startswith(prefix)
+    }
+    assert owners == {"/target_symbols/"}
 
 
 # --- the forbidden-extra pairing has an authority of its own -----------------
@@ -9857,7 +9970,7 @@ def test_the_epistemic_counts_come_from_their_own_sources() -> None:
     summary = cast(dict[str, Any], MANIFEST["vector_summary"])
 
     # the ordered list, so a duplicated entry could not hide behind a set
-    assert len(declared) == len(set(declared)) == len(DESCRIPTIVE_PATHS) == 83
+    assert len(declared) == len(set(declared)) == len(DESCRIPTIVE_PATHS) == 74
     assert f"({len(declared)} of them)" in _render_epistemic_split()[0]
     assert summary["fixtures"] == 19 == len(cast(list[Any], VALID["fixtures"]))
     assert summary["fixtures"] == len(FIXTURE_BINDINGS)
