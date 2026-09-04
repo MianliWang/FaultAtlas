@@ -9536,6 +9536,50 @@ def test_a_drifting_heading_sequence_is_refused() -> None:
         assert _actual_headings(tampered) != list(CONTRACT_HEADINGS), label
 
 
+def test_a_section_heading_is_resolved_as_structure_not_as_text() -> None:
+    """A copy of a heading inside a fence must not shadow the real one.
+
+    `_section_lines` used to find its own start with `lines.index(heading)`, a
+    raw text search that a fenced copy satisfies first -- handing back two lines
+    of code where a thirty-four line section belongs, with the heading oracle
+    still reporting the published sequence.
+    """
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    real = _section_lines(text, SECTION_EIGHT)
+    assert len(real) == 34
+
+    shadowed = text.replace(
+        SECTION_EIGHT, f"```\n{SECTION_EIGHT}\n```\n\n{SECTION_EIGHT}", 1
+    )
+    assert shadowed != text
+    assert shadowed.splitlines().index(SECTION_EIGHT) < shadowed.splitlines().index(
+        SECTION_EIGHT, shadowed.splitlines().index(SECTION_EIGHT) + 1
+    )
+    # the fenced copy is not structure, so the section resolves to the real one
+    assert _actual_headings(shadowed) == list(CONTRACT_HEADINGS)
+    assert _section_lines(shadowed, SECTION_EIGHT) == real
+
+    # and a heading that really is published twice is refused rather than picked
+    doubled = text.replace(SECTION_EIGHT, f"{SECTION_EIGHT}\n\n{SECTION_EIGHT}", 1)
+    with pytest.raises(AssertionError):
+        _section_lines(doubled, SECTION_EIGHT)
+
+
+def test_the_drift_forms_are_the_perturbations_they_claim() -> None:
+    """The relaxed quantifier is only sound if the extra forms are real ones."""
+    assert _drift_forms("text") == [""]
+    assert _drift_forms(3) == [4]
+    assert _drift_forms(True) == [False]
+    # a mapping keeps its size under `_drifted`, so a shortened one is offered
+    assert _drift_forms({"a": 1, "b": 2}) == [{"a": "", "b": 2}, {"a": 1}]
+    assert _drift_forms({"a": 1}) == [{"a": ""}]
+    # a list already moves its length, and is shortened as well for symmetry
+    assert _drift_forms([1, 2]) == [[1, 2, 2], [1]]
+    assert _drift_forms([1]) == [[1, 1]]
+    for form in _drift_forms({"a": 1, "b": 2}) + _drift_forms([1, 2]):
+        assert form != {"a": 1, "b": 2} and form != [1, 2]
+
+
 def test_a_fence_is_code_and_not_a_heading() -> None:
     """The other half of the same defect: a `#` in a fence is not a section.
 
@@ -9990,6 +10034,45 @@ def _drift_forms(value: Any) -> list[Any]:
     return forms
 
 
+def _drift_outcomes(region: ContractRegion, pointer: str) -> set[str]:
+    """`{"moved", "same", "broke"}` over the drift forms of one declared leaf.
+
+    The leaf is saved and restored here rather than through `monkeypatch`,
+    because `monkeypatch.undo()` reverts every patch made on that object -- a
+    probe that patches something and then calls this would have its own patch
+    silently rolled back underneath it.
+    """
+    renderer = region.renderer
+    assert renderer is not None
+    baseline = renderer()
+    parent_path, _, leaf = pointer.rpartition("/")
+    parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
+    original = parent[leaf]
+    seen: set[str] = set()
+    try:
+        for form in _drift_forms(original):
+            parent[leaf] = form
+            try:
+                seen.add("moved" if renderer() != baseline else "same")
+            except Exception:  # noqa: BLE001 - the renderer could not run at all
+                seen.add("broke")
+    finally:
+        parent[leaf] = original
+    assert renderer() == baseline, (region.region_id, pointer)
+    return seen
+
+
+def _declared_pointer_failures(region: ContractRegion, pointer: str) -> list[str]:
+    """Why a region may not declare this leaf. The rule, so a probe can run it."""
+    outcomes = _drift_outcomes(region, pointer)
+    reasons: list[str] = []
+    if "broke" in outcomes and pointer not in ADDRESSING_KEY_AUTHORITIES:
+        reasons.append("only-an-addressing-key-may-break-the-render")
+    if not outcomes & {"moved", "broke"}:
+        reasons.append("declared-authority-moves-nothing")
+    return reasons
+
+
 def test_every_registered_renderer_depends_on_its_declared_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -10011,13 +10094,6 @@ def test_every_registered_renderer_depends_on_its_declared_authority(
     raises without being one of them fails here.
     """
 
-    def outcome(region: ContractRegion, baseline: list[str]) -> str:
-        assert region.renderer is not None
-        try:
-            return "moved" if region.renderer() != baseline else "same"
-        except Exception:  # noqa: BLE001 - the renderer could not run at all
-            return "broke"
-
     for region in CONTRACT_PROJECTION_REGISTRY:
         if region.renderer is None:
             assert not region.authority, region.region_id
@@ -10032,26 +10108,15 @@ def test_every_registered_renderer_depends_on_its_declared_authority(
         for name in named:
             monkeypatch.setitem(globals(), name, _drifted_authority(name))
             try:
-                assert outcome(region, baseline) == "moved", (region.region_id, name)
+                assert region.renderer() != baseline, (region.region_id, name)
             finally:
                 monkeypatch.undo()
 
         for pointer in pointers:
-            parent_path, _, leaf = pointer.rpartition("/")
-            parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
-            seen: set[str] = set()
-            for form in _drift_forms(parent[leaf]):
-                monkeypatch.setitem(parent, leaf, form)
-                try:
-                    seen.add(outcome(region, baseline))
-                finally:
-                    monkeypatch.undo()
-            if "broke" in seen:
-                assert pointer in ADDRESSING_KEY_AUTHORITIES, (
-                    region.region_id,
-                    pointer,
-                )
-            assert seen & {"moved", "broke"}, (region.region_id, pointer)
+            assert not _declared_pointer_failures(region, pointer), (
+                region.region_id,
+                pointer,
+            )
 
         assert region.renderer() == baseline, region.region_id
 
@@ -10098,7 +10163,9 @@ def test_every_addressing_key_is_declared_and_really_addresses() -> None:
             assert renderer() == baseline, region.region_id
 
 
-def test_a_pointer_that_only_breaks_a_renderer_may_not_be_declared() -> None:
+def test_a_pointer_that_only_breaks_a_renderer_may_not_be_declared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The finding this exemption was narrowed for, kept as a control.
 
     `/source_decisions/0/path` is opened by the deferral reader the section-4
@@ -10125,29 +10192,28 @@ def test_a_pointer_that_only_breaks_a_renderer_may_not_be_declared() -> None:
         ("s7.governance-prose", "/source_decisions/1/decision_reference"),
     ):
         region = _region(region_id)
-        renderer = region.renderer
-        assert renderer is not None
         assert pointer not in region.authority, (region_id, pointer)
         assert pointer not in ADDRESSING_KEY_AUTHORITIES, pointer
 
-        baseline = renderer()
-        parent_path, _, leaf = pointer.rpartition("/")
-        parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
-        original = parent[leaf]
-        results: set[str] = set()
-        for form in _drift_forms(original):
-            parent[leaf] = form
-            try:
-                results.add("moved" if renderer() != baseline else "same")
-            except Exception:  # noqa: BLE001 - the case the control is about
-                results.add("broke")
-            finally:
-                parent[leaf] = original
+        outcomes = _drift_outcomes(region, pointer)
         # it breaks the renderer and never reaches the page, so declaring it
-        # would be a false authority -- which the rule above now refuses
-        assert "broke" in results, (region_id, pointer)
-        assert "moved" not in results, (region_id, pointer)
-        assert renderer() == baseline, region_id
+        # would be a false authority
+        assert "broke" in outcomes, (region_id, pointer)
+        assert "moved" not in outcomes, (region_id, pointer)
+        # and the RULE refuses it, not merely this test's reading of the outcome
+        assert _declared_pointer_failures(region, pointer) == [
+            "only-an-addressing-key-may-break-the-render"
+        ], (region_id, pointer)
+
+    # the exemption is what makes the addressing key admissible, and nothing else
+    scope = _region("s1.scope-warning")
+    key = "/corpus_files/8/filename"
+    assert _drift_outcomes(scope, key) == {"broke"}
+    assert _declared_pointer_failures(scope, key) == []
+    monkeypatch.setitem(globals(), "ADDRESSING_KEY_AUTHORITIES", frozenset[str]())
+    assert _declared_pointer_failures(scope, key) == [
+        "only-an-addressing-key-may-break-the-render"
+    ]
 
 
 def test_a_declared_authority_that_moves_nothing_is_refused(
@@ -11415,14 +11481,64 @@ def _document_closure_failures(text: str) -> list[tuple[int, str, str]]:
 
 
 def test_the_contract_document_is_exactly_what_the_registry_projects() -> None:
-    """The whole file, byte for byte, from the authorities that own it."""
+    """The whole file, byte for byte, from the authorities that own it.
+
+    The comparison is against the BYTES. `read_text` performs universal-newline
+    translation, so a CRLF document decodes to the same string as an LF one and
+    a check for `"\r"` in the decoded text can never fail -- the document could
+    change line endings wholesale with every projection still agreeing.
+    """
+    raw = (CORPUS / "contract.md").read_bytes()
     text = (CORPUS / "contract.md").read_text("utf-8")
 
     assert _document_closure_failures(text) == []
     assert _render_contract_document() == text.splitlines()
-    # the bytes, not just the lines: LF endings and one final newline
-    assert "\n".join(_render_contract_document()) + "\n" == text
-    assert "\r" not in text and not text.endswith("\n\n")
+    assert raw == ("\n".join(_render_contract_document()) + "\n").encode("utf-8")
+    assert b"\r" not in raw and not raw.endswith(b"\n\n")
+    # the decoded form is not evidence for the line endings, and says so
+    assert "\r" not in text
+    assert raw.replace(b"\n", b"\r\n").decode("utf-8").replace("\r", "") == text
+
+
+def test_no_projected_line_breaks_out_of_its_own_markup() -> None:
+    """A rendered value may not become structure it was not meant to be.
+
+    Region renderers interpolate canonical values into Markdown -- inside code
+    spans, inside table cells -- without escaping. A value carrying a backtick
+    would close the span around it and turn the rest of the sentence into
+    ordinary prose; one carrying a pipe would split a table cell; one carrying a
+    newline would become a line of its own. The document is compared against the
+    projection either way, so the projection has to refuse the shape rather than
+    project it faithfully into a different document.
+    """
+    unbalanced: list[tuple[str, str]] = []
+    split: list[tuple[str, str]] = []
+    table_owners = {
+        owner
+        for line, kind, owner in _document_partition()
+        if kind == "REGION" and line.startswith("|")
+    }
+    for region in CONTRACT_PROJECTION_REGISTRY:
+        for line in _region_lines(region):
+            if line.count("`") % 2:
+                unbalanced.append((region.region_id, line))
+            if "\n" in line or "\r" in line:
+                split.append((region.region_id, line))
+            if "|" in line and region.region_id not in table_owners:
+                split.append((region.region_id, line))
+    assert not unbalanced, unbalanced
+    assert not split, split
+
+    # and the guard is not vacuous: a value that closes its own span is caught
+    escaped = "inlined_values` and the rest of this sentence is ordinary prose"
+    execution = cast(dict[str, Any], MANIFEST["execution_contract"])
+    original = execution["fixture_references"]
+    execution["fixture_references"] = escaped
+    try:
+        broken = _render_fixture_mechanism()
+    finally:
+        execution["fixture_references"] = original
+    assert any(line.count("`") % 2 for line in broken), broken
 
 
 def test_every_document_line_has_exactly_one_structural_disposition() -> None:
@@ -11659,8 +11775,9 @@ def test_no_line_can_be_published_outside_the_registry() -> None:
     the point of the reconstruction and it makes "is this mutation caught" a
     weak question. So this test asks the two things that are not implied by it.
     First, that the enumeration covers every way a line could arrive: the title
-    band in six shapes, the body in five positions, the block structure in four,
-    and two containers. Second, that each refusal is ATTRIBUTED -- the line, the
+    band in seven shapes, the body in seven positions, the block structure in
+    four, and two containers -- twenty-three in all. Second, that each refusal
+    is ATTRIBUTED -- the line, the
     reason, and which registered owner the projection had put there -- because a
     rule that could only say "the file changed" would be a snapshot diff wearing
     a registry's name.
@@ -11847,6 +11964,53 @@ _CONSUMER_SWEEPS: dict[
 ] = {}
 
 
+def _restore_container(container: Any, order: Any) -> None:
+    """Put a container back as it was, in the ORDER it was in.
+
+    Re-assigning a deleted mapping key APPENDS it, which silently permutes the
+    manifest for every renderer that spends a dict's iteration order -- the
+    governance block spends three of them, and the next leaf of the same dict
+    would then be measured against a stale baseline. The container is rebuilt
+    from its own snapshot instead.
+    """
+    if isinstance(container, list):
+        items = cast(list[Any], container)
+        del items[:]
+        items.extend(cast(list[Any], order))
+        return
+    mapping = cast(dict[str, Any], container)
+    mapping.clear()
+    mapping.update(cast(dict[str, Any], order))
+
+
+def test_restoring_a_container_keeps_its_order() -> None:
+    """The repair, stated where it can fail rather than only where it is used.
+
+    Deleting every key of a dict in visit order and re-assigning each happens to
+    end in the original order, which is why the sweep's own seal could not see
+    the difference. A mapping whose keys are not all visited -- which is every
+    nested one -- does not come back.
+    """
+    mapping: dict[str, Any] = {"a": 1, "b": {"x": 2}, "c": 3}
+    order = dict(mapping)
+    del mapping["a"]
+    _restore_container(mapping, order)
+    mapping["a"] = 1
+    assert list(mapping) == ["a", "b", "c"]
+
+    # the naive form, for contrast: the key moves to the end
+    naive = dict(order)
+    del naive["a"]
+    naive["a"] = 1
+    assert list(naive) == ["b", "c", "a"]
+
+    items: list[Any] = [1, 2, 3]
+    sequence = list(items)
+    items.pop(1)
+    _restore_container(items, sequence)
+    assert items == [1, 2, 3]
+
+
 def _document_consumers() -> tuple[
     dict[str, frozenset[str]], dict[str, frozenset[str]]
 ]:
@@ -11873,25 +12037,6 @@ def _document_consumers() -> tuple[
             if now != baseline[region_id]:
                 moved.add(region_id)
         return moved, broke
-
-    def restore(container: Any, key: Any, original: Any, order: Any) -> None:
-        """Put the leaf back where it was, in the position it was in.
-
-        Re-assigning a deleted mapping key APPENDS it, which silently permutes
-        the manifest for every renderer that spends a dict's iteration order --
-        the governance block spends three of them, and the next leaf of the same
-        dict would then be measured against a stale baseline. The container is
-        rebuilt from its own snapshot instead, and the seal below is
-        order-sensitive so a future shortcut cannot hide the same way.
-        """
-        if isinstance(container, list):
-            items = cast(list[Any], container)
-            del items[:]
-            items.extend(cast(list[Any], order))
-        else:
-            mapping = cast(dict[str, Any], container)
-            mapping.clear()
-            mapping.update(cast(dict[str, Any], order))
 
     meta = set(_meta_schema_leaf_paths())
     shown: dict[str, frozenset[str]] = {}
@@ -11924,7 +12069,7 @@ def _document_consumers() -> tuple[
             else:
                 del cast(dict[str, Any], container)[key]
             seen, raised = observe()
-            restore(container, key, original, order)
+            _restore_container(container, order)
             moved |= seen
             broke |= raised
             shown[path] = frozenset(moved)
