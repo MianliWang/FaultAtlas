@@ -13626,17 +13626,29 @@ def _PR_caller_composed_change_set(vector: dict[str, Any], family: str) -> str:
     return f"A caller {verb} the {count} bindings with a selection of retained paths"
 
 
+# The manifest leaf each descriptive-limit sentence is built from. The renderer
+# below and the claim resolver read the SAME constant, so a claim naming another
+# leaf is naming a value its sentence was never built from.
+_PR_CHANGE_SET_COMPLETENESS_LEAF = (
+    "/replay_contract/evidence_limits/change_set_completeness_claimed"
+)
+_PR_MERGE_REVISION_SOURCE_LEAF = (
+    "/replay_contract/evidence_limits/merge_revision_source"
+)
+_PR_SUPERSESSION_FOLLOWED_LEAF = (
+    "/replay_contract/evidence_limits/supersession_followed"
+)
+
+
 def _PR_change_set_completeness_limit(vector: dict[str, Any], family: str) -> str:
     """Descriptive limit: the published change-set completeness flag."""
-    claimed = MANIFEST["replay_contract"]["evidence_limits"][
-        "change_set_completeness_claimed"
-    ]
+    claimed = _resolve_pointer(MANIFEST, _PR_CHANGE_SET_COMPLETENESS_LEAF)
     return f"{_PR_CHANGE_SET_COMPLETENESS} {'does' if claimed else 'does not'}"
 
 
 def _PR_merge_revision_absent_surface(vector: dict[str, Any], family: str) -> str:
     """Descriptive limit: the surface the published merge-revision source excludes."""
-    declared = MANIFEST["replay_contract"]["evidence_limits"]["merge_revision_source"]
+    declared = cast(str, _resolve_pointer(MANIFEST, _PR_MERGE_REVISION_SOURCE_LEAF))
     return f"{declared.split(', not ', 1)[1]} omits it"
 
 
@@ -13662,11 +13674,9 @@ def _PR_second_independent_correction_link(vector: dict[str, Any], family: str) 
 
 def _PR_supersession_limit(vector: dict[str, Any], family: str) -> str:
     """Descriptive limit: the published supersession-traversal flag."""
-    limits = MANIFEST["replay_contract"]["evidence_limits"]
-    subject, participle = "supersession_followed".split("_")
-    return (
-        f"{'a' if limits['supersession_followed'] else 'no'} {subject} is {participle}"
-    )
+    followed = _resolve_pointer(MANIFEST, _PR_SUPERSESSION_FOLLOWED_LEAF)
+    subject, participle = _PR_SUPERSESSION_FOLLOWED_LEAF.rsplit("/", 1)[1].split("_")
+    return f"{'a' if followed else 'no'} {subject} is {participle}"
 
 
 PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
@@ -15108,6 +15118,29 @@ PURPOSE_EMBEDDED_FACT_SELECTORS: dict[str, Callable[[dict[str, Any]], list[str]]
     "replay:caller_composed_change_set": _pR_composed_bindings,
 }
 
+# And for the two remaining forms, which were checked only for existence.
+#
+# A scalar provenance field was accepted whenever it was non-empty. The
+# association renderer reads BOTH scalars -- the classification supplies its
+# verb, the lock supplies the record it names -- so "non-empty" let the claim
+# cite the classification as support for a record identity the classification
+# does not establish. The field the fragment's subject comes from is named here.
+PURPOSE_SCALAR_FIELDS: dict[str, str] = {
+    "replay:caller_association_to_locked_record": "evidence_record_lock",
+    "replay:retained_target_declaration": "target",
+}
+
+# A manifest authority was accepted whenever the pointer resolved. Swapping the
+# completeness and merge-revision pointers left both resolving and both
+# descriptive while each renderer went on reading its own leaf, so the ledger
+# recorded unrelated evidence locations. These are the constants the renderers
+# themselves read.
+PURPOSE_MANIFEST_POINTERS: dict[str, str] = {
+    "replay:change_set_completeness_limit": _PR_CHANGE_SET_COMPLETENESS_LEAF,
+    "replay:merge_revision_absent_surface": _PR_MERGE_REVISION_SOURCE_LEAF,
+    "replay:supersession_limit": _PR_SUPERSESSION_FOLLOWED_LEAF,
+}
+
 
 def _render_purpose(
     vector: dict[str, Any],
@@ -15123,6 +15156,22 @@ def _render_purpose(
     claims = (PURPOSE_SEMANTICS if ledger is None else ledger)[cast(str, vector["id"])]
     fragments = [PURPOSE_RENDERERS[claim.renderer](vector, family) for claim in claims]
     return "; ".join(fragments) + "."
+
+
+def _scalar_field_failures(claim: PurposeClaim, field: str) -> list[str]:
+    """A scalar claim must name the field its own fragment is built from.
+
+    The association renderer reads two of them -- the classification supplies
+    its verb and the lock supplies the record it names -- so "the field is not
+    empty" let a claim cite the classification as support for a record identity
+    the classification does not establish.
+    """
+    declared = PURPOSE_SCALAR_FIELDS.get(claim.renderer)
+    if declared is None:
+        return ["renderer-reads-no-scalar-field"]
+    if declared != field:
+        return ["scalar-field-is-not-the-renderer-input"]
+    return []
 
 
 def _purpose_authority_failures(
@@ -15223,6 +15272,14 @@ def _purpose_authority_failures(
             _resolve_pointer(MANIFEST, pointer)
         except (KeyError, IndexError, TypeError):
             reasons.append("manifest-pointer-does-not-resolve")
+        else:
+            # resolving is not reading: the leaf must be the one this renderer
+            # builds its sentence from
+            declared = PURPOSE_MANIFEST_POINTERS.get(claim.renderer)
+            if declared is None:
+                reasons.append("renderer-reads-no-manifest-leaf")
+            elif declared != pointer:
+                reasons.append("manifest-leaf-is-not-the-renderer-input")
         if (
             pointer in DESCRIPTIVE_PATHS
             and claim.assurance != CANONICAL_DECLARATION_ONLY
@@ -15231,9 +15288,14 @@ def _purpose_authority_failures(
     elif authority in ("target", "input_mode"):
         if authority not in vector:
             reasons.append("field-absent")
+        else:
+            reasons.extend(_scalar_field_failures(claim, authority))
     elif authority in ("evidence-classification", "evidence-record-lock"):
-        if not vector.get(authority.replace("-", "_")):
+        field = authority.replace("-", "_")
+        if not vector.get(field):
             reasons.append("provenance-field-absent")
+        else:
+            reasons.extend(_scalar_field_failures(claim, field))
     elif authority == "literal":
         if claim.assurance != CANONICAL_DECLARATION_ONLY:
             reasons.append("literal-claimed-as-verified")
@@ -15676,8 +15738,11 @@ def test_the_old_positional_authority_form_is_refused() -> None:
         claim.assurance, claim.renderer, "manifest:/source_decisions/4/authority_role"
     )
 
+    # refused twice over: the slot addresses an order-neutral collection, and
+    # this renderer builds its sentence from no manifest leaf at all
     assert _purpose_authority_failures(vector, "replay", positional) == [
-        "positional-source-decision-authority-forbidden"
+        "positional-source-decision-authority-forbidden",
+        "renderer-reads-no-manifest-leaf",
     ]
 
 
@@ -15884,6 +15949,156 @@ def test_a_coordinate_the_renderer_never_reads_is_refused() -> None:
     assert _purpose_authority_failures(stripped, "replay", claim) == [
         "source-pointer-not-cited"
     ]
+
+
+def test_a_scalar_claim_may_not_cite_the_other_provenance_field() -> None:
+    """Non-empty was the whole rule, and the renderer reads both fields.
+
+    `_PR_caller_association_to_locked_record` takes its verb from the
+    classification and the record it names from the lock. Citing the
+    classification would offer it as support for a record identity it does not
+    establish, and the sentence would go on reading the lock.
+    """
+    identifier = "history.replay.evidence-association.base-binding"
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == identifier)
+    claim = next(
+        c
+        for c in PURPOSE_SEMANTICS[identifier]
+        if c.authority == "evidence-record-lock"
+    )
+    assert _purpose_authority_failures(vector, "replay", claim) == []
+    assert vector["evidence_classification"] and vector["evidence_record_lock"]
+
+    swapped = PurposeClaim(claim.assurance, claim.renderer, "evidence-classification")
+    assert _purpose_authority_failures(vector, "replay", swapped) == [
+        "scalar-field-is-not-the-renderer-input"
+    ]
+
+    orphan = PurposeClaim(
+        claim.assurance, "replay:evidence_link_non_claim", claim.authority
+    )
+    assert _purpose_authority_failures(vector, "replay", orphan) == [
+        "renderer-reads-no-scalar-field"
+    ]
+
+    # the target declaration is the other scalar claim, and it is bound the same
+    deletion = next(
+        v
+        for v in REPLAY["vectors"]
+        if v["id"] == "history.replay.head-ref-deletion.canonical"
+    )
+    target = PURPOSE_SEMANTICS["history.replay.head-ref-deletion.canonical"][0]
+    assert target.authority == "target"
+    assert _purpose_authority_failures(deletion, "replay", target) == []
+    moved = PurposeClaim(target.assurance, target.renderer, "input_mode")
+    assert _purpose_authority_failures(deletion, "replay", moved) == [
+        "scalar-field-is-not-the-renderer-input"
+    ]
+
+    # every renderer carrying a scalar claim declares its field, and no row is dead
+    assert {
+        c.renderer
+        for claims in PURPOSE_SEMANTICS.values()
+        for c in claims
+        if c.authority
+        in ("target", "input_mode", "evidence-classification", "evidence-record-lock")
+    } == set(PURPOSE_SCALAR_FIELDS)
+
+
+def test_a_manifest_claim_may_not_cite_another_published_limit() -> None:
+    """Resolving is not reading: the three limits used to be interchangeable.
+
+    Swapping the completeness and merge-revision pointers left both resolving
+    and both descriptive, while each renderer went on reading its own leaf, so
+    the ledger recorded an unrelated evidence location for each.
+    """
+    live = [
+        (identifier, claim)
+        for identifier, claims in PURPOSE_SEMANTICS.items()
+        for claim in claims
+        if claim.authority.startswith("manifest:")
+    ]
+    assert len(live) == 3
+    assert {claim.renderer for _i, claim in live} == set(PURPOSE_MANIFEST_POINTERS)
+
+    sections = _purpose_sections()
+    for identifier, claim in live:
+        vector = next(
+            v
+            for section in sections.values()
+            for v in section["vectors"]
+            if v["id"] == identifier
+        )
+        assert _purpose_authority_failures(vector, "replay", claim) == [], identifier
+        for other in sorted(set(PURPOSE_MANIFEST_POINTERS.values())):
+            if other == claim.authority.split(":", 1)[1]:
+                continue
+            swapped = PurposeClaim(claim.assurance, claim.renderer, f"manifest:{other}")
+            assert _purpose_authority_failures(vector, "replay", swapped) == [
+                "manifest-leaf-is-not-the-renderer-input"
+            ], (identifier, other)
+
+    # a renderer that reads no manifest leaf may not carry a manifest claim
+    identifier, claim = live[0]
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == identifier)
+    orphan = PurposeClaim(
+        claim.assurance, "replay:evidence_link_non_claim", claim.authority
+    )
+    assert _purpose_authority_failures(vector, "replay", orphan) == [
+        "renderer-reads-no-manifest-leaf"
+    ]
+
+
+def test_every_declared_purpose_leaf_and_field_moves_its_own_fragment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The declarations are read, not merely written down.
+
+    Each declared manifest leaf is drifted in place and each declared scalar
+    field is blanked, and the fragment the renderer produces must move or stop.
+    A table naming a leaf nothing reads would otherwise look exactly like one
+    naming the leaf the sentence is built from.
+    """
+    sections = _purpose_sections()
+    vectors = {
+        cast(str, vector["id"]): (family, vector)
+        for family, section in sections.items()
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+    }
+    inert: list[tuple[str, str]] = []
+
+    for identifier, claims in PURPOSE_SEMANTICS.items():
+        family, vector = vectors[identifier]
+        for claim in claims:
+            render = PURPOSE_RENDERERS[claim.renderer]
+            baseline = render(vector, family)
+            if claim.authority.startswith("manifest:"):
+                pointer = PURPOSE_MANIFEST_POINTERS[claim.renderer]
+                parent_path, _, leaf = pointer.rpartition("/")
+                parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
+                monkeypatch.setitem(parent, leaf, _drifted(parent[leaf]))
+                try:
+                    if render(vector, family) == baseline:
+                        inert.append((identifier, pointer))
+                except Exception:  # noqa: BLE001 - a renderer that stopped noticed
+                    pass
+                finally:
+                    monkeypatch.undo()
+            elif claim.authority in (
+                "target",
+                "input_mode",
+                "evidence-classification",
+                "evidence-record-lock",
+            ):
+                field = PURPOSE_SCALAR_FIELDS[claim.renderer]
+                edited = copy.deepcopy(vector)
+                edited[field] = ""
+                try:
+                    if render(edited, family) == baseline:
+                        inert.append((identifier, field))
+                except Exception:  # noqa: BLE001 - a renderer that stopped noticed
+                    pass
+    assert not inert, inert
 
 
 def test_a_composed_binding_claim_may_not_name_a_selected_path() -> None:
