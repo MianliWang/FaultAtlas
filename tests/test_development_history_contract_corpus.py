@@ -8742,12 +8742,172 @@ ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
 SECTION_HEADING = re.compile(r"^ {0,3}#{2}(?:[ \t]|$)")
 SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
 
+# --- a bounded block model, because a pattern alone reads the wrong lines ----
+#
+# Patterns applied line by line got two whole classes wrong, both recorded when
+# the empty-ATX correction landed and both closed here.
+#
+#   A real heading nested in a container was invisible. `- ## x`, `> ## x`,
+#   `1. ## x` and `- - ## x` are headings CommonMark publishes and the
+#   recognizer did not see, which is how a fabricated section could sit inside
+#   a bullet list.
+#
+#   A line inside a fenced code block was read as a heading although CommonMark
+#   says it is code, so `#` in a fence terminated a section that had not ended.
+#
+# The model below is deliberately small: the only containers are blockquote
+# markers and list-item markers, stripped left to right; a fence opens at the
+# depth it was written at and closes either on a matching fence at that depth
+# or when its container ends; nothing inside a fence is a heading; and a setext
+# underline must follow a nonblank line at its own depth. A bare `-` is both a
+# list marker and an underline, so it is retried against the raw line whenever a
+# document-level paragraph precedes it.
+#
+# WHAT THIS IS NOT, STATED IN BOTH DIRECTIONS. It is not a CommonMark parser.
+# It does not implement HTML blocks, link reference definitions, lazy paragraph
+# continuation, tab expansion to four-column stops, indented code inside a list
+# item, or the line terminators `str.splitlines` accepts and CommonMark does not.
+# The disagreements this produces are enumerated as executable cases in
+# `test_the_bounded_block_model_reads_the_forms_it_claims`, in two tuples, so a
+# later widening or narrowing has to move a test rather than a sentence.
+#
+#   FAIL-CLOSED -- a line CommonMark would not call a heading is read as one,
+#   so the document is refused rather than admitted. Anything nonblank above a
+#   `---` is treated as setext content, so a thematic break, an HTML block, a
+#   link reference definition and an indented code line all underline; and the
+#   underline is matched by container DEPTH, not container identity, so a `---`
+#   one container over underlines the paragraph above it.
+#
+#   FAIL-OPEN -- CommonMark publishes a heading the model does not report: a
+#   multi-line setext heading is anchored on its last content line rather than
+#   its first; a list-item continuation indented four columns; a bare `-` used
+#   as an underline inside a container; and a paragraph made only of `-` or `=`
+#   characters. These do NOT leave an unowned region, and that is the point of
+#   doing this after the projection rather than instead of it: every line of
+#   contract.md is reconstructed from the registry, so a line the heading model
+#   misreads is still a line no region produces, and is refused there. The
+#   heading oracle is the second lock, not the only one.
+#
+# The adjudication against a CommonMark parser that produced this boundary is
+# recorded in the change history rather than imported here, because that parser
+# is not a declared dependency of this project.
+_CONTAINER_MARKER = re.compile(
+    r"^ {0,3}(?:>[ \t]?|(?:[-*+]|\d{1,9}[.)])(?=[ \t]|$)[ \t]*)"
+)
+_FENCE = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})(?P<info>.*)$")
+
+
+def _strip_containers(raw: str) -> tuple[int, str]:
+    """The line with its blockquote and list-item markers removed.
+
+    Every marker consumes at least one character, so the walk is bounded by the
+    line rather than by a nesting cap -- a cap would silently stop seeing the
+    heading inside a container nested one deeper than the number chosen.
+    """
+    depth, content = 0, raw
+    while True:
+        marker = _CONTAINER_MARKER.match(content)
+        if marker is None:
+            return depth, content
+        content = content[marker.end() :]
+        depth += 1
+
+
+def _markdown_blocks(text: str) -> list[tuple[int, str, bool]]:
+    """`(container depth, content, inside a fenced block)` for every line."""
+    blocks: list[tuple[int, str, bool]] = []
+    fence, fence_depth = "", 0
+    for raw in text.splitlines():
+        depth, content = _strip_containers(raw)
+        marker = _FENCE.match(content)
+        if fence and depth < fence_depth:
+            # the container the fence was written in has ended, and so has the
+            # fence: an unterminated fence inside a blockquote must not swallow
+            # every heading after it
+            fence = ""
+        if fence:
+            if (
+                marker is not None
+                and depth == fence_depth
+                and marker["marker"][0] == fence[0]
+                and len(marker["marker"]) >= len(fence)
+                and not marker["info"].strip()
+            ):
+                fence = ""
+            blocks.append((depth, content, True))
+            continue
+        if marker is not None and not (
+            marker["marker"][0] == "`" and "`" in marker["info"]
+        ):
+            fence, fence_depth = marker["marker"], depth
+            blocks.append((depth, content, True))
+            continue
+        blocks.append((depth, content, False))
+    return blocks
+
+
+def _markdown_headings(text: str) -> list[tuple[int, int, int, str]]:
+    """`(line index, container depth, level, the line as published)`."""
+    blocks = _markdown_blocks(text)
+    raws = text.splitlines()
+    found: list[tuple[int, int, int, str]] = []
+    for index, (depth, content, fenced) in enumerate(blocks):
+        if fenced:
+            continue
+        opening = content.lstrip()
+        if ATX_HEADING.match(content):
+            found.append(
+                (index, depth, len(opening) - len(opening.lstrip("#")), raws[index])
+            )
+            continue
+        if not index:
+            continue
+        previous_depth, previous, previous_fenced = blocks[index - 1]
+        underline = SETEXT_UNDERLINE.match(content)
+        if underline is None and previous_depth == 0:
+            underline = SETEXT_UNDERLINE.match(raws[index])
+            depth = 0 if underline else depth
+        if (
+            underline
+            and not previous_fenced
+            and previous_depth == depth
+            and previous.strip()
+            and not ATX_HEADING.match(previous)
+            and not SETEXT_UNDERLINE.match(previous)
+        ):
+            level = 1 if underline[1][0] == "=" else 2
+            found.append((index - 1, depth, level, raws[index - 1]))
+    return found
+
+
+def _section_boundaries(text: str) -> set[int]:
+    """The lines where a document-level section ends, however it is written."""
+    return {
+        index
+        for index, depth, level, _raw in _markdown_headings(text)
+        if depth == 0 and level == 2
+    }
+
 
 def _section_lines(text: str, heading: str) -> list[str]:
+    """The lines under a heading, located by the block model rather than by text.
+
+    `lines.index(heading)` finds a copy of the heading inside a fenced block as
+    readily as the heading itself, which would hand back a slice of somebody
+    else's section. The heading is resolved through the same model that decides
+    where the section ends, and it must occur exactly once as real structure.
+    """
     lines = text.splitlines()
-    start = lines.index(heading) + 1
+    published = [
+        index
+        for index, depth, _level, raw in _markdown_headings(text)
+        if depth == 0 and raw == heading
+    ]
+    assert len(published) == 1, heading
+    boundaries = _section_boundaries(text)
+    start = published[0] + 1
     end = start
-    while end < len(lines) and not SECTION_HEADING.match(lines[end]):
+    while end < len(lines) and end not in boundaries:
         end += 1
     return lines[start:end]
 
@@ -9291,14 +9451,14 @@ SECTION_ONE, SECTION_FIVE = CONTRACT_HEADINGS[1], CONTRACT_HEADINGS[5]
 
 
 def _actual_headings(text: str) -> list[str]:
-    lines = text.splitlines()
-    found: list[str] = []
-    for index, line in enumerate(lines):
-        if ATX_HEADING.match(line):
-            found.append(line)
-        elif index and SETEXT_UNDERLINE.match(line) and lines[index - 1].strip():
-            found.append(lines[index - 1])
-    return found
+    """Every heading the document publishes, nested ones included.
+
+    A heading inside a list item or a blockquote is a heading, so it is
+    reported rather than skipped: the published sequence is exactly ten
+    document-level lines, and anything else in the list makes the comparison
+    fail instead of passing quietly.
+    """
+    return [raw for _index, _depth, _level, raw in _markdown_headings(text)]
 
 
 def _section_paragraphs(text: str, heading: str) -> list[str]:
@@ -9330,10 +9490,176 @@ def test_a_drifting_heading_sequence_is_refused() -> None:
         ("empty h1", "## 6. Rejection Contract", "#"),
         ("tab after hashes", "## 6. Rejection Contract", "##\t6. Rejection Contract"),
         ("single-dash setext", "## 6. Rejection Contract", "Extra Guarantees\n-"),
+        # A container is not a hiding place. Each of these ADDS a heading beside
+        # a bullet that stays where it was, rather than replacing a published
+        # heading -- replacing one would change the sequence by deletion and
+        # prove nothing about whether the container was read.
+        (
+            "list item",
+            "- no CI or test correctness",
+            "- ## 10. Extra\n- no CI or test correctness",
+        ),
+        ("ordered list item", "- no root cause", "1. ## 10. Extra\n- no root cause"),
+        (
+            "indented list item",
+            "- no persistence",
+            "  - ## 10. Extra\n- no persistence",
+        ),
+        (
+            "nested list item",
+            "- no source ingestion",
+            "- - ## 10. Extra\n- no source ingestion",
+        ),
+        (
+            "blockquote",
+            "- no merge-base semantics",
+            "> ## 10. Extra\n\n- no merge-base semantics",
+        ),
+        (
+            "tight blockquote",
+            "- no branch containment",
+            ">## 10. Extra\n\n- no branch containment",
+        ),
+        (
+            "nested blockquote",
+            "- no violated invariant",
+            "> > ## 10. Extra\n\n- no violated invariant",
+        ),
+        (
+            "blockquote setext",
+            "- no repair correctness",
+            "> Extra\n> ---\n\n- no repair correctness",
+        ),
     ):
         tampered = text.replace(original, replacement, 1)
         assert tampered != text, label
         assert _actual_headings(tampered) != list(CONTRACT_HEADINGS), label
+
+
+def test_a_fence_is_code_and_not_a_heading() -> None:
+    """The other half of the same defect: a `#` in a fence is not a section.
+
+    Reading it as one ended a section that had not ended, so the lines after it
+    left their own section's tiling and stopped being compared. The fence is
+    still refused -- nothing renders it -- but it is refused as unprojected
+    content rather than misread as structure.
+    """
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    for label, fence in (
+        ("backtick", "```\n# not actually a heading\n```"),
+        ("tilde", "~~~\n## 10. Extra Guarantees\n~~~"),
+        ("info string", "```python\n# not actually a heading\n```"),
+        ("longer close", "```\n## 10. Extra Guarantees\n`````"),
+        ("indented fence", "   ```\n   # not actually a heading\n   ```"),
+    ):
+        tampered = text.replace(
+            "## 8. Non-Generalizations", f"{fence}\n\n## 8. Non-Generalizations", 1
+        )
+        assert tampered != text, label
+        # the heading sequence is untouched: the fence lines are not structure
+        assert _actual_headings(tampered) == list(CONTRACT_HEADINGS), label
+        # section 7 keeps every line it had -- the fence lands inside it rather
+        # than truncating it, which is what reading a fenced `#` as a heading did
+        original = _section_lines(text, SECTION_SEVEN)
+        widened = _section_lines(tampered, SECTION_SEVEN)
+        assert widened[: len(original)] == original, label
+        assert len(widened) > len(original), label
+
+    # a fence containing a real-looking heading does not open a section either
+    fenced = text.replace(
+        "## 8. Non-Generalizations",
+        "```\n## 8. Non-Generalizations\n```\n\n## 8. Non-Generalizations",
+        1,
+    )
+    assert _actual_headings(fenced) == list(CONTRACT_HEADINGS)
+
+    # the live document carries no fence at all, so none of this is retrofitting
+    assert "```" not in text and "~~~" not in text
+    assert all(not fenced_line for _d, _c, fenced_line in _markdown_blocks(text))
+
+
+def test_the_bounded_block_model_reads_the_forms_it_claims() -> None:
+    """Named boundaries, stated as executable cases rather than as prose.
+
+    The comment above `_markdown_blocks` says what the model covers and what it
+    does not. These are those claims, so a later widening or narrowing has to
+    move a test rather than a sentence.
+    """
+    covered: tuple[tuple[str, str, list[tuple[int, int, int]]], ...] = (
+        ("atx", "## Title\n", [(0, 0, 2)]),
+        ("atx empty", "##\n", [(0, 0, 2)]),
+        ("atx level six", "###### Title\n", [(0, 0, 6)]),
+        ("atx seven hashes", "####### Title\n", []),
+        ("atx no space", "##Title\n", []),
+        ("atx three-space indent", "   ## Title\n", [(0, 0, 2)]),
+        ("atx four-space indent", "    ## Title\n", []),
+        ("setext equals", "Title\n=====\n", [(0, 0, 1)]),
+        ("setext dashes", "Title\n-----\n", [(0, 0, 2)]),
+        ("setext single dash", "Title\n-\n", [(0, 0, 2)]),
+        ("setext after blank", "\n---\n", []),
+        ("table delimiter is not setext", "| a |\n| --- |\n", []),
+        ("list item", "- ## Title\n", [(0, 1, 2)]),
+        ("ordered list item", "1. ## Title\n", [(0, 1, 2)]),
+        ("nested list item", "- - ## Title\n", [(0, 2, 2)]),
+        ("plain list item", "- not a heading\n", []),
+        ("blockquote", "> ## Title\n", [(0, 1, 2)]),
+        ("tight blockquote", ">## Title\n", [(0, 1, 2)]),
+        ("nested blockquote", "> > ## Title\n", [(0, 2, 2)]),
+        ("blockquote setext", "> Title\n> ---\n", [(0, 1, 2)]),
+        ("fenced code", "```\n# not a heading\n```\n", []),
+        ("tilde fence", "~~~\n# not a heading\n~~~\n", []),
+        ("fence with info", "```py\n# not a heading\n```\n", []),
+        ("unclosed fence", "```\n# not a heading\n", []),
+        ("after a closed fence", "```\ncode\n```\n\n## Title\n", [(4, 0, 2)]),
+        ("indented code", "para\n\n    # not a heading\n", []),
+    )
+    assert len(covered) == 26
+    for label, sample, expected in covered:
+        observed = [(i, d, level) for i, d, level, _raw in _markdown_headings(sample)]
+        assert observed == expected, label
+
+    # ...and the forms it deliberately does not resolve, pinned in the same way,
+    # so a widening or a narrowing has to move one of these rather than a
+    # sentence in the comment above. The trailing note on each row is what a
+    # CommonMark parser publishes for that document.
+    excluded: tuple[tuple[str, str, list[tuple[int, int, int]]], ...] = (
+        # fail-closed: anything nonblank above a `---` underlines
+        ("thematic break underlined", "***\n---\n", [(0, 0, 2)]),  # none
+        ("indented code underlined", "    code\n---\n", [(0, 0, 2)]),  # none
+        ("html block underlined", "<div>\n---\n", [(0, 0, 2)]),  # none
+        ("link definition underlined", "[a]: /b\n---\n", [(0, 0, 2)]),  # none
+        # fail-closed: depth is compared, container identity is not
+        ("underline one container over", "- item\n> ---\n", [(0, 1, 2)]),  # none
+        # fail-open: reported one line late, or not at all
+        ("multi-line setext", "One\nTwo\n---\n", [(1, 0, 2)]),  # (0, h2)
+        ("paragraph of dashes only", "===\n---\n", []),  # (0, h2)
+        ("four-column continuation", "-\n    ## x\n", []),  # (1, h2)
+        ("bare dash in a blockquote", "> quote\n> -\n", []),  # (0, h2)
+    )
+    assert len(excluded) == 9
+    for label, sample, expected in excluded:
+        observed = [(i, d, level) for i, d, level, _raw in _markdown_headings(sample)]
+        assert observed == expected, label
+
+    # nesting is bounded by the line, not by a cap: a cap would stop seeing the
+    # heading inside a container one deeper than the number chosen
+    for depth in (1, 4, 9, 20):
+        deep = "> " * depth + "## Title\n"
+        assert [(d, level) for _i, d, level, _raw in _markdown_headings(deep)] == [
+            (depth, 2)
+        ], depth
+
+    # an unterminated fence inside a container ends with the container, so it
+    # cannot swallow every heading after it
+    assert [
+        (i, d, level) for i, d, level, _raw in _markdown_headings("> ```\n\n## x\n")
+    ] == [(2, 0, 2)]
+
+    # and the live document is exactly its ten document-level headings
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    assert [(depth, level) for _i, depth, level, _r in _markdown_headings(text)] == [
+        (0, 1)
+    ] + [(0, 2)] * 9
 
 
 # --- section 1: the scope and authority warning ------------------------------
@@ -9535,6 +9861,12 @@ STEP_ONE_REGIONS: tuple[ContractRegion, ...] = (
             "/scope/package_exclusion_required",
             "/assurance/canonical_json_files",
             "/execution_contract/test_only_executor",
+            # The ledger row is addressed by filename and read for its role.
+            # Only entry 8 is declared: blanking any other filename leaves the
+            # search to find this one, so only this key can break the render,
+            # and it is verified through the addressing-key branch of the drift
+            # rule rather than by moving a word.
+            "/corpus_files/8/filename",
             "/corpus_files/8/role",
         ),
         "EXACT",
@@ -9592,9 +9924,17 @@ def test_every_registered_region_resolves_and_projects() -> None:
     text = (CORPUS / "contract.md").read_text("utf-8")
     for region in CONTRACT_PROJECTION_REGISTRY:
         assert region.heading in CONTRACT_HEADINGS, region.region_id
-        assert region.renderer is not None, region.region_id
+        assert text.count(cast(str, region.heading)) == 1, region.region_id
 
         selected = region.selector(text)
+        if region.renderer is None:
+            # an explanatory region declares its exact lines rather than
+            # rendering them; the preamble declares none, and that is the claim
+            assert selected == list(EXPLANATORY_REGION_LINES[region.region_id]), (
+                region.region_id
+            )
+            continue
+
         assert selected, region.region_id
         assert selected == region.renderer(), region.region_id
 
@@ -9623,6 +9963,33 @@ def _drifted(value: Any) -> Any:
     raise AssertionError(f"no drift defined for {type(value).__name__}")
 
 
+# Pointers a region ADDRESSES its authority by rather than spends as text. The
+# section-1 sentence locates its ledger row with a search on
+# `filename == "contract.md"`, so blanking that key cannot change a word -- it
+# removes the row. These, and only these, may satisfy the drift rule by breaking
+# a renderer instead of moving it.
+ADDRESSING_KEY_AUTHORITIES: frozenset[str] = frozenset({"/corpus_files/8/filename"})
+
+
+def _drift_forms(value: Any) -> list[Any]:
+    """Every distinguishable perturbation of a declared value.
+
+    `_drifted` blanks the first value of a mapping and leaves its size alone, so
+    a renderer spending only `len(...)` -- the section-4 opening counts its
+    three classifications -- does not move. A shortened mapping is therefore
+    offered as well. Lists already move their length under `_drifted`, which
+    appends; the extra list form is kept for symmetry and moves nothing today.
+    A declared authority is load-bearing if any form reaches the render.
+    """
+    forms = [_drifted(value)]
+    if isinstance(value, list) and len(cast(list[Any], value)) > 1:
+        forms.append(cast(list[Any], value)[:-1])
+    if isinstance(value, dict) and len(cast(dict[str, Any], value)) > 1:
+        mapping = cast(dict[str, Any], value)
+        forms.append(dict(list(mapping.items())[:-1]))
+    return forms
+
+
 def test_every_registered_renderer_depends_on_its_declared_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -9632,9 +9999,29 @@ def test_every_registered_renderer_depends_on_its_declared_authority(
     a renderer returning a frozen copy of the prose would agree just as well.
     Each declared pointer is therefore drifted in place and the render must
     move, which is what makes the authority column mean something.
+
+    One declared pointer cannot be spent as text at all. The section-1 sentence
+    finds its ledger row with a search on `filename == "contract.md"`, so
+    blanking that key does not change a word -- it removes the row and the
+    renderer stops. Accepting a raise as movement from EVERY pointer would have
+    been the wrong repair: many leaves make some renderer die without ever
+    reaching the page -- the control below counts them -- and any of them could
+    then have been declared as an authority it does not have. Raising is
+    admitted only from the pointers named as addressing keys, and a pointer that
+    raises without being one of them fails here.
     """
+
+    def outcome(region: ContractRegion, baseline: list[str]) -> str:
+        assert region.renderer is not None
+        try:
+            return "moved" if region.renderer() != baseline else "same"
+        except Exception:  # noqa: BLE001 - the renderer could not run at all
+            return "broke"
+
     for region in CONTRACT_PROJECTION_REGISTRY:
-        assert region.renderer is not None, region.region_id
+        if region.renderer is None:
+            assert not region.authority, region.region_id
+            continue
         baseline = region.renderer()
         # every declared authority must be able to move the render, whether it
         # is a manifest leaf, a live observation, or a vector collection
@@ -9645,27 +10032,199 @@ def test_every_registered_renderer_depends_on_its_declared_authority(
         for name in named:
             monkeypatch.setitem(globals(), name, _drifted_authority(name))
             try:
-                assert region.renderer() != baseline, (region.region_id, name)
+                assert outcome(region, baseline) == "moved", (region.region_id, name)
             finally:
                 monkeypatch.undo()
 
         for pointer in pointers:
             parent_path, _, leaf = pointer.rpartition("/")
             parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
-            monkeypatch.setitem(parent, leaf, _drifted(parent[leaf]))
-            try:
-                assert region.renderer() != baseline, (region.region_id, pointer)
-            finally:
-                monkeypatch.undo()
+            seen: set[str] = set()
+            for form in _drift_forms(parent[leaf]):
+                monkeypatch.setitem(parent, leaf, form)
+                try:
+                    seen.add(outcome(region, baseline))
+                finally:
+                    monkeypatch.undo()
+            if "broke" in seen:
+                assert pointer in ADDRESSING_KEY_AUTHORITIES, (
+                    region.region_id,
+                    pointer,
+                )
+            assert seen & {"moved", "broke"}, (region.region_id, pointer)
 
         assert region.renderer() == baseline, region.region_id
+
+
+def test_every_addressing_key_is_declared_and_really_addresses() -> None:
+    """The exemption is a named list, and each entry has to earn its place."""
+    declared = {
+        pointer
+        for region in CONTRACT_PROJECTION_REGISTRY
+        for pointer in region.authority
+        if pointer.startswith("/")
+    }
+    assert ADDRESSING_KEY_AUTHORITIES <= declared, sorted(
+        ADDRESSING_KEY_AUTHORITIES - declared
+    )
+    assert ADDRESSING_KEY_AUTHORITIES == frozenset({"/corpus_files/8/filename"})
+
+    # an addressing key is one a renderer searches with rather than prints: its
+    # drift must break a render, never merely change one
+    for pointer in sorted(ADDRESSING_KEY_AUTHORITIES):
+        owners = [
+            region
+            for region in CONTRACT_PROJECTION_REGISTRY
+            if pointer in region.authority and region.renderer is not None
+        ]
+        assert owners, pointer
+        for region in owners:
+            renderer = region.renderer
+            assert renderer is not None
+            baseline = renderer()
+            parent_path, _, leaf = pointer.rpartition("/")
+            parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
+            original = parent[leaf]
+            parent[leaf] = _drifted(original)
+            try:
+                broke = False
+                try:
+                    renderer()
+                except Exception:  # noqa: BLE001 - which is the point
+                    broke = True
+                assert broke, (region.region_id, pointer)
+            finally:
+                parent[leaf] = original
+            assert renderer() == baseline, region.region_id
+
+
+def test_a_pointer_that_only_breaks_a_renderer_may_not_be_declared() -> None:
+    """The finding this exemption was narrowed for, kept as a control.
+
+    `/source_decisions/0/path` is opened by the deferral reader the section-4
+    block runs, so drifting it kills all three section-4 renders -- without any
+    of their sentences ever showing it. Under a blanket raise-tolerance each of
+    them could have claimed it as an authority, and it is not a rare shape.
+    """
+    _shown, structural = _document_consumers()
+    breakable = sorted(
+        (path, region_id)
+        for path, regions in structural.items()
+        for region_id in regions
+        if region_id not in _declared_consumers(path)
+    )
+    # every one of these could have been declared as an authority it does not
+    # have, had a raise been allowed to stand in for reaching the page
+    assert len(breakable) == 90
+    assert len({path for path, _region_id in breakable}) == 31
+
+    for region_id, pointer in (
+        ("s4.linkable-facts", "/source_decisions/0/path"),
+        ("s4.replay-summary-opening", "/source_decisions/0/sha256"),
+        ("s6.rejection-oracle", "/target_symbols/7/symbol"),
+        ("s7.governance-prose", "/source_decisions/1/decision_reference"),
+    ):
+        region = _region(region_id)
+        renderer = region.renderer
+        assert renderer is not None
+        assert pointer not in region.authority, (region_id, pointer)
+        assert pointer not in ADDRESSING_KEY_AUTHORITIES, pointer
+
+        baseline = renderer()
+        parent_path, _, leaf = pointer.rpartition("/")
+        parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
+        original = parent[leaf]
+        results: set[str] = set()
+        for form in _drift_forms(original):
+            parent[leaf] = form
+            try:
+                results.add("moved" if renderer() != baseline else "same")
+            except Exception:  # noqa: BLE001 - the case the control is about
+                results.add("broke")
+            finally:
+                parent[leaf] = original
+        # it breaks the renderer and never reaches the page, so declaring it
+        # would be a false authority -- which the rule above now refuses
+        assert "broke" in results, (region_id, pointer)
+        assert "moved" not in results, (region_id, pointer)
+        assert renderer() == baseline, region_id
+
+
+def test_a_declared_authority_that_moves_nothing_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Offering several drift forms must not become "any excuse will do".
+
+    The rule above accepts a pointer when SOME perturbation of it moves the
+    render, because a renderer spending only `len(...)` is unmoved by a changed
+    member. That quantifier would be worthless if a leaf the region never reads
+    could satisfy it, so a leaf from each unrelated corner of the manifest is
+    offered to three regions and every one must be refused.
+    """
+
+    def noticed(region: ContractRegion, pointer: str) -> bool:
+        renderer = region.renderer
+        assert renderer is not None
+        baseline = renderer()
+        parent_path, _, leaf = pointer.rpartition("/")
+        parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
+        moved = False
+        for form in _drift_forms(parent[leaf]):
+            monkeypatch.setitem(parent, leaf, form)
+            try:
+                moved = moved or renderer() != baseline
+            except Exception:  # noqa: BLE001 - a raising renderer noticed
+                moved = True
+            finally:
+                monkeypatch.undo()
+        return moved
+
+    inert = [
+        (region_id, pointer)
+        for region_id in (
+            "s1.scope-warning",
+            "s7.governance-block",
+            "s3.inventory-summary",
+        )
+        for pointer in (
+            "/rejection_contract/normalization",
+            "/assurance/status",
+            "/corpus_identity/phase_closure_owner",
+            "/corpus_identity/serialization_and_migration_owner",
+            "/scope/covered_slices",
+            "/non_goals",
+            "/originating_publications",
+        )
+        if pointer not in _region(region_id).authority
+        and noticed(_region(region_id), pointer)
+    ]
+    assert not inert, inert
+
+    # and the rule is not merely refusing everything: each declared pointer is
+    # still accepted, which is what the suite depends on
+    for region in CONTRACT_PROJECTION_REGISTRY:
+        if region.renderer is None:
+            continue
+        for pointer in region.authority:
+            if pointer.startswith("/"):
+                assert noticed(region, pointer), (region.region_id, pointer)
 
 
 def test_every_registered_region_rejects_a_semantic_edit() -> None:
     """A selector that cannot see an edit inside its own region is decoration."""
     text = (CORPUS / "contract.md").read_text("utf-8")
     for region in CONTRACT_PROJECTION_REGISTRY:
-        assert region.renderer is not None, region.region_id
+        if region.renderer is None:
+            # an explanatory region declares no lines, so the edit that has to
+            # be refused is a line arriving where none belongs
+            declared = list(EXPLANATORY_REGION_LINES[region.region_id])
+            heading = cast(str, region.heading)
+            tampered = text.replace(
+                f"{heading}\n", f"{heading}\n\nA claim that answers to nothing.\n", 1
+            )
+            assert tampered != text, region.region_id
+            assert region.selector(tampered) != declared, region.region_id
+            continue
         # the last line, so a block anchored on its header row can still be
         # located after the edit and fails by comparison rather than by raising
         last = region.selector(text)[-1]
@@ -9982,7 +10541,13 @@ STEP_TWO_REGIONS: tuple[ContractRegion, ...] = (
         REPLAY_SUMMARY_SECTION,
         _paragraph_selector(REPLAY_SUMMARY_SECTION, 0),
         _sliced_renderer(_render_replay_summary_block, 0, 1),
-        ("/replay_contract/flattened_evidence_derived_history_claimed",),
+        (
+            "/replay_contract/flattened_evidence_derived_history_claimed",
+            # the sentence counts the classifications and says whether the
+            # fourth is absent, so both are its authorities
+            "/replay_contract/classifications",
+            "/replay_contract/deterministic_derivation_present",
+        ),
         "EXACT",
         "OBJECTIVE",
         "CANONICAL_DECLARATION_ONLY",
@@ -10029,7 +10594,11 @@ STEP_TWO_REGIONS: tuple[ContractRegion, ...] = (
         REPLAY_SUMMARY_SECTION,
         _paragraph_selector(REPLAY_SUMMARY_SECTION, 6),
         _render_role_lead_in,
-        ("_retained_roles_are_source_derived",),
+        (
+            "_retained_roles_are_source_derived",
+            # the observation is over these declared positions
+            "/replay_contract/retained_role_source_positions",
+        ),
         "EXACT",
         "OBJECTIVE",
         "INDEPENDENTLY_VERIFIED",
@@ -10110,11 +10679,21 @@ STEP_TWO_REGIONS: tuple[ContractRegion, ...] = (
         _actual_governance_block,
         _render_governance_block,
         (
+            # thirteen numbers are printed and thirteen are declared: the block
+            # used to name five of them and read the other eight unannounced
             "/effective_governance/inherited_subject_count",
+            "/effective_governance/dispositioned_exactly_once",
+            "/effective_governance/self_introduced_count",
             "/effective_governance/self_owned_open",
             "/effective_governance/totals/disposition/split",
+            "/effective_governance/totals/disposition/carried_forward",
+            "/effective_governance/totals/immediate_owner/S1.P06",
+            "/effective_governance/totals/immediate_owner/S2",
             "/effective_governance/totals/immediate_owner/S5",
+            "/effective_governance/totals/preserved_long_term_owner/S1.P06",
+            "/effective_governance/totals/preserved_long_term_owner/S5",
             "/effective_governance/authority_totals/S1.P05.S08",
+            "/effective_governance/authority_totals/S1.P05.S08.C01",
         ),
         "EXACT",
         "OBJECTIVE",
@@ -10142,8 +10721,52 @@ STEP_TWO_REGIONS: tuple[ContractRegion, ...] = (
     ),
 )
 
+# --- step 4: the region above the first heading ------------------------------
+#
+# `TILED_SECTIONS` starts at the first level-two heading, so the lines between
+# the document title and `## 1.` belonged to no region. Every prose form tried
+# there -- a paragraph, a bullet list, a blockquote, an indented block, a fenced
+# block, an HTML comment -- was published without a single test noticing, and a
+# sentence contradicting the non-goals passed as readily as an innocent one.
+#
+# The band carries no semantic content: the title is followed by a blank line
+# and then the first heading. That is a fact about the document, not an absence
+# of one, so it is recorded as an EXPLANATORY region -- no renderer, no
+# authority, and an authored line list that happens to be empty. Giving it a
+# structured authority would be inventing a source for prose that has none.
+
+DOCUMENT_TITLE = CONTRACT_HEADINGS[0]
+
+# An explanatory region declares its exact lines rather than rendering them.
+# Pinning the text refuses drift and claims nothing about whether it is true --
+# the same standing a CANONICAL_DECLARATION_ONLY purpose fragment has.
+#
+# It is also the one place in the closure where a line could enter the document
+# without a canonical source, so it is held empty and asserted empty: publishing
+# explanatory prose here would have to be a deliberate edit to this table and to
+# the test that pins it, never a quiet addition to the Markdown.
+EXPLANATORY_REGION_LINES: dict[str, tuple[str, ...]] = {"doc.preamble": ()}
+
+
+def _actual_preamble(text: str) -> list[str]:
+    return _section_paragraphs(text, DOCUMENT_TITLE)
+
+
+STEP_FOUR_REGIONS: tuple[ContractRegion, ...] = (
+    ContractRegion(
+        "doc.preamble",
+        DOCUMENT_TITLE,
+        _actual_preamble,
+        None,
+        (),
+        "EXPLANATORY",
+        "EXPLANATORY",
+        "CANONICAL_DECLARATION_ONLY",
+    ),
+)
+
 CONTRACT_PROJECTION_REGISTRY: tuple[ContractRegion, ...] = (
-    STEP_ONE_REGIONS + STEP_TWO_REGIONS
+    STEP_ONE_REGIONS + STEP_TWO_REGIONS + STEP_FOUR_REGIONS
 )
 
 # heading -> the regions that must together account for every non-blank line in
@@ -10176,6 +10799,12 @@ TILED_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (SECTION_EIGHT, ("s8.non-goals",)),
     (SECTION_NINE, ("s9.authority-table",)),
 )
+
+# the whole document, title band included: every heading the corpus publishes,
+# each followed by the regions that must account for it
+DOCUMENT_TILES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (DOCUMENT_TITLE, ("doc.preamble",)),
+) + TILED_SECTIONS
 
 
 def _drifted_authority(name: str) -> Any:
@@ -10243,10 +10872,25 @@ def _region(region_id: str) -> ContractRegion:
     return next(r for r in CONTRACT_PROJECTION_REGISTRY if r.region_id == region_id)
 
 
+def _region_lines(region: ContractRegion) -> list[str]:
+    """What a region publishes: a projection, or an authored explanatory block."""
+    if region.renderer is not None:
+        return region.renderer()
+    return list(EXPLANATORY_REGION_LINES[region.region_id])
+
+
+def _tile_lines(region_ids: tuple[str, ...]) -> list[str]:
+    return [
+        line for region_id in region_ids for line in _region_lines(_region(region_id))
+    ]
+
+
 @pytest.mark.parametrize(
     ("heading", "region_ids"),
-    TILED_SECTIONS,
-    ids=[h.split(".")[0] for h, _ in TILED_SECTIONS],
+    DOCUMENT_TILES,
+    ids=[
+        h.split(".")[0] if h.startswith("## ") else "# title" for h, _ in DOCUMENT_TILES
+    ],
 )
 def test_each_tiled_section_is_exactly_its_registered_regions(
     heading: str, region_ids: tuple[str, ...]
@@ -10255,16 +10899,12 @@ def test_each_tiled_section_is_exactly_its_registered_regions(
 
     The section's whole non-blank content must equal what the registry renders
     for it, so a block is no longer merely correct -- it has to be under its own
-    heading, in order, with no softening prose beside it.
+    heading, in order, with no softening prose beside it. The title band is
+    tiled on the same terms, and its region declares no lines at all.
     """
     text = (CORPUS / "contract.md").read_text("utf-8")
-    rendered: list[str] = []
-    for region_id in region_ids:
-        renderer = _region(region_id).renderer
-        assert renderer is not None, region_id
-        rendered.extend(renderer())
 
-    assert _section_paragraphs(text, heading) == rendered, heading
+    assert _section_paragraphs(text, heading) == _tile_lines(region_ids), heading
 
 
 def test_a_paragraph_added_to_a_tiled_section_is_refused() -> None:
@@ -10272,16 +10912,12 @@ def test_a_paragraph_added_to_a_tiled_section_is_refused() -> None:
     text = (CORPUS / "contract.md").read_text("utf-8")
     smuggled = "In practice this boundary is advisory rather than published."
 
-    for heading, region_ids in TILED_SECTIONS:
-        rendered: list[str] = []
-        for region_id in region_ids:
-            renderer = _region(region_id).renderer
-            assert renderer is not None, region_id
-            rendered.extend(renderer())
-
+    for heading, region_ids in DOCUMENT_TILES:
         tampered = text.replace(f"{heading}\n", f"{heading}\n\n{smuggled}\n", 1)
         assert tampered != text, heading
-        assert _section_paragraphs(tampered, heading) != rendered, heading
+        assert _section_paragraphs(tampered, heading) != _tile_lines(region_ids), (
+            heading
+        )
 
 
 # --- step 3: the authorities this corpus locks but had never opened ----------
@@ -10682,6 +11318,892 @@ def test_the_p09_deflection_is_never_reported_as_verified() -> None:
     assert "no S1.P09 confidence or review interpretation" in cast(
         list[str], MANIFEST["non_goals"]
     )
+
+
+# --- step 4: the document, not a set of separately checked sections ----------
+#
+# Steps 1 to 3 closed regions one at a time and tiled the sections they lived
+# in. What they never said is that those sections are the whole document, and
+# three holes lived in the gap.
+#
+#   The band between the document title and `## 1.` belonged to no region, so
+#   any prose put there published unchecked -- including prose contradicting a
+#   non-goal the document projects correctly two hundred lines further down.
+#
+#   `TILED_SECTIONS` was a hand-maintained literal that nothing compared with
+#   the document. Deleting one entry took a whole published section out of the
+#   comparison and cost one silently vanished parametrization.
+#
+#   The tiling compared non-blank lines only, so blank lines were unowned
+#   everywhere. Deleting the single blank line above the governance block
+#   dissolves that indented code block into the paragraph before it -- the
+#   document renders differently and every test stayed green.
+#
+# All three are the same missing statement, so one statement closes them: the
+# document is reconstructed, line for line and blank for blank, from the
+# heading authority and the registry, and compared with the published bytes.
+# That is not a snapshot -- nothing here holds a copy of the prose. Every
+# non-blank line comes from a named renderer reading the canonical JSON, or
+# from an explanatory region's declared lines; the separators come from one
+# stated rule; and the headings come from `CONTRACT_HEADINGS`. A line that no
+# region produces cannot appear anywhere, at any indentation, in any container.
+
+LINE_DISPOSITIONS = (
+    "DOCUMENT_TITLE",
+    "SECTION_HEADING",
+    "BLOCK_SEPARATOR",
+    "REGION",
+)
+
+
+def _document_partition(
+    tiles: tuple[tuple[str, tuple[str, ...]], ...] = DOCUMENT_TILES,
+) -> list[tuple[str, str, str]]:
+    """`(line, disposition, owner)` for every line the document is made of.
+
+    One blank line separates every block from the next: after a heading, and
+    between two regions. The document ends at its last block rather than with a
+    trailing separator. The tiling is a parameter so a probe can remove an
+    entry and watch the projection lose the section it accounted for.
+    """
+    partition: list[tuple[str, str, str]] = []
+    for heading, region_ids in tiles:
+        kind = "DOCUMENT_TITLE" if heading == DOCUMENT_TITLE else "SECTION_HEADING"
+        partition.append((heading, kind, heading))
+        for region_id in region_ids:
+            body = _region_lines(_region(region_id))
+            if not body:
+                continue
+            partition.append(("", "BLOCK_SEPARATOR", region_id))
+            partition.extend((line, "REGION", region_id) for line in body)
+        partition.append(("", "BLOCK_SEPARATOR", heading))
+    return partition[:-1]
+
+
+def _render_contract_document() -> list[str]:
+    return [line for line, _kind, _owner in _document_partition()]
+
+
+def _document_closure_failures(text: str) -> list[tuple[int, str, str]]:
+    """`(line number, reason, owner)` where the document departs from the projection.
+
+    A whole-file comparison could only say "different". Walking the two in step
+    names the line, why it is wrong, and which registered owner the projection
+    had put there, so a smuggled claim is reported where it sits.
+    """
+    projected = _document_partition()
+    published = text.splitlines()
+    failures: list[tuple[int, str, str]] = []
+    for index in range(max(len(projected), len(published))):
+        expected = projected[index][0] if index < len(projected) else None
+        actual = published[index] if index < len(published) else None
+        if expected == actual:
+            continue
+        if expected is None:
+            failures.append((index + 1, "line-outside-every-region", "END_OF_DOCUMENT"))
+        elif actual is None:
+            failures.append((index + 1, "projected-line-missing", projected[index][2]))
+        else:
+            failures.append(
+                (
+                    index + 1,
+                    f"{projected[index][1].lower()}-differs",
+                    projected[index][2],
+                )
+            )
+    return failures
+
+
+def test_the_contract_document_is_exactly_what_the_registry_projects() -> None:
+    """The whole file, byte for byte, from the authorities that own it."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+
+    assert _document_closure_failures(text) == []
+    assert _render_contract_document() == text.splitlines()
+    # the bytes, not just the lines: LF endings and one final newline
+    assert "\n".join(_render_contract_document()) + "\n" == text
+    assert "\r" not in text and not text.endswith("\n\n")
+
+
+def test_every_document_line_has_exactly_one_structural_disposition() -> None:
+    """No line unowned, none owned twice, and no region split in two.
+
+    Half of what follows is a property of `_document_partition` rather than of
+    the document -- a separator is blank because the builder emits `""`, and the
+    dispositions are the four it can produce. Those assertions are kept as the
+    partition's own contract, so a later builder that emitted a semantic line as
+    a separator, or ran two regions together, would have to break one of them.
+    The claims that are about the DOCUMENT are the three at the end: the
+    partition is exactly as long as the file, every registered region resolves
+    to exactly one unbroken run, and the heading sequence the partition emits is
+    the published one.
+    """
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    partition = _document_partition()
+    registered = {region.region_id for region in CONTRACT_PROJECTION_REGISTRY}
+
+    assert len(partition) == len(text.splitlines())
+    # The separator rule is one blank line, stated rather than assumed: no two
+    # blocks are joined and none is separated by two. It is deliberately
+    # STRICTER than CommonMark, which would render a second blank line
+    # identically -- a derived document has one layout, and a layout that can
+    # drift silently is a layout nothing owns.
+    assert "\n\n\n" not in text
+    assert not any(
+        partition[index][1] == "BLOCK_SEPARATOR" == partition[index + 1][1]
+        for index in range(len(partition) - 1)
+    )
+    for line, kind, owner in partition:
+        assert kind in LINE_DISPOSITIONS, (kind, owner)
+        # a separator is blank and a semantic line is not: the two kinds of
+        # line are distinguished by what they are, not by where they sit
+        assert (kind == "BLOCK_SEPARATOR") == (line == ""), (kind, line)
+        if kind == "REGION":
+            assert owner in registered, owner
+        else:
+            assert owner in CONTRACT_HEADINGS or owner in registered, owner
+
+    owned = [owner for _line, kind, owner in partition if kind == "REGION"]
+    # every region resolves exactly once, as one unbroken run
+    runs = [
+        owner
+        for index, owner in enumerate(owned)
+        if not index or owner != owned[index - 1]
+    ]
+    assert len(runs) == len(set(runs)), runs
+    assert set(runs) == registered - {"doc.preamble"}, sorted(registered ^ set(runs))
+    # the one channel a line could enter through without a canonical source is
+    # held empty, and every explanatory region has to come through it
+    assert EXPLANATORY_REGION_LINES == {"doc.preamble": ()}
+    assert {
+        region.region_id
+        for region in CONTRACT_PROJECTION_REGISTRY
+        if region.renderer is None
+    } == set(EXPLANATORY_REGION_LINES)
+
+    headings = [
+        owner
+        for _line, kind, owner in partition
+        if kind in ("DOCUMENT_TITLE", "SECTION_HEADING")
+    ]
+    assert headings == list(CONTRACT_HEADINGS)
+
+    counted = Counter(kind for _line, kind, _owner in partition)
+    assert counted["DOCUMENT_TITLE"] == 1
+    assert counted["SECTION_HEADING"] == len(CONTRACT_HEADINGS) - 1
+    assert sum(counted.values()) == len(text.splitlines())
+
+
+def test_the_document_tiles_account_for_every_heading_and_every_region() -> None:
+    """A hand-kept tiling that nothing compares can quietly lose a section."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+
+    assert [heading for heading, _ids in DOCUMENT_TILES] == list(CONTRACT_HEADINGS)
+    assert [heading for heading, _ids in DOCUMENT_TILES] == _actual_headings(text)
+
+    tiled = [region_id for _heading, ids in DOCUMENT_TILES for region_id in ids]
+    assert len(tiled) == len(set(tiled))
+    assert set(tiled) == {region.region_id for region in CONTRACT_PROJECTION_REGISTRY}
+    # and every region is tiled under the heading it declares
+    for heading, ids in DOCUMENT_TILES:
+        for region_id in ids:
+            assert _region(region_id).heading == heading, region_id
+
+
+def test_a_section_dropped_from_the_tiling_is_refused() -> None:
+    """Losing a tile used to cost one vanished parametrization and nothing else.
+
+    A hand-kept tiling that no test compares with the document can shed a whole
+    published section, after which anything may be written inside it. The
+    projection notices because the section's lines simply stop being produced.
+    """
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    reduced = tuple(tile for tile in DOCUMENT_TILES if tile[0] != SECTION_EIGHT)
+
+    assert len(reduced) == len(DOCUMENT_TILES) - 1
+    assert [heading for heading, _ids in reduced] != list(CONTRACT_HEADINGS)
+
+    lost = [line for line, _kind, _owner in _document_partition(reduced)]
+    assert lost != text.splitlines()
+    assert SECTION_EIGHT not in lost
+    # the heading, its two separators, and every bullet the section published
+    dropped = len(_region_lines(_region("s8.non-goals"))) + 3
+    assert len(lost) == len(text.splitlines()) - dropped == 109
+    # and the region it dropped stops being owned by anything
+    assert "s8.non-goals" not in {
+        owner for _l, _k, owner in _document_partition(reduced)
+    }
+
+
+# --- every way to publish an unowned line, refused --------------------------
+
+
+def _document_mutations(text: str) -> list[tuple[str, str]]:
+    """`(label, tampered document)` for each way a line could be smuggled in."""
+    claim = "In practice this corpus publishes a complete development-history graph."
+    non_goal = "- a complete development-history graph is published"
+    title = f"{DOCUMENT_TITLE}\n"
+    last = text.splitlines()[-1]
+    return [
+        # the band that belonged to nobody, in every form that was silent
+        ("preamble prose", text.replace(title, f"{title}\n{claim}\n", 1)),
+        ("preamble bullet", text.replace(title, f"{title}\n{non_goal}\n", 1)),
+        ("preamble blockquote", text.replace(title, f"{title}\n> {claim}\n", 1)),
+        ("preamble indented", text.replace(title, f"{title}\n    {claim}\n", 1)),
+        ("preamble fenced", text.replace(title, f"{title}\n```\n{claim}\n```\n", 1)),
+        (
+            "preamble html comment",
+            text.replace(title, f"{title}\n<!-- {claim} -->\n", 1),
+        ),
+        (
+            "preamble table",
+            text.replace(title, f"{title}\n| a | b |\n| --- | --- |\n", 1),
+        ),
+        # and the rest of the document, so the closure is not preamble-shaped
+        ("trailing prose", f"{text}\n{claim}\n"),
+        ("trailing bullet", f"{text}{non_goal}\n"),
+        (
+            "after a heading",
+            text.replace(f"{SECTION_SIX}\n", f"{SECTION_SIX}\n\n{claim}\n", 1),
+        ),
+        (
+            "between two regions",
+            text.replace("183 vectors over", f"{claim}\n\n183 vectors over", 1),
+        ),
+        (
+            "inside the bullet block",
+            text.replace("- no root cause", f"{non_goal}\n- no root cause", 1),
+        ),
+        (
+            "inside the governance block",
+            text.replace("    split 5", f"    {claim}\n    split 5", 1),
+        ),
+        (
+            "inside a table",
+            text.replace("| **total** |", f"| {claim} | | | |\n| **total** |", 1),
+        ),
+        # structure, not prose: the blank lines the document is built from
+        (
+            "separator deleted",
+            text.replace("\n\n    inherited ", "\n    inherited ", 1),
+        ),
+        (
+            "separator doubled",
+            text.replace(f"{SECTION_FIVE}\n\n", f"{SECTION_FIVE}\n\n\n", 1),
+        ),
+        (
+            "every separator deleted",
+            "\n".join(line for line in text.splitlines() if line) + "\n",
+        ),
+        ("trailing separator", f"{text}\n"),
+        # a region moved, duplicated or deleted
+        (
+            "a table row moved to another section",
+            text.replace(f"\n{last}\n", "\n", 1).replace(
+                f"{SECTION_THREE}\n", f"{SECTION_THREE}\n\n{last}\n", 1
+            ),
+        ),
+        ("a table row duplicated", text.replace(f"{last}\n", f"{last}\n{last}\n", 1)),
+        ("a table row deleted", text.replace(f"\n{last}\n", "\n", 1)),
+        # a container is not a hiding place either
+        (
+            "list-nested heading",
+            text.replace("- no persistence", "- ## 10. Extra\n- no persistence", 1),
+        ),
+        (
+            "blockquote heading",
+            text.replace(f"{SECTION_NINE}\n", f"> ## 10. Extra\n\n{SECTION_NINE}\n", 1),
+        ),
+    ]
+
+
+def test_no_line_can_be_published_outside_the_registry() -> None:
+    """Every way in, refused, and each refusal attributed to a registered owner.
+
+    Once the document is reconstructed, ANY edit to it is detectable -- that is
+    the point of the reconstruction and it makes "is this mutation caught" a
+    weak question. So this test asks the two things that are not implied by it.
+    First, that the enumeration covers every way a line could arrive: the title
+    band in six shapes, the body in five positions, the block structure in four,
+    and two containers. Second, that each refusal is ATTRIBUTED -- the line, the
+    reason, and which registered owner the projection had put there -- because a
+    rule that could only say "the file changed" would be a snapshot diff wearing
+    a registry's name.
+    """
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    mutations = _document_mutations(text)
+
+    # positive control: the published document is what the registry projects
+    assert _document_closure_failures(text) == []
+    assert len(mutations) == 23
+
+    attributed: dict[str, tuple[str, str]] = {}
+    for label, tampered in mutations:
+        assert tampered != text, label
+        failures = _document_closure_failures(tampered)
+        assert failures, label
+        _line, reason, owner = failures[0]
+        attributed[label] = (reason, owner)
+
+    registered = {region.region_id for region in CONTRACT_PROJECTION_REGISTRY}
+    for label, (reason, owner) in sorted(attributed.items()):
+        assert reason in (
+            "line-outside-every-region",
+            "projected-line-missing",
+            "region-differs",
+            "block_separator-differs",
+            "section_heading-differs",
+            "document_title-differs",
+        ), (label, reason)
+        assert (
+            owner in registered
+            or owner in CONTRACT_HEADINGS
+            or owner == ("END_OF_DOCUMENT")
+        ), (label, owner)
+
+    # the title band is refused by its own region, not only by the whole-document
+    # comparison, so the preamble has an owner rather than a special case
+    for label, tampered in mutations:
+        if label.startswith("preamble"):
+            assert _actual_preamble(tampered) != [], label
+            line, _reason, _owner = _document_closure_failures(tampered)[0]
+            # reported inside the title band, above the first section heading
+            assert line <= 4, (label, line)
+
+
+def test_a_contradiction_beside_a_correct_projection_is_refused() -> None:
+    """The correct sentence surviving is not the question being asked.
+
+    Every one of these leaves the projected statement exactly where it was and
+    adds a second one denying it, which is the shape a contradiction takes when
+    the oracle only checks that the right sentence is still present. Detection
+    here is structural -- the added line answers to no region -- so no claim is
+    made about reading English, and the two things asserted are the two that do
+    not follow from the reconstruction existing: that every projected line
+    really is still published unchanged in the tampered document, and that the
+    refusal is attributed to an owner rather than to the file having changed.
+    """
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    rendered = _render_contract_document()
+    title = f"{DOCUMENT_TITLE}\n"
+    contradictions = (
+        "In practice 184 vectors ship.",
+        "The four canonical JSON files are derived; this Markdown is the authority.",
+        "`deterministic_derivation` is in fact present.",
+        "Only ten forbidden extras are published.",
+        "This corpus is a production schema and a public API.",
+        "Two of the nineteen fixtures are referenced by marker.",
+        "The corpus is executed by the full suite and ships in the wheel.",
+        "Ancestry and merge-base semantics are published after all.",
+    )
+    silent: list[tuple[str, str]] = []
+    registered = {region.region_id for region in CONTRACT_PROJECTION_REGISTRY}
+    placements: set[str] = set()
+    for claim in contradictions:
+        for where, tampered in (
+            ("preamble", text.replace(title, f"{title}\n{claim}\n", 1)),
+            (
+                "after the first heading",
+                text.replace(f"{SECTION_ONE}\n", f"{SECTION_ONE}\n\n{claim}\n", 1),
+            ),
+            (
+                "mid document",
+                text.replace(f"{SECTION_FIVE}\n", f"{SECTION_FIVE}\n\n{claim}\n", 1),
+            ),
+            ("after the last table", f"{text}\n{claim}\n"),
+        ):
+            placements.add(where)
+            assert tampered != text, (claim, where)
+            # the statement it denies is still published, unchanged
+            assert set(rendered) <= set(tampered.splitlines()), (claim, where)
+            failures = _document_closure_failures(tampered)
+            if not failures:
+                silent.append((where, claim))
+                continue
+            _line, reason, owner = failures[0]
+            assert reason != "", (claim, where)
+            assert (
+                owner in registered
+                or owner in CONTRACT_HEADINGS
+                or owner == ("END_OF_DOCUMENT")
+            ), (claim, where, owner)
+    assert not silent, silent
+    # the matrix is what the docstring says it is: a quarter of it may not go
+    # missing because a tuple was edited
+    assert placements == {
+        "preamble",
+        "after the first heading",
+        "mid document",
+        "after the last table",
+    }
+    assert len(contradictions) == 8
+    assert len(contradictions) * len(placements) == 32
+
+
+# --- the reverse direction: which region shows this declaration? -------------
+#
+# Every check so far runs Markdown -> authority: a published line names the
+# region that renders it, and the region names the leaves it reads. That leaves
+# the other question open. When a declaration is meant to appear in the
+# document, WHICH region consumes it -- and can a leaf reach the page through a
+# region that never declared it?
+#
+# It can be answered rather than asserted. Each region renders deterministically
+# from the canonical JSON and a fixed set of named observations of the oracle
+# itself, so a manifest leaf is document-facing exactly when perturbing it moves
+# what some region renders. Two perturbations are used: the value is drifted,
+# and then removed from its container, because a renderer spending only a
+# collection's size is unmoved by a changed member.
+#
+# Three classes come out, and they partition the declaration universe:
+#
+#   PROJECTED   perturbing it changes a rendered line. Every region it moves
+#               must declare a pointer covering it -- no leaf reaches the page
+#               through a region that never said it reads it.
+#   STRUCTURAL  perturbing it breaks a projection without changing any line: an
+#               addressing key, or a locked artifact's coordinate read through
+#               a named authority. Its value is not on the page, so demanding a
+#               declaration from the breaking region would overclaim -- three
+#               section-4 regions share one block renderer and would each have
+#               to claim the deferral coordinate that only one of their
+#               sentences rests on. The rule is therefore collection-granular:
+#               the top-level key it lives under must be declared somewhere in
+#               the registry. Two of the manifest's top-level keys are declared
+#               by nobody, and a structural read into either of them fails.
+#   UNSEEN      no region reads it. That is not the same as "not published":
+#               the section-3 inventory table renders its counts from the
+#               sealed vector FILES, so the manifest's own `vector_summary`
+#               counts land here even though the same numbers appear on the
+#               page. Nor is it "unchecked" -- those two surfaces are pinned to
+#               each other elsewhere. It means only that the document does not
+#               read this leaf.
+#
+# The counts are outputs. What is asserted is the partition and the no-silent-
+# consumer rule; the numbers are reported so a later change has to move them
+# deliberately.
+
+
+def _leaf_slots(
+    node: Any, prefix: str = "", parent: Any = None, key: Any = None
+) -> list[tuple[str, Any, Any]]:
+    """`(leaf path, the container holding it, its key)`, one per manifest leaf."""
+    if isinstance(node, dict) and node:
+        mapping = cast(dict[str, Any], node)
+        return [
+            slot
+            for k, v in mapping.items()
+            for slot in _leaf_slots(v, f"{prefix}/{k}", node, k)
+        ]
+    if isinstance(node, list) and node:
+        items = cast(list[Any], node)
+        return [
+            slot
+            for i, v in enumerate(items)
+            for slot in _leaf_slots(v, f"{prefix}/{i}", node, i)
+        ]
+    return [(prefix, parent, key)]
+
+
+# One sweep per registry, because three tests ask the same pure question of the
+# same 386 leaves and this module is the project's fastest feedback loop. The
+# key is the registry itself: the probes below hand in a modified one and must
+# get a fresh answer rather than this one.
+_CONSUMER_SWEEPS: dict[
+    tuple[ContractRegion, ...],
+    tuple[dict[str, frozenset[str]], dict[str, frozenset[str]]],
+] = {}
+
+
+def _document_consumers() -> tuple[
+    dict[str, frozenset[str]], dict[str, frozenset[str]]
+]:
+    """`(shown by, broken by)` regions, for every declaration-universe leaf."""
+    if CONTRACT_PROJECTION_REGISTRY in _CONSUMER_SWEEPS:
+        return _CONSUMER_SWEEPS[CONTRACT_PROJECTION_REGISTRY]
+
+    rendered = [
+        (region.region_id, region.renderer)
+        for region in CONTRACT_PROJECTION_REGISTRY
+        if region.renderer is not None
+    ]
+    baseline = {region_id: render() for region_id, render in rendered}
+
+    def observe() -> tuple[set[str], set[str]]:
+        moved: set[str] = set()
+        broke: set[str] = set()
+        for region_id, render in rendered:
+            try:
+                now = render()
+            except Exception:  # noqa: BLE001 - a renderer that cannot run noticed
+                broke.add(region_id)
+                continue
+            if now != baseline[region_id]:
+                moved.add(region_id)
+        return moved, broke
+
+    def restore(container: Any, key: Any, original: Any, order: Any) -> None:
+        """Put the leaf back where it was, in the position it was in.
+
+        Re-assigning a deleted mapping key APPENDS it, which silently permutes
+        the manifest for every renderer that spends a dict's iteration order --
+        the governance block spends three of them, and the next leaf of the same
+        dict would then be measured against a stale baseline. The container is
+        rebuilt from its own snapshot instead, and the seal below is
+        order-sensitive so a future shortcut cannot hide the same way.
+        """
+        if isinstance(container, list):
+            items = cast(list[Any], container)
+            del items[:]
+            items.extend(cast(list[Any], order))
+        else:
+            mapping = cast(dict[str, Any], container)
+            mapping.clear()
+            mapping.update(cast(dict[str, Any], order))
+
+    meta = set(_meta_schema_leaf_paths())
+    shown: dict[str, frozenset[str]] = {}
+    structural: dict[str, frozenset[str]] = {}
+    # The sweep edits the shared manifest in place, so it puts the document back
+    # under try/finally and then proves it. Without that, an interrupted sweep
+    # would leave six hundred other tests reading a damaged authority and
+    # failing somewhere else entirely.
+    sealed = json.dumps(MANIFEST)
+    try:
+        for path, container, key in _leaf_slots(MANIFEST):
+            if path in meta:
+                continue
+            original = container[key]
+            order = (
+                list(cast(list[Any], container))
+                if isinstance(container, list)
+                else dict(cast(dict[str, Any], container))
+            )
+            moved: set[str] = set()
+            broke: set[str] = set()
+            for form in _drift_forms(original):
+                container[key] = form
+                seen, raised = observe()
+                moved |= seen
+                broke |= raised
+            container[key] = original
+            if isinstance(container, list):
+                cast(list[Any], container).pop(key)
+            else:
+                del cast(dict[str, Any], container)[key]
+            seen, raised = observe()
+            restore(container, key, original, order)
+            moved |= seen
+            broke |= raised
+            shown[path] = frozenset(moved)
+            structural[path] = frozenset(broke - moved)
+    finally:
+        MANIFEST.clear()
+        MANIFEST.update(cast(dict[str, Any], json.loads(sealed)))
+    assert json.dumps(MANIFEST) == sealed, "the sweep did not restore"
+
+    _CONSUMER_SWEEPS[CONTRACT_PROJECTION_REGISTRY] = (shown, structural)
+    return shown, structural
+
+
+def test_the_consumer_sweep_puts_the_manifest_back_exactly() -> None:
+    """Including the order a mapping was in, which no renderer may find moved.
+
+    Re-assigning a deleted key appends it. Three governance dicts are rendered
+    by iteration, so a sweep that restored values but not positions would make
+    the document itself change as a side effect of measuring it.
+    """
+    before = json.dumps(MANIFEST)
+    document = _render_contract_document()
+    _CONSUMER_SWEEPS.clear()
+    _document_consumers()
+
+    assert json.dumps(MANIFEST) == before
+    assert _leaf_paths(MANIFEST) == json.loads(json.dumps(_leaf_paths(MANIFEST)))
+    assert _render_contract_document() == document
+    # and the memo really is keyed on the registry rather than on nothing
+    assert CONTRACT_PROJECTION_REGISTRY in _CONSUMER_SWEEPS
+
+
+def _declared_consumers(path: str) -> set[str]:
+    """The regions whose declared pointers cover this leaf."""
+    return {
+        region.region_id
+        for region in CONTRACT_PROJECTION_REGISTRY
+        for reference in region.authority
+        if reference.startswith("/")
+        and (path == reference or path.startswith(f"{reference}/"))
+    }
+
+
+def test_the_leaf_slots_are_the_leaf_paths() -> None:
+    """The reverse sweep addresses containers, so it must walk the same leaves."""
+    assert [path for path, _c, _k in _leaf_slots(MANIFEST)] == _leaf_paths(MANIFEST)
+
+
+def test_no_declaration_reaches_the_document_through_an_undeclared_region() -> None:
+    """A region that shows a leaf must have said it reads it.
+
+    The governance block printed thirteen numbers and named five; the section-4
+    opening counted the classifications and named none of them; the role lead-in
+    rested on the declared source positions without citing them. All three
+    projected correctly and none of them said what from.
+    """
+    shown, structural = _document_consumers()
+
+    undeclared = sorted(
+        (path, sorted(regions - _declared_consumers(path)))
+        for path, regions in shown.items()
+        if regions - _declared_consumers(path)
+    )
+    assert not undeclared, undeclared
+
+    # a structural input is never a leaf the registry has never heard of
+    assert not _orphaned_structural_inputs(
+        structural, shown, CONTRACT_PROJECTION_REGISTRY
+    )
+
+
+def _declared_collections(registry: tuple[ContractRegion, ...]) -> set[str]:
+    return {
+        reference.split("/")[1]
+        for region in registry
+        for reference in region.authority
+        if reference.startswith("/")
+    }
+
+
+def _orphaned_structural_inputs(
+    structural: dict[str, frozenset[str]],
+    shown: dict[str, frozenset[str]],
+    registry: tuple[ContractRegion, ...],
+) -> list[str]:
+    """Structural inputs whose collection no region declares at all."""
+    collections = _declared_collections(registry)
+    return sorted(
+        path
+        for path, regions in structural.items()
+        if regions and not shown[path] and path.split("/")[1] not in collections
+    )
+
+
+def test_the_structural_input_rule_can_be_violated() -> None:
+    """A rule nothing can break is a sentence, not a rule.
+
+    Every `corpus_files` filename is a structural input: the section-1 sentence
+    searches the ledger by filename, so removing any one of them stops the
+    renderer without changing a word. They are accounted for because the region
+    declares two pointers into that collection. Take both away and the nine
+    become orphaned -- which is the state the rule exists to refuse.
+    """
+    shown, structural = _document_consumers()
+    assert not _orphaned_structural_inputs(
+        structural, shown, CONTRACT_PROJECTION_REGISTRY
+    )
+
+    stripped = tuple(
+        region._replace(
+            authority=tuple(
+                reference
+                for reference in region.authority
+                if not reference.startswith("/corpus_files/")
+            )
+        )
+        if region.region_id == "s1.scope-warning"
+        else region
+        for region in CONTRACT_PROJECTION_REGISTRY
+    )
+    assert "corpus_files" not in _declared_collections(stripped)
+    orphaned = _orphaned_structural_inputs(structural, shown, stripped)
+    assert orphaned == [f"/corpus_files/{index}/filename" for index in range(9)]
+
+
+def test_the_declaration_universe_is_partitioned_by_what_the_document_shows() -> None:
+    """Projected, structural, unseen -- exhaustive, disjoint, and counted."""
+    shown, structural = _document_consumers()
+    universe = _declaration_universe()
+
+    projected = {path for path, regions in shown.items() if regions}
+    structural_only = {
+        path for path, regions in structural.items() if regions and not shown[path]
+    }
+    unseen = set(universe) - projected - structural_only
+
+    # the sweep and the universe must be over the same leaves: if `_leaf_slots`
+    # and `_leaf_paths` ever diverged, the three classes would silently be a
+    # partition of something else
+    assert set(shown) == set(structural) == set(universe)
+    assert projected | structural_only | unseen == set(universe)
+    assert len(universe) == 386
+    assert len(projected) == 151
+    assert len(structural_only) == 11
+    assert len(unseen) == 224
+    # the meta-schema stays outside the universe it classifies
+    assert not set(shown) & set(_meta_schema_leaf_paths())
+
+    # more than one consumer is allowed and is never silent: each is declared
+    multiple = {
+        path: sorted(regions) for path, regions in shown.items() if len(regions) > 1
+    }
+    assert len(multiple) == 11
+    for path, regions in multiple.items():
+        assert set(regions) <= _declared_consumers(path), path
+
+
+def test_a_leaf_the_document_shows_cannot_be_dropped_from_the_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rule is not vacuous: remove a declaration and the sweep says so.
+
+    The registry itself is replaced with one governance pointer missing, and the
+    same functions the rule uses are asked again. A local reimplementation of
+    the matching would only have proved that this test agrees with itself.
+    """
+    path = "/effective_governance/dispositioned_exactly_once"
+    shown, _structural = _document_consumers()
+    assert shown[path] == frozenset({"s7.governance-block"})
+    assert _declared_consumers(path) == {"s7.governance-block"}
+
+    stripped = tuple(
+        region._replace(
+            authority=tuple(
+                reference for reference in region.authority if reference != path
+            )
+        )
+        if region.region_id == "s7.governance-block"
+        else region
+        for region in CONTRACT_PROJECTION_REGISTRY
+    )
+    monkeypatch.setitem(globals(), "CONTRACT_PROJECTION_REGISTRY", stripped)
+
+    # the block still prints the number, so the leaf is still document-facing --
+    # and now no region declares it, which is exactly the failure the rule names
+    shown, _structural = _document_consumers()
+    assert shown[path] == frozenset({"s7.governance-block"})
+    assert _declared_consumers(path) == set()
+    undeclared = sorted(
+        (leaf, sorted(regions - _declared_consumers(leaf)))
+        for leaf, regions in shown.items()
+        if regions - _declared_consumers(leaf)
+    )
+    assert undeclared == [(path, ["s7.governance-block"])]
+
+
+# --- the claim ledger, closed by partition rather than by row matching -------
+#
+# A document-projection audit taken before step 1 recorded roughly a hundred
+# claim units and their gaps, and step 4 owes that ledger a final disposition
+# for each. The sheet itself was an out-of-band artifact and its row numbering
+# is not reconstructible: the one identifier that survives in this module,
+# `S8-U12`, denotes `/non_goals/22`, which is not the twelfth unit under any
+# line-order numbering of section 8. Inventing a numbering that collided with
+# it would falsify a comment that is currently correct.
+#
+# So the ledger is closed the only way it honestly can be -- by exhaustion. The
+# document is partitioned line for line, every semantic line carries the three
+# declared axes of the region that owns it, and no line is left over. Any unit
+# the audit could have named is a line of this document, so every unit has a
+# disposition whether or not its old row number can be recovered.
+#
+# Exactly one audit identifier survives in this repository: `S8-U12`, in the
+# step-3 comment and docstring above, and it is located below by name. The
+# product-surface lead-in was discussed on the pull request as `S2-U1a` /
+# `S2-U1b`; those labels appear nowhere in the repository, so that row is
+# located by content rather than by a number this module would be inventing.
+
+
+def _document_claim_units() -> list[tuple[int, str, str, str, str]]:
+    """`(line, owner, projection kind, epistemic kind, assurance)` per unit."""
+    units: list[tuple[int, str, str, str, str]] = []
+    for index, (_line, kind, owner) in enumerate(_document_partition(), start=1):
+        if kind == "BLOCK_SEPARATOR":
+            continue
+        if kind == "REGION":
+            region = _region(owner)
+            units.append(
+                (
+                    index,
+                    owner,
+                    region.projection_kind,
+                    region.epistemic_kind,
+                    region.authority_assurance,
+                )
+            )
+        else:
+            units.append((index, owner, "HEADING", "STRUCTURAL", "PUBLISHED_SEQUENCE"))
+    return units
+
+
+def test_every_document_claim_unit_carries_a_final_disposition() -> None:
+    """No unexplained residue: the units are the document, exhaustively."""
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    lines = text.splitlines()
+    units = _document_claim_units()
+
+    # exhaustive over the semantic lines, and only over those
+    assert [line for line, _o, _p, _e, _a in units] == [
+        index for index, line in enumerate(lines, start=1) if line
+    ]
+    assert len(units) == 113
+    assert len({line for line, *_rest in units}) == len(units)
+
+    kinds = Counter(
+        (projection, epistemic, assurance)
+        for _line, _owner, projection, epistemic, assurance in units
+    )
+    assert kinds == {
+        ("HEADING", "STRUCTURAL", "PUBLISHED_SEQUENCE"): 10,
+        ("EXACT", "OBJECTIVE", "INDEPENDENTLY_VERIFIED"): 71,
+        ("EXACT", "OBJECTIVE", "CANONICAL_DECLARATION_ONLY"): 27,
+        ("EXACT", "DESCRIPTIVE", "CANONICAL_DECLARATION_ONLY"): 5,
+    }
+    # nothing is projected exactly and called explanatory, or the reverse
+    for _line, owner, projection, epistemic, _assurance in units:
+        if projection == "HEADING":
+            continue
+        assert projection in PROJECTION_KINDS, owner
+        assert epistemic in EPISTEMIC_KINDS, owner
+        assert (projection == "EXPLANATORY") == (epistemic == "EXPLANATORY"), owner
+
+
+def test_the_audit_rows_still_named_land_in_classified_regions() -> None:
+    """The rows the record still names, located in the final partition.
+
+    `S8-U12` is the one identifier this repository carries, so it is asserted by
+    name. The product-surface lead-in is located by content, because no
+    identifier for it exists outside the pull request discussion.
+    """
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    lines = text.splitlines()
+    located = {line: owner for line, owner, *_rest in _document_claim_units()}
+
+    # the two counts in the product-surface lead-in
+    lead_in = next(
+        line
+        for line, raw in enumerate(lines, start=1)
+        if "production modules and" in raw
+    )
+    assert located[lead_in] == "s2.surface-lead-in"
+    assert _region("s2.surface-lead-in").authority == (
+        "/scope/production_modules",
+        "/scope/phase",
+        "/target_symbols",
+    )
+
+    # S8-U12: the S1.P09 deflection, projected exactly and verified by nobody
+    deflection = next(
+        line
+        for line, raw in enumerate(lines, start=1)
+        if raw == f"- {MANIFEST['non_goals'][22]}"
+    )
+    assert located[deflection] == "s8.non-goals"
+    assert ("s8.p09-deflection", "s8.non-goals", "", "EXTERNAL_AUTHORITY_DEFERRED") in (
+        EXTERNAL_CLAIMS
+    )
+
+    # every external claim still names a region the partition actually owns
+    owners = set(located.values())
+    for _claim_id, region_id, _authority, _assurance in EXTERNAL_CLAIMS:
+        assert region_id in owners, region_id
 
 
 # --- every `missing` error, partitioned by what the input actually says ------
