@@ -8772,11 +8772,15 @@ SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
 # later widening or narrowing has to move a test rather than a sentence.
 #
 #   FAIL-CLOSED -- a line CommonMark would not call a heading is read as one,
-#   so the document is refused rather than admitted. Anything nonblank above a
-#   `---` is treated as setext content, so a thematic break, an HTML block, a
-#   link reference definition and an indented code line all underline; and the
-#   underline is matched by container DEPTH, not container identity, so a `---`
-#   one container over underlines the paragraph above it.
+#   so the document is refused rather than admitted. A nonblank line above a
+#   `---` is treated as setext content unless it is itself a heading, another
+#   underline or fenced, so a thematic break, an HTML block, a link reference
+#   definition and an indented code line all underline. Containers are matched
+#   by DEPTH rather than identity, both for that underline and for closing a
+#   fence, so a `---` one container over underlines the paragraph above it. And
+#   a list marker is followed by any run of spaces, where CommonMark stops at
+#   four columns and reads the rest as indented code, so `-` and five spaces
+#   before a `## x` is a heading here and code there.
 #
 #   FAIL-OPEN -- CommonMark publishes a heading the model does not report: a
 #   multi-line setext heading is anchored on its last content line rather than
@@ -9674,13 +9678,17 @@ def test_the_bounded_block_model_reads_the_forms_it_claims() -> None:
         ("link definition underlined", "[a]: /b\n---\n", [(0, 0, 2)]),  # none
         # fail-closed: depth is compared, container identity is not
         ("underline one container over", "- item\n> ---\n", [(0, 1, 2)]),  # none
+        # fail-closed: a list marker takes any run of spaces, CommonMark four
+        ("wide list marker", "-      ## x\n", [(0, 1, 2)]),  # none
+        # ...and a tab after the marker is a heading in both, for contrast
+        ("tab after list marker", "-\t## x\n", [(0, 1, 2)]),  # (0, h2)
         # fail-open: reported one line late, or not at all
         ("multi-line setext", "One\nTwo\n---\n", [(1, 0, 2)]),  # (0, h2)
         ("paragraph of dashes only", "===\n---\n", []),  # (0, h2)
         ("four-column continuation", "-\n    ## x\n", []),  # (1, h2)
         ("bare dash in a blockquote", "> quote\n> -\n", []),  # (0, h2)
     )
-    assert len(excluded) == 9
+    assert len(excluded) == 11
     for label, sample, expected in excluded:
         observed = [(i, d, level) for i, d, level, _raw in _markdown_headings(sample)]
         assert observed == expected, label
@@ -11954,7 +11962,7 @@ def _leaf_slots(
     return [(prefix, parent, key)]
 
 
-# One sweep per registry, because three tests ask the same pure question of the
+# One sweep per registry, because six tests ask the same pure question of the
 # same 386 leaves and this module is the project's fastest feedback loop. The
 # key is the registry itself: the probes below hand in a modified one and must
 # get a fresh answer rather than this one.
