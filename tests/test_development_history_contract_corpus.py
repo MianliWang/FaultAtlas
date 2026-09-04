@@ -16101,6 +16101,74 @@ def test_every_declared_purpose_leaf_and_field_moves_its_own_fragment(
     assert not inert, inert
 
 
+# What binds each authority form to the code that spends it. Three findings in
+# a row were the same shape -- a form checked for EXISTENCE rather than for
+# being read -- so the forms are enumerated against the resolver's own table and
+# each one has to name its binding. A form arriving with none is the defect.
+PURPOSE_AUTHORITY_BINDINGS: dict[str, str] = {
+    "embedded-fact": "PURPOSE_EMBEDDED_FACT_SELECTORS",
+    "evidence-classification": "PURPOSE_SCALAR_FIELDS",
+    "evidence-record-lock": "PURPOSE_SCALAR_FIELDS",
+    "expected": "the cited leaf is perturbed and the fragment must move",
+    "input": "the cited leaf is perturbed and the fragment must move",
+    "input_mode": "PURPOSE_SCALAR_FIELDS",
+    "literal": "no source: admitted only as CANONICAL_DECLARATION_ONLY",
+    "manifest": "PURPOSE_MANIFEST_POINTERS",
+    "requirement": "REQUIREMENT_LEDGER, whose row must witness this vector",
+    "secondary-witness": "SECONDARY_WITNESS_REGISTRY, re-derived from the vector",
+    "source-decision-role": "REQUIRED_SOURCE_DECISION_BY_REFERENCE and the vector lock",
+    "source-pointer": "PURPOSE_SOURCE_POINTER_SELECTORS",
+    "target": "PURPOSE_SCALAR_FIELDS",
+}
+
+_AUTHORITY_SELECTOR_TABLES: dict[str, tuple[str, ...]] = {
+    "PURPOSE_SOURCE_POINTER_SELECTORS": ("source-pointer",),
+    "PURPOSE_EMBEDDED_FACT_SELECTORS": ("embedded-fact",),
+    "PURPOSE_MANIFEST_POINTERS": ("manifest",),
+    "PURPOSE_SCALAR_FIELDS": (
+        "target",
+        "input_mode",
+        "evidence-classification",
+        "evidence-record-lock",
+    ),
+}
+
+
+def test_every_authority_form_is_bound_to_the_code_that_reads_it() -> None:
+    """No form may be satisfied by existing, which was the whole defect class.
+
+    Every live form is enumerated against the resolver's own assurance table, so
+    a form cannot arrive without a binding; each table-bound form must have an
+    entry for every renderer that carries it and no entry it does not; and an
+    unrecognised form is still refused outright.
+    """
+    assert set(PURPOSE_AUTHORITY_BINDINGS) == set(REQUIRED_ASSURANCE_BY_AUTHORITY_FORM)
+
+    for table, forms in sorted(_AUTHORITY_SELECTOR_TABLES.items()):
+        declared = cast(dict[str, Any], globals()[table])
+        assert declared, table
+        carried = {
+            claim.renderer
+            for claims in PURPOSE_SEMANTICS.values()
+            for claim in claims
+            if _authority_form(claim.authority) in forms
+        }
+        # every renderer carrying one of these forms declares what it reads,
+        # and no row of the table is dead
+        assert carried == set(declared), (table, sorted(carried ^ set(declared)))
+        assert all(PURPOSE_AUTHORITY_BINDINGS[form] == table for form in forms), table
+
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == CORRECTION_PURPOSE_VECTOR)
+    unknown = PurposeClaim(
+        CANONICAL_DECLARATION_ONLY,
+        "replay:evidence_link_non_claim",
+        "roadmap:/s1/p05/s09",
+    )
+    assert _purpose_authority_failures(vector, "replay", unknown) == [
+        "unrecognised-authority"
+    ]
+
+
 def test_a_composed_binding_claim_may_not_name_a_selected_path() -> None:
     """The composition counts its bindings; the paths it chose are not those."""
     identifier = "history.replay.change-set.supplied-three-paths"
