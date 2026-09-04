@@ -11538,6 +11538,41 @@ def test_a_section_dropped_from_the_tiling_is_refused() -> None:
 # --- every way to publish an unowned line, refused --------------------------
 
 
+# What the projection must report for each smuggled line: the line it first
+# disagrees on, why, and which registered owner it had put there. Pinning the
+# codomain of those three would have proved nothing -- a diagnostic returning a
+# constant wrong answer satisfies it -- so each row carries its own triple.
+DOCUMENT_MUTATION_REPORTS: dict[str, tuple[int, str, str]] = {
+    "preamble prose": (3, "section_heading-differs", SECTION_ONE),
+    "preamble bullet": (3, "section_heading-differs", SECTION_ONE),
+    "preamble blockquote": (3, "section_heading-differs", SECTION_ONE),
+    "preamble indented": (3, "section_heading-differs", SECTION_ONE),
+    "preamble fenced": (3, "section_heading-differs", SECTION_ONE),
+    "preamble html comment": (3, "section_heading-differs", SECTION_ONE),
+    "preamble table": (3, "section_heading-differs", SECTION_ONE),
+    "trailing prose": (145, "line-outside-every-region", "END_OF_DOCUMENT"),
+    "trailing bullet": (145, "line-outside-every-region", "END_OF_DOCUMENT"),
+    "after a heading": (73, "region-differs", "s6.rejection-oracle"),
+    "between two regions": (43, "region-differs", "s3.inventory-summary"),
+    "inside the bullet block": (123, "region-differs", "s8.non-goals"),
+    "inside the governance block": (96, "region-differs", "s7.governance-block"),
+    "inside a table": (41, "region-differs", "s3.inventory-table"),
+    "separator deleted": (94, "block_separator-differs", "s7.governance-block"),
+    "separator doubled": (67, "region-differs", "s5.epistemic-split"),
+    "every separator deleted": (2, "block_separator-differs", DOCUMENT_TITLE),
+    "trailing separator": (145, "line-outside-every-region", "END_OF_DOCUMENT"),
+    "a table row moved to another section": (
+        27,
+        "region-differs",
+        "s3.inventory-table",
+    ),
+    "a table row duplicated": (145, "line-outside-every-region", "END_OF_DOCUMENT"),
+    "a table row deleted": (144, "projected-line-missing", "s9.authority-table"),
+    "list-nested heading": (128, "region-differs", "s8.non-goals"),
+    "blockquote heading": (136, "section_heading-differs", SECTION_NINE),
+}
+
+
 def _document_mutations(text: str) -> list[tuple[str, str]]:
     """`(label, tampered document)` for each way a line could be smuggled in."""
     claim = "In practice this corpus publishes a complete development-history graph."
@@ -11636,29 +11671,19 @@ def test_no_line_can_be_published_outside_the_registry() -> None:
     # positive control: the published document is what the registry projects
     assert _document_closure_failures(text) == []
     assert len(mutations) == 23
+    assert {label for label, _t in mutations} == set(DOCUMENT_MUTATION_REPORTS)
 
-    attributed: dict[str, tuple[str, str]] = {}
+    registered = {region.region_id for region in CONTRACT_PROJECTION_REGISTRY}
     for label, tampered in mutations:
         assert tampered != text, label
         failures = _document_closure_failures(tampered)
         assert failures, label
-        _line, reason, owner = failures[0]
-        attributed[label] = (reason, owner)
-
-    registered = {region.region_id for region in CONTRACT_PROJECTION_REGISTRY}
-    for label, (reason, owner) in sorted(attributed.items()):
-        assert reason in (
-            "line-outside-every-region",
-            "projected-line-missing",
-            "region-differs",
-            "block_separator-differs",
-            "section_heading-differs",
-            "document_title-differs",
-        ), (label, reason)
+        assert failures[0] == DOCUMENT_MUTATION_REPORTS[label], label
+        _line, _reason, owner = failures[0]
         assert (
             owner in registered
             or owner in CONTRACT_HEADINGS
-            or owner == ("END_OF_DOCUMENT")
+            or owner == "END_OF_DOCUMENT"
         ), (label, owner)
 
     # the title band is refused by its own region, not only by the whole-document
@@ -11669,6 +11694,18 @@ def test_no_line_can_be_published_outside_the_registry() -> None:
             line, _reason, _owner = _document_closure_failures(tampered)[0]
             # reported inside the title band, above the first section heading
             assert line <= 4, (label, line)
+
+
+# Where the projection first disagrees for each placement. A contradiction is
+# an ordinary added line as far as the structure is concerned, so the report is
+# the same whichever sentence is smuggled -- which is the honest claim, and is
+# what these pins say.
+CONTRADICTION_REPORTS: dict[str, tuple[int, str, str]] = {
+    "preamble": (3, "section_heading-differs", SECTION_ONE),
+    "after the first heading": (5, "region-differs", "s1.scope-warning"),
+    "mid document": (67, "region-differs", "s5.epistemic-split"),
+    "after the last table": (145, "line-outside-every-region", "END_OF_DOCUMENT"),
+}
 
 
 def test_a_contradiction_beside_a_correct_projection_is_refused() -> None:
@@ -11720,22 +11757,18 @@ def test_a_contradiction_beside_a_correct_projection_is_refused() -> None:
             if not failures:
                 silent.append((where, claim))
                 continue
-            _line, reason, owner = failures[0]
-            assert reason != "", (claim, where)
+            # the same attribution the smuggling probes require, per placement
+            assert failures[0] == CONTRADICTION_REPORTS[where], (claim, where)
+            _line, _reason, owner = failures[0]
             assert (
                 owner in registered
                 or owner in CONTRACT_HEADINGS
-                or owner == ("END_OF_DOCUMENT")
+                or owner == "END_OF_DOCUMENT"
             ), (claim, where, owner)
     assert not silent, silent
     # the matrix is what the docstring says it is: a quarter of it may not go
     # missing because a tuple was edited
-    assert placements == {
-        "preamble",
-        "after the first heading",
-        "mid document",
-        "after the last table",
-    }
+    assert placements == set(CONTRADICTION_REPORTS)
     assert len(contradictions) == 8
     assert len(contradictions) * len(placements) == 32
 
