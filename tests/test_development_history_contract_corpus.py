@@ -15,7 +15,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from types import UnionType
-from typing import Any, NamedTuple, Union, cast, get_origin
+from typing import Any, NamedTuple, SupportsIndex, Union, cast, get_origin
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -16872,6 +16872,56 @@ class _TracedMapping(dict[str, Any]):
     def values(self) -> Any:
         return [self[key] for key in self._raw]
 
+    def setdefault(self, key: Any, default: Any = None) -> Any:
+        return self[key] if key in self._raw else default
+
+    def pop(self, key: Any, *default: Any) -> Any:
+        if key in self._raw:
+            return self[key]
+        if default:
+            self._record()
+            return default[0]
+        raise KeyError(key)
+
+    def popitem(self) -> Any:
+        key = next(reversed(list(self._raw)))
+        return (key, self[key])
+
+    def copy(self) -> Any:
+        return dict(self.items())
+
+    def __reversed__(self) -> Any:
+        self._record()
+        return reversed(list(self._raw))
+
+    def __eq__(self, other: object) -> bool:
+        self._record()
+        return self._raw == other
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    def __or__(self, other: Any) -> Any:
+        return dict(self.items()) | other
+
+    def __ror__(self, other: Any) -> Any:
+        return other | dict(self.items())
+
+    def clear(self) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def __delitem__(self, key: Any) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def __ior__(self, other: Any) -> Any:
+        raise AssertionError("a renderer may not mutate the corpus")
+
 
 class _TracedSequence(list[Any]):
     """A sequence that records the coordinate of every element taken out of it."""
@@ -16917,6 +16967,81 @@ class _TracedSequence(list[Any]):
         self._record()
         return value in self._raw
 
+    def __reversed__(self) -> Any:
+        self._record()
+        return reversed(
+            [
+                _traced(value, self._coordinate(position), self._seen)
+                for position, value in enumerate(self._raw)
+            ]
+        )
+
+    def copy(self) -> Any:
+        return list(self)
+
+    def pop(self, index: SupportsIndex = -1) -> Any:
+        return self[index]
+
+    def index(self, *args: Any) -> int:
+        self._record()
+        return self._raw.index(*args)
+
+    def count(self, value: Any) -> int:
+        self._record()
+        return self._raw.count(value)
+
+    def __eq__(self, other: object) -> bool:
+        self._record()
+        return self._raw == other
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    def __add__(self, other: Any) -> Any:
+        return list(self) + other
+
+    def __radd__(self, other: Any) -> Any:
+        return other + list(self)
+
+    def __mul__(self, count: SupportsIndex) -> Any:
+        return list(self) * count
+
+    def __rmul__(self, count: SupportsIndex) -> Any:
+        return list(self) * count
+
+    def append(self, value: Any) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def extend(self, values: Any) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def insert(self, index: SupportsIndex, value: Any) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def remove(self, value: Any) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def clear(self) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def sort(self, **kwargs: Any) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def reverse(self) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def __setitem__(self, index: Any, value: Any) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def __delitem__(self, index: Any) -> None:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def __iadd__(self, other: Any) -> Any:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def __imul__(self, count: SupportsIndex) -> Any:
+        raise AssertionError("a renderer may not mutate the corpus")
+
 
 def _smallest_coordinates(seen: set[str]) -> tuple[str, ...]:
     """Drop a collection coordinate when something under it was also read."""
@@ -16933,6 +17058,107 @@ def _smallest_coordinates(seen: set[str]) -> tuple[str, ...]:
             )
         )
     )
+
+
+# Accessors the proxies do not override, and why each cannot leak an untraced
+# value. Ordering comparisons hand back a bool over the whole container and
+# never a child; `fromkeys` is a constructor that builds a plain dict from keys
+# the caller already has. Everything else on `dict` and `list` either records
+# what it hands out or refuses, and the test below keeps that list closed.
+_TRACED_UNGUARDED = {
+    "__lt__": "an ordering comparison returns a bool, never a member",
+    "__le__": "an ordering comparison returns a bool, never a member",
+    "__gt__": "an ordering comparison returns a bool, never a member",
+    "__ge__": "an ordering comparison returns a bool, never a member",
+    "fromkeys": "a constructor over keys the caller already holds",
+}
+
+
+def test_no_container_accessor_can_hand_out_an_untraced_value() -> None:
+    """A recorder with an unguarded accessor is a recorder with a hole.
+
+    Five did leak before this list was closed: a sequence's `reversed`, `copy`
+    and `pop` handed back the raw member, a mapping's `setdefault` did the same,
+    and an equality test read the whole container without recording it. So the
+    public surface of `dict` and `list` is enumerated rather than sampled, and
+    every name must be overridden or excused here by name.
+    """
+    surface = {
+        "__getitem__",
+        "__setitem__",
+        "__delitem__",
+        "__iter__",
+        "__reversed__",
+        "__len__",
+        "__contains__",
+        "__eq__",
+        "__ne__",
+        "__or__",
+        "__ror__",
+        "__ior__",
+        "__add__",
+        "__radd__",
+        "__mul__",
+        "__rmul__",
+        "__iadd__",
+        "__imul__",
+        "__lt__",
+        "__le__",
+        "__gt__",
+        "__ge__",
+    }
+    for base, proxy in ((dict, _TracedMapping), (list, _TracedSequence)):
+        names = {
+            name for name in dir(base) if not name.startswith("__") or name in surface
+        }
+        unguarded = {name for name in names if name not in proxy.__dict__}
+        assert unguarded == set(_TRACED_UNGUARDED) & names, (base.__name__, unguarded)
+
+    # and the five that leaked are closed, each checked through the proxy
+    vector = next(
+        v for v in REPLAY["vectors"] if v["id"] == "history.replay.role-binding.base"
+    )
+    comparison = "source-pointer:/observations/comparison"
+    reads: tuple[tuple[str, Callable[[Any], Any]], ...] = (
+        (
+            "reversed",
+            lambda w: list(reversed(w["source_pointers"]))[-1]["json_pointer"],
+        ),
+        ("copy", lambda w: w["source_pointers"].copy()[0]["json_pointer"]),
+        ("pop", lambda w: w["source_pointers"].pop(0)["json_pointer"]),
+        ("concatenate", lambda w: (w["source_pointers"] + [])[0]["json_pointer"]),
+        (
+            "setdefault",
+            lambda w: w["source_pointers"][0].setdefault("json_pointer", ""),
+        ),
+    )
+    for label, read in reads:
+        seen: set[str] = set()
+        read(_TracedMapping(vector, None, seen))
+        assert comparison in _smallest_coordinates(seen), label
+
+    # a container read as a whole records the container, not nothing
+    whole: tuple[tuple[str, Callable[[Any], Any]], ...] = (
+        ("equality", lambda w: w["input"] == {}),
+        ("length", lambda w: len(w["input"])),
+        ("membership", lambda w: "role_assignment" in w["input"]),
+    )
+    for label, read in whole:
+        seen = set()
+        read(_TracedMapping(vector, None, seen))
+        assert _smallest_coordinates(seen) == ("input:",), label
+
+    # the corpus is read-only under tracing: a renderer that mutates is refused
+    mutations: tuple[tuple[str, Callable[[Any], Any]], ...] = (
+        ("append", lambda w: w["source_pointers"].append(1)),
+        ("assign", lambda w: w["input"].__setitem__("x", 1)),
+        ("update", lambda w: w["input"].update({"x": 1})),
+        ("delete", lambda w: w["input"].__delitem__("role_assignment")),
+        ("sort", lambda w: w["source_pointers"].sort()),
+    )
+    for label, mutate in mutations:
+        with pytest.raises(AssertionError):
+            mutate(_TracedMapping(vector, None, set()))
 
 
 def _traced_dependencies(
