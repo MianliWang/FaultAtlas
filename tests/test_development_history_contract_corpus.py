@@ -13116,11 +13116,27 @@ PURPOSE_ASSURANCE_CLASSES = (
 
 
 class PurposeClaim(NamedTuple):
-    """One claim a purpose makes, its strength, and what answers for it."""
+    """One claim a purpose makes, its strength, what answers for it, and what
+    it is built from.
+
+    `authority` and `dependencies` are different questions and are kept apart.
+    The authority says WHY this fragment is admitted and how strongly -- a
+    requirement identity, a retained coordinate, a locked source decision. The
+    dependencies are the complete set of structured inputs whose values decide
+    which fragment is rendered. A requirement identity can be the authority
+    while an input leaf merely parameterizes the authored gloss it selects;
+    that leaf is a dependency and not a second claim.
+
+    A claim stays one coherent language fragment. "The canonical base binding
+    of pull request 4414" is one claim even though it is built from two leaves,
+    and splitting it per leaf would describe the implementation rather than the
+    sentence.
+    """
 
     assurance: str
     renderer: str
     authority: str
+    dependencies: tuple[str, ...] = ()
 
 
 # ---- valid family renderers ---------------------------------------------
@@ -14240,12 +14256,21 @@ def _pR_short(digest: str) -> str:
 
 
 def _pR_authority_role(reference: str) -> str:
-    entry = next(
+    """The role of the one source decision carrying this reference.
+
+    The whole collection is scanned and exactly one match required, rather than
+    stopping at the first. A short-circuiting search reads a different prefix of
+    the list when the list is reordered, and `source_decisions` ordering is
+    semantically neutral -- so the inputs this fragment rests on would move
+    without its meaning moving, and a duplicated reference would pass.
+    """
+    matches = [
         row
-        for row in MANIFEST["source_decisions"]
+        for row in cast(list[dict[str, Any]], MANIFEST["source_decisions"])
         if row["decision_reference"] == reference
-    )
-    return str(entry["authority_role"])
+    ]
+    assert len(matches) == 1, reference
+    return str(matches[0]["authority_role"])
 
 
 def _PR_retained_role_binding_fact(vector: dict[str, Any], family: str) -> str:
@@ -14379,6 +14404,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:role_binding_canonical",
             "input:/role_assignment/role",
+            (
+                "input:/pull_request/repository_scoped_number",
+                "input:/role_assignment/role",
+            ),
         ),
     ),
     "history.valid.role-binding.head-canonical": (
@@ -14386,6 +14415,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:role_binding_canonical",
             "input:/role_assignment/role",
+            (
+                "input:/pull_request/repository_scoped_number",
+                "input:/role_assignment/role",
+            ),
         ),
     ),
     "history.valid.status.added": (
@@ -14393,6 +14426,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:status_member",
             "expected:/semantic_dump",
+            ("expected:/semantic_dump",),
         ),
     ),
     "history.valid.status.modified": (
@@ -14400,6 +14434,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:status_member",
             "expected:/semantic_dump",
+            ("expected:/semantic_dump",),
         ),
     ),
     "history.valid.changed-path.added": (
@@ -14407,6 +14442,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:changed_path_canonical",
             "input:/status",
+            (
+                "input:/path",
+                "input:/status",
+            ),
         ),
     ),
     "history.valid.changed-path.modified": (
@@ -14414,6 +14453,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:changed_path_canonical",
             "input:/status",
+            (
+                "input:/path",
+                "input:/status",
+            ),
         ),
     ),
     "history.valid.change-set.canonical-three-paths": (
@@ -14421,6 +14464,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:change_set_supplied_count",
             "input:/changed_paths",
+            ("input:/changed_paths",),
         ),
     ),
     "history.valid.change-set.single-path-minimum": (
@@ -14428,6 +14472,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:change_set_minimum",
             "input:/changed_paths",
+            ("input:/changed_paths",),
         ),
     ),
     "history.valid.change-set.supplied-order-preserved": (
@@ -14435,6 +14480,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "valid:requirement_sentence",
             "requirement:CS-18",
+            ("field:id",),
         ),
     ),
     "history.valid.change-set.maximum-changed-paths": (
@@ -14442,6 +14488,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:change_set_maximum",
             "input:/changed_paths/indexed_value/count",
+            ("input:/changed_paths/indexed_value/count",),
         ),
     ),
     "history.valid.approval.canonical": (
@@ -14449,6 +14496,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:approval_canonical",
             "input:/review/provider_global_id",
+            (
+                "input:/approved_revision/full_digest",
+                "input:/review/provider_global_id",
+            ),
         ),
     ),
     "history.valid.approval.revision-need-not-be-head": (
@@ -14456,6 +14507,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "valid:requirement_sentence",
             "requirement:RA-04",
+            ("field:id",),
         ),
     ),
     "history.valid.merge-outcome.canonical": (
@@ -14463,6 +14515,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:merge_outcome_canonical",
             "input:/merge_revision/full_digest",
+            (
+                "input:/merge_revision/full_digest",
+                "input:/pull_request/repository_scoped_number",
+            ),
         ),
     ),
     "history.valid.merge-outcome.revision-independent-of-head": (
@@ -14470,6 +14526,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "valid:requirement_sentence",
             "requirement:MO-04",
+            ("field:id",),
         ),
     ),
     "history.valid.head-ref-deletion.canonical": (
@@ -14477,6 +14534,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:head_ref_deletion_canonical",
             "input:/head_ref_name",
+            ("input:/head_ref_name",),
         ),
     ),
     "history.valid.occurrence-time.approval": (
@@ -14484,6 +14542,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:occurrence_instant",
             "input:/occurred_at",
+            (
+                "input:/occurred_at",
+                "input:/occurrence",
+            ),
         ),
     ),
     "history.valid.occurrence-time.merge": (
@@ -14491,6 +14553,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:occurrence_instant",
             "input:/occurred_at",
+            (
+                "input:/occurred_at",
+                "input:/occurrence",
+            ),
         ),
     ),
     "history.valid.occurrence-time.deletion": (
@@ -14498,6 +14564,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:occurrence_instant",
             "input:/occurred_at",
+            (
+                "input:/occurred_at",
+                "input:/occurrence",
+            ),
         ),
     ),
     "history.valid.occurrence-time.offset-zero-form": (
@@ -14505,6 +14575,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:occurrence_offset_normalisation",
             "input:/occurred_at",
+            (
+                "expected:/semantic_dump/occurred_at",
+                "input:/occurred_at",
+            ),
         ),
     ),
     "history.valid.occurrence-time.equal-instants-allowed": (
@@ -14512,11 +14586,16 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:occurrence_tied_surface",
             "input:/occurred_at",
+            (
+                "input:/occurred_at",
+                "input:/occurrence",
+            ),
         ),
         PurposeClaim(
             REQUIREMENT_DERIVED,
             "valid:requirement_sentence",
             "requirement:OT-06",
+            ("field:id",),
         ),
     ),
     "history.valid.evidence-link.role-binding-json": (
@@ -14524,6 +14603,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_json_fact",
             "input:/fact",
+            ("input:/fact",),
         ),
     ),
     "history.valid.evidence-link.changed-path-json": (
@@ -14531,6 +14611,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_json_fact",
             "input:/fact",
+            ("input:/fact",),
         ),
     ),
     "history.valid.evidence-link.review-approval-json": (
@@ -14538,6 +14619,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_json_fact",
             "input:/fact",
+            ("input:/fact",),
         ),
     ),
     "history.valid.evidence-link.merge-outcome-json": (
@@ -14545,6 +14627,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_json_fact",
             "input:/fact",
+            ("input:/fact",),
         ),
     ),
     "history.valid.evidence-link.head-ref-deletion-json": (
@@ -14552,6 +14635,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_json_fact",
             "input:/fact",
+            ("input:/fact",),
         ),
     ),
     "history.valid.evidence-link.occurrence-time-json": (
@@ -14559,6 +14643,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_json_fact",
             "input:/fact",
+            ("input:/fact",),
         ),
     ),
     "history.valid.evidence-link.role-binding-python": (
@@ -14566,6 +14651,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_python_fact",
             "input:/fact/typed_value/target",
+            ("input:/fact/typed_value/target",),
         ),
     ),
     "history.valid.evidence-link.changed-path-python": (
@@ -14573,6 +14659,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_python_fact",
             "input:/fact/typed_value/target",
+            ("input:/fact/typed_value/target",),
         ),
     ),
     "history.valid.evidence-link.review-approval-python": (
@@ -14580,6 +14667,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_python_fact",
             "input:/fact/typed_value/target",
+            ("input:/fact/typed_value/target",),
         ),
     ),
     "history.valid.evidence-link.merge-outcome-python": (
@@ -14587,6 +14675,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_python_fact",
             "input:/fact/typed_value/target",
+            ("input:/fact/typed_value/target",),
         ),
     ),
     "history.valid.evidence-link.head-ref-deletion-python": (
@@ -14594,6 +14683,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_python_fact",
             "input:/fact/typed_value/target",
+            ("input:/fact/typed_value/target",),
         ),
     ),
     "history.valid.evidence-link.occurrence-time-python": (
@@ -14601,6 +14691,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             BEHAVIOUR_DERIVED,
             "valid:evidence_link_python_fact",
             "input:/fact/typed_value/target",
+            ("input:/fact/typed_value/target",),
         ),
     ),
     "history.valid.evidence-link.second-fact-same-record": (
@@ -14608,6 +14699,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "valid:requirement_sentence",
             "requirement:EL-06",
+            ("field:id",),
         ),
     ),
     "history.valid.role-binding.distinct-pull-request": (
@@ -14615,6 +14707,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.role-binding.distinct-revision": (
@@ -14622,6 +14715,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.role-binding.python-typed": (
@@ -14629,6 +14723,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.status.python-enum": (
@@ -14636,6 +14731,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.changed-path.distinct-blob": (
@@ -14643,6 +14739,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.changed-path.python-typed": (
@@ -14650,6 +14747,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.change-set.python-typed": (
@@ -14657,6 +14755,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.approval.python-typed": (
@@ -14664,6 +14763,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.merge-outcome.python-typed": (
@@ -14671,6 +14771,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.head-ref-deletion.distinct-ref-name": (
@@ -14678,6 +14779,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.head-ref-deletion.python-typed": (
@@ -14685,6 +14787,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.occurrence-time.sub-second-preserved": (
@@ -14692,6 +14795,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.occurrence-time.python-typed": (
@@ -14699,6 +14803,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.evidence-link.correction-record": (
@@ -14706,6 +14811,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
     ),
     "history.valid.evidence-link.synthetic-record": (
@@ -14713,11 +14819,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration",
             "literal",
+            ("field:id",),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "valid:canonical_declaration_second",
             "literal",
+            ("field:id",),
         ),
     ),
     # -- 111 invalid vectors --------------------------------------------
@@ -14726,6 +14834,11 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.approval.extra-state": (
@@ -14733,6 +14846,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.approval.extra-submitted-at": (
@@ -14740,6 +14859,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.approval.missing-approved-revision": (
@@ -14747,6 +14872,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.approval.missing-review": (
@@ -14754,6 +14886,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.approval.non-pull-request-parent": (
@@ -14761,6 +14900,15 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "input:/review/kind",
+                "input:/review/parent/kind",
+                "target",
+            ),
         ),
     ),
     "history.invalid.approval.non-review-kind-subject": (
@@ -14768,6 +14916,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RA-03",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.approval.non-review-subject": (
@@ -14775,6 +14927,15 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "input:/review/kind",
+                "input:/review/parent/kind",
+                "target",
+            ),
         ),
     ),
     "history.invalid.approval.untyped-python-approved-revision": (
@@ -14782,6 +14943,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RA-02",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.approval.untyped-python-review": (
@@ -14789,6 +14954,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RA-01",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.above-maximum-changed-paths": (
@@ -14796,6 +14965,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-05",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.base-position-rejects-non-base-role": (
@@ -14803,6 +14976,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-11",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.duplicate-path": (
@@ -14810,6 +14987,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-16",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.empty-changed-paths": (
@@ -14817,6 +14998,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-04",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.equal-base-and-head-revision": (
@@ -14824,6 +15009,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-13",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.extra-complete": (
@@ -14831,6 +15020,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-17",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.head-position-rejects-non-head-role": (
@@ -14838,6 +15031,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-12",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.mismatched-pull-requests": (
@@ -14845,6 +15042,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-10",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.mismatched-revision-algorithms": (
@@ -14852,11 +15053,19 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-14",
+            (
+                "field:id",
+                "target",
+            ),
         ),
         PurposeClaim(
             BEHAVIOUR_DERIVED,
             "invalid:objects_already_match_head",
             "input:/changed_paths",
+            (
+                "input:/changed_paths/0/head_object/algorithm",
+                "input:/head/role_assignment/revision/algorithm",
+            ),
         ),
     ),
     "history.invalid.change-set.missing-base": (
@@ -14864,6 +15073,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-01",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.missing-changed-paths": (
@@ -14871,6 +15084,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-03",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.missing-head": (
@@ -14878,6 +15095,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-02",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.mixed-hash-algorithms": (
@@ -14885,6 +15106,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-15",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.python-list-not-tuple": (
@@ -14892,6 +15117,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-08",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.untyped-python-base": (
@@ -14899,6 +15128,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-06",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.untyped-python-changed-path-element": (
@@ -14906,6 +15139,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-09",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.change-set.untyped-python-head": (
@@ -14913,6 +15150,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-07",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.changed-path.commit-as-head-object": (
@@ -14920,6 +15161,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CP-03",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.changed-path.empty-path": (
@@ -14927,6 +15172,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.changed-path.extra-base-object": (
@@ -14934,6 +15186,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.changed-path.missing-head-object": (
@@ -14941,6 +15199,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.changed-path.missing-path": (
@@ -14948,6 +15213,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.changed-path.missing-status": (
@@ -14955,6 +15227,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.changed-path.raw-python-status": (
@@ -14962,6 +15241,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CP-04",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.changed-path.unknown-status": (
@@ -14969,6 +15252,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.changed-path.untyped-python-head-object": (
@@ -14976,6 +15266,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CP-02",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.changed-path.untyped-python-path": (
@@ -14983,6 +15277,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CP-01",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.change-set-fact": (
@@ -14990,6 +15288,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:EL-04",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.change-set-fact-python": (
@@ -14997,6 +15299,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "input:/fact/typed_value/target",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.changed-path-status-fact": (
@@ -15004,6 +15314,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:EL-05",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.empty-fact-json": (
@@ -15011,6 +15325,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/fact",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-artifact": (
@@ -15018,6 +15340,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-confidence": (
@@ -15025,6 +15353,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-evidence-records": (
@@ -15032,6 +15366,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-json-pointer": (
@@ -15039,6 +15379,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-primary-evidence": (
@@ -15046,6 +15392,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-request-id": (
@@ -15053,6 +15405,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-schema-version": (
@@ -15060,6 +15418,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-strength": (
@@ -15067,6 +15431,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-superseded": (
@@ -15074,6 +15444,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-support-role": (
@@ -15081,6 +15457,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.extra-verification": (
@@ -15088,6 +15470,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.hybrid-fact-json": (
@@ -15095,6 +15483,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/fact",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.instant-basic-format": (
@@ -15102,6 +15498,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/fact/occurred_at",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.instant-naive": (
@@ -15109,6 +15513,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/fact/occurred_at",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.instant-non-zero-offset": (
@@ -15116,6 +15528,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/fact/occurred_at",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.instant-week-date": (
@@ -15123,6 +15543,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/fact/occurred_at",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.malformed-record": (
@@ -15130,6 +15558,11 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.missing-evidence-record": (
@@ -15137,6 +15570,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.missing-fact": (
@@ -15144,6 +15584,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.nested-non-admitted-occurrence": (
@@ -15151,6 +15598,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/fact/occurrence",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.occurrence-time-fact-python": (
@@ -15158,6 +15613,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:EL-02",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.status-fact-python": (
@@ -15165,6 +15624,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "input:/fact/enum_value/target",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.typed-children-mapping-python": (
@@ -15172,6 +15639,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "input:/fact",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.untyped-python-fact": (
@@ -15179,6 +15654,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:EL-01",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.evidence-link.untyped-python-record": (
@@ -15186,6 +15665,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:EL-03",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.head-ref-deletion.base-binding": (
@@ -15193,6 +15676,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:HD-03",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.head-ref-deletion.empty-ref-name": (
@@ -15200,6 +15687,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.head-ref-deletion.extra-namespace": (
@@ -15207,6 +15701,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.head-ref-deletion.missing-head": (
@@ -15214,6 +15714,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.head-ref-deletion.missing-ref-name": (
@@ -15221,6 +15728,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.head-ref-deletion.raw-python-ref-name": (
@@ -15228,6 +15742,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:HD-02",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.head-ref-deletion.refs-prefixed-name": (
@@ -15235,6 +15753,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:HD-04",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.head-ref-deletion.untyped-python-head": (
@@ -15242,6 +15764,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:HD-01",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.merge-outcome.extra-parents": (
@@ -15249,6 +15775,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.merge-outcome.extra-strategy": (
@@ -15256,6 +15788,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.merge-outcome.missing-merge-revision": (
@@ -15263,6 +15801,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.merge-outcome.missing-pull-request": (
@@ -15270,6 +15815,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.merge-outcome.non-pull-request-subject": (
@@ -15277,6 +15829,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:MO-03",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.merge-outcome.tree-as-merge-revision": (
@@ -15284,6 +15840,11 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.merge-outcome.untyped-python-merge-revision": (
@@ -15291,6 +15852,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:MO-02",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.merge-outcome.untyped-python-pull-request": (
@@ -15298,6 +15863,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:MO-01",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.extra-chronology": (
@@ -15305,6 +15874,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.instant-malformed": (
@@ -15312,6 +15887,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.instant-naive": (
@@ -15319,6 +15901,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.instant-negative-offset": (
@@ -15326,6 +15915,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.instant-positive-offset": (
@@ -15333,6 +15929,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:OT-02",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.missing-occurred-at": (
@@ -15340,6 +15940,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.missing-occurrence": (
@@ -15347,11 +15954,23 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
         PurposeClaim(
             BEHAVIOUR_DERIVED,
             "invalid:true_omission_not_union",
             "expected:/error_location_mode",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "input:",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.non-admitted-change-set": (
@@ -15359,6 +15978,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/occurrence",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.non-admitted-changed-path": (
@@ -15366,6 +15993,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/occurrence",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.non-admitted-changed-path-status": (
@@ -15373,6 +16008,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.non-admitted-commit-identity": (
@@ -15380,6 +16022,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/occurrence",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.non-admitted-role-binding": (
@@ -15387,6 +16037,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_location_mode",
+                "expected:/error_type",
+                "field:id",
+                "input:/occurrence",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.raw-python-instant": (
@@ -15394,6 +16052,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.occurrence-time.untyped-python-occurrence": (
@@ -15401,6 +16066,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:OT-01",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.disallowed-revision-role": (
@@ -15408,6 +16077,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RB-04",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.dumped-mapping-python": (
@@ -15415,6 +16088,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "input:/pull_request",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.extra-observed-at": (
@@ -15422,6 +16103,12 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.foreign-python-subject": (
@@ -15429,6 +16116,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "input:/pull_request/typed_value/target",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.missing-pull-request": (
@@ -15436,6 +16131,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.missing-role-assignment": (
@@ -15443,6 +16145,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.non-pull-request-subject": (
@@ -15450,6 +16159,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RB-03",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.null-role-assignment": (
@@ -15457,6 +16170,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.swapped-members": (
@@ -15464,6 +16184,11 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location/0",
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.untyped-python-pull-request": (
@@ -15471,6 +16196,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RB-01",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.role-binding.untyped-python-role-assignment": (
@@ -15478,6 +16207,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RB-02",
+            (
+                "field:id",
+                "target",
+            ),
         ),
     ),
     "history.invalid.status.copied": (
@@ -15485,6 +16218,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.status.not-a-status": (
@@ -15492,6 +16233,11 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:ST-03",
+            (
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.status.removed": (
@@ -15499,6 +16245,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     "history.invalid.status.renamed": (
@@ -15506,6 +16260,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
+            (
+                "expected:/error_location",
+                "expected:/error_type",
+                "expected:/failure_category",
+                "field:id",
+                "input:",
+                "target",
+            ),
         ),
     ),
     # -- 24 replay vectors ----------------------------------------------
@@ -15514,6 +16276,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:retained_role_binding_fact",
             "source-pointer:/observations/comparison",
+            (
+                "expected:/semantic_dump/pull_request/repository_scoped_number",
+                "expected:/semantic_dump/role_assignment/revision/full_digest",
+                "expected:/semantic_dump/role_assignment/role",
+                "source-pointer:/observations/comparison",
+                "source-pointer:/observations/pr/attempts/0/bracket_a",
+                "source-pointer:/observations/repository",
+            ),
         ),
     ),
     "history.replay.role-binding.head": (
@@ -15521,6 +16291,14 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:retained_role_binding_fact",
             "source-pointer:/observations/comparison",
+            (
+                "expected:/semantic_dump/pull_request/repository_scoped_number",
+                "expected:/semantic_dump/role_assignment/revision/full_digest",
+                "expected:/semantic_dump/role_assignment/role",
+                "source-pointer:/observations/comparison",
+                "source-pointer:/observations/pr/attempts/0/bracket_a",
+                "source-pointer:/observations/repository",
+            ),
         ),
     ),
     "history.replay.changed-path.changelog": (
@@ -15528,6 +16306,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:retained_changed_path_fact",
             "source-pointer:/observations/pr/changed_files/items/0",
+            (
+                "expected:/semantic_dump/path",
+                "source-pointer:/observations/pr/changed_files/items/0",
+            ),
         ),
     ),
     "history.replay.changed-path.rewrite": (
@@ -15535,6 +16317,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:retained_changed_path_fact",
             "source-pointer:/observations/pr/changed_files/items/1",
+            (
+                "expected:/semantic_dump/path",
+                "source-pointer:/observations/pr/changed_files/items/1",
+            ),
         ),
     ),
     "history.replay.changed-path.assertrewrite": (
@@ -15542,6 +16328,10 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:retained_changed_path_fact",
             "source-pointer:/observations/pr/changed_files/items/2",
+            (
+                "expected:/semantic_dump/path",
+                "source-pointer:/observations/pr/changed_files/items/2",
+            ),
         ),
     ),
     "history.replay.change-set.supplied-three-paths": (
@@ -15549,11 +16339,18 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_composed_change_set",
             "embedded-fact:/base",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:change_set_completeness_limit",
             "manifest:/replay_contract/evidence_limits/change_set_completeness_claimed",
+            (
+                "manifest:/replay_contract/evidence_limits/change_set_completeness_claimed",
+            ),
         ),
     ),
     "history.replay.review-approval.canonical": (
@@ -15561,6 +16358,11 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:retained_review_approval_fact",
             "source-pointer:/observations/pr/reviews/items/0",
+            (
+                "expected:/semantic_dump/approved_revision/full_digest",
+                "expected:/semantic_dump/review/provider_global_id",
+                "source-pointer:/observations/pr/reviews/items/0",
+            ),
         ),
     ),
     "history.replay.merge-outcome.canonical": (
@@ -15568,11 +16370,16 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:retained_merge_event_fact",
             "source-pointer:/observations/pr/timeline/items/4",
+            (
+                "expected:/semantic_dump/merge_revision/full_digest",
+                "source-pointer:/observations/pr/timeline/items/4",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:merge_revision_absent_surface",
             "manifest:/replay_contract/evidence_limits/merge_revision_source",
+            ("manifest:/replay_contract/evidence_limits/merge_revision_source",),
         ),
     ),
     "history.replay.head-ref-deletion.canonical": (
@@ -15580,6 +16387,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "replay:retained_target_declaration",
             "target",
+            ("target",),
         ),
     ),
     "history.replay.occurrence-time.approval": (
@@ -15587,6 +16395,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:retained_occurrence_instant_fact",
             "source-pointer:/observations/pr/reviews/items/0/submitted_at",
+            (
+                "expected:/semantic_dump/occurred_at",
+                "expected:/semantic_dump/occurrence",
+                "source-pointer:/observations/pr/attempts/0/bracket_a",
+                "source-pointer:/observations/pr/reviews/items/0/submitted_at",
+                "source-pointer:/observations/repository",
+            ),
         ),
     ),
     "history.replay.occurrence-time.merge": (
@@ -15594,6 +16409,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:retained_occurrence_instant_fact",
             "source-pointer:/observations/pr/timeline/items/4/created_at/value",
+            (
+                "expected:/semantic_dump/occurred_at",
+                "expected:/semantic_dump/occurrence",
+                "source-pointer:/observations/pr/attempts/0/bracket_a",
+                "source-pointer:/observations/pr/timeline/items/4/created_at/value",
+                "source-pointer:/observations/repository",
+            ),
         ),
     ),
     "history.replay.occurrence-time.deletion": (
@@ -15601,6 +16423,13 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:retained_occurrence_instant_fact",
             "source-pointer:/observations/pr/timeline/items/6/created_at/value",
+            (
+                "expected:/semantic_dump/occurred_at",
+                "expected:/semantic_dump/occurrence",
+                "source-pointer:/observations/pr/attempts/0/bracket_a/head",
+                "source-pointer:/observations/pr/timeline/items/6/created_at/value",
+                "source-pointer:/observations/repository",
+            ),
         ),
     ),
     "history.replay.evidence-association.base-binding": (
@@ -15608,11 +16437,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.head-binding": (
@@ -15620,11 +16455,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.changed-path-changelog": (
@@ -15632,11 +16473,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.changed-path-rewrite": (
@@ -15644,11 +16491,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.changed-path-assertrewrite": (
@@ -15656,11 +16509,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.review-approval": (
@@ -15668,11 +16527,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.merge-outcome": (
@@ -15680,11 +16545,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.head-ref-deletion": (
@@ -15692,11 +16563,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.occurrence-approval": (
@@ -15704,11 +16581,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.occurrence-merge": (
@@ -15716,11 +16599,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.occurrence-deletion": (
@@ -15728,11 +16617,17 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             PROVENANCE_DERIVED,
             "replay:caller_association_to_locked_record",
             "evidence-record-lock",
+            (
+                "embedded-fact:",
+                "evidence-classification",
+                "evidence-record-lock",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:evidence_link_non_claim",
             "literal",
+            (),
         ),
     ),
     "history.replay.evidence-association.approval-correction-record": (
@@ -15740,11 +16635,21 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             CANONICAL_DECLARATION_ONLY,
             "replay:second_independent_correction_link",
             "source-decision-role:correction:s04-c01-acquisition-closure",
+            (
+                "evidence-record-lock",
+                "manifest:/source_decisions",
+                "source-decision:acquisition:run-0001",
+                "source-decision:closure:s1-p03:evidence-envelope",
+                "source-decision:correction:s04-c01-acquisition-closure",
+                "source-decision:correction:s1-p05-s08-c01:owner-topology",
+                "source-decision:decision:s1-p05-s08:disposition",
+            ),
         ),
         PurposeClaim(
             CANONICAL_DECLARATION_ONLY,
             "replay:supersession_limit",
             "manifest:/replay_contract/evidence_limits/supersession_followed",
+            ("manifest:/replay_contract/evidence_limits/supersession_followed",),
         ),
     ),
 }
@@ -15833,6 +16738,217 @@ PURPOSE_MANIFEST_POINTERS: dict[str, str] = {
     "replay:merge_revision_absent_surface": _PR_MERGE_REVISION_SOURCE_LEAF,
     "replay:supersession_limit": _PR_SUPERSESSION_FOLLOWED_LEAF,
 }
+
+
+# --- what a renderer actually reads, observed rather than restated ----------
+#
+# A declared dependency list that the ledger also writes down would agree with
+# itself. These accessors record the coordinate of every structured value a
+# renderer reads AS IT READS IT, so the declaration is compared with the run.
+#
+# Coordinates are the smallest stable semantic address of what was consumed.
+# A leaf read records the leaf; a collection consumed as a unit -- counted,
+# iterated, tested for membership -- records the collection, and is dropped
+# again if something under it was also read. Entries in an addressed collection
+# are named by their own identity rather than by position, because
+# `source_pointers`, `source_decisions` and `target_symbols` are searched by
+# identity and their order carries no meaning.
+#
+# The traced universe is the two structured corpus surfaces: the vector and the
+# manifest. The requirement ledger and the secondary-witness registry are
+# test-side authored tables that supply a fragment's AUTHORITY, not corpus
+# input, and live product symbols are the live authority rather than corpus
+# data; both are bound by the authority rules above.
+
+_TRACED_SCALAR_FIELDS = {
+    "target": "target",
+    "input_mode": "input_mode",
+    "evidence_classification": "evidence-classification",
+    "evidence_record_lock": "evidence-record-lock",
+}
+_TRACED_ROOT_FORMS = {
+    "input": "input:",
+    "expected": "expected:",
+    "source_pointers": "source-pointer:",
+    "embedded_facts": "embedded-fact:",
+}
+_TRACED_IDENTIFIED_COLLECTIONS = {
+    "source-pointer:": "json_pointer",
+    "manifest:/source_decisions": "decision_reference",
+    "manifest:/target_symbols": "symbol",
+}
+_TRACED_ENTRY_FORMS = (
+    "source-pointer:",
+    "embedded-fact:",
+    "source-decision:",
+    "target-symbol:",
+)
+_TRACED_ENTRY_PREFIXES = {
+    "manifest:/source_decisions": "source-decision:",
+    "manifest:/target_symbols": "target-symbol:",
+}
+
+
+def _traced_is_entry(at: str | None) -> bool:
+    """Whether this coordinate already names one identified entry."""
+    return (
+        at is not None and not at.endswith(":") and at.startswith(_TRACED_ENTRY_FORMS)
+    )
+
+
+def _traced_coordinate(at: str | None, node: Any, key: Any) -> str:
+    if at is None:
+        name = str(key)
+        if name in _TRACED_ROOT_FORMS:
+            return _TRACED_ROOT_FORMS[name]
+        if name in _TRACED_SCALAR_FIELDS:
+            return _TRACED_SCALAR_FIELDS[name]
+        return f"field:{name}"
+    if at == "embedded-fact:":
+        return f"embedded-fact:{key}"
+    identifier = _TRACED_IDENTIFIED_COLLECTIONS.get(at)
+    if identifier is not None:
+        prefix = _TRACED_ENTRY_PREFIXES.get(at, at)
+        return f"{prefix}{cast(dict[str, Any], node[key])[identifier]}"
+    return f"{at}/{key}"
+
+
+def _traced(value: Any, at: str | None, seen: set[str]) -> Any:
+    if isinstance(value, dict):
+        return _TracedMapping(cast(dict[str, Any], value), at, seen)
+    if isinstance(value, list):
+        return _TracedSequence(cast(list[Any], value), at, seen)
+    if at is not None:
+        seen.add(at)
+    return value
+
+
+class _TracedMapping(dict[str, Any]):
+    """A mapping that records the coordinate of every value taken out of it."""
+
+    def __init__(self, node: dict[str, Any], at: str | None, seen: set[str]) -> None:
+        super().__init__(node)
+        self._at = at
+        self._seen = seen
+        self._raw = node
+
+    def _coordinate(self, key: Any) -> str:
+        if _traced_is_entry(self._at):
+            return cast(str, self._at)
+        return _traced_coordinate(self._at, self._raw, key)
+
+    def _record(self) -> None:
+        if self._at is not None:
+            self._seen.add(self._at)
+
+    def __getitem__(self, key: Any) -> Any:
+        return _traced(self._raw[key], self._coordinate(key), self._seen)
+
+    def get(self, key: Any, default: Any = None) -> Any:
+        if key not in self._raw:
+            self._record()
+            return default
+        return self[key]
+
+    def __iter__(self) -> Any:
+        self._record()
+        return iter(self._raw)
+
+    def __len__(self) -> int:
+        self._record()
+        return len(self._raw)
+
+    def __contains__(self, key: object) -> bool:
+        self._record()
+        return key in self._raw
+
+    def keys(self) -> Any:
+        self._record()
+        return self._raw.keys()
+
+    def items(self) -> Any:
+        return [(key, self[key]) for key in self._raw]
+
+    def values(self) -> Any:
+        return [self[key] for key in self._raw]
+
+
+class _TracedSequence(list[Any]):
+    """A sequence that records the coordinate of every element taken out of it."""
+
+    def __init__(self, node: list[Any], at: str | None, seen: set[str]) -> None:
+        super().__init__(node)
+        self._at = at
+        self._seen = seen
+        self._raw = node
+
+    def _coordinate(self, index: Any) -> str:
+        if _traced_is_entry(self._at):
+            return cast(str, self._at)
+        return _traced_coordinate(self._at, self._raw, index)
+
+    def _record(self) -> None:
+        if self._at is not None:
+            self._seen.add(self._at)
+
+    def __getitem__(self, index: Any) -> Any:
+        if isinstance(index, slice):
+            self._record()
+            return [
+                _traced(value, self._coordinate(position), self._seen)
+                for position, value in enumerate(self._raw)
+            ][index]
+        return _traced(self._raw[index], self._coordinate(index), self._seen)
+
+    def __iter__(self) -> Any:
+        self._record()
+        return iter(
+            [
+                _traced(value, self._coordinate(position), self._seen)
+                for position, value in enumerate(self._raw)
+            ]
+        )
+
+    def __len__(self) -> int:
+        self._record()
+        return len(self._raw)
+
+    def __contains__(self, value: object) -> bool:
+        self._record()
+        return value in self._raw
+
+
+def _smallest_coordinates(seen: set[str]) -> tuple[str, ...]:
+    """Drop a collection coordinate when something under it was also read."""
+    return tuple(
+        sorted(
+            coordinate
+            for coordinate in seen
+            if not any(
+                other != coordinate
+                and other.startswith(
+                    coordinate if coordinate.endswith(":") else f"{coordinate}/"
+                )
+                for other in seen
+            )
+        )
+    )
+
+
+def _traced_dependencies(
+    vector: dict[str, Any], family: str, renderer: str
+) -> tuple[str, ...]:
+    """Every structured coordinate this renderer reads for this vector."""
+    seen: set[str] = set()
+    watched_vector = _TracedMapping(vector, None, seen)
+    watched_manifest = _TracedMapping(MANIFEST, "manifest:", seen)
+    original = globals()["MANIFEST"]
+    globals()["MANIFEST"] = watched_manifest
+    try:
+        PURPOSE_RENDERERS[renderer](watched_vector, family)
+    finally:
+        globals()["MANIFEST"] = original
+    return _smallest_coordinates(seen)
 
 
 def _render_purpose(
@@ -16522,6 +17638,232 @@ def _coordinate_claims() -> list[tuple[str, str, dict[str, Any], PurposeClaim]]:
         for claim in PURPOSE_SEMANTICS[identifier]
         if claim.authority.startswith(("source-pointer:", "embedded-fact:"))
     ]
+
+
+def _dependency_failures(
+    ledger: dict[str, tuple[PurposeClaim, ...]],
+) -> list[tuple[str, str]]:
+    """`(vector id, reason)` wherever a claim's declared inputs are not its real ones."""
+    sections = _purpose_sections()
+    vectors = {
+        cast(str, vector["id"]): (family, vector)
+        for family, section in sections.items()
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+    }
+    failures: list[tuple[str, str]] = []
+    for identifier, claims in ledger.items():
+        family, vector = vectors[identifier]
+        for claim in claims:
+            observed = _traced_dependencies(vector, family, claim.renderer)
+            declared = claim.dependencies
+            if tuple(sorted(declared)) != declared:
+                failures.append((identifier, "dependencies-not-in-order"))
+            if len(set(declared)) != len(declared):
+                failures.append((identifier, "dependency-declared-twice"))
+            for coordinate in sorted(set(observed) - set(declared)):
+                failures.append((identifier, f"undeclared-dependency:{coordinate}"))
+            for coordinate in sorted(set(declared) - set(observed)):
+                failures.append((identifier, f"dependency-not-consumed:{coordinate}"))
+    return sorted(failures)
+
+
+def test_every_claim_declares_the_complete_set_of_inputs_it_is_built_from() -> None:
+    """Equality, not membership, and observed rather than restated.
+
+    The finding was that a claim could cite one leaf while its renderer read
+    two: repointing the role-binding authority at the pull-request number left
+    the suite green and dropped the role's provenance entirely. Each claim now
+    declares its COMPLETE dependency set, and the set is compared with what the
+    renderer is watched reading -- so an undeclared input and a declared input
+    the renderer never touches both fail.
+    """
+    assert not _dependency_failures(PURPOSE_SEMANTICS)
+
+    edges = sum(
+        len(claim.dependencies)
+        for claims in PURPOSE_SEMANTICS.values()
+        for claim in claims
+    )
+    assert len(PURPOSE_SEMANTICS) == 183
+    assert sum(len(claims) for claims in PURPOSE_SEMANTICS.values()) == 201
+    assert edges == 573
+
+    # the example the finding named, both bindings, complete
+    for identifier in (
+        "history.valid.role-binding.base-canonical",
+        "history.valid.role-binding.head-canonical",
+    ):
+        (claim,) = PURPOSE_SEMANTICS[identifier]
+        assert claim.dependencies == (
+            "input:/pull_request/repository_scoped_number",
+            "input:/role_assignment/role",
+        ), identifier
+        assert claim.authority == "input:/role_assignment/role", identifier
+
+    # every declared coordinate is one of the forms the corpus addresses by
+    forms = {
+        coordinate.split(":", 1)[0]
+        for claims in PURPOSE_SEMANTICS.values()
+        for claim in claims
+        for coordinate in claim.dependencies
+    }
+    assert forms == {
+        "embedded-fact",
+        "evidence-classification",
+        "evidence-record-lock",
+        "expected",
+        "field",
+        "input",
+        "manifest",
+        "source-decision",
+        "source-pointer",
+        "target",
+    }
+
+
+def test_a_dependency_set_that_is_not_the_renderers_own_is_refused() -> None:
+    """Six ways to get the set wrong, and each one caught.
+
+    Membership in either direction is not enough, and neither is a set that
+    happens to be the right size. These are the shapes a hand-maintained list
+    drifts into.
+    """
+    identifier = "history.valid.role-binding.base-canonical"
+    (claim,) = PURPOSE_SEMANTICS[identifier]
+    other = "history.valid.role-binding.head-canonical"
+    role = "input:/role_assignment/role"
+    number = "input:/pull_request/repository_scoped_number"
+
+    def moved(dependencies: tuple[str, ...]) -> list[tuple[str, str]]:
+        ledger = dict(PURPOSE_SEMANTICS)
+        ledger[identifier] = (
+            PurposeClaim(
+                claim.assurance, claim.renderer, claim.authority, dependencies
+            ),
+        )
+        return _dependency_failures(ledger)
+
+    # an input the renderer really reads, undeclared
+    assert moved((role,)) == [(identifier, f"undeclared-dependency:{number}")]
+    assert moved((number,)) == [(identifier, f"undeclared-dependency:{role}")]
+    # a declared input the renderer never touches
+    assert moved((number, role, "target")) == [
+        (identifier, "dependency-not-consumed:target")
+    ]
+    # the set emptied, and the set of another claim entirely
+    assert len(moved(())) == 2
+    assert moved(("field:id", "target")) == sorted(
+        [
+            (identifier, f"undeclared-dependency:{number}"),
+            (identifier, f"undeclared-dependency:{role}"),
+            (identifier, "dependency-not-consumed:field:id"),
+            (identifier, "dependency-not-consumed:target"),
+        ]
+    )
+    # unordered and duplicated declarations are refused as written
+    assert moved((role, number)) == [(identifier, "dependencies-not-in-order")]
+    assert moved((number, number, role)) == [(identifier, "dependency-declared-twice")]
+
+    # a dependency moved to another claim leaves both wrong
+    ledger = dict(PURPOSE_SEMANTICS)
+    ledger[identifier] = (
+        PurposeClaim(claim.assurance, claim.renderer, claim.authority, (number,)),
+    )
+    (sibling,) = PURPOSE_SEMANTICS[other]
+    ledger[other] = (
+        PurposeClaim(
+            sibling.assurance,
+            sibling.renderer,
+            sibling.authority,
+            (number, role, "input_mode"),
+        ),
+    )
+    assert _dependency_failures(ledger) == sorted(
+        [
+            (identifier, f"undeclared-dependency:{role}"),
+            (other, "dependency-not-consumed:input_mode"),
+        ]
+    )
+
+
+def test_a_renderer_that_changes_what_it_reads_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The declaration follows the code, so the code may not move alone."""
+    identifier = "history.valid.role-binding.base-canonical"
+    original = PURPOSE_RENDERERS["valid:role_binding_canonical"]
+
+    def stopped(vector: dict[str, Any], family: str) -> str:
+        """Stops consuming the pull request number the sentence is built from."""
+        return f"The canonical {vector['input']['role_assignment']['role'].upper()} binding"
+
+    def gained(vector: dict[str, Any], family: str) -> str:
+        """Reads a claim-bearing input nothing declared."""
+        return original(vector, family) + str(vector["input_mode"])
+
+    for replacement, reason in (
+        (
+            stopped,
+            "dependency-not-consumed:input:/pull_request/repository_scoped_number",
+        ),
+        (gained, "undeclared-dependency:input_mode"),
+    ):
+        monkeypatch.setitem(
+            PURPOSE_RENDERERS, "valid:role_binding_canonical", replacement
+        )
+        try:
+            failures = _dependency_failures(PURPOSE_SEMANTICS)
+        finally:
+            monkeypatch.undo()
+        assert (identifier, reason) in failures, reason
+    assert not _dependency_failures(PURPOSE_SEMANTICS)
+
+
+def test_the_traced_coordinates_are_identity_addressed_and_order_free(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dependency that moved when a neutral list was reordered would be a slot.
+
+    `source_decisions` ordering is semantically neutral, and the correction link
+    scans it by reference. Its dependencies name the decisions, not their
+    positions, so the whole ledger survives the reversal that Part A made law.
+    """
+    coordinates = {
+        coordinate
+        for claims in PURPOSE_SEMANTICS.values()
+        for claim in claims
+        for coordinate in claim.dependencies
+    }
+    positional = [
+        coordinate
+        for coordinate in coordinates
+        for prefix in ("manifest:/source_decisions/", "manifest:/target_symbols/")
+        if coordinate.startswith(prefix)
+    ]
+    assert not positional, positional
+    # scanning the whole collection is recorded as the collection, which carries
+    # no position either; its members are named by their own references
+    assert "manifest:/source_decisions" in coordinates
+
+    (link,) = [
+        claim
+        for claim in PURPOSE_SEMANTICS[CORRECTION_PURPOSE_VECTOR]
+        if claim.renderer == "replay:second_independent_correction_link"
+    ]
+    assert link.dependencies == (
+        "evidence-record-lock",
+        "manifest:/source_decisions",
+        "source-decision:acquisition:run-0001",
+        "source-decision:closure:s1-p03:evidence-envelope",
+        "source-decision:correction:s04-c01-acquisition-closure",
+        "source-decision:correction:s1-p05-s08-c01:owner-topology",
+        "source-decision:decision:s1-p05-s08:disposition",
+    )
+
+    monkeypatch.setitem(
+        MANIFEST, "source_decisions", list(reversed(_live_source_decisions()))
+    )
+    assert not _dependency_failures(PURPOSE_SEMANTICS)
 
 
 def test_every_coordinate_claim_names_the_input_its_renderer_reads() -> None:
@@ -17229,16 +18571,23 @@ def test_the_purpose_ledger_is_written_out_and_never_computed() -> None:
         assert isinstance(key, ast.Constant) and isinstance(key.value, str)
         assert isinstance(value, ast.Tuple)
         for element in value.elts:
-            # every claim is a PurposeClaim(...) call over three constants
+            # every claim is a PurposeClaim(...) call over three constants and
+            # a literal tuple of constant coordinates -- a comprehension that
+            # rebuilt the dependencies from the tracer would agree with itself
             assert isinstance(element, ast.Call)
             assert isinstance(element.func, ast.Name)
             assert element.func.id == "PurposeClaim"
-            assert len(element.args) == 3 and not element.keywords
+            assert len(element.args) == 4 and not element.keywords
             assert isinstance(element.args[0], ast.Name)
             assert element.args[0].id in PURPOSE_ASSURANCE_CLASSES
-            for argument in element.args[1:]:
+            for argument in element.args[1:3]:
                 assert isinstance(argument, ast.Constant)
                 assert isinstance(argument.value, str)
+            written = element.args[3]
+            assert isinstance(written, ast.Tuple)
+            for coordinate in written.elts:
+                assert isinstance(coordinate, ast.Constant)
+                assert isinstance(coordinate.value, str)
 
     touching = [
         node
