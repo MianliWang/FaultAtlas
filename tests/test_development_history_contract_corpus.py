@@ -5615,7 +5615,7 @@ def _tracked_git_entries() -> list[tuple[str, str]]:
         fields = _INDEX_ENTRY_HEADER.unpack_from(raw, offset)
         mode, flags = fields[6], fields[11]
         offset += _INDEX_ENTRY_HEADER.size
-        if version >= 3 and flags & 0x4000:
+        if flags & 0x4000:
             offset += 2
         length = flags & 0xFFF
         if length < 0xFFF:
@@ -5626,7 +5626,10 @@ def _tracked_git_entries() -> list[tuple[str, str]]:
             name = raw[offset:end]
             offset = end
         offset = start + (offset - start + 8) // 8 * 8
-        entries.append((name.decode("utf-8"), f"{mode:06o}"))
+        try:
+            entries.append((name.decode("utf-8"), f"{mode:06o}"))
+        except UnicodeDecodeError as failure:  # pragma: no cover - named, not swallowed
+            raise AssertionError(f"non-UTF-8 tracked path: {name!r}") from failure
     return entries
 
 
@@ -5641,7 +5644,8 @@ def _corpus_node_failures(
         reasons.append("symlink-is-not-a-corpus-file")
     info = path.lstat()
     if not stat_module.S_ISREG(info.st_mode):
-        reasons.append("not-a-regular-file")
+        # named before anything tries to read it: opening a FIFO would block
+        return [*reasons, "not-a-regular-file"]
     if f"0{info.st_mode & 0o777:o}" != entry["filesystem_mode"]:
         reasons.append("filesystem-mode-differs")
     matches = [mode for name, mode in tracked if name == relative]
@@ -5656,8 +5660,16 @@ def _v_corpus_files() -> None:
     """Declared file state is compared with the filesystem, not with itself."""
     declared = cast(list[dict[str, Any]], MANIFEST["corpus_files"])
     assert tuple(sorted(cast(str, e["filename"]) for e in declared)) == CORPUS_FILES
+    # the directory is a corpus node too: refusing a linked FILE while the
+    # DIRECTORY is a link would leave the whole corpus an alias
+    assert not CORPUS.is_symlink(), CORPUS
+    assert CORPUS.is_dir(), CORPUS
     assert {p.name for p in CORPUS.iterdir()} == set(CORPUS_FILES)
     tracked = _tracked_git_entries()
+    prefix = f"{CORPUS.relative_to(REPOSITORY_ROOT).as_posix()}/"
+    inside = sorted(name for name, _mode in tracked if name.startswith(prefix))
+    # nothing tracked under the corpus that the manifest does not declare
+    assert inside == sorted(f"{prefix}{name}" for name in CORPUS_FILES), inside
     for entry in declared:
         filename = cast(str, entry["filename"])
         path = CORPUS / filename
@@ -5668,6 +5680,38 @@ def _v_corpus_files() -> None:
             raw = path.read_bytes()
             assert hashlib.sha256(raw).hexdigest() == entry["sha256"], filename
             assert len(raw) == entry["byte_length"], filename
+
+
+def test_the_corpus_directory_is_a_directory_and_holds_only_its_own_files(
+    tmp_path: Path,
+) -> None:
+    """Refusing a linked file while the DIRECTORY is a link protects nothing.
+
+    Replacing `v1/` with a symlink to a resealed copy passed every file-level
+    check, because each corpus path then resolved through the link to a real
+    regular file with the right digest and the right tracked name.
+    """
+    assert not CORPUS.is_symlink()
+    assert CORPUS.is_dir()
+
+    real = tmp_path / "v1"
+    real.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    assert alias.is_dir() and alias.is_symlink()
+    # the two conditions the validator applies, on a directory that would pass
+    # every per-file check underneath it
+    assert not (not alias.is_symlink() and alias.is_dir())
+
+    # and nothing may be tracked under the corpus that the manifest omits
+    prefix = f"{CORPUS.relative_to(REPOSITORY_ROOT).as_posix()}/"
+    tracked = sorted(
+        name for name, _mode in _tracked_git_entries() if name.startswith(prefix)
+    )
+    assert tracked == sorted(f"{prefix}{name}" for name in CORPUS_FILES)
+    assert len(tracked) == 9
+    smuggled = [*tracked, f"{prefix}tenth.json"]
+    assert smuggled != sorted(f"{prefix}{name}" for name in CORPUS_FILES)
 
 
 def test_the_index_parser_agrees_with_the_tracked_corpus() -> None:
@@ -6573,7 +6617,8 @@ def test_a_false_file_mode_declaration_is_refused() -> None:
     )
     assert entry["filesystem_mode"] == "0644"
     entry["filesystem_mode"] = "0777"
-    info = (CORPUS / "manifest.json").stat()
+    # lstat, like the validator: a followed stat would be reading the target
+    info = (CORPUS / "manifest.json").lstat()
 
     assert f"0{info.st_mode & 0o777:o}" != entry["filesystem_mode"]
 
@@ -7899,6 +7944,9 @@ def _markdown_code_span(value: object) -> str:
     """
     text = str(value)
     assert "\n" not in text and "\r" not in text, text
+    # an empty span is not a span: `` is two literal backticks, and a value of
+    # only spaces cannot survive the padding rule either
+    assert text and text.strip(), repr(text)
     longest = max((len(run) for run in _BACKTICK_RUN.findall(text)), default=0)
     delimiter = "`" * (longest + 1)
     padded = text.startswith("`") or text.endswith("`")
@@ -7908,10 +7956,37 @@ def _markdown_code_span(value: object) -> str:
 
 
 def _markdown_cell(value: object) -> str:
-    """One table cell: a pipe in the data may not become a separator."""
+    r"""One table cell: a pipe in the data may not become a separator.
+
+    GFM resolves `\|` while it splits the row, before any inline parsing, so an
+    escaped pipe survives even inside a code span. A BACKSLASH does not: inside
+    a code span no escape is processed, so a doubled backslash publishes as two
+    backslashes and the value is silently changed. There is no encoding that
+    round-trips one, so a backslash in a cell value is refused rather than
+    mangled -- fail closed, and no canonical value carries one today.
+    """
     text = str(value)
     assert "\n" not in text and "\r" not in text, text
-    return text.replace("\\", "\\\\").replace("|", "\\|")
+    assert "\\" not in text, text
+    return text.replace("|", "\\|")
+
+
+# Characters that would make a value into inline structure where the renderer
+# meant prose. A code span and a table cell have their own encodings above; a
+# value written as bare sentence text has none, so the structural characters
+# are refused instead. Emphasis markers are included because nothing published
+# needs them -- naming them here is cheaper than deciding later whether an
+# italicised fragment of a canonical value was intended.
+_MARKDOWN_INLINE_STRUCTURE = frozenset("<>|`\\[]*_&")
+
+
+def _markdown_text(value: object) -> str:
+    """A canonical value written as prose, with no inline structure in it."""
+    text = str(value)
+    assert "\n" not in text and "\r" not in text, text
+    intruders = sorted(_MARKDOWN_INLINE_STRUCTURE & set(text))
+    assert not intruders, (intruders, text)
+    return text
 
 
 def _markdown_row_cells(row: str) -> list[str]:
@@ -8034,7 +8109,7 @@ def _render_inventory() -> list[tuple[str, ...]]:
 
 def _render_forbidden_extras() -> list[tuple[str, ...]]:
     return [
-        (_tick(e["extra_key"]), e["published_non_claim"])
+        (_tick(e["extra_key"]), _markdown_text(e["published_non_claim"]))
         for e in cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"])
     ]
 
@@ -8933,7 +9008,9 @@ def test_each_replayed_leaf_has_one_source_within_a_vector() -> None:
 
 
 def _render_non_goal_block() -> list[str]:
-    return [f"- {goal}" for goal in cast(list[str], MANIFEST["non_goals"])]
+    return [
+        f"- {_markdown_text(goal)}" for goal in cast(list[str], MANIFEST["non_goals"])
+    ]
 
 
 def _actual_non_goal_block(text: str) -> list[str]:
@@ -9384,7 +9461,7 @@ def _render_classification_block() -> list[str]:
         dict[str, str], MANIFEST["replay_contract"]["classifications"]
     )
     return [
-        f"- {_markdown_code_span(key)} — {value}"
+        f"- {_markdown_code_span(key)} — {_markdown_text(value)}"
         for key, value in sorted(classifications.items())
     ]
 
@@ -9977,12 +10054,12 @@ def test_a_section_heading_is_resolved_as_structure_not_as_text() -> None:
 
 def test_the_drift_forms_are_the_perturbations_they_claim() -> None:
     """The relaxed quantifier is only sound if the extra forms are real ones."""
-    assert _drift_forms("text") == [""]
+    assert _drift_forms("text") == ["drifted"]
     assert _drift_forms(3) == [4]
     assert _drift_forms(True) == [False]
     # a mapping keeps its size under `_drifted`, so a shortened one is offered
-    assert _drift_forms({"a": 1, "b": 2}) == [{"a": "", "b": 2}, {"a": 1}]
-    assert _drift_forms({"a": 1}) == [{"a": ""}]
+    assert _drift_forms({"a": 1, "b": 2}) == [{"a": "drifted", "b": 2}, {"a": 1}]
+    assert _drift_forms({"a": 1}) == [{"a": "drifted"}]
     # a list already moves its length, and is shortened as well for symmetry
     assert _drift_forms([1, 2]) == [[1, 2, 2], [1]]
     assert _drift_forms([1]) == [[1, 1]]
@@ -10141,7 +10218,7 @@ def _render_scope_warning() -> list[str]:
     # authority would be inventing one.
     return [
         (
-            f"This {cast(str, identity['classification']).split('_')[0]},"
+            f"This {_markdown_text(cast(str, identity['classification']).split('_')[0])},"
             f" {'source-only' if scope['source_only'] else 'production'}"
             f" {_markdown_code_span(identity['originating_slice'])} contract corpus is not a"
             " production schema, class, adapter, reader, writer, migration,"
@@ -10411,14 +10488,20 @@ def _drifted(value: Any) -> Any:
     if isinstance(value, int):
         return value + 1
     if isinstance(value, str):
-        return ""
+        # a distinguishable value rather than the empty string: an empty
+        # canonical value is not publishable at all, so blanking one would make
+        # a renderer refuse it and turn "the render moved" into "the render
+        # broke" -- which is a different, and much weaker, observation
+        return "drifted"
     if isinstance(value, list):
         items = cast(list[Any], value)
         # duplicate the last entry: the length moves, the element shape does not
         return [*items, items[-1]] if items else ["drifted"]
     if isinstance(value, dict):
         mapping = cast(dict[str, Any], value)
-        return {**mapping, next(iter(mapping)): ""} if mapping else {"drifted": ""}
+        return (
+            {**mapping, next(iter(mapping)): "drifted"} if mapping else {"drifted": ""}
+        )
     raise AssertionError(f"no drift defined for {type(value).__name__}")
 
 
@@ -10914,7 +10997,7 @@ def _render_rejection_oracle() -> list[str]:
         }
     )
     unions = " and ".join(
-        f"the {_markdown_code_span(layer)} {location} union"
+        f"the {_markdown_code_span(layer)} {_markdown_text(location)} union"
         for layer, location in carriers
     )
     return [
@@ -11983,8 +12066,6 @@ def test_a_pipe_in_a_canonical_value_stays_one_table_cell() -> None:
         "|leading",
         "trailing|",
         "a|b|c|d",
-        "back\\slash",
-        "escaped\\|pipe",
         "S1.P05.S02",
     )
     targets = cast(list[dict[str, Any]], MANIFEST["target_symbols"])
@@ -12008,6 +12089,19 @@ def test_a_pipe_in_a_canonical_value_stays_one_table_cell() -> None:
             _markdown_cell(breaking)
         with pytest.raises(AssertionError):
             _markdown_code_span(breaking)
+
+    # A BACKSLASH IS REFUSED, NOT ESCAPED. GFM resolves `\|` while it splits the
+    # row, so an escaped pipe survives inside a code span; a backslash does not,
+    # because no escape is processed inside a span. Doubling it publishes two
+    # backslashes and silently changes the value, so there is nothing to encode.
+    for backslashed in ("back\\slash", "escaped\\|pipe", "trailing\\"):
+        with pytest.raises(AssertionError):
+            _markdown_cell(backslashed)
+
+    # an empty or blank value is not a code span at all
+    for blank in ("", " ", "   "):
+        with pytest.raises(AssertionError):
+            _markdown_code_span(blank)
 
     # the round trip is exact for every cell the document actually publishes
     for _label, table_header, render in DERIVED_TABLES:
@@ -12071,6 +12165,49 @@ def test_a_backtick_in_a_canonical_value_stays_inside_its_span() -> None:
     # a backtick-free value renders exactly as it always did
     assert _markdown_code_span("S1.P05.S09") == "`S1.P05.S09`"
     assert _tick("S1.P05.S09") == "`S1.P05.S09`"
+
+
+def test_a_value_written_as_prose_may_not_become_inline_structure() -> None:
+    """A code span and a cell have an encoding; bare sentence text has none.
+
+    The classification bullets, the forbidden-extra claims, the non-goals and
+    the merge-revision surface put canonical values straight into prose, where
+    a `<b>` or a pipe is published as structure. There is nothing to escape
+    into, so the structural characters are refused instead.
+    """
+    for value in (
+        "no evidence aggregation",
+        "S1.P05 publishes no deterministic derivation",
+        "retained normalized observation",
+    ):
+        assert _markdown_text(value) == value
+
+    for hostile in (
+        "<b>injected</b>",
+        "a | pipe",
+        "a `span`",
+        "a [link](x)",
+        "*emphasis*",
+        "an _underscore_",
+        "&amp;",
+        "back\\slash",
+        "two\nlines",
+    ):
+        with pytest.raises(AssertionError):
+            _markdown_text(hostile)
+
+    # every value the document publishes as prose passes it today
+    classifications = cast(
+        dict[str, str], MANIFEST["replay_contract"]["classifications"]
+    )
+    for value in classifications.values():
+        assert _markdown_text(value) == value
+    for entry in cast(list[dict[str, str]], MANIFEST["s07_forbidden_extra_ledger"]):
+        assert (
+            _markdown_text(entry["published_non_claim"]) == entry["published_non_claim"]
+        )
+    for goal in cast(list[str], MANIFEST["non_goals"]):
+        assert _markdown_text(goal) == goal
 
 
 def test_the_code_span_padding_publishes_the_value_itself() -> None:
@@ -14373,7 +14510,7 @@ def _PR_change_set_completeness_limit(vector: dict[str, Any], family: str) -> st
 def _PR_merge_revision_absent_surface(vector: dict[str, Any], family: str) -> str:
     """Descriptive limit: the surface the published merge-revision source excludes."""
     declared = cast(str, _resolve_pointer(MANIFEST, _PR_MERGE_REVISION_SOURCE_LEAF))
-    return f"{declared.split(', not ', 1)[1]} omits it"
+    return f"{_markdown_text(declared.split(', not ', 1)[1])} omits it"
 
 
 def _PR_caller_association_to_locked_record(vector: dict[str, Any], family: str) -> str:
