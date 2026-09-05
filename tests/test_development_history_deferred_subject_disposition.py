@@ -595,7 +595,7 @@ def test_the_roadmap_records_the_s08_disposition_and_transition() -> None:
     text = " ".join(ROADMAP.read_text(encoding="utf-8").split())
 
     assert "`S1.P05.S08` — Deferred-Subject Disposition (complete)" in text
-    assert "`S1.P05.S09` is next and not started" in text
+    assert "`S1.P05.S10` is next and not started" in text
     assert "`self_owned_open == 0`" in text
     assert "reference_corpus/contracts/development-history/decisions" in text
 
