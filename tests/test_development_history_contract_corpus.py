@@ -8,12 +8,12 @@ import inspect
 import json
 import re
 import stat as stat_module
-import struct
+import subprocess
 from collections import Counter
 from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import UnionType
 from typing import Any, NamedTuple, SupportsIndex, Union, cast, get_origin
 
@@ -86,6 +86,14 @@ def _owned_targets() -> dict[str, Any]:
     targets.update({name: getattr(link_module, name) for name in link_module.__all__})
     return targets
 
+
+LIVE_MODULES = {
+    "faultatlas.domain.history": history_module,
+    "faultatlas.domain.history_evidence_link": link_module,
+    "faultatlas.domain.evidence": evidence,
+    "faultatlas.domain.identity": identity,
+    "faultatlas.domain.revision": revision,
+}
 
 OWNED = _owned_targets()
 RESOLVABLE = {**OWNED, **SUPPORT_MODELS, **SUPPORT_ENUMS}
@@ -359,7 +367,7 @@ def test_the_manifest_records_the_vector_file_digests() -> None:
         "replay-vectors.json",
     }
     for filename, entry in declared.items():
-        raw = (CORPUS / filename).read_bytes()
+        raw = _corpus_file_path(filename).read_bytes()
         assert entry["sha256"] == hashlib.sha256(raw).hexdigest()
         assert entry["byte_length"] == len(raw)
 
@@ -663,6 +671,195 @@ def test_enum_vectors_reject_a_lexeme_outside_the_published_vocabulary() -> None
 # --- governance is an authority, never a vector -------------------------------
 
 
+# --- a corpus path is untrusted until an authored authority matches it -------
+#
+# Every path in this corpus arrives as canonical DATA: a source decision's
+# `path`, an artifact lock's `path`, a replay pointer's `document_path`, the
+# execution contract's executor. Joining one to `REPOSITORY_ROOT` and reading it
+# gives the data control of what the suite opens -- `/dev/zero` hangs the run,
+# `../../` reaches out of the repository -- and the digest that would have
+# caught it is computed from the bytes the path already handed back.
+#
+# So identity comes first and I/O last. The authored path lives in
+# `REQUIRED_SOURCE_DECISION_BY_REFERENCE`; the manifest's own path is compared
+# with it before anything is opened, the string is validated lexically, and the
+# node is confined under the repository root. Only then is a byte read.
+
+
+def _lexically_safe_repository_path(relative: str) -> PurePosixPath:
+    """A repository-relative path, checked as a string before it is a path."""
+    assert relative, "empty repository path"
+    assert "\\" not in relative, relative
+    assert "\x00" not in relative, relative
+    pure = PurePosixPath(relative)
+    assert not pure.is_absolute(), relative
+    assert not pure.parts or pure.parts[0] != "/", relative
+    for part in pure.parts:
+        assert part not in ("", ".", ".."), relative
+    assert str(pure) == relative, relative
+    return pure
+
+
+def _confined_repository_path(relative: str) -> Path:
+    """The node an authored repository-relative path names, or nothing.
+
+    Lexical validation first, then confinement, then the caller may read. No
+    component may be a symlink, so a link planted inside the repository cannot
+    carry the read outside it either.
+    """
+    pure = _lexically_safe_repository_path(relative)
+    candidate = REPOSITORY_ROOT / pure
+    root = REPOSITORY_ROOT.resolve()
+    walked = REPOSITORY_ROOT
+    for part in pure.parts:
+        walked = walked / part
+        assert not walked.is_symlink(), str(walked)
+    assert candidate.resolve().is_relative_to(root), relative
+    return candidate
+
+
+def _authority_path(reference: str) -> Path:
+    """The confined node a locked authority reference names.
+
+    The manifest's own `path` is compared with the authored one and never used
+    to reach the filesystem: a repointed entry is refused before any open.
+    """
+    assert reference in REQUIRED_SOURCE_DECISION_BY_REFERENCE, reference
+    authored = REQUIRED_SOURCE_DECISION_BY_REFERENCE[reference][0]
+    declared = [
+        entry
+        for entry in cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+        if entry["decision_reference"] == reference
+    ]
+    assert len(declared) == 1, reference
+    assert declared[0]["path"] == authored, (reference, declared[0]["path"])
+    return _confined_repository_path(authored)
+
+
+def _corpus_file_path(filename: str) -> Path:
+    """The confined node a declared corpus filename names.
+
+    A filename read out of the manifest is data too, so it must be one this
+    module authored in `CORPUS_FILES` before it can address anything.
+    """
+    assert filename in CORPUS_FILES, filename
+    return _confined_repository_path(
+        f"{CORPUS.relative_to(REPOSITORY_ROOT).as_posix()}/{filename}"
+    )
+
+
+def _authority_bytes(reference: str) -> bytes:
+    """The bytes of a locked authority, read only after its identity holds."""
+    return _authority_path(reference).read_bytes()
+
+
+RETAINED_ACQUISITION_REFERENCE = "acquisition:run-0001"
+
+
+def _artifact_lock_path(lock: dict[str, Any]) -> Path:
+    """The confined node an artifact lock names, matched by its own lock id."""
+    lock_id = cast(str, lock["lock_id"])
+    path = _authority_path(lock_id)
+    assert lock["path"] == REQUIRED_SOURCE_DECISION_BY_REFERENCE[lock_id][0], lock_id
+    return path
+
+
+_HOSTILE_CORPUS_PATHS = (
+    ("device node", "/dev/zero"),
+    ("parent escape", "../../outside.json"),
+    ("neighbouring corpus", "../reference_corpus/contracts/other/v1/manifest.json"),
+    ("absolute temporary file", "/tmp/planted-decision.json"),
+    ("embedded traversal", "reference_corpus/../../etc/passwd"),
+    ("backslash ambiguity", "reference_corpus\\..\\..\\outside.json"),
+    ("current directory", "."),
+    ("bare parent", ".."),
+    ("empty", ""),
+    ("NUL byte", "reference_corpus/decision.json\x00.txt"),
+)
+
+
+def test_no_corpus_supplied_path_reaches_the_filesystem_before_its_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reads are sealed off, so the gate must refuse on the string alone.
+
+    Opening first and checking afterwards is not a smaller mistake: `/dev/zero`
+    never returns, `../..` leaves the repository, and the digest that would
+    have caught the substitution is computed from the bytes the substituted
+    path already handed back. Here every way this module could read a byte
+    raises instead, and each refusal is required to happen without one.
+    """
+    reference = "decision:s1-p05-s08:disposition"
+    authored = REQUIRED_SOURCE_DECISION_BY_REFERENCE[reference][0]
+    live = _live_source_decisions()
+    reached: list[str] = []
+
+    def _sealed(target: Any, *_args: Any, **_kwargs: Any) -> Any:
+        reached.append(str(target))
+        raise AssertionError(f"a corpus path reached the filesystem: {target}")
+
+    for name in ("open", "read_bytes", "read_text"):
+        monkeypatch.setattr(Path, name, _sealed)
+    monkeypatch.setattr("builtins.open", _sealed)
+
+    for label, hostile in _HOSTILE_CORPUS_PATHS:
+        entries = copy.deepcopy(live)
+        next(e for e in entries if e["decision_reference"] == reference)["path"] = (
+            hostile
+        )
+        monkeypatch.setitem(MANIFEST, "source_decisions", entries)
+        with pytest.raises(AssertionError) as refusal:
+            _authority_path(reference)
+        assert "reached the filesystem" not in str(refusal.value), label
+        assert reached == [], (label, reached)
+
+    # a reference this module never authored is refused before the lookup
+    monkeypatch.setitem(MANIFEST, "source_decisions", live)
+    with pytest.raises(AssertionError):
+        _authority_path("decision:invented")
+    # and the authored path is still accepted -- the gate refuses substitution,
+    # not access
+    assert _authority_path(reference) == REPOSITORY_ROOT / authored
+    assert reached == []
+
+
+def test_a_symlink_inside_the_repository_cannot_carry_a_read_outside_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Confinement is checked component by component, not on the leaf alone.
+
+    A link planted anywhere along the path would otherwise let a node that is
+    lexically inside the repository resolve to bytes that are not.
+    """
+    root = tmp_path / "root"
+    (root / "corpus").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "decision.json").write_text('{"forged":true}', encoding="utf-8")
+    monkeypatch.setitem(globals(), "REPOSITORY_ROOT", root)
+
+    (root / "corpus" / "decision.json").symlink_to(outside / "decision.json")
+    with pytest.raises(AssertionError):
+        _confined_repository_path("corpus/decision.json")
+
+    # the escape is on an intermediate component, so the leaf looks ordinary
+    (root / "linked").symlink_to(outside, target_is_directory=True)
+    assert (root / "linked" / "decision.json").is_file()
+    with pytest.raises(AssertionError):
+        _confined_repository_path("linked/decision.json")
+
+    plain = root / "corpus" / "plain.json"
+    plain.write_text("{}", encoding="utf-8")
+    assert _confined_repository_path("corpus/plain.json") == plain
+
+
+def _retained_document_path(document_path: str) -> Path:
+    """A replay pointer cites the locked acquisition and nothing else."""
+    authored = REQUIRED_SOURCE_DECISION_BY_REFERENCE[RETAINED_ACQUISITION_REFERENCE][0]
+    assert document_path == authored, document_path
+    return _confined_repository_path(authored)
+
+
 def _authority(reference: str) -> dict[str, Any]:
     return next(
         entry
@@ -683,7 +880,7 @@ def _authority(reference: str) -> dict[str, Any]:
 )
 def test_every_source_authority_digest_matches_live_bytes(reference: str) -> None:
     entry = _authority(reference)
-    raw = (REPOSITORY_ROOT / entry["path"]).read_bytes()
+    raw = _authority_bytes(reference)
 
     assert entry["sha256"] == hashlib.sha256(raw).hexdigest()
     assert entry["authority_ids"]
@@ -694,28 +891,44 @@ def test_the_authority_set_is_exactly_five_and_minimal() -> None:
     assert len(MANIFEST["source_decisions"]) == 5
 
 
-def test_the_effective_governance_is_recomputed_from_both_artifacts() -> None:
-    """The corpus must not treat the base S08 owner topology as current truth."""
-    base = json.loads(
-        (
-            REPOSITORY_ROOT / _authority("decision:s1-p05-s08:disposition")["path"]
-        ).read_text("utf-8")
-    )
+class EffectiveGovernance(NamedTuple):
+    """The current owner topology, recomputed rather than read."""
+
+    subjects: frozenset[str]
+    disposition: dict[str, int]
+    immediate_owner: dict[str, int]
+    preserved_long_term_owner: dict[str, int]
+    state: dict[str, int]
+
+
+def _recomputed_effective_governance() -> EffectiveGovernance:
+    """The topology the two locked artifacts currently establish, recomputed.
+
+    The S08 decision publishes the inherited subject register; the S08.C01
+    correction supersedes some of those subjects. Reading either one alone
+    gives a topology that is not current -- S08 by itself is the state before
+    the correction, and the correction by itself covers only what it moved --
+    so the register is walked and each superseded subject is replaced by its
+    corrected view before anything is counted.
+
+    Both artifacts are read through the authority gate, so a repointed manifest
+    entry cannot decide what this recomputes from.
+    """
+    base = json.loads(_authority_bytes("decision:s1-p05-s08:disposition"))
     correction = json.loads(
-        (
-            REPOSITORY_ROOT
-            / _authority("correction:s1-p05-s08-c01:owner-topology")["path"]
-        ).read_text("utf-8")
+        _authority_bytes("correction:s1-p05-s08-c01:owner-topology")
     )
     corrected = {
         item["source"]["subject_id"]: item["corrected"]
         for item in correction["superseded_dispositions"]["items"]
     }
 
-    dispositions: dict[str, int] = {}
-    immediate: dict[str, int] = {}
-    long_term: dict[str, int] = {}
-    states: dict[str, int] = {}
+    totals: dict[str, dict[str, int]] = {
+        "disposition": {},
+        "immediate_owner": {},
+        "preserved_long_term_owner": {},
+        "current_state": {},
+    }
     subjects: set[str] = set()
     for entry in base["inherited_subject_register"]["items"]:
         subject_id = entry["source"]["subject_id"]
@@ -731,26 +944,140 @@ def test_the_effective_governance_is_recomputed_from_both_artifacts() -> None:
         }
         if subject_id in corrected:
             view = {key: corrected[subject_id][key] for key in view}
-        dispositions[view["disposition"]] = dispositions.get(view["disposition"], 0) + 1
-        immediate[view["immediate_owner"]] = (
-            immediate.get(view["immediate_owner"], 0) + 1
-        )
-        long_term[view["preserved_long_term_owner"]] = (
-            long_term.get(view["preserved_long_term_owner"], 0) + 1
-        )
-        states[view["current_state"]] = states.get(view["current_state"], 0) + 1
-        assert view["immediate_owner"] != "S1.P05"
-        assert view["preserved_long_term_owner"] != "S1.P05"
+        for field, counted in totals.items():
+            counted[view[field]] = counted.get(view[field], 0) + 1
+        # S1.P05 owns none of what it inherited, before or after the correction
+        assert view["immediate_owner"] != "S1.P05", subject_id
+        assert view["preserved_long_term_owner"] != "S1.P05", subject_id
 
-    declared = MANIFEST["effective_governance"]
-    assert len(subjects) == declared["inherited_subject_count"] == 12
-    assert declared["self_introduced_count"] == 0
-    assert declared["self_owned_open"] == 0
-    assert declared["totals"]["disposition"] == dispositions
-    assert declared["totals"]["immediate_owner"] == immediate
-    assert declared["totals"]["preserved_long_term_owner"] == long_term
-    assert declared["totals"]["state"] == states
-    assert declared["recomputation_required"] is True
+    return EffectiveGovernance(
+        frozenset(subjects),
+        totals["disposition"],
+        totals["immediate_owner"],
+        totals["preserved_long_term_owner"],
+        totals["current_state"],
+    )
+
+
+def _effective_governance_failures() -> list[str]:
+    """Every way the published topology differs from the recomputed one."""
+    recomputed = _recomputed_effective_governance()
+    declared = cast(dict[str, Any], MANIFEST["effective_governance"])
+    published = cast(dict[str, dict[str, int]], declared["totals"])
+    return [
+        reason
+        for reason, agrees in (
+            ("inherited-subject-count", len(recomputed.subjects) == 12),
+            (
+                "declared-subject-count",
+                declared["inherited_subject_count"] == len(recomputed.subjects),
+            ),
+            ("self-introduced-count", declared["self_introduced_count"] == 0),
+            ("self-owned-open", declared["self_owned_open"] == 0),
+            ("disposition-totals", published["disposition"] == recomputed.disposition),
+            (
+                "immediate-owner-totals",
+                published["immediate_owner"] == recomputed.immediate_owner,
+            ),
+            (
+                "long-term-owner-totals",
+                published["preserved_long_term_owner"]
+                == recomputed.preserved_long_term_owner,
+            ),
+            ("state-totals", published["state"] == recomputed.state),
+            ("recomputation-required", declared["recomputation_required"] is True),
+        )
+        if not agrees
+    ]
+
+
+def test_the_effective_governance_is_recomputed_from_both_artifacts() -> None:
+    """The corpus must not treat the base S08 owner topology as current truth."""
+    assert _effective_governance_failures() == []
+
+    # the recomputation is load-bearing: reading S08 alone is a DIFFERENT
+    # topology, so the published totals cannot be satisfied by the base
+    # artifact on its own
+    base = json.loads(_authority_bytes("decision:s1-p05-s08:disposition"))
+    uncorrected: dict[str, int] = {}
+    for entry in base["inherited_subject_register"]["items"]:
+        part = (
+            entry.get("carried_forward") or entry["split"]["carried_forward_remainder"]
+        )
+        owner = cast(str, part["immediate_owner"])
+        uncorrected[owner] = uncorrected.get(owner, 0) + 1
+    recomputed = _recomputed_effective_governance()
+    assert uncorrected != recomputed.immediate_owner, (
+        "the correction moves nothing, so the recomputation proves nothing"
+    )
+
+
+def test_the_recomputation_claim_is_answered_by_performing_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A claim that an oracle recomputes something is only worth the oracle.
+
+    `effective_governance_recomputed_by_oracle` was DESCRIPTIVE: the manifest
+    asserted that the effective owner topology is recomputed rather than
+    inherited from S08, and nothing compared that assertion with anything. It
+    is an objective declaration now, because there is something outside the
+    manifest to compare it with -- the two locked artifacts and the walk
+    through them -- and the assurance validator performs that walk.
+
+    Its sibling stays descriptive and must: `recomputation_required` says a
+    future reader OUGHT to recompute, and no artifact can confirm an obligation.
+    """
+    claim = "/assurance/effective_governance_recomputed_by_oracle"
+    assert claim not in DESCRIPTIVE_PATHS
+    assert claim in _objective_leaf_paths()
+    assert "/effective_governance/recomputation_required" in DESCRIPTIVE_PATHS
+    assert _unowned_objective_paths() == []
+
+    # the boolean is load-bearing: a manifest that stops claiming it is refused
+    live = cast(dict[str, Any], MANIFEST["assurance"])
+    for value in (False, "true", None):
+        monkeypatch.setitem(
+            MANIFEST,
+            "assurance",
+            {**live, "effective_governance_recomputed_by_oracle": value},
+        )
+        with pytest.raises(AssertionError):
+            _v_assurance()
+    monkeypatch.setitem(MANIFEST, "assurance", live)
+    _v_assurance()
+
+    # and so is the recomputation: every published total answers to the walk
+    published = cast(dict[str, Any], MANIFEST["effective_governance"])
+    for reason, drifted in (
+        ("declared-subject-count", {**published, "inherited_subject_count": 11}),
+        ("self-introduced-count", {**published, "self_introduced_count": 1}),
+        ("self-owned-open", {**published, "self_owned_open": 1}),
+        ("recomputation-required", {**published, "recomputation_required": False}),
+        (
+            "immediate-owner-totals",
+            {
+                **published,
+                "totals": {
+                    **cast(dict[str, Any], published["totals"]),
+                    "immediate_owner": {"S1.P09": 12},
+                },
+            },
+        ),
+        (
+            "state-totals",
+            {
+                **published,
+                "totals": {
+                    **cast(dict[str, Any], published["totals"]),
+                    "state": {"open": 12},
+                },
+            },
+        ),
+    ):
+        monkeypatch.setitem(MANIFEST, "effective_governance", drifted)
+        assert _effective_governance_failures() == [reason], reason
+        with pytest.raises(AssertionError):
+            _v_assurance()
 
 
 def test_governance_vocabulary_never_leaks_into_product_vectors() -> None:
@@ -833,7 +1160,7 @@ def test_the_change_set_replays_as_composition_and_is_never_linked() -> None:
 
 def test_the_retained_artifact_locks_match_live_bytes() -> None:
     for lock in REPLAY["artifact_locks"]:
-        raw = (REPOSITORY_ROOT / lock["path"]).read_bytes()
+        raw = _artifact_lock_path(lock).read_bytes()
         assert lock["sha256"] == hashlib.sha256(raw).hexdigest()
         assert lock["byte_length"] == len(raw)
 
@@ -1084,7 +1411,7 @@ def test_every_replay_source_pointer_resolves_into_its_replayed_value(
             "source_fields",
         }
         assert {"document_path", "json_pointer", "source_fields"} <= set(pointer)
-        path = REPOSITORY_ROOT / cast(str, pointer["document_path"])
+        path = _retained_document_path(cast(str, pointer["document_path"]))
         assert path.is_file(), f"{vector['id']}: {pointer['document_path']}"
         resolved = _resolve_pointer(
             json.loads(path.read_text("utf-8")), cast(str, pointer["json_pointer"])
@@ -1276,7 +1603,7 @@ def _canonicalization_name(recorded: Any) -> str:
 
 def _reference_for_lock(lock: dict[str, Any]) -> dict[str, Any]:
     """Build the complete published reference from the locked bytes alone."""
-    raw = (REPOSITORY_ROOT / cast(str, lock["path"])).read_bytes()
+    raw = _artifact_lock_path(lock).read_bytes()
     assert hashlib.sha256(raw).hexdigest() == lock["sha256"], lock["lock_id"]
     assert len(raw) == lock["byte_length"], lock["lock_id"]
 
@@ -3444,16 +3771,9 @@ def test_evidence_localization_keeps_exactly_one_representative() -> None:
 
 def test_the_effective_governance_authority_split_is_recomputed() -> None:
     """Six subjects still stand on S08; six now stand on the C01 correction."""
-    base = json.loads(
-        (
-            REPOSITORY_ROOT / _authority("decision:s1-p05-s08:disposition")["path"]
-        ).read_text("utf-8")
-    )
+    base = json.loads(_authority_bytes("decision:s1-p05-s08:disposition"))
     correction = json.loads(
-        (
-            REPOSITORY_ROOT
-            / _authority("correction:s1-p05-s08-c01:owner-topology")["path"]
-        ).read_text("utf-8")
+        _authority_bytes("correction:s1-p05-s08-c01:owner-topology")
     )
     corrected = {
         item["source"]["subject_id"]
@@ -4393,7 +4713,7 @@ def test_an_unpartitioned_required_member_is_refused() -> None:
 def _declared_authority_ids(entry: dict[str, Any]) -> set[str]:
     """Collect the ids the locked document itself publishes."""
     document = json.loads(
-        (REPOSITORY_ROOT / cast(str, entry["path"])).read_text("utf-8")
+        _authority_bytes(cast(str, entry["decision_reference"])).decode("utf-8")
     )
     source = cast(dict[str, str], entry["authority_id_source"])
     node = _resolve_pointer(document, source["collection"])
@@ -4671,9 +4991,11 @@ def test_repointing_a_reference_at_another_locked_artifact_fails() -> None:
     """The reproduction, kept permanently.
 
     `closure:s1-p03:evidence-envelope` is given the S08 decision's path, role
-    and id-source. Every per-entry source-decision check still passes -- the
-    digest matches those bytes and the ids resolve in that document -- and only
-    the attachment notices the reference now names the wrong record.
+    and id-source. The per-entry checks were once satisfied by that -- the
+    digest matched the bytes the entry now pointed at, and the ids resolved in
+    that document -- so only the attachment noticed the wrong record. Reads are
+    addressed by reference now, so the entry is measured against the artifact it
+    claims to be and the substitution no longer survives either check.
     """
     entries = copy.deepcopy(_live_source_decisions())
     repointed = next(
@@ -4691,10 +5013,12 @@ def test_repointing_a_reference_at_another_locked_artifact_fails() -> None:
     repointed["authority_id_source"] = copy.deepcopy(s08["authority_id_source"])
     repointed["authority_ids"] = list(cast(list[str], s08["authority_ids"]))
 
-    # every existing per-entry check the corpus already runs still passes
-    raw = (REPOSITORY_ROOT / cast(str, repointed["path"])).read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == repointed["sha256"]
-    assert set(repointed["authority_ids"]) == _declared_authority_ids(repointed)
+    # the bytes read are the ones the reference names, not the ones it points at
+    raw = _authority_bytes(cast(str, repointed["decision_reference"]))
+    assert hashlib.sha256(raw).hexdigest() != repointed["sha256"]
+    with pytest.raises(KeyError):
+        # the borrowed id-source names nothing in the artifact it now reads
+        _declared_authority_ids(repointed)
 
     assert _source_attachment_failures(
         entries, REQUIRED_SOURCE_DECISION_BY_REFERENCE
@@ -4728,11 +5052,10 @@ def test_two_references_exchanging_their_whole_identity_tuple_fail() -> None:
     )
 
     for entry in (first, second):
-        raw = (REPOSITORY_ROOT / cast(str, entry["path"])).read_bytes()
-        assert hashlib.sha256(raw).hexdigest() == entry["sha256"], "still coherent"
-        assert set(cast(list[str], entry["authority_ids"])) <= _declared_authority_ids(
-            entry
-        )
+        raw = _authority_bytes(cast(str, entry["decision_reference"]))
+        assert hashlib.sha256(raw).hexdigest() != entry["sha256"], "not its artifact"
+        with pytest.raises(KeyError):
+            _declared_authority_ids(entry)
 
     assert _source_attachment_failures(
         entries, REQUIRED_SOURCE_DECISION_BY_REFERENCE
@@ -4846,7 +5169,7 @@ def test_every_published_source_decision_field_has_an_owner() -> None:
             "id_field": field,
         }
         # derived from the attached artifact, never authored here
-        raw = (REPOSITORY_ROOT / path).read_bytes()
+        raw = _authority_bytes(reference)
         assert entry["sha256"] == hashlib.sha256(raw).hexdigest()
         resolved = _declared_authority_ids(entry)
         declared = set(cast(list[str], entry["authority_ids"]))
@@ -4926,7 +5249,7 @@ def _selection_records(
     """
     path, _role, collection, id_field = REQUIRED_SOURCE_DECISION_BY_REFERENCE[reference]
     if document is None:
-        document = json.loads((REPOSITORY_ROOT / path).read_text("utf-8"))
+        document = json.loads(_confined_repository_path(path).read_bytes())
     node = _resolve_pointer(document, collection)
     records = (
         [cast(dict[str, Any], node)]
@@ -5153,7 +5476,7 @@ def test_a_missing_or_ambiguous_reservation_fails_closed() -> None:
     """Exercised on an in-memory artifact, not through a digest mismatch."""
     reference = "closure:s1-p03:evidence-envelope"
     path = REQUIRED_SOURCE_DECISION_BY_REFERENCE[reference][0]
-    original = json.loads((REPOSITORY_ROOT / path).read_text("utf-8"))
+    original = json.loads(_confined_repository_path(path).read_bytes())
 
     without = copy.deepcopy(original)
     without["deferred_register"]["entries"] = [
@@ -5184,9 +5507,13 @@ def test_a_missing_or_ambiguous_reservation_fails_closed() -> None:
         {reference: doubled},
     ) == [(reference, "selector-matches-more-than-one-record")]
 
-    assert (REPOSITORY_ROOT / path).read_bytes() == json.dumps(
-        original, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8") + b"\n", "the locked artifact was only ever read"
+    assert (
+        _confined_repository_path(path).read_bytes()
+        == json.dumps(
+            original, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        + b"\n"
+    ), "the locked artifact was only ever read"
 
 
 def test_a_selector_for_an_unpublished_reference_fails() -> None:
@@ -5581,53 +5908,49 @@ def _v_corpus_identity() -> None:
 # outside the corpus. Git mode was also INFERRED from filesystem permissions,
 # which cannot express the difference at all.
 #
-# The Git index is parsed instead. It is the record of what is tracked, it is
-# read rather than shelled out to, and no repository code is executed. Version 4
-# prefix compression is refused rather than guessed at; this repository's index
-# is version 2. These are repository-tracked corpus files, so a checkout is the
-# only mode this corpus oracle supports, and an absent index fails loudly.
-
-_INDEX_ENTRY_HEADER = struct.Struct(">10I20sH")
-
-
-def _git_directory() -> Path:
-    """`.git`, following the one indirection a worktree or submodule adds."""
-    marker = REPOSITORY_ROOT / ".git"
-    assert marker.exists(), "the corpus oracle requires a Git checkout"
-    if marker.is_dir():
-        return marker
-    pointer = marker.read_text("utf-8").strip()
-    assert pointer.startswith("gitdir:"), pointer
-    return (REPOSITORY_ROOT / pointer.split(":", 1)[1].strip()).resolve()
+# Git is asked what it tracks. A hand-written `.git/index` parser stood here
+# first, and it was a second implementation of a format this corpus does not
+# own: it read the on-disk header, refused version 4 as unsupported and
+# reimplemented the padding rules. Every one of those is a way to be wrong
+# about a repository that is perfectly valid -- version 4 path compression, a
+# split index whose entries live in a shared file, a linked worktree with its
+# own index -- and being wrong there means reporting a corpus file as untracked
+# or reading a stale mode, which is exactly the failure the oracle exists to
+# catch.
+#
+# `git ls-files --stage` is Git's own answer to the same question and is
+# correct for every index it can write. It is invoked as an argument vector,
+# never through a shell, with no interpolated string anywhere in it, and it
+# reads only this repository's own index -- no analyzed repository's code is
+# executed. `-z` makes the record separator unambiguous for any path Git can
+# hold. A non-zero exit, an unparseable record or a path at a merge stage other
+# than zero fails loudly rather than being read past.
 
 
 def _tracked_git_entries() -> list[tuple[str, str]]:
     """`(repository-relative path, Git mode)` for every entry Git tracks."""
-    raw = (_git_directory() / "index").read_bytes()
-    signature, version, count = struct.unpack(">4sII", raw[:12])
-    assert signature == b"DIRC", signature
-    assert version in (2, 3), f"unsupported Git index version {version}"
+    completed = subprocess.run(  # noqa: S603 - argv only, no shell, fixed program
+        ["git", "ls-files", "--stage", "-z"],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", "replace")
 
     entries: list[tuple[str, str]] = []
-    offset = 12
-    for _ in range(count):
-        start = offset
-        fields = _INDEX_ENTRY_HEADER.unpack_from(raw, offset)
-        mode, flags = fields[6], fields[11]
-        offset += _INDEX_ENTRY_HEADER.size
-        if flags & 0x4000:
-            offset += 2
-        length = flags & 0xFFF
-        if length < 0xFFF:
-            name = raw[offset : offset + length]
-            offset += length
-        else:
-            end = raw.index(b"\x00", offset)
-            name = raw[offset:end]
-            offset = end
-        offset = start + (offset - start + 8) // 8 * 8
+    for record in completed.stdout.split(b"\x00"):
+        if not record:
+            continue
+        head, separator, name = record.partition(b"\t")
+        assert separator == b"\t", record
+        fields = head.split(b" ")
+        assert len(fields) == 3, record
+        mode, _object_name, stage = fields
+        # stage 0 is the merged state; 1, 2 and 3 only exist while a conflict
+        # is unresolved, and a corpus file has no meaningful mode until it is
+        assert stage == b"0", f"{name!r} is at merge stage {stage!r}"
         try:
-            entries.append((name.decode("utf-8"), f"{mode:06o}"))
+            entries.append((name.decode("utf-8"), mode.decode("ascii")))
         except UnicodeDecodeError as failure:  # pragma: no cover - named, not swallowed
             raise AssertionError(f"non-UTF-8 tracked path: {name!r}") from failure
     return entries
@@ -5672,7 +5995,7 @@ def _v_corpus_files() -> None:
     assert inside == sorted(f"{prefix}{name}" for name in CORPUS_FILES), inside
     for entry in declared:
         filename = cast(str, entry["filename"])
-        path = CORPUS / filename
+        path = _corpus_file_path(filename)
         assert entry["required"] is True, filename
         relative = path.relative_to(REPOSITORY_ROOT).as_posix()
         assert _corpus_node_failures(path, entry, tracked, relative) == [], filename
@@ -5714,13 +6037,14 @@ def test_the_corpus_directory_is_a_directory_and_holds_only_its_own_files(
     assert smuggled != sorted(f"{prefix}{name}" for name in CORPUS_FILES)
 
 
-def test_the_index_parser_agrees_with_the_tracked_corpus() -> None:
-    """The parse is real: every corpus file is tracked once, as a regular blob."""
+def test_git_reports_every_corpus_file_tracked_exactly_once() -> None:
+    """One stage-zero entry per corpus file, as a regular blob."""
     tracked = _tracked_git_entries()
+    assert tracked, "the corpus oracle requires a Git checkout"
     assert len(tracked) == len({name for name, _mode in tracked}), "duplicate entry"
 
     for filename in CORPUS_FILES:
-        relative = (CORPUS / filename).relative_to(REPOSITORY_ROOT).as_posix()
+        relative = _corpus_file_path(filename).relative_to(REPOSITORY_ROOT).as_posix()
         modes = [mode for name, mode in tracked if name == relative]
         assert modes == ["100644"], (filename, modes)
 
@@ -5732,6 +6056,91 @@ def test_the_index_parser_agrees_with_the_tracked_corpus() -> None:
         "120000",
         "160000",
     }
+
+
+class _FakeCompleted:
+    """Just enough of `CompletedProcess` for the reader to be probed."""
+
+    def __init__(self, stdout: bytes, returncode: int) -> None:
+        self.stdout = stdout
+        self.stderr = b"git refused"
+        self.returncode = returncode
+
+
+def _fixed_git_answer(
+    stdout: bytes, returncode: int = 0
+) -> Callable[..., _FakeCompleted]:
+    def run(*_args: Any, **_kwargs: Any) -> _FakeCompleted:
+        return _FakeCompleted(stdout, returncode)
+
+    return run
+
+
+_STAGE_ZERO = b"100644 " + b"0" * 40 + b" 0\tcorpus/manifest.json\x00"
+
+
+def test_the_tracked_entry_reader_refuses_what_it_cannot_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A record that is not a stage-zero entry is refused, never read past.
+
+    Reading past a malformed record is how the parser this replaces could have
+    reported a corpus file as untracked, and an unresolved conflict has no
+    single mode to compare the working tree against.
+    """
+    monkeypatch.setattr(subprocess, "run", _fixed_git_answer(_STAGE_ZERO))
+    assert _tracked_git_entries() == [("corpus/manifest.json", "100644")]
+
+    for label, stdout, code in (
+        ("git itself failed", _STAGE_ZERO, 128),
+        ("unresolved conflict", _STAGE_ZERO.replace(b" 0\t", b" 2\t"), 0),
+        ("no tab separator", _STAGE_ZERO.replace(b"\t", b" "), 0),
+        ("truncated record", b"100644 0\tcorpus/manifest.json\x00", 0),
+        ("non-utf8 path", b"100644 " + b"0" * 40 + b" 0\t\xff\xfe\x00", 0),
+    ):
+        monkeypatch.setattr(subprocess, "run", _fixed_git_answer(stdout, code))
+        with pytest.raises(AssertionError):
+            _tracked_git_entries()
+        assert label
+
+
+def test_the_tracked_entry_reader_never_builds_a_command_from_data() -> None:
+    """The argument vector is literal: no shell, no interpolation, no input."""
+    tree = ast.parse(inspect.getsource(_tracked_git_entries))
+    assert not [
+        keyword
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        for keyword in node.keywords
+        if keyword.arg == "shell"
+    ], "no shell, ever"
+    call = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run"
+    )
+    assert len(call.args) == 1
+    argv = call.args[0]
+    assert isinstance(argv, ast.List)
+    # every element is a literal string: nothing here can be interpolated
+    assert all(isinstance(element, ast.Constant) for element in argv.elts)
+    assert [ast.literal_eval(element) for element in argv.elts] == [
+        "git",
+        "ls-files",
+        "--stage",
+        "-z",
+    ]
+    assert {keyword.arg for keyword in call.keywords} == {
+        "cwd",
+        "capture_output",
+        "check",
+    }
+    # the working directory is this repository, named by the module's own
+    # constant rather than inherited from wherever the suite was started
+    cwd = next(k.value for k in call.keywords if k.arg == "cwd")
+    assert isinstance(cwd, ast.Name) and cwd.id == "REPOSITORY_ROOT"
 
 
 def test_a_symlinked_corpus_file_is_refused(tmp_path: Path) -> None:
@@ -5811,7 +6220,7 @@ def _v_scope() -> None:
         SUPPORTING_AUTHORITIES
     )
     for module in PRODUCTION_MODULES + SUPPORTING_AUTHORITIES:
-        assert importlib.import_module(module) is not None
+        assert LIVE_MODULES[module].__name__ == module
     # source_only: no production module may reach the corpus tree at all.
     assert scope["source_only"] is True
     for source in (REPOSITORY_ROOT / "src").rglob("*.py"):
@@ -5853,14 +6262,99 @@ def _derived_target_class(symbol: object) -> str:
     return kinds[0]
 
 
+def _live_target(entry: dict[str, Any]) -> object:
+    """The live object a declared target row names, resolved without importing.
+
+    `entry["module"]` is canonical data. Handing it to an importer would let
+    the corpus choose what this suite executes, and the import is the damage
+    itself: the named module's body runs before there is any value to inspect
+    and refuse. The symbol is resolved through `OWNED` -- built from the two
+    product packages' own `__all__` -- and the declared module name is then
+    compared with the one the resolved object reports, so a repointed row is
+    caught by the object rather than by trusting the row.
+    """
+    name = cast(str, entry["symbol"])
+    assert name in OWNED, name
+    symbol = OWNED[name]
+    assert getattr(symbol, "__module__", None) == entry["module"], name
+    assert entry["module"] in PRODUCTION_MODULES, entry["module"]
+    return symbol
+
+
 def _v_target_symbols() -> None:
     declared = cast(list[dict[str, Any]], MANIFEST["target_symbols"])
     assert {cast(str, e["symbol"]) for e in declared} == set(OWNED)
     for entry in declared:
-        module = importlib.import_module(cast(str, entry["module"]))
-        assert entry["symbol"] in module.__all__, entry["symbol"]
-        symbol = getattr(module, cast(str, entry["symbol"]))
+        symbol = _live_target(entry)
         assert entry["target_class"] == _derived_target_class(symbol), entry["symbol"]
+
+
+def test_no_declared_module_name_ever_reaches_an_importer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A module name in the corpus is data, and importing it would run it.
+
+    There is no inspect-then-refuse for an import: by the time a value comes
+    back the named module's body has already executed. So the importers are
+    sealed off here and a target row carrying a hostile module name is required
+    to be refused without one being reached.
+    """
+    calls: list[str] = []
+
+    def _sealed(name: str, *_args: Any, **_kwargs: Any) -> Any:
+        calls.append(name)
+        raise AssertionError(f"a corpus module name reached an importer: {name}")
+
+    monkeypatch.setattr(importlib, "import_module", _sealed)
+
+    entry = copy.deepcopy(cast(list[dict[str, Any]], MANIFEST["target_symbols"])[0])
+    assert _live_target(entry) is OWNED[cast(str, entry["symbol"])]
+
+    for hostile in (
+        "os",
+        "subprocess",
+        "faultatlas.domain.history_evidence_link",
+        "tests.test_development_history_contract_corpus",
+        "",
+    ):
+        with pytest.raises(AssertionError):
+            _live_target({**entry, "module": hostile})
+    # an unpublished symbol is refused before the module name is looked at
+    with pytest.raises(AssertionError):
+        _live_target({**entry, "symbol": "NotExported"})
+    assert calls == []
+
+
+def test_this_module_calls_no_importer_at_all() -> None:
+    """The class, not the instance: nothing here loads a module by name.
+
+    Two derivations resolved a corpus-supplied `module` through
+    `importlib.import_module`. The closure is that the suite no longer names an
+    importer anywhere -- the sole reference left is the seal the probe above
+    installs over it.
+    """
+    tree = ast.parse(Path(__file__).read_text("utf-8"))
+    loaders = {"import_module", "__import__", "exec_module", "load_module", "eval"}
+    called = sorted(
+        {
+            node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute | ast.Name)
+            and (
+                node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id
+            )
+            in loaders
+        }
+    )
+    assert called == [], called
+
+    # `importlib` survives only as the object the seal is installed on
+    assert [
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and node.id == "importlib"
+    ] == ["importlib"]
 
 
 def _v_execution_contract() -> None:
@@ -5888,8 +6382,14 @@ def _v_execution_contract() -> None:
     assert tuple(cast(list[str], contract["input_modes"])) == tuple(
         sorted(INPUT_MODE_DISPATCH)
     )
-    executor = REPOSITORY_ROOT / cast(str, contract["test_only_executor"])
-    assert executor.resolve() == Path(__file__).resolve()
+    # the executor is compared as a string against this module's own location:
+    # a corpus-supplied path never addresses the filesystem
+    executor = _lexically_safe_repository_path(
+        cast(str, contract["test_only_executor"])
+    )
+    assert executor == PurePosixPath(
+        Path(__file__).resolve().relative_to(REPOSITORY_ROOT.resolve()).as_posix()
+    )
 
 
 def _v_rejection_contract() -> None:
@@ -5949,7 +6449,7 @@ def _v_source_decisions() -> None:
     entries = cast(list[dict[str, Any]], MANIFEST["source_decisions"])
     assert len(entries) == 5
     for entry in entries:
-        raw = (REPOSITORY_ROOT / cast(str, entry["path"])).read_bytes()
+        raw = _authority_bytes(cast(str, entry["decision_reference"]))
         assert hashlib.sha256(raw).hexdigest() == entry["sha256"]
         assert set(cast(list[str], entry["authority_ids"])) <= _declared_authority_ids(
             entry
@@ -6025,10 +6525,15 @@ def _v_assurance() -> None:
     locked = [e for e in MANIFEST["corpus_files"] if "sha256" in e]
     assert assurance["corpus_files_digest_locked"] is bool(locked)
     for entry in locked:
-        raw = (CORPUS / cast(str, entry["filename"])).read_bytes()
+        raw = _corpus_file_path(cast(str, entry["filename"])).read_bytes()
         assert hashlib.sha256(raw).hexdigest() == entry["sha256"]
     assert assurance["symbol_coverage_derived_from_live_dunder_all"] is True
     assert {cast(str, e["symbol"]) for e in MANIFEST["target_symbols"]} == set(OWNED)
+    # the recomputation claim is answered by performing it: the effective owner
+    # topology is rebuilt from the locked S08 decision through the S08.C01
+    # correction and compared with what the manifest publishes
+    assert _effective_governance_failures() == []
+    assert assurance["effective_governance_recomputed_by_oracle"] is True
 
 
 OBJECTIVE_VALIDATORS: tuple[tuple[str, Callable[[], None]], ...] = (
@@ -6118,7 +6623,7 @@ def test_the_meta_schema_is_exactly_the_classifier_and_its_paths() -> None:
     ]
 
     assert sorted(_meta_schema_leaf_paths()) == sorted(expected)
-    assert len(_meta_schema_leaf_paths()) == len(declared) + 1 == 75
+    assert len(_meta_schema_leaf_paths()) == len(declared) + 1 == 74
 
 
 def test_the_declaration_universe_excludes_the_meta_schema() -> None:
@@ -6130,13 +6635,13 @@ def test_the_declaration_universe_excludes_the_meta_schema() -> None:
     assert not universe & meta
     # the classifier's own path list is manifest data, so shortening it moves
     # the total and the meta-schema together; the universe it classifies does not
-    assert len(every) == 461
-    assert len(meta) == 75
+    assert len(every) == 460
+    assert len(meta) == 74
     assert len(universe) == 386
 
 
 def test_the_declaration_universe_is_partitioned_in_two_kinds() -> None:
-    """386 = 312 + 74, with nothing unclassified and nothing counted twice."""
+    """386 = 313 + 73, with nothing unclassified and nothing counted twice."""
     universe = set(_declaration_universe())
     objective = set(_objective_leaf_paths())
     descriptive = set(DESCRIPTIVE_PATHS)
@@ -6145,8 +6650,8 @@ def test_the_declaration_universe_is_partitioned_in_two_kinds() -> None:
     assert universe == objective | descriptive
     assert not objective & descriptive
     assert len(universe) == len(objective) + len(descriptive)
-    assert len(objective) == 312
-    assert len(descriptive) == 74
+    assert len(objective) == 313
+    assert len(descriptive) == 73
     # no meta-schema leaf reaches either side of the accounting
     assert not (objective | descriptive) & set(_meta_schema_leaf_paths())
 
@@ -7444,11 +7949,20 @@ def _lock_authority_failures(
             failures.append((lock_id, "ambiguous-authority"))
             continue
         authority = matches[0]
-        if authority["path"] != lock["path"]:
-            failures.append((lock_id, "authority-path-differs"))
-        if authority["sha256"] != lock["sha256"]:
-            failures.append((lock_id, "authority-digest-differs"))
-        raw = (REPOSITORY_ROOT / cast(str, lock["path"])).read_bytes()
+        edge = [
+            reason
+            for reason, broken in (
+                ("authority-path-differs", authority["path"] != lock["path"]),
+                ("authority-digest-differs", authority["sha256"] != lock["sha256"]),
+            )
+            if broken
+        ]
+        if edge:
+            # identity before I/O: a lock whose edge to its authority is broken
+            # is reported, never opened
+            failures.extend((lock_id, reason) for reason in edge)
+            continue
+        raw = _artifact_lock_path(lock).read_bytes()
         if hashlib.sha256(raw).hexdigest() != lock["sha256"]:
             failures.append((lock_id, "live-bytes-differ"))
         if len(raw) != lock["byte_length"]:
@@ -7977,7 +8491,27 @@ def _markdown_cell(value: object) -> str:
 # are refused instead. Emphasis markers are included because nothing published
 # needs them -- naming them here is cheaper than deciding later whether an
 # italicised fragment of a canonical value was intended.
-_MARKDOWN_INLINE_STRUCTURE = frozenset("<>|`\\[]*_&")
+#
+# This is NOT a general Markdown sanitizer and does not try to be one. It is a
+# closed enumeration of GFM's INLINE constructs and the characters that open
+# them, so the list can be checked against the specification rather than
+# against intuition:
+#
+#   code span                 `        emphasis, strong          * _
+#   link, image               [ ] !    raw HTML, autolink        < >
+#   entity reference          &        backslash escape          \
+#   strikethrough (GFM)       ~        table cell (GFM)          |
+#   email autolink (GFM)      @
+#
+# `~` was the gap: GFM's strikethrough extension is not in CommonMark, so a
+# value carrying `~~text~~` published as struck-through prose while every
+# other construct was refused. The extended autolink below is the one GFM
+# construct with no single opening character -- it is triggered by a prefix --
+# so it is matched as a prefix. Line-level structure (headings, list markers,
+# fences) is not this function's business: the document closure owns which
+# lines exist and what may start one.
+_MARKDOWN_INLINE_STRUCTURE = frozenset("<>|`\\[]*_&~!@")
+_MARKDOWN_AUTOLINK_PREFIXES = ("www.", "http://", "https://", "mailto:")
 
 
 def _markdown_text(value: object) -> str:
@@ -7986,6 +8520,8 @@ def _markdown_text(value: object) -> str:
     assert "\n" not in text and "\r" not in text, text
     intruders = sorted(_MARKDOWN_INLINE_STRUCTURE & set(text))
     assert not intruders, (intruders, text)
+    folded = text.lower()
+    assert not [p for p in _MARKDOWN_AUTOLINK_PREFIXES if p in folded], text
     return text
 
 
@@ -8267,12 +8803,7 @@ def test_every_target_class_is_derived_from_its_live_symbol() -> None:
     declared = cast(list[dict[str, Any]], MANIFEST["target_symbols"])
     assert len(declared) == 9
 
-    derived: list[str] = []
-    for entry in declared:
-        module = importlib.import_module(cast(str, entry["module"]))
-        derived.append(
-            _derived_target_class(getattr(module, cast(str, entry["symbol"])))
-        )
+    derived = [_derived_target_class(_live_target(entry)) for entry in declared]
     assert derived == [cast(str, entry["target_class"]) for entry in declared]
     assert Counter(derived) == {"record_model_target": 8, "vocabulary_enum_target": 1}
 
@@ -9059,7 +9590,8 @@ GOVERNANCE_REFERENCES = (
     "decision:s1-p05-s08:disposition",
     "correction:s1-p05-s08-c01:owner-topology",
 )
-RETAINED_ACQUISITION_REFERENCE = "acquisition:run-0001"
+# `RETAINED_ACQUISITION_REFERENCE` is bound beside the authority gate, which
+# needs it before any of this runs.
 RETAINED_CORRECTION_REFERENCE = "correction:s04-c01-acquisition-closure"
 CORRECTION_CITING_VECTOR = (
     "history.replay.evidence-association.approval-correction-record"
@@ -10341,7 +10873,7 @@ def test_the_epistemic_counts_come_from_their_own_sources() -> None:
     summary = cast(dict[str, Any], MANIFEST["vector_summary"])
 
     # the ordered list, so a duplicated entry could not hide behind a set
-    assert len(declared) == len(set(declared)) == len(DESCRIPTIVE_PATHS) == 74
+    assert len(declared) == len(set(declared)) == len(DESCRIPTIVE_PATHS) == 73
     assert f"({len(declared)} of them)" in _render_epistemic_split()[0]
     assert summary["fixtures"] == 19 == len(cast(list[Any], VALID["fixtures"]))
     assert summary["fixtures"] == len(FIXTURE_BINDINGS)
@@ -11525,7 +12057,7 @@ def _locked_source(decision_reference: str) -> dict[str, Any]:
     assert len(matches) == 1, decision_reference
 
     entry = matches[0]
-    raw = (REPOSITORY_ROOT / cast(str, entry["path"])).read_bytes()
+    raw = _authority_bytes(decision_reference)
     assert hashlib.sha256(raw).hexdigest() == entry["sha256"], decision_reference
     return cast(dict[str, Any], json.loads(raw))
 
@@ -12187,14 +12719,42 @@ def test_a_value_written_as_prose_may_not_become_inline_structure() -> None:
         "a | pipe",
         "a `span`",
         "a [link](x)",
+        "an ![image](x)",
         "*emphasis*",
         "an _underscore_",
         "&amp;",
         "back\\slash",
         "two\nlines",
+        # GFM's strikethrough extension: not CommonMark, and not refused until
+        # this run, so a value could publish as struck-through prose
+        "~",
+        "~~forged~~",
+        "a~b",
+        "~~~",
+        "a\u007etilde",
+        # the one construct with no opening character of its own
+        "see www.example.com",
+        "see http://example.com",
+        "see HTTPS://EXAMPLE.COM",
+        "mailto:someone@example.com",
+        "someone@example.com",
     ):
         with pytest.raises(AssertionError):
             _markdown_text(hostile)
+
+    # the enumeration is the claim, so it is checked against the constructs it
+    # names rather than against the probes above
+    assert _MARKDOWN_INLINE_STRUCTURE == frozenset(
+        "`"  # code span
+        "*_"  # emphasis and strong
+        "[]!"  # link and image
+        "<>"  # raw HTML and autolink
+        "&"  # entity reference
+        "\\"  # backslash escape
+        "~"  # strikethrough
+        "|"  # table cell
+        "@"  # email autolink
+    )
 
     # every value the document publishes as prose passes it today
     classifications = cast(
@@ -12208,6 +12768,42 @@ def test_a_value_written_as_prose_may_not_become_inline_structure() -> None:
         )
     for goal in cast(list[str], MANIFEST["non_goals"]):
         assert _markdown_text(goal) == goal
+
+
+_AUTHORED_CELL_EMPHASIS = "**"
+
+
+def test_every_published_table_cell_is_a_span_or_prose_safe() -> None:
+    """The same GFM audit, applied to the other context a value lands in.
+
+    A cell has an encoding for `|` and refuses a backslash, and that is all it
+    ever claimed. Every OTHER inline construct is live inside a cell, so a
+    canonical value written into one as bare text could publish as a link or as
+    struck-through prose exactly as it could in a sentence.
+
+    It does not today, and that is what is checked rather than assumed: every
+    published cell is a code span, which is literal, or bare content that
+    satisfies the prose rule. The one authored exception is the totals row's
+    emphasis -- structure the renderer means -- so it is unwrapped by name and
+    its content is held to the same rule.
+    """
+    spans = 0
+    bare = 0
+    for label, _header, render in DERIVED_TABLES:
+        for row in render():
+            for cell in row:
+                if cell.startswith("`"):
+                    assert _unmatched_code_span_runs(cell) == [], (label, cell)
+                    spans += 1
+                    continue
+                content = cell
+                if content.startswith(_AUTHORED_CELL_EMPHASIS) and content.endswith(
+                    _AUTHORED_CELL_EMPHASIS
+                ):
+                    content = content[2:-2]
+                assert _markdown_text(content) == content, (label, cell)
+                bare += 1
+    assert spans and bare, (spans, bare)
 
 
 def test_the_code_span_padding_publishes_the_value_itself() -> None:
@@ -16964,6 +17560,24 @@ def _traced_coordinate(at: str | None, node: Any, key: Any) -> str:
     return f"{at}/{key}"
 
 
+# The two roots of the traced universe. Neither has a coordinate smaller than
+# everything under it, so a container consumed AS A VALUE at a root cannot be
+# accounted for: writing the vector or the manifest into a sentence hands the
+# renderer every leaf beneath it. Recording a `vector:/` or `manifest:`
+# catch-all would satisfy the accounting with the widest declaration the
+# vocabulary can express, which says no more than declaring nothing. So the
+# whole-root consumption is refused and the renderer reads what its sentence
+# actually needs.
+_TRACED_ROOT_COORDINATES = frozenset({"manifest:"})
+
+
+def _traced_whole(at: str | None, seen: set[str]) -> None:
+    """Record a container consumed as a value, or refuse a whole root."""
+    if at is None or at in _TRACED_ROOT_COORDINATES:
+        raise AssertionError("a whole corpus root has no dependency coordinate")
+    seen.add(at)
+
+
 def _traced(value: Any, at: str | None, seen: set[str]) -> Any:
     if isinstance(value, dict):
         return _TracedMapping(cast(dict[str, Any], value), at, seen)
@@ -17023,21 +17637,6 @@ class _TracedMapping(dict[str, Any]):
     def values(self) -> Any:
         return [self[key] for key in self._raw]
 
-    def setdefault(self, key: Any, default: Any = None) -> Any:
-        return self[key] if key in self._raw else default
-
-    def pop(self, key: Any, *default: Any) -> Any:
-        if key in self._raw:
-            return self[key]
-        if default:
-            self._record()
-            return default[0]
-        raise KeyError(key)
-
-    def popitem(self) -> Any:
-        key = next(reversed(list(self._raw)))
-        return (key, self[key])
-
     def copy(self) -> Any:
         return dict(self.items())
 
@@ -17052,23 +17651,44 @@ class _TracedMapping(dict[str, Any]):
     def __ne__(self, other: object) -> bool:
         return not self == other
 
+    def _whole(self) -> None:
+        _traced_whole(self._at, self._seen)
+
     def __repr__(self) -> str:
-        self._record()
+        self._whole()
         return repr(self._raw)
 
     def __str__(self) -> str:
-        self._record()
+        self._whole()
         return str(self._raw)
 
     def __format__(self, specification: str) -> str:
-        self._record()
+        self._whole()
         return format(self._raw, specification)
+
+    def __reduce__(self) -> Any:
+        raise AssertionError("a traced container may not be serialised whole")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> Any:
+        raise AssertionError("a traced container may not be serialised whole")
+
+    def __getstate__(self) -> Any:
+        raise AssertionError("a traced container may not be serialised whole")
 
     def __or__(self, other: Any) -> Any:
         return dict(self.items()) | other
 
     def __ror__(self, other: Any) -> Any:
         return other | dict(self.items())
+
+    def setdefault(self, key: Any, default: Any = None) -> Any:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def pop(self, key: Any, *default: Any) -> Any:
+        raise AssertionError("a renderer may not mutate the corpus")
+
+    def popitem(self) -> Any:
+        raise AssertionError("a renderer may not mutate the corpus")
 
     def clear(self) -> None:
         raise AssertionError("a renderer may not mutate the corpus")
@@ -17142,9 +17762,6 @@ class _TracedSequence(list[Any]):
     def copy(self) -> Any:
         return list(self)
 
-    def pop(self, index: SupportsIndex = -1) -> Any:
-        return self[index]
-
     def index(self, *args: Any) -> int:
         self._record()
         return self._raw.index(*args)
@@ -17160,17 +17777,29 @@ class _TracedSequence(list[Any]):
     def __ne__(self, other: object) -> bool:
         return not self == other
 
+    def _whole(self) -> None:
+        _traced_whole(self._at, self._seen)
+
     def __repr__(self) -> str:
-        self._record()
+        self._whole()
         return repr(self._raw)
 
     def __str__(self) -> str:
-        self._record()
+        self._whole()
         return str(self._raw)
 
     def __format__(self, specification: str) -> str:
-        self._record()
+        self._whole()
         return format(self._raw, specification)
+
+    def __reduce__(self) -> Any:
+        raise AssertionError("a traced container may not be serialised whole")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> Any:
+        raise AssertionError("a traced container may not be serialised whole")
+
+    def __getstate__(self) -> Any:
+        raise AssertionError("a traced container may not be serialised whole")
 
     def __add__(self, other: Any) -> Any:
         return list(self) + other
@@ -17183,6 +17812,9 @@ class _TracedSequence(list[Any]):
 
     def __rmul__(self, count: SupportsIndex) -> Any:
         return list(self) * count
+
+    def pop(self, index: SupportsIndex = -1) -> Any:
+        raise AssertionError("a renderer may not mutate the corpus")
 
     def append(self, value: Any) -> None:
         raise AssertionError("a renderer may not mutate the corpus")
@@ -17236,16 +17868,30 @@ def _smallest_coordinates(seen: set[str]) -> tuple[str, ...]:
 
 
 # Accessors the proxies do not override, and why each cannot leak an untraced
-# value. Ordering comparisons hand back a bool over the whole container and
-# never a child; `fromkeys` is a constructor that builds a plain dict from keys
-# the caller already has. Everything else on `dict` and `list` either records
-# what it hands out or refuses, and the test below keeps that list closed.
+# value. This is the WHOLE public surface of `dict` and `list` -- every name
+# `dir()` reports, inherited ones included -- rather than a hand-picked list of
+# the interesting ones, because a name nobody thought to sample is exactly how
+# `setdefault` and a sequence's `pop` stayed open. Everything not excused below
+# either records what it hands out or refuses outright.
 _TRACED_UNGUARDED = {
     "__lt__": "an ordering comparison returns a bool, never a member",
     "__le__": "an ordering comparison returns a bool, never a member",
     "__gt__": "an ordering comparison returns a bool, never a member",
     "__ge__": "an ordering comparison returns a bool, never a member",
     "fromkeys": "a constructor over keys the caller already holds",
+    "__class__": "the type, not a member",
+    "__class_getitem__": "a type subscription, evaluated on the class",
+    "__new__": "allocation, before any node is bound",
+    "__init_subclass__": "class creation, not a container read",
+    "__subclasshook__": "an issubclass answer over types",
+    "__dir__": "the attribute names of the proxy, not the corpus",
+    "__sizeof__": "an int over the base storage",
+    "__getattribute__": (
+        "attribute access on the proxy itself, which reaches `_raw` and is "
+        "refused in the renderer closure rather than at the container"
+    ),
+    "__setattr__": "attribute access on the proxy itself, same closure",
+    "__delattr__": "attribute access on the proxy itself, same closure",
 }
 
 
@@ -17274,47 +17920,27 @@ def test_no_renderer_reaches_around_the_recorder() -> None:
 def test_no_container_accessor_can_hand_out_an_untraced_value() -> None:
     """A recorder with an unguarded accessor is a recorder with a hole.
 
-    Five did leak before this list was closed: a sequence's `reversed`, `copy`
+    Five leaked before this list was closed: a sequence's `reversed`, `copy`
     and `pop` handed back the raw member, a mapping's `setdefault` did the same,
     and an equality test read the whole container without recording it. So the
     public surface of `dict` and `list` is enumerated rather than sampled, and
     every name must be overridden or excused here by name.
+
+    `pop`, `popitem` and `setdefault` were closed as READS -- they returned a
+    traced value -- but each of them mutates the container it is called on, and
+    tracing is a read-only view. Recording what they hand back describes the
+    corpus as it was before a renderer changed it. They fail closed with the
+    rest of the mutations now, whether or not the key is present.
     """
-    surface = {
-        "__getitem__",
-        "__setitem__",
-        "__delitem__",
-        "__iter__",
-        "__reversed__",
-        "__len__",
-        "__contains__",
-        "__eq__",
-        "__ne__",
-        "__or__",
-        "__ror__",
-        "__ior__",
-        "__add__",
-        "__radd__",
-        "__mul__",
-        "__rmul__",
-        "__iadd__",
-        "__imul__",
-        "__lt__",
-        "__le__",
-        "__gt__",
-        "__ge__",
-        # a container written into a sentence is read whole, and the base
-        # storage holds the raw children, so these three leaked everything
-        "__repr__",
-        "__str__",
-        "__format__",
-    }
     for base, proxy in ((dict, _TracedMapping), (list, _TracedSequence)):
-        names = {
-            name for name in dir(base) if not name.startswith("__") or name in surface
-        }
-        unguarded = {name for name in names if name not in proxy.__dict__}
-        assert unguarded == set(_TRACED_UNGUARDED) & names, (base.__name__, unguarded)
+        published = set(dir(base))
+        unguarded = published - set(proxy.__dict__)
+        assert unguarded == set(_TRACED_UNGUARDED) & published, (
+            base.__name__,
+            sorted(unguarded - set(_TRACED_UNGUARDED)),
+        )
+    # and no excuse outlives the name it was written for
+    assert set(_TRACED_UNGUARDED) <= set(dir(dict)) | set(dir(list))
 
     # and the five that leaked are closed, each checked through the proxy
     vector = next(
@@ -17327,12 +17953,8 @@ def test_no_container_accessor_can_hand_out_an_untraced_value() -> None:
             lambda w: list(reversed(w["source_pointers"]))[-1]["json_pointer"],
         ),
         ("copy", lambda w: w["source_pointers"].copy()[0]["json_pointer"]),
-        ("pop", lambda w: w["source_pointers"].pop(0)["json_pointer"]),
         ("concatenate", lambda w: (w["source_pointers"] + [])[0]["json_pointer"]),
-        (
-            "setdefault",
-            lambda w: w["source_pointers"][0].setdefault("json_pointer", ""),
-        ),
+        ("index", lambda w: w["source_pointers"][0]["json_pointer"]),
     )
     for label, read in reads:
         seen: set[str] = set()
@@ -17362,10 +17984,84 @@ def test_no_container_accessor_can_hand_out_an_untraced_value() -> None:
         ("update", lambda w: w["input"].update({"x": 1})),
         ("delete", lambda w: w["input"].__delitem__("role_assignment")),
         ("sort", lambda w: w["source_pointers"].sort()),
+        # each of these returns a value AND removes or inserts one, so a
+        # read-only view cannot offer them at all
+        ("list pop", lambda w: w["source_pointers"].pop(0)),
+        ("mapping pop", lambda w: w["input"].pop("role_assignment")),
+        ("mapping pop default", lambda w: w["input"].pop("absent", None)),
+        ("popitem", lambda w: w["input"].popitem()),
+        ("setdefault present", lambda w: w["input"].setdefault("role_assignment", 1)),
+        ("setdefault absent", lambda w: w["input"].setdefault("absent", 1)),
     )
     for label, mutate in mutations:
-        with pytest.raises(AssertionError):
+        with pytest.raises(AssertionError, match="may not mutate"):
             mutate(_TracedMapping(vector, None, set()))
+        assert label
+
+    # a mutation must not be recorded as a read either: nothing about the
+    # refused call may reach the dependency set
+    for _label, mutate in mutations:
+        seen = set()
+        with pytest.raises(AssertionError):
+            mutate(_TracedMapping(vector, None, seen))
+        assert seen <= {"input:", "source-pointer:"}
+
+
+def test_a_whole_corpus_root_cannot_be_consumed_as_a_value() -> None:
+    """A root written whole into a sentence has no coordinate to declare.
+
+    The conversions record the container they are called on, which is right for
+    a nested one -- `input:` is a real address and everything under it is a
+    real narrowing. A root is different: it has no address smaller than the
+    corpus surface itself, so the only coordinate available for `f"{vector}"`
+    would be a `vector:/` or `manifest:` catch-all standing for every leaf.
+    Declaring that is indistinguishable from declaring nothing, and it would
+    make the dependency ledger trivially satisfiable for any renderer willing
+    to interpolate the root. So the consumption is refused instead.
+    """
+    vector = next(
+        v for v in REPLAY["vectors"] if v["id"] == "history.replay.role-binding.base"
+    )
+    consumptions: tuple[tuple[str, Callable[[Any], Any]], ...] = (
+        ("str", str),
+        ("repr", repr),
+        ("interpolation", lambda root: f"{root}"),
+        ("format", lambda root: format(root, "")),
+        ("format spec", lambda root: format(root, ">1")),
+        ("reduce", lambda root: root.__reduce__()),
+        ("reduce_ex", lambda root: root.__reduce_ex__(2)),
+        ("getstate", lambda root: root.__getstate__()),
+        ("copy", copy.copy),
+        ("deepcopy", copy.deepcopy),
+    )
+    roots: tuple[tuple[str, dict[str, Any], str | None], ...] = (
+        ("vector", vector, None),
+        ("manifest", MANIFEST, "manifest:"),
+    )
+    for root_label, node, at in roots:
+        for label, consume in consumptions:
+            seen: set[str] = set()
+            with pytest.raises(AssertionError):
+                consume(_TracedMapping(node, at, seen))
+            # refused, and nothing recorded: no catch-all is written either
+            assert seen == set(), (root_label, label)
+
+    # a sequence root is refused on the same rule, wherever one is built
+    with pytest.raises(AssertionError):
+        str(_TracedSequence(cast(list[Any], vector["source_pointers"]), None, set()))
+
+    # and a NESTED container is still converted and recorded, not refused: the
+    # closure is about roots, not about writing a value into a sentence
+    for label, consume in consumptions[:4]:
+        seen = set()
+        assert consume(_TracedMapping(vector, None, seen)["input"]) is not None
+        assert _smallest_coordinates(seen) == ("input:",), label
+
+    # the manifest's own children keep their real addresses too
+    seen = set()
+    watched = _TracedMapping(MANIFEST, "manifest:", seen)
+    assert str(watched["replay_contract"]["evidence_limits"])
+    assert _smallest_coordinates(seen) == ("manifest:/replay_contract/evidence_limits",)
 
 
 def _traced_dependencies(

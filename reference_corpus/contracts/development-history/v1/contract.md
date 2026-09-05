@@ -64,7 +64,7 @@ A caller-supplied composition or association cites no retained location of its o
 
 ## 5. Objective and Descriptive Declarations
 
-Every manifest declaration is exactly one of two kinds. An **objective** declaration is compared with something outside the manifest -- the live `__all__`, the filesystem, the sealed vector files, the locked source documents, or the executor's own registries -- and the focused oracle fails if any objective leaf has no such consumer. A **descriptive** declaration has no independent source of truth; the exact leaf paths are enumerated in `descriptive_metadata.paths` (74 of them) and are never counted as verified assurance.
+Every manifest declaration is exactly one of two kinds. An **objective** declaration is compared with something outside the manifest -- the live `__all__`, the filesystem, the sealed vector files, the locked source documents, or the executor's own registries -- and the focused oracle fails if any objective leaf has no such consumer. A **descriptive** declaration has no independent source of truth; the exact leaf paths are enumerated in `descriptive_metadata.paths` (73 of them) and are never counted as verified assurance.
 
 Fixture values are inlined in the vectors rather than referenced by marker. The manifest records that mechanism as `inlined_values_with_test_only_explicit_semantic_bindings`: the corpus carries the values, and the oracle resolves each of the 19 declared fixtures to an exact vector, side, and JSON pointer rather than searching for an equal value.
 
