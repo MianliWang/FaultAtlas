@@ -5,20 +5,22 @@ import builtins
 import copy
 import hashlib
 import importlib
+import importlib.util
 import inspect
 import io
 import json
 import re
 import stat as stat_module
 import subprocess
+import sys
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from enum import Enum
 from pathlib import Path, PurePosixPath
 from string import ascii_letters, digits
-from types import UnionType
-from typing import Any, NamedTuple, SupportsIndex, Union, cast, get_origin
+from types import CodeType, FunctionType, ModuleType, UnionType
+from typing import Any, NamedTuple, Union, cast, get_origin
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -6531,15 +6533,19 @@ def test_no_declared_module_name_ever_reaches_an_importer(
 
 
 def test_this_module_calls_no_importer_at_all() -> None:
-    """The class, not the instance: nothing here loads a module by name.
+    """The class, not the instance: nothing here loads a module BY NAME.
 
     Two derivations resolved a corpus-supplied `module` through
-    `importlib.import_module`. The closure is that the suite no longer names an
-    importer anywhere -- the sole reference left is the seal the probe above
-    installs over it.
+    `importlib.import_module`, which runs it. No importer is named anywhere in
+    the module now.
+
+    One loader survives and is not of that kind: the renderer-purity audit
+    loads THIS FILE again, by path, to judge a copy the test runner has not
+    rewritten. Its argument is `__file__` and it is checked to be, so no name
+    -- corpus-supplied or otherwise -- decides what it loads.
     """
     tree = ast.parse(Path(__file__).read_text("utf-8"))
-    loaders = {"import_module", "__import__", "exec_module", "load_module", "eval"}
+    loaders = {"import_module", "__import__", "load_module", "eval"}
     called = sorted(
         {
             node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id
@@ -6554,12 +6560,30 @@ def test_this_module_calls_no_importer_at_all() -> None:
     )
     assert called == [], called
 
-    # `importlib` survives only as the object the seal is installed on
-    assert [
+    # every `exec_module` call is the purity audit loading this file by path
+    loads = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in ("exec_module", "spec_from_file_location")
+    ]
+    assert len(loads) == 2, len(loads)
+    (located,) = [n for n in loads if n.func.attr == "spec_from_file_location"]  # type: ignore[union-attr]
+    assert len(located.args) == 2
+    assert isinstance(located.args[0], ast.Constant)
+    path_argument = located.args[1]
+    assert isinstance(path_argument, ast.Call)
+    assert isinstance(path_argument.func, ast.Name) and path_argument.func.id == "Path"
+    assert [a.id for a in path_argument.args if isinstance(a, ast.Name)] == ["__file__"]
+
+    # `importlib` is only ever the object the seal is installed on, or the
+    # by-path loader above
+    assert {
         node.id
         for node in ast.walk(tree)
         if isinstance(node, ast.Name) and node.id == "importlib"
-    ] == ["importlib"]
+    } == {"importlib"}
 
 
 def _v_execution_contract() -> None:
@@ -14384,6 +14408,24 @@ def _pV_capitalise(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
+def _entries(inputs: dict[str, Any], prefix: str) -> list[Any]:
+    """The resolved values whose coordinates share a prefix, in that order.
+
+    Sound because the frontier's key set IS the claim's declared dependency
+    set: scanning it scans declared data and can reach nothing else. This is
+    what replaces the renderers that used to scan `vector["source_pointers"]`
+    -- including one that took element zero, which made a semantically neutral
+    ordering load-bearing for which pointer a sentence was about.
+    """
+    return [inputs[key] for key in sorted(inputs) if key.startswith(prefix)]
+
+
+def _only(values: list[Any]) -> Any:
+    """The single declared value of its kind, or a refusal."""
+    assert len(values) == 1, values
+    return values[0]
+
+
 def _pV_plain(value: Any) -> Any:
     """Strip the declared python-input markers down to the declared value."""
     while isinstance(value, dict):
@@ -14416,75 +14458,74 @@ def _pV_changed_path_count(declared: Any) -> int:
     return int(shaped["indexed_value"]["count"])
 
 
-def _PV_role_binding_canonical(vector: dict[str, Any], family: str) -> str:
+def _PV_role_binding_canonical(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """`<ROLE>` and the pull-request number, read out of the declared input."""
-    supplied = vector["input"]
-    role = _pV_plain(supplied["role_assignment"])["role"]
-    number = _pV_plain(supplied["pull_request"])["repository_scoped_number"]
+    role = cast(str, inputs["input:/role_assignment/role"])
+    number = inputs["input:/pull_request/repository_scoped_number"]
     return f"The canonical {role.upper()} binding of pull request {number}"
 
 
-def _PV_status_member(vector: dict[str, Any], family: str) -> str:
+def _PV_status_member(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """The admitted vocabulary member, read out of the authored dump."""
-    return f"The published {vector['expected']['semantic_dump']} status member"
+    return f"The published {inputs['expected:/semantic_dump']} status member"
 
 
-def _PV_changed_path_canonical(vector: dict[str, Any], family: str) -> str:
+def _PV_changed_path_canonical(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """Status out of the input; the path's published fixture name beside it."""
-    supplied = vector["input"]
-    status = _pV_plain(supplied["status"])
-    name = _PV_PATH_NAMES[_pV_plain(supplied["path"])]
+    status = _pV_plain(inputs["input:/status"])
+    name = _PV_PATH_NAMES[_pV_plain(inputs["input:/path"])]
     return f"The canonical {status} {name} path"
 
 
-def _PV_change_set_supplied_count(vector: dict[str, Any], family: str) -> str:
-    count = _pV_changed_path_count(vector["input"]["changed_paths"])
+def _PV_change_set_supplied_count(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
+    count = _pV_changed_path_count(inputs["input:/changed_paths"])
     return f"The canonical supplied change set over {_pV_spell(count)} paths"
 
 
-def _PV_change_set_minimum(vector: dict[str, Any], family: str) -> str:
-    count = _pV_changed_path_count(vector["input"]["changed_paths"])
+def _PV_change_set_minimum(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
+    count = _pV_changed_path_count(inputs["input:/changed_paths"])
     return f"{_pV_capitalise(_pV_spell(count))} changed path is the published minimum"
 
 
-def _PV_change_set_maximum(vector: dict[str, Any], family: str) -> str:
-    count = _pV_changed_path_count(vector["input"]["changed_paths"])
+def _PV_change_set_maximum(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
+    count = int(inputs["input:/changed_paths/indexed_value/count"])
     return (
         f"{_pV_capitalise(_pV_spell(count))} changed paths is the published maximum "
         "and is accepted"
     )
 
 
-def _PV_approval_canonical(vector: dict[str, Any], family: str) -> str:
-    supplied = vector["input"]
-    review = _pV_plain(supplied["review"])["provider_global_id"]
-    revision = _pV_plain(supplied["approved_revision"])["full_digest"][:8]
+def _PV_approval_canonical(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
+    review = inputs["input:/review/provider_global_id"]
+    revision = cast(str, inputs["input:/approved_revision/full_digest"])[:8]
     return f"Review {review} approves revision {revision}"
 
 
-def _PV_merge_outcome_canonical(vector: dict[str, Any], family: str) -> str:
-    supplied = vector["input"]
-    number = _pV_plain(supplied["pull_request"])["repository_scoped_number"]
-    revision = _pV_plain(supplied["merge_revision"])["full_digest"][:8]
+def _PV_merge_outcome_canonical(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
+    number = inputs["input:/pull_request/repository_scoped_number"]
+    revision = cast(str, inputs["input:/merge_revision/full_digest"])[:8]
     return f"Pull request {number} merged as revision {revision}"
 
 
-def _PV_head_ref_deletion_canonical(vector: dict[str, Any], family: str) -> str:
-    lexeme = _pV_plain(vector["input"]["head_ref_name"])
+def _PV_head_ref_deletion_canonical(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
+    lexeme = _pV_plain(inputs["input:/head_ref_name"])
     return f"The recorded head ref {lexeme} was deleted"
 
 
-def _PV_occurrence_instant(vector: dict[str, Any], family: str) -> str:
+def _PV_occurrence_instant(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """The admitted surface and the instant it carries, both from the input."""
-    supplied = vector["input"]
-    surface = _PV_OCCURRENCE_SURFACE_NAMES[_pV_symbol_of(supplied["occurrence"])]
-    return f"The {surface} occurred at {_pV_plain(supplied['occurred_at'])}"
+    surface = _PV_OCCURRENCE_SURFACE_NAMES[_pV_symbol_of(inputs["input:/occurrence"])]
+    return f"The {surface} occurred at {_pV_plain(inputs['input:/occurred_at'])}"
 
 
-def _PV_occurrence_offset_normalisation(vector: dict[str, Any], family: str) -> str:
+def _PV_occurrence_offset_normalisation(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
     """Both offset lexemes: one supplied, one in the authored dump."""
-    supplied = _pV_OFFSET.search(_pV_plain(vector["input"]["occurred_at"]))
-    normalized = _pV_OFFSET.search(vector["expected"]["semantic_dump"]["occurred_at"])
+    supplied = _pV_OFFSET.search(_pV_plain(inputs["input:/occurred_at"]))
+    normalized = _pV_OFFSET.search(inputs["expected:/semantic_dump/occurred_at"])
     assert supplied and normalized
     return (
         f"An explicit {supplied.group(1)} offset is accepted and normalized "
@@ -14492,33 +14533,41 @@ def _PV_occurrence_offset_normalisation(vector: dict[str, Any], family: str) -> 
     )
 
 
-def _PV_occurrence_tied_surface(vector: dict[str, Any], family: str) -> str:
+def _PV_occurrence_tied_surface(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """Which surface carries which of the locked instants."""
-    supplied = vector["input"]
-    surface = _PV_OCCURRENCE_SURFACE_SHORT_NAMES[_pV_symbol_of(supplied["occurrence"])]
-    instant = _PV_INSTANT_NAMES[_pV_plain(supplied["occurred_at"])]
+    symbol = _pV_symbol_of(inputs["input:/occurrence"])
+    surface = _PV_OCCURRENCE_SURFACE_SHORT_NAMES[symbol]
+    instant = _PV_INSTANT_NAMES[_pV_plain(inputs["input:/occurred_at"])]
     return f"The {surface} surface carries the {instant} instant"
 
 
-def _PV_evidence_link_json_fact(vector: dict[str, Any], family: str) -> str:
-    symbol = _pV_symbol_of(vector["input"]["fact"])
+def _PV_evidence_link_json_fact(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
+    symbol = _pV_symbol_of(inputs["input:/fact"])
     return f"A {symbol} is an admitted fact in the link's JSON reconstruction"
 
 
-def _PV_evidence_link_python_fact(vector: dict[str, Any], family: str) -> str:
-    symbol = _pV_symbol_of(vector["input"]["fact"])
+def _PV_evidence_link_python_fact(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
+    symbol = cast(str, inputs["input:/fact/typed_value/target"])
     return f"A published {symbol} is admitted in Python input"
 
 
-def _PV_requirement_sentence(vector: dict[str, Any], family: str) -> str:
-    """One fixed sentence per ledger row, selected by that row's witness."""
-    return _PV_REQUIREMENT_SENTENCES[_pV_REQUIREMENT_BY_WITNESS[vector["id"]]]
+def _PV_requirement_sentence(
+    _inputs: dict[str, Any], authority: PurposeAuthority
+) -> str:
+    """One fixed sentence per ledger row, selected by that row's requirement.
+
+    The requirement is the claim's AUTHORITY, not one of its render inputs: the
+    vector id was only ever the key that located the ledger row, and that
+    binding is proved independently by `_purpose_authority_failures`.
+    """
+    assert authority.requirement_id is not None
+    return _PV_REQUIREMENT_SENTENCES[authority.requirement_id]
 
 
-def _pV_declaration(index: int) -> Callable[[dict[str, Any], str], str]:
-    def render(vector: dict[str, Any], family: str) -> str:
+def _pV_declaration(index: int) -> Callable[[dict[str, Any], PurposeAuthority], str]:
+    def render(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
         """Authored interpretation; no structured authority stands behind it."""
-        return _PV_CANONICAL_DECLARATIONS[vector["id"]][index]
+        return _PV_CANONICAL_DECLARATIONS[cast(str, inputs["field:id"])][index]
 
     return render
 
@@ -14558,18 +14607,6 @@ expected fields directly.
 _pI_LEDGER_BY_WITNESS = {row[4]: row for row in REQUIREMENT_LEDGER}
 
 
-def _pI_identity(vector: dict[str, Any]) -> tuple[str, str]:
-    """The validated (target, requirement) pair this vector witnesses."""
-    row = _pI_LEDGER_BY_WITNESS.get(vector["id"])
-    if row is not None:
-        return (vector["target"], row[2])
-    registered = SECONDARY_WITNESS_REGISTRY[vector["id"]]
-    derived = _derived_requirement(vector)
-    if registered != derived:  # pragma: no cover - the corpus tests forbid it
-        raise AssertionError(vector["id"])
-    return (vector["target"], derived)
-
-
 def _pI_instant_grammar(lexeme: str) -> str:
     """Classify a supplied instant lexeme by its own shape."""
     date, marker, clock = lexeme.partition("T")
@@ -14600,9 +14637,9 @@ def _pI_supplied_shape(node: Any) -> tuple[Any, ...]:
     return ("scalar", type(node).__name__)
 
 
-def _pI_fact_branch(vector: dict[str, Any]) -> tuple[Any, ...]:
+def _pI_fact_branch(inputs: dict[str, Any]) -> tuple[Any, ...]:
     """Which admitted-fact branch the supplied mapping reaches for, if any."""
-    fact = vector["input"]["fact"]
+    fact = cast(dict[str, Any], inputs["input:/fact"])
     keys = tuple(sorted(fact))
     if keys == ("occurred_at", "occurrence"):
         if not isinstance(fact["occurrence"], dict):
@@ -14611,48 +14648,67 @@ def _pI_fact_branch(vector: dict[str, Any]) -> tuple[Any, ...]:
     return ("fact-keys", keys)
 
 
-def _pI_no_discriminator(_vector: dict[str, Any]) -> tuple[Any, ...]:
+def _pI_no_discriminator(_inputs: dict[str, Any]) -> tuple[Any, ...]:
     return ()
 
 
+def _pI_status_lexeme(inputs: dict[str, Any]) -> tuple[Any, ...]:
+    return (inputs["input:"],)
+
+
+def _pI_review_nesting(inputs: dict[str, Any]) -> tuple[Any, ...]:
+    return (inputs["input:/review/kind"], inputs["input:/review/parent/kind"])
+
+
+def _pI_pull_request_shape(inputs: dict[str, Any]) -> tuple[Any, ...]:
+    return _pI_supplied_shape(inputs["input:/pull_request"])
+
+
+def _pI_error_type(inputs: dict[str, Any]) -> tuple[Any, ...]:
+    return (inputs["expected:/error_type"],)
+
+
+def _pI_occurrence_members(inputs: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(sorted(cast(dict[str, Any], inputs["input:/occurrence"])))
+
+
+def _pI_fact_shape(inputs: dict[str, Any]) -> tuple[Any, ...]:
+    return _pI_supplied_shape(inputs["input:/fact"])
+
+
+# Named rather than lambdas, because a lambda in a dispatch table is reached
+# through a local name and the renderer call-graph audit cannot see it. Seven
+# of these were invisible to that audit while running on the hot path of every
+# gloss claim -- the same shape as `dir(dict)` omitting `__dict__`.
 _pI_DISCRIMINATORS: dict[
     tuple[Any, ...], Callable[[dict[str, Any]], tuple[Any, ...]]
 ] = {
-    ("ChangedPathStatus", "the vocabulary is closed"): lambda v: (v["input"],),
+    ("ChangedPathStatus", "the vocabulary is closed"): _pI_status_lexeme,
     (
         "PullRequestReviewRevisionApproval",
         "review refuses this published boundary",
-    ): lambda v: (
-        v["input"]["review"]["kind"],
-        v["input"]["review"]["parent"]["kind"],
-    ),
+    ): _pI_review_nesting,
     (
         "PullRequestRevisionRoleBinding",
         "pull_request refuses this published boundary",
-    ): lambda v: _pI_supplied_shape(v["input"]["pull_request"]),
+    ): _pI_pull_request_shape,
     (
         "PullRequestHistoricalOccurrenceTime",
         "occurred_at refuses this published boundary",
-    ): lambda v: (v["expected"]["error_type"],),
+    ): _pI_error_type,
     (
         "PullRequestHistoricalOccurrenceTime",
         "occurrence admits only its published union members",
-    ): lambda v: tuple(sorted(v["input"]["occurrence"])),
+    ): _pI_occurrence_members,
     (
         "PullRequestHistoryFactEvidenceLink",
         "fact refuses this published boundary",
-    ): lambda v: _pI_supplied_shape(v["input"]["fact"]),
+    ): _pI_fact_shape,
     (
         "PullRequestHistoryFactEvidenceLink",
         "fact admits only its published union members",
     ): _pI_fact_branch,
 }
-
-
-def _pI_gloss_key(vector: dict[str, Any]) -> tuple[Any, ...]:
-    identity = _pI_identity(vector)
-    discriminate = _pI_DISCRIMINATORS.get(identity, _pI_no_discriminator)
-    return identity + tuple(discriminate(vector))
 
 
 _pI_REQUIREMENT_GLOSS: dict[tuple[Any, ...], str] = {
@@ -15150,28 +15206,41 @@ _pI_REQUIREMENT_GLOSS: dict[tuple[Any, ...], str] = {
 }
 
 
-def _pI_render_requirement_gloss(vector: dict[str, Any], family: str) -> str:
-    """The authored sentence selected by this vector's requirement identity."""
-    return _pI_REQUIREMENT_GLOSS[_pI_gloss_key(vector)]
+def _pI_render_requirement_gloss(
+    inputs: dict[str, Any], authority: PurposeAuthority
+) -> str:
+    """The authored sentence selected by this vector's requirement identity.
+
+    The identity is (target, requirement): the target is a declared render
+    input, the requirement is what the claim's authority resolves to. Which
+    further values distinguish two vectors under the same requirement is the
+    discriminator's business, and each of those values is declared too.
+    """
+    assert authority.requirement is not None
+    identity = (cast(str, inputs["target"]), authority.requirement)
+    discriminate = _pI_DISCRIMINATORS.get(identity, _pI_no_discriminator)
+    return _pI_REQUIREMENT_GLOSS[identity + tuple(discriminate(inputs))]
 
 
-def _pI_render_objects_already_match_head(vector: dict[str, Any], family: str) -> str:
+def _pI_render_objects_already_match_head(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
     """Whether every supplied changed object already matches the head revision."""
-    supplied = vector["input"]
-    head_algorithm = supplied["head"]["role_assignment"]["revision"]["algorithm"]
-    objects = [p["head_object"]["algorithm"] for p in supplied["changed_paths"]]
-    if objects and all(a == head_algorithm for a in objects):
+    head_algorithm = inputs["input:/head/role_assignment/revision/algorithm"]
+    supplied = inputs["input:/changed_paths/0/head_object/algorithm"]
+    if supplied == head_algorithm:
         return "every changed object already matches the head"
     return "not every changed object matches the head"
 
 
-def _pI_render_true_omission_not_union(vector: dict[str, Any], family: str) -> str:
+def _pI_render_true_omission_not_union(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
     """Whether the recorded failure is a real omission or a closed-union refusal."""
-    expected = vector["expected"]
-    field = expected["error_location"][0]
-    supplied = vector["input"]
-    omitted = isinstance(supplied, dict) and field not in supplied
-    if omitted and expected["error_location_mode"] == "exact":
+    field = inputs["expected:/error_location/0"]
+    supplied = inputs["input:"]
+    omitted = isinstance(supplied, dict) and field not in cast(dict[str, Any], supplied)
+    if omitted and inputs["expected:/error_location_mode"] == "exact":
         return "omitting it is not a union failure"
     return "omitting it is a union failure"
 
@@ -15243,10 +15312,6 @@ def _pR_source_position(pointer: dict[str, Any]) -> str:
     return "/" + "/".join(parts)
 
 
-def _pR_primary(vector: dict[str, Any]) -> dict[str, Any]:
-    return vector["source_pointers"][0]
-
-
 # The retained coordinate each provenance renderer actually reads. A vector
 # cites several -- the comparison, the pull request bracket, the repository --
 # and only one of them is the node a given sentence is about. These selections
@@ -15281,17 +15346,9 @@ def _pR_instant_pointer(vector: dict[str, Any]) -> dict[str, Any]:
     raise LookupError("no retained coordinate carries the replayed instant")
 
 
-def _pR_composed_bindings(vector: dict[str, Any]) -> list[str]:
+def _pR_composed_bindings(facts: dict[str, Any]) -> list[str]:
     """The embedded facts a caller composition binds, in declared order."""
-    return [key for key in vector["embedded_facts"] if key.count("/") == 1]
-
-
-def _pR_replayed_targets(vector: dict[str, Any]) -> list[str]:
-    return [
-        target
-        for pointer in vector["source_pointers"]
-        for target in pointer["source_fields"].values()
-    ]
+    return [key for key in facts if key.count("/") == 1]
 
 
 def _pR_target_ending(targets: list[str], leaf: str) -> str:
@@ -15302,92 +15359,95 @@ def _pR_short(digest: str) -> str:
     return digest[:8]
 
 
-def _pR_authority_role(reference: str) -> str:
+def _pR_authority_role(rows: list[dict[str, Any]], reference: str) -> str:
     """The role of the one source decision carrying this reference.
 
     The whole collection is scanned and exactly one match required, rather than
     stopping at the first. A short-circuiting search reads a different prefix of
     the list when the list is reordered, and `source_decisions` ordering is
     semantically neutral -- so the inputs this fragment rests on would move
-    without its meaning moving, and a duplicated reference would pass.
+    without its meaning moving, and a duplicated reference would pass. The
+    collection arrives as a declared dependency; the renderer no longer reaches
+    the manifest to find it.
     """
-    matches = [
-        row
-        for row in cast(list[dict[str, Any]], MANIFEST["source_decisions"])
-        if row["decision_reference"] == reference
-    ]
+    matches = [row for row in rows if row["decision_reference"] == reference]
     assert len(matches) == 1, reference
     return str(matches[0]["authority_role"])
 
 
-def _PR_retained_role_binding_fact(vector: dict[str, Any], family: str) -> str:
+def _PR_retained_role_binding_fact(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """Retained comparison node, the role it implies, its revision and the PR."""
-    pointer = _pR_role_implication_pointer(vector)
+    pointer = next(
+        entry
+        for entry in _entries(inputs, "source-pointer:")
+        if cast(dict[str, Any], entry).get("role_implications")
+    )
     noun = _PR_RETAINED_NODE_NOUNS[_pR_source_position(pointer)]
-    role = _pR_replayed(vector, next(iter(pointer["role_implications"].values())))
-    revision = _pR_replayed(
-        vector,
-        _pR_target_ending(list(pointer["source_fields"].values()), "full_digest"),
+    role = inputs["expected:/semantic_dump/role_assignment/role"]
+    revision = cast(
+        str, inputs["expected:/semantic_dump/role_assignment/revision/full_digest"]
     )
-    number = _pR_replayed(
-        vector,
-        _pR_target_ending(_pR_replayed_targets(vector), "repository_scoped_number"),
+    number = inputs["expected:/semantic_dump/pull_request/repository_scoped_number"]
+    return (
+        f"The retained {noun} records {role} {_pR_short(revision)} "
+        f"for pull request {number}"
     )
-    return f"The retained {noun} records {role} {_pR_short(revision)} for pull request {number}"
 
 
-def _PR_retained_changed_path_fact(vector: dict[str, Any], family: str) -> str:
+def _PR_retained_changed_path_fact(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """Retained changed-file node and the repository path it carries."""
-    pointer = _pR_primary(vector)
+    pointer = _only(_entries(inputs, "source-pointer:"))
     noun = _PR_RETAINED_NODE_NOUNS[_pR_source_position(pointer)]
-    path = _pR_replayed(
-        vector, _pR_target_ending(list(pointer["source_fields"].values()), "path")
-    )
-    return f"The retained {noun} for {path}"
+    return f"The retained {noun} for {inputs['expected:/semantic_dump/path']}"
 
 
-def _PR_retained_review_approval_fact(vector: dict[str, Any], family: str) -> str:
+def _PR_retained_review_approval_fact(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
     """Retained review node, its provider id and the revision it approves."""
-    pointer = _pR_primary(vector)
+    pointer = _only(_entries(inputs, "source-pointer:"))
     noun = _PR_RETAINED_NODE_NOUNS[_pR_source_position(pointer)]
-    fields = list(pointer["source_fields"].values())
-    review = _pR_replayed(vector, _pR_target_ending(fields, "provider_global_id"))
-    revision = _pR_replayed(vector, _pR_target_ending(fields, "full_digest"))
+    review = inputs["expected:/semantic_dump/review/provider_global_id"]
+    revision = cast(
+        str, inputs["expected:/semantic_dump/approved_revision/full_digest"]
+    )
     return f"The retained {noun} {review} approves revision {_pR_short(revision)}"
 
 
-def _PR_retained_merge_event_fact(vector: dict[str, Any], family: str) -> str:
+def _PR_retained_merge_event_fact(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """Retained timeline event and the merge revision it alone carries."""
-    pointer = _pR_primary(vector)
+    pointer = _only(_entries(inputs, "source-pointer:"))
     noun = _PR_RETAINED_NODE_NOUNS[_pR_source_position(pointer)]
-    target = _pR_target_ending(list(pointer["source_fields"].values()), "full_digest")
-    subject = target.strip("/").split("/")[0].replace("_", " ")
-    return f"The retained {noun} records {subject} {_pR_short(_pR_replayed(vector, target))}"
-
-
-def _PR_retained_occurrence_instant_fact(vector: dict[str, Any], family: str) -> str:
-    """Retained instant and the published history fact it is attached to."""
-    roots = sorted({t.strip("/").split("/")[0] for t in _pR_replayed_targets(vector)})
-    coordinate = _pR_instant_pointer(vector)
-    instant = _pR_replayed(vector, _pR_instant_target(coordinate, vector))
-    occurrence = next(
-        _pR_replayed(vector, f"/{r}")
-        for r in roots
-        if isinstance(_pR_replayed(vector, f"/{r}"), dict)
+    target = _pR_target_ending(
+        list(cast(dict[str, str], pointer["source_fields"]).values()), "full_digest"
     )
+    subject = target.strip("/").split("/")[0].replace("_", " ")
+    digest = cast(str, inputs["expected:/semantic_dump/merge_revision/full_digest"])
+    return f"The retained {noun} records {subject} {_pR_short(digest)}"
+
+
+def _PR_retained_occurrence_instant_fact(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
+    """Retained instant and the published history fact it is attached to."""
+    instant = inputs["expected:/semantic_dump/occurred_at"]
+    occurrence = cast(dict[str, Any], inputs["expected:/semantic_dump/occurrence"])
     kind = _PR_OCCURRENCE_KINDS[frozenset(occurrence)]
     return f"The retained source instant {instant} for the {kind} occurrence"
 
 
-def _PR_retained_target_declaration(vector: dict[str, Any], family: str) -> str:
+def _PR_retained_target_declaration(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
     """Authored declaration selected by the vector's published product symbol."""
-    return _PR_TARGET_DECLARATIONS[vector["target"]]
+    return _PR_TARGET_DECLARATIONS[cast(str, inputs["target"])]
 
 
-def _PR_caller_composed_change_set(vector: dict[str, Any], family: str) -> str:
+def _PR_caller_composed_change_set(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """Caller composition: the bound role bindings plus a choice of paths."""
-    verb = _PR_CALLER_VERBS[vector["evidence_classification"]]
-    count = _PR_CARDINAL_WORDS[len(_pR_composed_bindings(vector))]
+    verb = _PR_CALLER_VERBS[cast(str, inputs["evidence-classification"])]
+    bound = _pR_composed_bindings(cast(dict[str, Any], inputs["embedded-fact:"]))
+    count = _PR_CARDINAL_WORDS[len(bound)]
     return f"A caller {verb} the {count} bindings with a selection of retained paths"
 
 
@@ -15405,41 +15465,52 @@ _PR_SUPERSESSION_FOLLOWED_LEAF = (
 )
 
 
-def _PR_change_set_completeness_limit(vector: dict[str, Any], family: str) -> str:
+def _PR_change_set_completeness_limit(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
     """Descriptive limit: the published change-set completeness flag."""
-    claimed = _resolve_pointer(MANIFEST, _PR_CHANGE_SET_COMPLETENESS_LEAF)
+    claimed = inputs[f"manifest:{_PR_CHANGE_SET_COMPLETENESS_LEAF}"]
     return f"{_PR_CHANGE_SET_COMPLETENESS} {'does' if claimed else 'does not'}"
 
 
-def _PR_merge_revision_absent_surface(vector: dict[str, Any], family: str) -> str:
+def _PR_merge_revision_absent_surface(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
     """Descriptive limit: the surface the published merge-revision source excludes."""
-    declared = cast(str, _resolve_pointer(MANIFEST, _PR_MERGE_REVISION_SOURCE_LEAF))
+    declared = cast(str, inputs[f"manifest:{_PR_MERGE_REVISION_SOURCE_LEAF}"])
     return f"{_markdown_text(declared.split(', not ', 1)[1])} omits it"
 
 
-def _PR_caller_association_to_locked_record(vector: dict[str, Any], family: str) -> str:
+def _PR_caller_association_to_locked_record(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
     """Caller association from the bound fact to the locked evidence record."""
-    verb = _PR_CALLER_VERBS[vector["evidence_classification"]]
-    bound = sorted(vector["embedded_facts"])[0].strip("/").replace("_", " ")
-    kind = vector["evidence_record_lock"].split(":", 1)[0]
+    verb = _PR_CALLER_VERBS[cast(str, inputs["evidence-classification"])]
+    facts = cast(dict[str, Any], inputs["embedded-fact:"])
+    bound = sorted(facts)[0].strip("/").replace("_", " ")
+    kind = cast(str, inputs["evidence-record-lock"]).split(":", 1)[0]
     return f"A caller {verb} the {bound} with the retained {kind} record"
 
 
-def _PR_evidence_link_non_claim(vector: dict[str, Any], family: str) -> str:
+def _PR_evidence_link_non_claim(_inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """Authored summary of the S07 published non-claims."""
     return _PR_EVIDENCE_LINK_NON_CLAIM
 
 
-def _PR_second_independent_correction_link(vector: dict[str, Any], family: str) -> str:
+def _PR_second_independent_correction_link(
+    inputs: dict[str, Any], _a: PurposeAuthority
+) -> str:
     """Authored reading of the correction association, named by its authority role."""
-    role = _pR_authority_role(vector["evidence_record_lock"]).split("_")
+    reference = cast(str, inputs["evidence-record-lock"])
+    rows = cast(list[dict[str, Any]], inputs["manifest:/source_decisions"])
+    role = _pR_authority_role(rows, reference).split("_")
     record = " ".join(role[:-1] + ["record"] if role[-1] == "evidence" else role)
     return f"The same fact associated with the {record} is a second independent link"
 
 
-def _PR_supersession_limit(vector: dict[str, Any], family: str) -> str:
+def _PR_supersession_limit(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
     """Descriptive limit: the published supersession-traversal flag."""
-    followed = _resolve_pointer(MANIFEST, _PR_SUPERSESSION_FOLLOWED_LEAF)
+    followed = inputs[f"manifest:{_PR_SUPERSESSION_FOLLOWED_LEAF}"]
     subject, participle = _PR_SUPERSESSION_FOLLOWED_LEAF.rsplit("/", 1)[1].split("_")
     return f"{'a' if followed else 'no'} {subject} is {participle}"
 
@@ -15527,7 +15598,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "valid:requirement_sentence",
             "requirement:CS-18",
-            ("field:id",),
+            (),
         ),
     ),
     "history.valid.change-set.maximum-changed-paths": (
@@ -15554,7 +15625,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "valid:requirement_sentence",
             "requirement:RA-04",
-            ("field:id",),
+            (),
         ),
     ),
     "history.valid.merge-outcome.canonical": (
@@ -15573,7 +15644,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "valid:requirement_sentence",
             "requirement:MO-04",
-            ("field:id",),
+            (),
         ),
     ),
     "history.valid.head-ref-deletion.canonical": (
@@ -15642,7 +15713,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "valid:requirement_sentence",
             "requirement:OT-06",
-            ("field:id",),
+            (),
         ),
     ),
     "history.valid.evidence-link.role-binding-json": (
@@ -15746,7 +15817,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "valid:requirement_sentence",
             "requirement:EL-06",
-            ("field:id",),
+            (),
         ),
     ),
     "history.valid.role-binding.distinct-pull-request": (
@@ -15881,11 +15952,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.approval.extra-state": (
@@ -15893,12 +15960,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.approval.extra-submitted-at": (
@@ -15906,12 +15968,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.approval.missing-approved-revision": (
@@ -15919,13 +15976,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.approval.missing-review": (
@@ -15933,13 +15984,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.approval.non-pull-request-parent": (
@@ -15948,10 +15993,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "input:/review/kind",
                 "input:/review/parent/kind",
                 "target",
@@ -15963,10 +16004,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RA-03",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.approval.non-review-subject": (
@@ -15975,10 +16013,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "input:/review/kind",
                 "input:/review/parent/kind",
                 "target",
@@ -15990,10 +16024,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RA-02",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.approval.untyped-python-review": (
@@ -16001,10 +16032,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RA-01",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.above-maximum-changed-paths": (
@@ -16012,10 +16040,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-05",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.base-position-rejects-non-base-role": (
@@ -16023,10 +16048,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-11",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.duplicate-path": (
@@ -16034,10 +16056,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-16",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.empty-changed-paths": (
@@ -16045,10 +16064,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-04",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.equal-base-and-head-revision": (
@@ -16056,10 +16072,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-13",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.extra-complete": (
@@ -16067,10 +16080,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-17",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.head-position-rejects-non-head-role": (
@@ -16078,10 +16088,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-12",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.mismatched-pull-requests": (
@@ -16089,10 +16096,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-10",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.mismatched-revision-algorithms": (
@@ -16100,10 +16104,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-14",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
         PurposeClaim(
             BEHAVIOUR_DERIVED,
@@ -16120,10 +16121,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-01",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.missing-changed-paths": (
@@ -16131,10 +16129,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-03",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.missing-head": (
@@ -16142,10 +16137,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-02",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.mixed-hash-algorithms": (
@@ -16153,10 +16145,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-15",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.python-list-not-tuple": (
@@ -16164,10 +16153,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-08",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.untyped-python-base": (
@@ -16175,10 +16161,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-06",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.untyped-python-changed-path-element": (
@@ -16186,10 +16169,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-09",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.change-set.untyped-python-head": (
@@ -16197,10 +16177,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CS-07",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.changed-path.commit-as-head-object": (
@@ -16208,10 +16185,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CP-03",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.changed-path.empty-path": (
@@ -16219,13 +16193,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.changed-path.extra-base-object": (
@@ -16233,12 +16201,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.changed-path.missing-head-object": (
@@ -16246,13 +16209,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.changed-path.missing-path": (
@@ -16260,13 +16217,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.changed-path.missing-status": (
@@ -16274,13 +16225,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.changed-path.raw-python-status": (
@@ -16288,10 +16233,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CP-04",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.changed-path.unknown-status": (
@@ -16299,13 +16241,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.changed-path.untyped-python-head-object": (
@@ -16313,10 +16249,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CP-02",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.changed-path.untyped-python-path": (
@@ -16324,10 +16257,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:CP-01",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.change-set-fact": (
@@ -16335,10 +16265,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:EL-04",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.change-set-fact-python": (
@@ -16347,11 +16274,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
-                "input:/fact/typed_value/target",
+                "input:/fact",
                 "target",
             ),
         ),
@@ -16361,10 +16284,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:EL-05",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.empty-fact-json": (
@@ -16373,10 +16293,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
                 "input:/fact",
                 "target",
             ),
@@ -16387,12 +16303,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.extra-confidence": (
@@ -16400,12 +16311,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.extra-evidence-records": (
@@ -16413,12 +16319,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.extra-json-pointer": (
@@ -16426,12 +16327,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.extra-primary-evidence": (
@@ -16439,12 +16335,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.extra-request-id": (
@@ -16452,12 +16343,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.extra-schema-version": (
@@ -16465,12 +16351,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.extra-strength": (
@@ -16478,12 +16359,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.extra-superseded": (
@@ -16491,12 +16367,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.extra-support-role": (
@@ -16504,12 +16375,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.extra-verification": (
@@ -16517,12 +16383,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.hybrid-fact-json": (
@@ -16531,10 +16392,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
                 "input:/fact",
                 "target",
             ),
@@ -16546,11 +16403,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
-                "input:/fact/occurred_at",
+                "input:/fact",
                 "target",
             ),
         ),
@@ -16561,11 +16414,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
-                "input:/fact/occurred_at",
+                "input:/fact",
                 "target",
             ),
         ),
@@ -16576,11 +16425,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
-                "input:/fact/occurred_at",
+                "input:/fact",
                 "target",
             ),
         ),
@@ -16591,11 +16436,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
-                "input:/fact/occurred_at",
+                "input:/fact",
                 "target",
             ),
         ),
@@ -16605,11 +16446,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.missing-evidence-record": (
@@ -16617,13 +16454,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.missing-fact": (
@@ -16631,13 +16462,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.nested-non-admitted-occurrence": (
@@ -16646,11 +16471,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
-                "input:/fact/occurrence",
+                "input:/fact",
                 "target",
             ),
         ),
@@ -16660,10 +16481,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:EL-02",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.status-fact-python": (
@@ -16672,11 +16490,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
-                "input:/fact/enum_value/target",
+                "input:/fact",
                 "target",
             ),
         ),
@@ -16687,10 +16501,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "input:/fact",
                 "target",
             ),
@@ -16701,10 +16511,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:EL-01",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.evidence-link.untyped-python-record": (
@@ -16712,10 +16519,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:EL-03",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.head-ref-deletion.base-binding": (
@@ -16723,10 +16527,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:HD-03",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.head-ref-deletion.empty-ref-name": (
@@ -16734,13 +16535,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.head-ref-deletion.extra-namespace": (
@@ -16748,12 +16543,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.head-ref-deletion.missing-head": (
@@ -16761,13 +16551,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.head-ref-deletion.missing-ref-name": (
@@ -16775,13 +16559,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.head-ref-deletion.raw-python-ref-name": (
@@ -16789,10 +16567,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:HD-02",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.head-ref-deletion.refs-prefixed-name": (
@@ -16800,10 +16575,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:HD-04",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.head-ref-deletion.untyped-python-head": (
@@ -16811,10 +16583,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:HD-01",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.merge-outcome.extra-parents": (
@@ -16822,12 +16591,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.merge-outcome.extra-strategy": (
@@ -16835,12 +16599,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.merge-outcome.missing-merge-revision": (
@@ -16848,13 +16607,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.merge-outcome.missing-pull-request": (
@@ -16862,13 +16615,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.merge-outcome.non-pull-request-subject": (
@@ -16876,10 +16623,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:MO-03",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.merge-outcome.tree-as-merge-revision": (
@@ -16887,11 +16631,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.merge-outcome.untyped-python-merge-revision": (
@@ -16899,10 +16639,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:MO-02",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.merge-outcome.untyped-python-pull-request": (
@@ -16910,10 +16647,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:MO-01",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.occurrence-time.extra-chronology": (
@@ -16921,12 +16655,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.occurrence-time.instant-malformed": (
@@ -16935,10 +16664,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
                 "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "target",
             ),
         ),
@@ -16949,10 +16675,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
                 "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "target",
             ),
         ),
@@ -16963,10 +16686,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
                 "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "target",
             ),
         ),
@@ -16976,10 +16696,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:OT-02",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.occurrence-time.missing-occurred-at": (
@@ -16987,13 +16704,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.occurrence-time.missing-occurrence": (
@@ -17001,13 +16712,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
         PurposeClaim(
             BEHAVIOUR_DERIVED,
@@ -17026,10 +16731,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
                 "input:/occurrence",
                 "target",
             ),
@@ -17041,10 +16742,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
                 "input:/occurrence",
                 "target",
             ),
@@ -17055,13 +16752,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.occurrence-time.non-admitted-commit-identity": (
@@ -17070,10 +16761,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
                 "input:/occurrence",
                 "target",
             ),
@@ -17085,10 +16772,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_location_mode",
-                "expected:/error_type",
-                "field:id",
                 "input:/occurrence",
                 "target",
             ),
@@ -17100,10 +16783,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
                 "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "target",
             ),
         ),
@@ -17113,10 +16793,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:OT-01",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.role-binding.disallowed-revision-role": (
@@ -17124,10 +16801,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RB-04",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.role-binding.dumped-mapping-python": (
@@ -17136,10 +16810,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "input:/pull_request",
                 "target",
             ),
@@ -17150,12 +16820,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.role-binding.foreign-python-subject": (
@@ -17164,11 +16829,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
-                "input:/pull_request/typed_value/target",
+                "input:/pull_request",
                 "target",
             ),
         ),
@@ -17178,13 +16839,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.role-binding.missing-role-assignment": (
@@ -17192,13 +16847,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "field:id",
-                "input:",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.role-binding.non-pull-request-subject": (
@@ -17206,10 +16855,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RB-03",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.role-binding.null-role-assignment": (
@@ -17217,13 +16863,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.role-binding.swapped-members": (
@@ -17231,11 +16871,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "secondary-witness",
-            (
-                "expected:/error_location/0",
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.role-binding.untyped-python-pull-request": (
@@ -17243,10 +16879,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RB-01",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.role-binding.untyped-python-role-assignment": (
@@ -17254,10 +16887,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             REQUIREMENT_DERIVED,
             "invalid:requirement_gloss",
             "requirement:RB-02",
-            (
-                "field:id",
-                "target",
-            ),
+            ("target",),
         ),
     ),
     "history.invalid.status.copied": (
@@ -17266,10 +16896,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "input:",
                 "target",
             ),
@@ -17281,7 +16907,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "requirement:ST-03",
             (
-                "field:id",
                 "input:",
                 "target",
             ),
@@ -17293,10 +16918,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "input:",
                 "target",
             ),
@@ -17308,10 +16929,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             "invalid:requirement_gloss",
             "secondary-witness",
             (
-                "expected:/error_location",
-                "expected:/error_type",
-                "expected:/failure_category",
-                "field:id",
                 "input:",
                 "target",
             ),
@@ -17328,8 +16945,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
                 "expected:/semantic_dump/role_assignment/revision/full_digest",
                 "expected:/semantic_dump/role_assignment/role",
                 "source-pointer:/observations/comparison",
-                "source-pointer:/observations/pr/attempts/0/bracket_a",
-                "source-pointer:/observations/repository",
             ),
         ),
     ),
@@ -17343,8 +16958,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
                 "expected:/semantic_dump/role_assignment/revision/full_digest",
                 "expected:/semantic_dump/role_assignment/role",
                 "source-pointer:/observations/comparison",
-                "source-pointer:/observations/pr/attempts/0/bracket_a",
-                "source-pointer:/observations/repository",
             ),
         ),
     ),
@@ -17445,9 +17058,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             (
                 "expected:/semantic_dump/occurred_at",
                 "expected:/semantic_dump/occurrence",
-                "source-pointer:/observations/pr/attempts/0/bracket_a",
-                "source-pointer:/observations/pr/reviews/items/0/submitted_at",
-                "source-pointer:/observations/repository",
             ),
         ),
     ),
@@ -17459,9 +17069,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             (
                 "expected:/semantic_dump/occurred_at",
                 "expected:/semantic_dump/occurrence",
-                "source-pointer:/observations/pr/attempts/0/bracket_a",
-                "source-pointer:/observations/pr/timeline/items/4/created_at/value",
-                "source-pointer:/observations/repository",
             ),
         ),
     ),
@@ -17473,9 +17080,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             (
                 "expected:/semantic_dump/occurred_at",
                 "expected:/semantic_dump/occurrence",
-                "source-pointer:/observations/pr/attempts/0/bracket_a/head",
-                "source-pointer:/observations/pr/timeline/items/6/created_at/value",
-                "source-pointer:/observations/repository",
             ),
         ),
     ),
@@ -17685,11 +17289,6 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
             (
                 "evidence-record-lock",
                 "manifest:/source_decisions",
-                "source-decision:acquisition:run-0001",
-                "source-decision:closure:s1-p03:evidence-envelope",
-                "source-decision:correction:s04-c01-acquisition-closure",
-                "source-decision:correction:s1-p05-s08-c01:owner-topology",
-                "source-decision:decision:s1-p05-s08:disposition",
             ),
         ),
         PurposeClaim(
@@ -17702,7 +17301,7 @@ PURPOSE_SEMANTICS: dict[str, tuple[PurposeClaim, ...]] = {
 }
 
 
-PURPOSE_RENDERERS: dict[str, Callable[[dict[str, Any], str], str]] = {
+PURPOSE_RENDERERS: dict[str, Callable[[dict[str, Any], PurposeAuthority], str]] = {
     "valid:approval_canonical": _PV_approval_canonical,
     "valid:canonical_declaration": _PV_canonical_declaration,
     "valid:canonical_declaration_second": _PV_canonical_declaration_second,
@@ -17739,28 +17338,66 @@ PURPOSE_RENDERERS: dict[str, Callable[[dict[str, Any], str], str]] = {
 }
 
 
-# Which retained coordinate each provenance renderer consumes. A replay vector
+# Which retained coordinate each provenance claim answers to. A replay vector
 # cites several source pointers, so "the claimed coordinate is cited somewhere"
-# accepted a coordinate the sentence was never read from -- the role-binding
-# claim could name `/observations/repository` while the renderer went on
-# deriving the role and the revision from the comparison. The values here are
-# the renderers' own selections, so the two cannot disagree; a renderer with no
-# entry may not carry a coordinate claim at all.
+# accepted a coordinate the sentence was never sourced from -- the role-binding
+# claim could name `/observations/repository` while the fragment rested on the
+# comparison.
+#
+# These run in the GATE, on the raw vector, and never inside a renderer: a
+# provenance authority answers WHY a replayed value is admitted as retained,
+# which is a different question from which values the sentence is built out of.
+# The three that used to take `source_pointers[0]` are selected by what their
+# retained fields actually fill instead; a semantically neutral ordering was
+# deciding which node a sentence was said to be about, which is the hazard
+# `_pR_authority_role` refuses for `source_decisions` in the same module.
+def _pR_pointer_supplying(vector: dict[str, Any], leaf: str) -> dict[str, Any]:
+    """The one cited coordinate whose retained fields fill this replayed leaf."""
+    matching = [
+        pointer
+        for pointer in cast(list[dict[str, Any]], vector["source_pointers"])
+        if any(
+            target.rsplit("/", 1)[-1] == leaf
+            for target in cast(dict[str, str], pointer["source_fields"]).values()
+        )
+    ]
+    assert len(matching) == 1, leaf
+    return matching[0]
+
+
+def _pR_path_pointer(vector: dict[str, Any]) -> dict[str, Any]:
+    return _pR_pointer_supplying(vector, "path")
+
+
+def _pR_review_pointer(vector: dict[str, Any]) -> dict[str, Any]:
+    return _pR_pointer_supplying(vector, "provider_global_id")
+
+
+def _pR_merge_pointer(vector: dict[str, Any]) -> dict[str, Any]:
+    return _pR_pointer_supplying(vector, "full_digest")
+
+
 PURPOSE_SOURCE_POINTER_SELECTORS: dict[
     str, Callable[[dict[str, Any]], dict[str, Any]]
 ] = {
-    "replay:retained_changed_path_fact": _pR_primary,
-    "replay:retained_merge_event_fact": _pR_primary,
+    "replay:retained_changed_path_fact": _pR_path_pointer,
+    "replay:retained_merge_event_fact": _pR_merge_pointer,
     "replay:retained_occurrence_instant_fact": _pR_instant_pointer,
-    "replay:retained_review_approval_fact": _pR_primary,
+    "replay:retained_review_approval_fact": _pR_review_pointer,
     "replay:retained_role_binding_fact": _pR_role_implication_pointer,
 }
+
 
 # The same rule for embedded facts. A composition binds its role bindings and
 # counts them; the paths it selects are not bindings, so citing one of those
 # would name a key the sentence does not rest on.
+def _pR_composed_binding_keys(vector: dict[str, Any]) -> list[str]:
+    """The gate's view of the same selection, over the raw vector."""
+    return _pR_composed_bindings(cast(dict[str, Any], vector["embedded_facts"]))
+
+
 PURPOSE_EMBEDDED_FACT_SELECTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
-    "replay:caller_composed_change_set": _pR_composed_bindings,
+    "replay:caller_composed_change_set": _pR_composed_binding_keys,
 }
 
 # And for the two remaining forms, which were checked only for existence.
@@ -17787,610 +17424,236 @@ PURPOSE_MANIFEST_POINTERS: dict[str, str] = {
 }
 
 
-# --- what a renderer actually reads, observed rather than restated ----------
+# --- the closed input frontier ----------------------------------------------
 #
-# A declared dependency list that the ledger also writes down would agree with
-# itself. These accessors record the coordinate of every structured value a
-# renderer reads AS IT READS IT, so the declaration is compared with the run.
+# A renderer used to be handed the vector and the manifest, wrapped in proxies
+# that subclassed dict and list and recorded a coordinate on each accessor. The
+# declared dependencies were then compared with what the proxies observed.
 #
-# Coordinates are the smallest stable semantic address of what was consumed.
-# A leaf read records the leaf; a collection consumed as a unit -- counted,
-# iterated, tested for membership, or written into a sentence -- records the
-# collection, and is dropped again if something under it was also read.
+# That basis is retired, because its completeness was the completeness of an
+# enumeration of every Python operation that can take content out of a
+# container -- and that enumeration cannot be finished. `dir(dict)` does not
+# contain `__dict__`, so the proxy's own storage was outside the audited
+# surface by construction; an excuse written beside a name ("an ordering
+# comparison returns a bool, never a member") was true about the return type
+# and false about the leak; and a base-class or MRO call reached past every
+# override without naming anything anyone had thought to forbid. Four
+# closures, four new instances.
 #
-# One deliberate exception: inside an ENTRY of an addressed collection every
-# field collapses to the entry's own coordinate, because a source pointer, a
-# source decision and a target symbol are each consumed as one record rather
-# than field by field. The entry is named by its identity -- json pointer,
-# decision reference, symbol -- rather than by position, so a reordering of
-# `source_decisions` or `target_symbols` cannot move it. `source_pointers` is
-# addressed by identity for the same reason, though `_pR_primary` does select
-# the first entry by position, so that ONE collection's order is load-bearing
-# for which pointer a renderer picks even though the coordinate it produces is
-# not positional.
+# So completeness stops being a property of what the renderer DID and becomes a
+# property of what the renderer WAS GIVEN. A renderer receives one immutable
+# frontier whose key set is exactly the coordinates its claim declares, plus
+# the payload its epistemic authority resolves to. There is nothing left to
+# enumerate: an undeclared coordinate is not hidden from the renderer, it is
+# ABSENT, and reading it raises.
 #
-# The traced universe is the two structured corpus surfaces: the vector and the
-# manifest. The requirement ledger and the secondary-witness registry are
-# test-side authored tables that supply a fragment's AUTHORITY, not corpus
-# input, and live product symbols are the live authority rather than corpus
-# data; both are bound by the authority rules above.
-
-_TRACED_SCALAR_FIELDS = {
-    "target": "target",
-    "input_mode": "input_mode",
-    "evidence_classification": "evidence-classification",
-    "evidence_record_lock": "evidence-record-lock",
-}
-_TRACED_ROOT_FORMS = {
-    "input": "input:",
-    "expected": "expected:",
-    "source_pointers": "source-pointer:",
-    "embedded_facts": "embedded-fact:",
-}
-_TRACED_IDENTIFIED_COLLECTIONS = {
-    "source-pointer:": "json_pointer",
-    "manifest:/source_decisions": "decision_reference",
-    "manifest:/target_symbols": "symbol",
-}
-_TRACED_ENTRY_FORMS = (
-    "source-pointer:",
-    "embedded-fact:",
-    "source-decision:",
-    "target-symbol:",
-)
-_TRACED_ENTRY_PREFIXES = {
-    "manifest:/source_decisions": "source-decision:",
-    "manifest:/target_symbols": "target-symbol:",
-}
+# The gate below may read raw corpus. Renderers may not, and the restricted
+# language they are held to is enforced over `co_names | co_freevars` -- which
+# CPython guarantees carries every global and every attribute name a code
+# object references, so the audited surface cannot exclude a channel the way
+# `dir()` did.
 
 
-def _traced_is_entry(at: str | None) -> bool:
-    """Whether this coordinate already names one identified entry."""
-    return (
-        at is not None and not at.endswith(":") and at.startswith(_TRACED_ENTRY_FORMS)
-    )
+def _frozen(value: Any) -> Any:
+    """A deep copy of a resolved value, sharing nothing with the corpus.
 
-
-def _traced_coordinate(at: str | None, node: Any, key: Any) -> str:
-    if at is None:
-        name = str(key)
-        if name in _TRACED_ROOT_FORMS:
-            return _TRACED_ROOT_FORMS[name]
-        if name in _TRACED_SCALAR_FIELDS:
-            return _TRACED_SCALAR_FIELDS[name]
-        return f"field:{name}"
-    if at == "embedded-fact:":
-        return f"embedded-fact:{key}"
-    identifier = _TRACED_IDENTIFIED_COLLECTIONS.get(at)
-    if identifier is not None:
-        prefix = _TRACED_ENTRY_PREFIXES.get(at, at)
-        return f"{prefix}{cast(dict[str, Any], node[key])[identifier]}"
-    return f"{at}/{key}"
-
-
-# The two roots of the traced universe. Neither has a coordinate smaller than
-# everything under it, so a container consumed AS A VALUE at a root cannot be
-# accounted for: writing the vector or the manifest into a sentence hands the
-# renderer every leaf beneath it. Recording a `vector:/` or `manifest:`
-# catch-all would satisfy the accounting with the widest declaration the
-# vocabulary can express, which says no more than declaring nothing. So the
-# whole-root consumption is refused and the renderer reads what its sentence
-# actually needs.
-_TRACED_ROOT_COORDINATES = frozenset({"manifest:"})
-
-
-def _traced_whole(at: str | None, seen: set[str]) -> None:
-    """Record a container consumed as a value, or refuse a whole root."""
-    if at is None or at in _TRACED_ROOT_COORDINATES:
-        raise AssertionError("a whole corpus root has no dependency coordinate")
-    seen.add(at)
-
-
-def _traced(value: Any, at: str | None, seen: set[str]) -> Any:
+    Plain `dict` and `list`, deliberately, not `MappingProxyType` and `tuple`.
+    Immutability is not what closes the leak -- ABSENCE is: the copy holds only
+    the declared subtree, so inspecting it freely discloses nothing undeclared,
+    which is exactly what a claim declaring a container has already declared.
+    Changing the types instead breaks the renderers that ask `isinstance(x,
+    dict)` about published data, and one of them inverts its sentence when the
+    answer flips: `omitting it is not a union failure` becomes `omitting it is
+    a union failure`, silently. A type test that quietly changes meaning is the
+    V1 failure again, so the types are preserved and the copy is asserted.
+    """
     if isinstance(value, dict):
-        return _TracedMapping(cast(dict[str, Any], value), at, seen)
+        return {key: _frozen(item) for key, item in cast(dict[str, Any], value).items()}
     if isinstance(value, list):
-        return _TracedSequence(cast(list[Any], value), at, seen)
-    if at is not None:
-        seen.add(at)
+        return [_frozen(item) for item in cast(list[Any], value)]
     return value
 
 
-class _TracedMapping(dict[str, Any]):
-    """A mapping that records the coordinate of every value taken out of it."""
-
-    def __init__(self, node: dict[str, Any], at: str | None, seen: set[str]) -> None:
-        super().__init__(node)
-        self._at = at
-        self._seen = seen
-        self._raw = node
-
-    def _coordinate(self, key: Any) -> str:
-        if _traced_is_entry(self._at):
-            return cast(str, self._at)
-        return _traced_coordinate(self._at, self._raw, key)
-
-    def _record(self) -> None:
-        if self._at is not None:
-            self._seen.add(self._at)
-
-    def __getitem__(self, key: Any) -> Any:
-        return _traced(self._raw[key], self._coordinate(key), self._seen)
-
-    def get(self, key: Any, default: Any = None) -> Any:
-        if key not in self._raw:
-            self._record()
-            return default
-        return self[key]
-
-    def __iter__(self) -> Any:
-        self._record()
-        return iter(self._raw)
-
-    def __len__(self) -> int:
-        self._record()
-        return len(self._raw)
-
-    def __contains__(self, key: object) -> bool:
-        self._record()
-        return key in self._raw
-
-    def keys(self) -> Any:
-        self._record()
-        return self._raw.keys()
-
-    def items(self) -> Any:
-        return [(key, self[key]) for key in self._raw]
-
-    def values(self) -> Any:
-        return [self[key] for key in self._raw]
-
-    def copy(self) -> Any:
-        return dict(self.items())
-
-    def __reversed__(self) -> Any:
-        self._record()
-        return reversed(list(self._raw))
-
-    def __eq__(self, other: object) -> bool:
-        self._record()
-        return self._raw == other
-
-    def __ne__(self, other: object) -> bool:
-        return not self == other
-
-    def _whole(self) -> None:
-        _traced_whole(self._at, self._seen)
-
-    def __repr__(self) -> str:
-        self._whole()
-        return repr(self._raw)
-
-    def __str__(self) -> str:
-        self._whole()
-        return str(self._raw)
-
-    def __format__(self, specification: str) -> str:
-        self._whole()
-        return format(self._raw, specification)
-
-    def __reduce__(self) -> Any:
-        raise AssertionError("a traced container may not be serialised whole")
-
-    def __reduce_ex__(self, protocol: SupportsIndex) -> Any:
-        raise AssertionError("a traced container may not be serialised whole")
-
-    def __getstate__(self) -> Any:
-        raise AssertionError("a traced container may not be serialised whole")
-
-    def __or__(self, other: Any) -> Any:
-        return dict(self.items()) | other
-
-    def __ror__(self, other: Any) -> Any:
-        return other | dict(self.items())
-
-    def setdefault(self, key: Any, default: Any = None) -> Any:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def pop(self, key: Any, *default: Any) -> Any:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def popitem(self) -> Any:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def clear(self) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def update(self, *args: Any, **kwargs: Any) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def __setitem__(self, key: Any, value: Any) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def __delitem__(self, key: Any) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def __ior__(self, other: Any) -> Any:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-
-class _TracedSequence(list[Any]):
-    """A sequence that records the coordinate of every element taken out of it."""
-
-    def __init__(self, node: list[Any], at: str | None, seen: set[str]) -> None:
-        super().__init__(node)
-        self._at = at
-        self._seen = seen
-        self._raw = node
-
-    def _coordinate(self, index: Any) -> str:
-        if _traced_is_entry(self._at):
-            return cast(str, self._at)
-        return _traced_coordinate(self._at, self._raw, index)
-
-    def _record(self) -> None:
-        if self._at is not None:
-            self._seen.add(self._at)
-
-    def __getitem__(self, index: Any) -> Any:
-        if isinstance(index, slice):
-            self._record()
-            return [
-                _traced(value, self._coordinate(position), self._seen)
-                for position, value in enumerate(self._raw)
-            ][index]
-        return _traced(self._raw[index], self._coordinate(index), self._seen)
-
-    def __iter__(self) -> Any:
-        self._record()
-        return iter(
-            [
-                _traced(value, self._coordinate(position), self._seen)
-                for position, value in enumerate(self._raw)
-            ]
-        )
-
-    def __len__(self) -> int:
-        self._record()
-        return len(self._raw)
-
-    def __contains__(self, value: object) -> bool:
-        self._record()
-        return value in self._raw
-
-    def __reversed__(self) -> Any:
-        self._record()
-        return reversed(
-            [
-                _traced(value, self._coordinate(position), self._seen)
-                for position, value in enumerate(self._raw)
-            ]
-        )
-
-    def copy(self) -> Any:
-        return list(self)
-
-    def index(self, *args: Any) -> int:
-        self._record()
-        return self._raw.index(*args)
-
-    def count(self, value: Any) -> int:
-        self._record()
-        return self._raw.count(value)
-
-    def __eq__(self, other: object) -> bool:
-        self._record()
-        return self._raw == other
-
-    def __ne__(self, other: object) -> bool:
-        return not self == other
-
-    def _whole(self) -> None:
-        _traced_whole(self._at, self._seen)
-
-    def __repr__(self) -> str:
-        self._whole()
-        return repr(self._raw)
-
-    def __str__(self) -> str:
-        self._whole()
-        return str(self._raw)
-
-    def __format__(self, specification: str) -> str:
-        self._whole()
-        return format(self._raw, specification)
-
-    def __reduce__(self) -> Any:
-        raise AssertionError("a traced container may not be serialised whole")
-
-    def __reduce_ex__(self, protocol: SupportsIndex) -> Any:
-        raise AssertionError("a traced container may not be serialised whole")
-
-    def __getstate__(self) -> Any:
-        raise AssertionError("a traced container may not be serialised whole")
-
-    def __add__(self, other: Any) -> Any:
-        return list(self) + other
-
-    def __radd__(self, other: Any) -> Any:
-        return other + list(self)
-
-    def __mul__(self, count: SupportsIndex) -> Any:
-        return list(self) * count
-
-    def __rmul__(self, count: SupportsIndex) -> Any:
-        return list(self) * count
-
-    def pop(self, index: SupportsIndex = -1) -> Any:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def append(self, value: Any) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def extend(self, values: Any) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def insert(self, index: SupportsIndex, value: Any) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def remove(self, value: Any) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def clear(self) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def sort(self, **kwargs: Any) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def reverse(self) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def __setitem__(self, index: Any, value: Any) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def __delitem__(self, index: Any) -> None:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def __iadd__(self, other: Any) -> Any:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-    def __imul__(self, count: SupportsIndex) -> Any:
-        raise AssertionError("a renderer may not mutate the corpus")
-
-
-def _smallest_coordinates(seen: set[str]) -> tuple[str, ...]:
-    """Drop a collection coordinate when something under it was also read."""
-    return tuple(
-        sorted(
-            coordinate
-            for coordinate in seen
-            if not any(
-                other != coordinate
-                and other.startswith(
-                    coordinate if coordinate.endswith(":") else f"{coordinate}/"
-                )
-                for other in seen
+def _shares_nothing(resolved: Any, live: Any) -> bool:
+    """Whether a resolved value shares no container with the corpus node."""
+    if isinstance(live, dict | list):
+        if resolved is live:
+            return False
+        children = (
+            zip(
+                cast(dict[str, Any], resolved).values(),
+                cast(dict[str, Any], live).values(),
+                strict=True,
             )
+            if isinstance(live, dict)
+            else zip(cast(list[Any], resolved), cast(list[Any], live), strict=True)
         )
-    )
+        return all(_shares_nothing(child, node) for child, node in children)
+    return True
 
 
-# Accessors the proxies do not override, and why each cannot leak an untraced
-# value. This is the WHOLE public surface of `dict` and `list` -- every name
-# `dir()` reports, inherited ones included -- rather than a hand-picked list of
-# the interesting ones, because a name nobody thought to sample is exactly how
-# `setdefault` and a sequence's `pop` stayed open. Everything not excused below
-# either records what it hands out or refuses outright.
-_TRACED_UNGUARDED = {
-    "__lt__": "an ordering comparison returns a bool, never a member",
-    "__le__": "an ordering comparison returns a bool, never a member",
-    "__gt__": "an ordering comparison returns a bool, never a member",
-    "__ge__": "an ordering comparison returns a bool, never a member",
-    "fromkeys": "a constructor over keys the caller already holds",
-    "__class__": "the type, not a member",
-    "__class_getitem__": "a type subscription, evaluated on the class",
-    "__new__": "allocation, before any node is bound",
-    "__init_subclass__": "class creation, not a container read",
-    "__subclasshook__": "an issubclass answer over types",
-    "__dir__": "the attribute names of the proxy, not the corpus",
-    "__sizeof__": "an int over the base storage",
-    "__getattribute__": (
-        "attribute access on the proxy itself, which reaches `_raw` and is "
-        "refused in the renderer closure rather than at the container"
-    ),
-    "__setattr__": "attribute access on the proxy itself, same closure",
-    "__delattr__": "attribute access on the proxy itself, same closure",
+# The coordinate grammar, which is the one PurposeSemantics already publishes.
+# Two rules are stated here rather than left implicit:
+#
+#   `field:` is a CLOSED enumeration. Resolving `vector[<any name>]` would make
+#   `field:purpose` a legal coordinate that hands a renderer the very sentence
+#   it is rebuilding, and `field:semantic_partition` / `field:category` the
+#   lexical identity the corpus forbids parsing. The three are unspellable.
+#
+#   No coordinate may resolve to a corpus ROOT. A root has no address smaller
+#   than everything under it, so declaring one says no more than declaring
+#   nothing. Bare `input:` and `embedded-fact:` are not roots -- they are
+#   fields of the vector -- and remain legal.
+_PURPOSE_FIELD_COORDINATES = frozenset({"field:id"})
+_PURPOSE_VECTOR_SCALARS = {
+    "target": "target",
+    "evidence-classification": "evidence_classification",
+    "evidence-record-lock": "evidence_record_lock",
 }
+_PURPOSE_VECTOR_ROOTS = {"input:": "input", "expected:": "expected"}
 
 
-def test_no_renderer_reaches_around_the_recorder() -> None:
-    """The proxies are only a boundary if renderer code goes through them.
-
-    An unbound base-class call -- `dict.__getitem__(node, key)` -- or a touch of
-    the proxy's own `_raw` would hand back the corpus with nothing recorded. No
-    accessor can defend against that, so the renderer closure is read instead:
-    the same call graph the purpose-blindness guards walk, checked for the two
-    shapes that reach past the recorder.
-    """
-    reachable = _reachable_purpose_functions()
-    assert len(reachable) >= len(PURPOSE_RENDERERS)
-    for name, node in sorted(reachable.items()):
-        for used in ast.walk(node):
-            if isinstance(used, ast.Attribute):
-                assert used.attr != "_raw", f"{name} reaches past the recorder"
-                if isinstance(used.value, ast.Name) and used.value.id in (
-                    "dict",
-                    "list",
-                ):
-                    raise AssertionError(f"{name} calls {used.value.id}.{used.attr}")
-
-
-def test_no_container_accessor_can_hand_out_an_untraced_value() -> None:
-    """A recorder with an unguarded accessor is a recorder with a hole.
-
-    Five leaked before this list was closed: a sequence's `reversed`, `copy`
-    and `pop` handed back the raw member, a mapping's `setdefault` did the same,
-    and an equality test read the whole container without recording it. So the
-    public surface of `dict` and `list` is enumerated rather than sampled, and
-    every name must be overridden or excused here by name.
-
-    `pop`, `popitem` and `setdefault` were closed as READS -- they returned a
-    traced value -- but each of them mutates the container it is called on, and
-    tracing is a read-only view. Recording what they hand back describes the
-    corpus as it was before a renderer changed it. They fail closed with the
-    rest of the mutations now, whether or not the key is present.
-    """
-    for base, proxy in ((dict, _TracedMapping), (list, _TracedSequence)):
-        published = set(dir(base))
-        unguarded = published - set(proxy.__dict__)
-        assert unguarded == set(_TRACED_UNGUARDED) & published, (
-            base.__name__,
-            sorted(unguarded - set(_TRACED_UNGUARDED)),
+def _purpose_pointer(node: Any, pointer: str) -> Any:
+    """Descend a JSON pointer, refusing anything that is not a step."""
+    for token in [part for part in pointer.split("/") if part]:
+        node = (
+            cast(list[Any], node)[int(token)]
+            if isinstance(node, list)
+            else cast(dict[str, Any], node)[token]
         )
-    # and no excuse outlives the name it was written for
-    assert set(_TRACED_UNGUARDED) <= set(dir(dict)) | set(dir(list))
-
-    # and the five that leaked are closed, each checked through the proxy
-    vector = next(
-        v for v in REPLAY["vectors"] if v["id"] == "history.replay.role-binding.base"
-    )
-    comparison = "source-pointer:/observations/comparison"
-    reads: tuple[tuple[str, Callable[[Any], Any]], ...] = (
-        (
-            "reversed",
-            lambda w: list(reversed(w["source_pointers"]))[-1]["json_pointer"],
-        ),
-        ("copy", lambda w: w["source_pointers"].copy()[0]["json_pointer"]),
-        ("concatenate", lambda w: (w["source_pointers"] + [])[0]["json_pointer"]),
-        ("index", lambda w: w["source_pointers"][0]["json_pointer"]),
-    )
-    for label, read in reads:
-        seen: set[str] = set()
-        read(_TracedMapping(vector, None, seen))
-        assert comparison in _smallest_coordinates(seen), label
-
-    # a container read as a whole records the container, not nothing --
-    # including the three conversions that walk it into a sentence
-    whole: tuple[tuple[str, Callable[[Any], Any]], ...] = (
-        ("equality", lambda w: w["input"] == {}),
-        ("length", lambda w: len(w["input"])),
-        ("membership", lambda w: "role_assignment" in w["input"]),
-        ("interpolation", lambda w: f"{w['input']}"),
-        ("str", lambda w: str(w["input"])),
-        ("repr", lambda w: repr(w["input"])),
-        ("format", lambda w: format(w["input"], "")),
-    )
-    for label, read in whole:
-        seen = set()
-        read(_TracedMapping(vector, None, seen))
-        assert _smallest_coordinates(seen) == ("input:",), label
-
-    # the corpus is read-only under tracing: a renderer that mutates is refused
-    mutations: tuple[tuple[str, Callable[[Any], Any]], ...] = (
-        ("append", lambda w: w["source_pointers"].append(1)),
-        ("assign", lambda w: w["input"].__setitem__("x", 1)),
-        ("update", lambda w: w["input"].update({"x": 1})),
-        ("delete", lambda w: w["input"].__delitem__("role_assignment")),
-        ("sort", lambda w: w["source_pointers"].sort()),
-        # each of these returns a value AND removes or inserts one, so a
-        # read-only view cannot offer them at all
-        ("list pop", lambda w: w["source_pointers"].pop(0)),
-        ("mapping pop", lambda w: w["input"].pop("role_assignment")),
-        ("mapping pop default", lambda w: w["input"].pop("absent", None)),
-        ("popitem", lambda w: w["input"].popitem()),
-        ("setdefault present", lambda w: w["input"].setdefault("role_assignment", 1)),
-        ("setdefault absent", lambda w: w["input"].setdefault("absent", 1)),
-    )
-    for label, mutate in mutations:
-        with pytest.raises(AssertionError, match="may not mutate"):
-            mutate(_TracedMapping(vector, None, set()))
-        assert label
-
-    # a mutation must not be recorded as a read either: nothing about the
-    # refused call may reach the dependency set
-    for _label, mutate in mutations:
-        seen = set()
-        with pytest.raises(AssertionError):
-            mutate(_TracedMapping(vector, None, seen))
-        assert seen <= {"input:", "source-pointer:"}
+    return node
 
 
-def test_a_whole_corpus_root_cannot_be_consumed_as_a_value() -> None:
-    """A root written whole into a sentence has no coordinate to declare.
+def _resolve_purpose_dependency(vector: dict[str, Any], coordinate: str) -> Any:
+    """The immutable value one declared coordinate names.
 
-    The conversions record the container they are called on, which is right for
-    a nested one -- `input:` is a real address and everything under it is a
-    real narrowing. A root is different: it has no address smaller than the
-    corpus surface itself, so the only coordinate available for `f"{vector}"`
-    would be a `vector:/` or `manifest:` catch-all standing for every leaf.
-    Declaring that is indistinguishable from declaring nothing, and it would
-    make the dependency ledger trivially satisfiable for any renderer willing
-    to interpolate the root. So the consumption is refused instead.
+    This is the only place a purpose fragment's inputs are taken out of the
+    corpus, and the only code in the purpose path that sees a raw vector or a
+    raw manifest.
     """
-    vector = next(
-        v for v in REPLAY["vectors"] if v["id"] == "history.replay.role-binding.base"
-    )
-    consumptions: tuple[tuple[str, Callable[[Any], Any]], ...] = (
-        ("str", str),
-        ("repr", repr),
-        ("interpolation", lambda root: f"{root}"),
-        ("format", lambda root: format(root, "")),
-        ("format spec", lambda root: format(root, ">1")),
-        ("reduce", lambda root: root.__reduce__()),
-        ("reduce_ex", lambda root: root.__reduce_ex__(2)),
-        ("getstate", lambda root: root.__getstate__()),
-        ("copy", copy.copy),
-        ("deepcopy", copy.deepcopy),
-    )
-    roots: tuple[tuple[str, dict[str, Any], str | None], ...] = (
-        ("vector", vector, None),
-        ("manifest", MANIFEST, "manifest:"),
-    )
-    for root_label, node, at in roots:
-        for label, consume in consumptions:
-            seen: set[str] = set()
-            with pytest.raises(AssertionError):
-                consume(_TracedMapping(node, at, seen))
-            # refused, and nothing recorded: no catch-all is written either
-            assert seen == set(), (root_label, label)
+    assert coordinate and not coordinate.endswith("/"), coordinate
 
-    # a sequence root is refused on the same rule, wherever one is built
-    with pytest.raises(AssertionError):
-        str(_TracedSequence(cast(list[Any], vector["source_pointers"]), None, set()))
+    if coordinate in _PURPOSE_VECTOR_SCALARS:
+        return _frozen(vector[_PURPOSE_VECTOR_SCALARS[coordinate]])
 
-    # and a NESTED container is still converted and recorded, not refused: the
-    # closure is about roots, not about writing a value into a sentence
-    for label, consume in consumptions[:4]:
-        seen = set()
-        assert consume(_TracedMapping(vector, None, seen)["input"]) is not None
-        assert _smallest_coordinates(seen) == ("input:",), label
+    if coordinate.startswith("field:"):
+        assert coordinate in _PURPOSE_FIELD_COORDINATES, coordinate
+        return _frozen(vector[coordinate.split(":", 1)[1]])
 
-    # the manifest's own children keep their real addresses too
-    seen = set()
-    watched = _TracedMapping(MANIFEST, "manifest:", seen)
-    assert str(watched["replay_contract"]["evidence_limits"])
-    assert _smallest_coordinates(seen) == ("manifest:/replay_contract/evidence_limits",)
+    for prefix, field in _PURPOSE_VECTOR_ROOTS.items():
+        if coordinate.startswith(prefix):
+            pointer = coordinate[len(prefix) :]
+            # bare `expected:` is the whole independently authored dump, which
+            # is a root by any other name; bare `input:` is one declared field
+            assert prefix == "input:" or pointer, coordinate
+            return _frozen(_purpose_pointer(vector[field], pointer))
+
+    if coordinate.startswith("source-pointer:"):
+        wanted = coordinate.split(":", 1)[1]
+        assert wanted, coordinate
+        cited = cast(list[dict[str, Any]], vector.get("source_pointers") or [])
+        matching = [entry for entry in cited if entry["json_pointer"] == wanted]
+        assert len(matching) == 1, coordinate
+        return _frozen(matching[0])
+
+    if coordinate.startswith("embedded-fact:"):
+        key = coordinate.split(":", 1)[1]
+        facts = cast(dict[str, Any], vector["embedded_facts"])
+        return _frozen(facts if not key else facts[key])
+
+    if coordinate.startswith("source-decision:"):
+        reference = coordinate.split(":", 1)[1]
+        assert reference, coordinate
+        rows = cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+        matching = [row for row in rows if row["decision_reference"] == reference]
+        assert len(matching) == 1, coordinate
+        return _frozen(matching[0])
+
+    if coordinate.startswith("manifest:"):
+        pointer = coordinate.split(":", 1)[1]
+        assert pointer.startswith("/"), coordinate
+        return _frozen(_purpose_pointer(MANIFEST, pointer))
+
+    raise AssertionError(f"unknown dependency coordinate: {coordinate}")
 
 
-def _traced_dependencies(
-    vector: dict[str, Any], family: str, renderer: str
-) -> tuple[str, ...]:
-    """Every structured coordinate this renderer reads for this vector."""
-    seen: set[str] = set()
-    watched_vector = _TracedMapping(vector, None, seen)
-    watched_manifest = _TracedMapping(MANIFEST, "manifest:", seen)
-    original = globals()["MANIFEST"]
-    globals()["MANIFEST"] = watched_manifest
-    try:
-        PURPOSE_RENDERERS[renderer](watched_vector, family)
-    finally:
-        globals()["MANIFEST"] = original
-    return _smallest_coordinates(seen)
+class PurposeAuthority(NamedTuple):
+    """What a claim's epistemic authority resolves to for its renderer.
+
+    Kept apart from the dependencies on purpose. A dependency is a structured
+    value the sentence is built from; an authority is why the sentence is
+    admitted at all. The requirement a gloss names is the second kind: the
+    ledger row that witnesses this vector, or the registry entry cross-checked
+    against the derivation. Collapsing it into the dependency set would make
+    the vector id look like a render input, when what the id does is locate the
+    authority -- and `_purpose_authority_failures` already proves that binding
+    independently.
+    """
+
+    requirement: str | None
+    requirement_id: str | None
+
+
+def _resolve_purpose_authority(
+    vector: dict[str, Any], claim: PurposeClaim
+) -> PurposeAuthority:
+    """The immutable payload a claim's authority supplies to its renderer.
+
+    The identity is derived FROM THE VECTOR, so `claim.authority` stays an
+    independent assertion that `_purpose_authority_failures` cross-checks
+    rather than the single authored path both would rest on.
+    """
+    identifier = cast(str, vector["id"])
+    row = _pI_LEDGER_BY_WITNESS.get(identifier)
+    if row is not None:
+        # the ledger row that witnesses this vector supplies both the
+        # requirement's identity and the sentence key authored against it
+        return PurposeAuthority(cast(str, row[2]), cast(str, row[0]))
+    registered = SECONDARY_WITNESS_REGISTRY.get(identifier)
+    if registered is not None:
+        # a secondary witness has no row of its own; the requirement it
+        # witnesses is derived from the vector and cross-checked here
+        derived = _derived_requirement(vector)
+        assert registered == derived, identifier
+        return PurposeAuthority(registered, None)
+    return PurposeAuthority(None, None)
+
+
+def _purpose_inputs(vector: dict[str, Any], claim: PurposeClaim) -> dict[str, Any]:
+    """Exactly the values the claim declares, and nothing else.
+
+    Equality of the key set with `claim.dependencies` is the whole invariant:
+    a coordinate the claim does not declare is not hidden from the renderer, it
+    does not exist in what the renderer is handed.
+    """
+    assert tuple(sorted(claim.dependencies)) == claim.dependencies, claim.dependencies
+    assert len(set(claim.dependencies)) == len(claim.dependencies), claim.dependencies
+    frontier = {
+        coordinate: _resolve_purpose_dependency(vector, coordinate)
+        for coordinate in claim.dependencies
+    }
+    assert set(frontier) == set(claim.dependencies)
+    return frontier
+
+
+def _render_claim(vector: dict[str, Any], claim: PurposeClaim) -> str:
+    """One fragment, built from its declared frontier and nothing else.
+
+    This is the whole of the renderer's world: a mapping whose key set equals
+    the claim's declared coordinates, and the payload the claim's authority
+    resolves to. The frontier is compared with itself afterwards, so a renderer
+    that writes into what it was given is refused rather than tolerated.
+    """
+    inputs = _purpose_inputs(vector, claim)
+    authority = _resolve_purpose_authority(vector, claim)
+    unchanged = copy.deepcopy(inputs)
+    fragment = PURPOSE_RENDERERS[claim.renderer](inputs, authority)
+    assert inputs == unchanged, claim.renderer
+    return fragment
 
 
 def _render_purpose(
     vector: dict[str, Any],
-    family: str,
     ledger: dict[str, tuple[PurposeClaim, ...]] | None = None,
 ) -> str:
     """Rebuild the published sentence from its claims, and only from those.
@@ -18400,8 +17663,7 @@ def _render_purpose(
     sites that only ask about the live corpus short.
     """
     claims = (PURPOSE_SEMANTICS if ledger is None else ledger)[cast(str, vector["id"])]
-    fragments = [PURPOSE_RENDERERS[claim.renderer](vector, family) for claim in claims]
-    return "; ".join(fragments) + "."
+    return "; ".join(_render_claim(vector, claim) for claim in claims) + "."
 
 
 def _scalar_field_failures(claim: PurposeClaim, field: str) -> list[str]:
@@ -18575,7 +17837,7 @@ def _purpose_failures(
                 for reason in _purpose_authority_failures(vector, family, claim):
                     failures.append((identifier, reason))
             try:
-                rendered = _render_purpose(vector, family, ledger)
+                rendered = _render_purpose(vector, ledger)
             except Exception:  # noqa: BLE001 - a renderer that cannot run is a failure
                 failures.append((identifier, "renderer-raised"))
                 continue
@@ -18600,9 +17862,9 @@ def test_every_published_purpose_is_rebuilt_from_its_claims() -> None:
 
     assert len(PURPOSE_SEMANTICS) == 183
     assert sum(len(claims) for claims in PURPOSE_SEMANTICS.values()) == 201
-    for family, section in _purpose_sections().items():
+    for section in _purpose_sections().values():
         for vector in section["vectors"]:
-            assert _render_purpose(vector, family) == vector["purpose"], vector["id"]
+            assert _render_purpose(vector) == vector["purpose"], vector["id"]
 
 
 def test_the_purpose_ledger_closes_against_the_corpus_both_ways() -> None:
@@ -18729,6 +17991,83 @@ def _reachable_purpose_functions() -> dict[str, ast.FunctionDef]:
     return reached
 
 
+# --- the restricted language a purpose renderer is held to -------------------
+#
+# The enforcement substrate is CPython's own, not an AST name walk. Two
+# totality guarantees make the surface closed rather than enumerated:
+#
+#   every global and every ATTRIBUTE name a code object references appears in
+#   its `co_names` (free variables in `co_freevars`);
+#   every nested code object appears in its `co_consts`.
+#
+# So `mro`, `__subclasses__`, `__bases__`, `__globals__` and the rest of the
+# reach-around vocabulary are refused by ABSENCE from an allowlist, with no
+# forbidden name anyone had to foresee. That is the difference from the retired
+# design, which asked whether a deny-list of dict/list accessors was complete
+# yet -- and `dir(dict)` does not report `__dict__`, so it never could be.
+#
+# The walk follows values, not names: nested code, closures, defaults, and
+# containers. Seven lambdas in a dispatch table were reachable from every gloss
+# claim and invisible to the name walk this replaces.
+
+
+def _reachable_code(seeds: Iterable[object]) -> tuple[set[CodeType], set[str]]:
+    """Every code object and free name reachable from these callables."""
+    codes: set[CodeType] = set()
+    names: set[str] = set()
+    seen: set[int] = set()
+    frontier: list[object] = list(seeds)
+
+    while frontier:
+        value = frontier.pop()
+        if id(value) in seen:
+            continue
+        seen.add(id(value))
+        if isinstance(value, FunctionType):
+            units = [value.__code__]
+            while units:
+                unit = units.pop()
+                if unit in codes:
+                    continue
+                codes.add(unit)
+                units.extend(
+                    const for const in unit.co_consts if isinstance(const, CodeType)
+                )
+                for name in set(unit.co_names) | set(unit.co_freevars):
+                    names.add(name)
+                    if name in globals():
+                        frontier.append(globals()[name])
+            frontier.extend(value.__defaults__ or ())
+            frontier.extend((value.__kwdefaults__ or {}).values())
+            for cell in value.__closure__ or ():
+                try:
+                    frontier.append(cell.cell_contents)
+                except ValueError:  # pragma: no cover - an empty cell holds nothing
+                    continue
+        elif isinstance(value, dict):
+            frontier.extend(cast(dict[Any, Any], value))
+            frontier.extend(cast(dict[Any, Any], value).values())
+        elif isinstance(value, list | tuple | set | frozenset):
+            frontier.extend(cast(Any, value))
+    return codes, names
+
+
+def _executed_code(run: Callable[[], None]) -> set[CodeType]:
+    """Every code object in this module that a run actually enters."""
+    entered: set[CodeType] = set()
+
+    def record(frame: Any, event: str, _arg: Any) -> None:
+        if event == "call":
+            entered.add(cast(CodeType, frame.f_code))
+
+    sys.setprofile(record)
+    try:
+        run()
+    finally:
+        sys.setprofile(None)
+    return {code for code in entered if code.co_filename == __file__}
+
+
 def _identifier_readers(node: ast.FunctionDef) -> list[str]:
     """Names bound to the vector id, so a rename cannot hide the parsing."""
     bound = {"__vector_id__"}
@@ -18752,22 +18091,392 @@ def _identifier_readers(node: ast.FunctionDef) -> list[str]:
     return sorted(bound)
 
 
+# The names a purpose renderer's call graph is allowed to reference. This is
+# the whole enforcement surface, and it is a POSITIVE list: `mro`,
+# `__subclasses__`, `__bases__`, `__class__`, `__globals__`, `getattr`,
+# `vars`, `eval` and every other reach-around are refused because they are not
+# here, not because anyone predicted them.
+#
+# The claim is bounded and stated plainly: every purpose renderer published in
+# this repository obeys this restricted language. It is not a claim that
+# arbitrary Python could not escape a sandbox -- there is no sandbox.
+def _unrewritten_module() -> ModuleType:
+    """This module loaded again, without pytest's assertion rewriting.
+
+    The runner rewrites every assertion in the file under test, which inserts
+    its own names (`@pytest_ar`, `_call_reprcompare`, `locals`, `append`) into
+    the `co_names` of every code object here. Subtracting a list of those would
+    be an exclusion list, and an exclusion list is exactly the shape that let
+    the retired design hide a channel. So the surface is judged against a
+    pristine load instead, and nothing is subtracted from it.
+    """
+    specification = importlib.util.spec_from_file_location(
+        "_s09_unrewritten", Path(__file__)
+    )
+    assert specification is not None and specification.loader is not None
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
+
+
+PURPOSE_PURE_SURFACE: frozenset[str] = frozenset(
+    {
+        # typing, and the module's own name in an assertion message
+        "Any",
+        "cast",
+        "__name__",
+        # builtins the published renderers use
+        "dict",
+        "divmod",
+        "frozenset",
+        "int",
+        "isinstance",
+        "iter",
+        "len",
+        "list",
+        "next",
+        "set",
+        "sorted",
+        "str",
+        "tuple",
+        "type",
+        # authored value tables: the sentences themselves
+        "_PR_CALLER_VERBS",
+        "_PR_CARDINAL_WORDS",
+        "_PR_CHANGE_SET_COMPLETENESS",
+        "_PR_CHANGE_SET_COMPLETENESS_LEAF",
+        "_PR_EVIDENCE_LINK_NON_CLAIM",
+        "_PR_MERGE_REVISION_SOURCE_LEAF",
+        "_PR_OCCURRENCE_KINDS",
+        "_PR_RETAINED_NODE_NOUNS",
+        "_PR_SUPERSESSION_FOLLOWED_LEAF",
+        "_PR_TARGET_DECLARATIONS",
+        "_PV_CANONICAL_DECLARATIONS",
+        "_PV_INSTANT_NAMES",
+        "_PV_OCCURRENCE_SURFACE_NAMES",
+        "_PV_OCCURRENCE_SURFACE_SHORT_NAMES",
+        "_PV_PATH_NAMES",
+        "_PV_REQUIREMENT_SENTENCES",
+        "_pI_DISCRIMINATORS",
+        "_pI_REQUIREMENT_GLOSS",
+        "_pV_OFFSET",
+        "_pV_ONES",
+        "_pV_SYMBOL_BY_FIELD_SET",
+        "_pV_TENS",
+        "_PROSE_VALUE",
+        "_PROSE_WWW_AUTOLINK",
+        # pure helpers over values already in the frontier
+        "_entries",
+        "_only",
+        "_markdown_text",
+        "_pI_instant_grammar",
+        "_pI_no_discriminator",
+        "_pI_supplied_shape",
+        "_pR_authority_role",
+        "_pR_composed_bindings",
+        "_pR_short",
+        "_pR_source_position",
+        "_pR_target_ending",
+        "_pV_capitalise",
+        "_pV_changed_path_count",
+        "_pV_plain",
+        "_pV_spell",
+        "_pV_symbol_of",
+        "_pV_under_hundred",
+        "_pV_under_thousand",
+        # attribute and method names on values and on the authority payload
+        "count",
+        "endswith",
+        "fullmatch",
+        "get",
+        "group",
+        "index",
+        "isdigit",
+        "items",
+        "join",
+        "leaf",
+        "partition",
+        "replace",
+        "requirement",
+        "requirement_id",
+        "rfind",
+        "rsplit",
+        "search",
+        "split",
+        "startswith",
+        "strip",
+        "upper",
+        "values",
+    }
+)
+
+# Names whose absence is the point. Asserted separately so the reason is on the
+# page: each one is a route from any object back to the interpreter, and one of
+# them -- `type(x).mro()[-1].__subclasses__()` -- reaches the live manifest from
+# any value at all. None is forbidden anywhere; they simply are not admitted.
+PURPOSE_REACH_AROUND_NAMES = frozenset(
+    {
+        "mro",
+        "__subclasses__",
+        "__bases__",
+        "__mro__",
+        "__class__",
+        "__base__",
+        "__dict__",
+        "__globals__",
+        "__code__",
+        "__closure__",
+        "__builtins__",
+        "__reduce__",
+        "__reduce_ex__",
+        "__getstate__",
+        "gi_frame",
+        "globals",
+        "locals",
+        "vars",
+        "getattr",
+        "setattr",
+        "eval",
+        "exec",
+        "compile",
+        "open",
+        "__import__",
+        "MANIFEST",
+        "VALID",
+        "INVALID",
+        "REPLAY",
+        "SECTIONS",
+        "RESOLVABLE",
+        "REQUIREMENT_LEDGER",
+        "SECONDARY_WITNESS_REGISTRY",
+        "PURPOSE_SEMANTICS",
+        "_pI_LEDGER_BY_WITNESS",
+        "_pV_REQUIREMENT_BY_WITNESS",
+        "_resolve_pointer",
+        "_purpose_pointer",
+        "_resolve_purpose_dependency",
+    }
+)
+
+
+def _live_containers(node: Any, found: set[int]) -> set[int]:
+    """The identity of every container inside a corpus node."""
+    stack: list[Any] = [node]
+    while stack:
+        current: Any = stack.pop()
+        if isinstance(current, dict):
+            mapping = cast(dict[str, Any], current)
+            found.add(id(mapping))
+            stack.extend(mapping.values())
+        elif isinstance(current, list):
+            sequence = cast(list[Any], current)
+            found.add(id(sequence))
+            stack.extend(sequence)
+    return found
+
+
+def test_no_resolved_value_shares_a_container_with_the_corpus() -> None:
+    """The frontier is a copy, so there is no corpus in renderer scope at all.
+
+    This is what the three retired leaks all reduced to. Each of them was a
+    route from something a renderer legitimately held back to something it did
+    not: a sequence whose ordering comparison read undeclared members, a proxy
+    whose base storage was the vector itself, a root whose whole content came
+    out in one call. None of them has a target here, because nothing the
+    renderer holds is part of the corpus.
+    """
+    sections = _purpose_sections()
+    vectors = {
+        cast(str, vector["id"]): vector
+        for section in sections.values()
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+    }
+    live: set[int] = set()
+    for vector in vectors.values():
+        _live_containers(vector, live)
+    _live_containers(MANIFEST, live)
+
+    checked = 0
+    for identifier, claims in PURPOSE_SEMANTICS.items():
+        for claim in claims:
+            frontier = _purpose_inputs(vectors[identifier], claim)
+            for coordinate, value in frontier.items():
+                checked += 1
+                assert not _live_containers(value, set()) & live, (
+                    identifier,
+                    coordinate,
+                )
+                assert _shares_nothing(
+                    value, _resolve_purpose_dependency(vectors[identifier], coordinate)
+                )
+    assert checked == 266
+
+
+def test_the_three_retired_leaks_have_no_target_under_the_frontier() -> None:
+    """Kept permanently, and answered by absence rather than by an accessor.
+
+    The reason is no longer "that accessor records correctly". It is that the
+    object those expressions were written against is not in renderer scope.
+    """
+    identifier = "history.replay.role-binding.base"
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == identifier)
+    (claim,) = PURPOSE_SEMANTICS[identifier]
+    frontier = _purpose_inputs(vector, claim)
+
+    # A. an ordering comparison disclosed content with nothing recorded. There
+    # is no `source_pointers` sequence here -- one declared ENTRY is, and every
+    # byte of it is already declared
+    assert not any(
+        value is vector.get("source_pointers") for value in frontier.values()
+    )
+    (entry,) = [v for k, v in frontier.items() if k.startswith("source-pointer:")]
+    assert set(cast(dict[str, Any], entry)) == {
+        "document_path",
+        "json_pointer",
+        "role_implications",
+        "source_fields",
+    }
+
+    # B. the reach-arounds went after a proxy's own storage. A plain dict has
+    # no `_raw`, no instance `__dict__`, and its base class is not a container
+    with pytest.raises(TypeError):
+        vars(frontier)
+    with pytest.raises(KeyError):
+        frontier["_raw"]  # noqa: B018 - the subscript is the probe
+    assert type(frontier).__mro__ == (dict, object)
+
+    # C. the roots themselves. Neither is in the frontier, and no renderer can
+    # name one either
+    assert not any(value is vector for value in frontier.values())
+    assert not any(value is MANIFEST for value in frontier.values())
+    pristine = _unrewritten_module()
+    _codes, names = pristine._reachable_code(pristine.PURPOSE_RENDERERS.values())
+    assert names.isdisjoint({"MANIFEST", "VALID", "INVALID", "REPLAY", "SECTIONS"})
+
+    # and the frontier a renderer is handed carries the declared set exactly
+    assert set(frontier) == set(claim.dependencies)
+
+
+def test_every_purpose_renderer_obeys_the_restricted_language() -> None:
+    """The surface is a positive list over names, and it is closed.
+
+    Two CPython guarantees make this finite where the retired design could not
+    be: every global and every attribute name a code object references appears
+    in its `co_names` (free variables in `co_freevars`), and every nested code
+    object appears in its `co_consts`. So the audited surface cannot omit a
+    channel the way `dir(dict)` omitted `__dict__` -- there is no name a
+    renderer can use that this does not see.
+
+    The default is refusal. A name not on the list fails, so nothing had to be
+    foreseen: the escape that reaches the live manifest from any value at all,
+    `type(x).mro()[-1].__subclasses__()`, is refused because `mro` and
+    `__subclasses__` were never admitted.
+    """
+    pristine = _unrewritten_module()
+    codes, names = pristine._reachable_code(pristine.PURPOSE_RENDERERS.values())
+    assert codes, "the walk found nothing"
+
+    outside = sorted(names - PURPOSE_PURE_SURFACE)
+    assert not outside, outside
+    assert not (names & PURPOSE_REACH_AROUND_NAMES)
+
+    # the allowlist is tight: an entry nothing references is a standing
+    # permission, and standing permissions are how the retired excuse list grew
+    unused = sorted(PURPOSE_PURE_SURFACE - names)
+    assert not unused, unused
+
+    # no admitted global is a module, and none is a class the graph could walk
+    # -- checked through containers, since a dict of classes passes a shallow
+    # test and hands out types all the same
+    def values_under(value: Any, depth: int = 0) -> list[Any]:
+        if depth > 3:
+            return []
+        if isinstance(value, dict):
+            found: list[Any] = []
+            for item in cast(dict[Any, Any], value).values():
+                found.extend([item, *values_under(item, depth + 1)])
+            return found
+        if isinstance(value, list | tuple | set | frozenset):
+            found = []
+            for item in cast(Any, value):
+                found.extend([item, *values_under(item, depth + 1)])
+            return found
+        return []
+
+    for name in sorted(names & set(vars(pristine))):
+        if name in ("Any", "cast"):
+            continue  # typing helpers, used in annotations
+        bound = vars(pristine)[name]
+        assert not isinstance(bound, ModuleType), name
+        for reached in [bound, *values_under(bound)]:
+            assert not isinstance(reached, ModuleType), name
+            assert not isinstance(reached, type), (name, reached)
+
+
+def test_the_restricted_language_is_enforced_over_everything_that_runs() -> None:
+    """Reached-but-never-run is safe; run-but-never-reached is the hole.
+
+    A static closure that misses a unit the corpus actually executes is the
+    retired failure exactly: the call-graph walk this replaces followed
+    `ast.Call` on a plain name, so seven discriminator lambdas dispatched out
+    of a table ran on the hot path of every gloss claim and were audited by
+    nobody. Here the whole corpus is rendered under a profiler and every code
+    object it enters must be one the surface already covers.
+    """
+    sections = _purpose_sections()
+    vectors = {
+        cast(str, vector["id"]): vector
+        for section in sections.values()
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+    }
+
+    # the frontiers are resolved OUTSIDE the profiled region: the gate is
+    # allowed to read raw corpus, and it is the renderers that are on trial
+    plan = [
+        (
+            PURPOSE_RENDERERS[claim.renderer],
+            _purpose_inputs(vectors[identifier], claim),
+            _resolve_purpose_authority(vectors[identifier], claim),
+        )
+        for identifier, claims in PURPOSE_SEMANTICS.items()
+        for claim in claims
+    ]
+
+    def render_everything() -> None:
+        for render, inputs, authority in plan:
+            render(inputs, authority)
+
+    codes, _names = _reachable_code(PURPOSE_RENDERERS.values())
+    executed = _executed_code(render_everything) - {render_everything.__code__}
+    assert executed, "nothing ran"
+    assert not (executed - codes), sorted(c.co_name for c in executed - codes)
+
+    # the seven that were invisible to the walk this replaces are covered now
+    for discriminate in _pI_DISCRIMINATORS.values():
+        assert discriminate.__code__ in codes, discriminate.__name__
+    assert len(_pI_DISCRIMINATORS) == 7
+
+
 def test_no_renderer_reads_the_text_it_is_rebuilding() -> None:
     """A renderer that consulted `purpose` would only be copying it.
 
-    The check follows the call graph. Reading the registered function's own
-    source would leave every helper it calls unexamined, and one hop is all a
-    renderer would need to echo the sentence back.
+    Two closures, not one. The coordinate is unspellable -- `field:` is a
+    closed enumeration, so `field:purpose` resolves to nothing and the value
+    can never enter a frontier -- and no reachable code object carries the name
+    either, which catches an attempt made through some other route.
     """
-    reachable = _reachable_purpose_functions()
+    with pytest.raises(AssertionError):
+        _resolve_purpose_dependency(
+            next(iter(cast(list[dict[str, Any]], VALID["vectors"]))), "field:purpose"
+        )
+    assert PURPOSE_PURE_SURFACE.isdisjoint({"purpose", "field:purpose"})
 
-    assert len(reachable) >= len(PURPOSE_RENDERERS), "the closure is not smaller"
-    for name, node in sorted(reachable.items()):
-        for literal in ast.walk(node):
-            if isinstance(literal, ast.Constant) and literal.value == "purpose":
-                raise AssertionError(f"{name} names the field it rebuilds")
-            if isinstance(literal, ast.Attribute) and literal.attr == "purpose":
-                raise AssertionError(f"{name} reaches the field it rebuilds")
+    pristine = _unrewritten_module()
+    codes, names = pristine._reachable_code(pristine.PURPOSE_RENDERERS.values())
+    assert "purpose" not in names
+    for code in codes:
+        constants = {c for c in code.co_consts if isinstance(c, str)}
+        assert not (constants & {"purpose", "field:purpose"}), code.co_name
 
     resolver = inspect.getsource(_purpose_authority_failures)
     assert '"purpose"' not in resolver
@@ -18778,18 +18487,33 @@ def test_no_renderer_reads_meaning_out_of_an_identifier() -> None:
 
     Deriving BASE from a `.base-canonical` suffix, or merge prose from a
     `merge-outcome` category, would make this rule restate the labels other
-    authorities already close. The id may be a dict key and nothing else, so
-    the check tracks every name it is bound to and refuses any attribute call
-    or subscript on it -- a substring search would miss `identifier.rsplit`.
+    authorities already close. The partition and the category are unspellable
+    as coordinates, and the id -- which one renderer legitimately selects by --
+    may be a dict key and nothing else.
     """
-    for name, node in sorted(_reachable_purpose_functions().items()):
-        for literal in ast.walk(node):
-            if isinstance(literal, ast.Constant) and literal.value in (
+    vector = next(iter(cast(list[dict[str, Any]], VALID["vectors"])))
+    for forbidden in ("field:semantic_partition", "field:category", "field:target"):
+        with pytest.raises(AssertionError):
+            _resolve_purpose_dependency(vector, forbidden)
+    assert _PURPOSE_FIELD_COORDINATES == frozenset({"field:id"})
+
+    pristine = _unrewritten_module()
+    codes, names = pristine._reachable_code(pristine.PURPOSE_RENDERERS.values())
+    assert names.isdisjoint({"semantic_partition", "category"})
+    for code in codes:
+        constants = {c for c in code.co_consts if isinstance(c, str)}
+        assert not (
+            constants
+            & {
                 "semantic_partition",
                 "category",
-            ):
-                raise AssertionError(f"{name} reads a taxonomy label")
+                "field:semantic_partition",
+                "field:category",
+            }
+        ), code.co_name
 
+    # the id reaches exactly one renderer, and only as a key
+    for name, node in sorted(_reachable_purpose_functions().items()):
         readers = set(_identifier_readers(node))
         for used in ast.walk(node):
             target: ast.expr | None = None
@@ -18797,12 +18521,14 @@ def test_no_renderer_reads_meaning_out_of_an_identifier() -> None:
                 target = used.value
             elif isinstance(used, ast.Subscript):
                 target = used.value
-            if isinstance(target, ast.Name) and target.id in readers:
-                raise AssertionError(f"{name} takes the vector id apart")
             if (
-                isinstance(target, ast.Subscript)
-                and isinstance(target.slice, ast.Constant)
-                and target.slice.value == "id"
+                isinstance(target, ast.Name)
+                and target.id in readers
+                and not (
+                    isinstance(used, ast.Subscript)
+                    and isinstance(used.slice, ast.Constant)
+                    and used.slice.value == "id"
+                )
             ):
                 raise AssertionError(f"{name} takes the vector id apart")
 
@@ -18872,7 +18598,7 @@ def test_a_derived_claim_moves_when_the_field_it_cites_moves() -> None:
     change the sentence, otherwise the citation is decoration.
     """
     inert: list[tuple[str, str]] = []
-    for family, section in _purpose_sections().items():
+    for section in _purpose_sections().values():
         for vector in section["vectors"]:
             identifier = cast(str, vector["id"])
             for claim in PURPOSE_SEMANTICS[identifier]:
@@ -18889,7 +18615,7 @@ def test_a_derived_claim_moves_when_the_field_it_cites_moves() -> None:
                         cast(list[Any], parent)[int(leaf)] = "-"
                     else:
                         cast(dict[str, Any], parent)[leaf] = "-"
-                    moved = _render_purpose(edited, family)
+                    moved = _render_purpose(edited)
                 except Exception:  # noqa: BLE001 - a raising renderer did notice
                     continue
                 if moved == vector["purpose"]:
@@ -18971,9 +18697,12 @@ def test_reordering_source_decisions_leaves_the_purpose_claim_alone(
     assert not _purpose_failures(_purpose_sections(), PURPOSE_SEMANTICS)
 
     vector, _claim = _correction_purpose_claim()
-    assert _render_purpose(vector, "replay") == vector["purpose"]
+    assert _render_purpose(vector) == vector["purpose"]
     assert (
-        _pR_authority_role(CORRECTION_PURPOSE_REFERENCE)
+        _pR_authority_role(
+            cast(list[dict[str, Any]], MANIFEST["source_decisions"]),
+            CORRECTION_PURPOSE_REFERENCE,
+        )
         == "retained_additive_correction_evidence"
     )
 
@@ -19080,39 +18809,82 @@ def _coordinate_claims() -> list[tuple[str, str, dict[str, Any], PurposeClaim]]:
 def _dependency_failures(
     ledger: dict[str, tuple[PurposeClaim, ...]],
 ) -> list[tuple[str, str]]:
-    """`(vector id, reason)` wherever a claim's declared inputs are not its real ones."""
+    """`(vector id, reason)` wherever a claim's declared inputs are not its real ones.
+
+    Leave-one-out over the frontier, which is what replaces watching a proxy.
+    The two directions are proved differently now, and neither needs anything
+    enumerated:
+
+      nothing undeclared is consumed -- BY CONSTRUCTION. The renderer is handed
+      a mapping whose key set equals the declared coordinates, so an undeclared
+      value is not concealed from it, it is absent. There is no read to observe
+      because there is nothing to read.
+
+      nothing declared is unused -- BY REMOVAL. Drop one coordinate and resolve
+      the rest; the fragment must fail to build or come out different. A
+      coordinate whose absence changes nothing was never an input, and no
+      amount of watching a proxy could establish that.
+    """
     sections = _purpose_sections()
     vectors = {
-        cast(str, vector["id"]): (family, vector)
-        for family, section in sections.items()
+        cast(str, vector["id"]): vector
+        for section in sections.values()
         for vector in cast(list[dict[str, Any]], section["vectors"])
     }
     failures: list[tuple[str, str]] = []
     for identifier, claims in ledger.items():
-        family, vector = vectors[identifier]
+        vector = vectors[identifier]
         for claim in claims:
-            observed = _traced_dependencies(vector, family, claim.renderer)
             declared = claim.dependencies
             if tuple(sorted(declared)) != declared:
                 failures.append((identifier, "dependencies-not-in-order"))
+                continue
             if len(set(declared)) != len(declared):
                 failures.append((identifier, "dependency-declared-twice"))
-            for coordinate in sorted(set(observed) - set(declared)):
-                failures.append((identifier, f"undeclared-dependency:{coordinate}"))
-            for coordinate in sorted(set(declared) - set(observed)):
-                failures.append((identifier, f"dependency-not-consumed:{coordinate}"))
+                continue
+            try:
+                fragment = _render_claim(vector, claim)
+            except Exception:  # noqa: BLE001 - reported, not swallowed
+                failures.append((identifier, "renderer-raised"))
+                continue
+            for coordinate in declared:
+                reduced = PurposeClaim(
+                    claim.assurance,
+                    claim.renderer,
+                    claim.authority,
+                    tuple(c for c in declared if c != coordinate),
+                )
+                try:
+                    without = _render_claim(vector, reduced)
+                except Exception:  # noqa: BLE001 - failing closed is the pass
+                    continue
+                if without == fragment:
+                    failures.append(
+                        (identifier, f"dependency-not-consumed:{coordinate}")
+                    )
     return sorted(failures)
 
 
 def test_every_claim_declares_the_complete_set_of_inputs_it_is_built_from() -> None:
-    """Equality, not membership, and observed rather than restated.
+    """Equality, not membership, and constructive rather than observed.
 
     The finding was that a claim could cite one leaf while its renderer read
     two: repointing the role-binding authority at the pull-request number left
-    the suite green and dropped the role's provenance entirely. Each claim now
-    declares its COMPLETE dependency set, and the set is compared with what the
-    renderer is watched reading -- so an undeclared input and a declared input
-    the renderer never touches both fail.
+    the suite green and dropped the role's provenance entirely.
+
+    The set used to be compared with what a proxy was watched handing over. It
+    is compared with what the renderer can be built from now: the frontier
+    carries exactly the declared coordinates, so an undeclared input cannot be
+    consumed, and removing a declared one must break or move the fragment.
+
+    The edge count fell from 573 because the old figure was not an account of
+    what the renderers read. `_smallest_coordinates` dropped a container
+    coordinate whenever a deeper one was recorded, which erased the list length
+    and key-set reads two gloss branches rest on -- nine claims could not in
+    fact be rebuilt from what they declared -- and the same rule applied to
+    opaque identity strings erased three sibling `source_pointers` entries
+    whose pointers were merely textual prefixes of one another. The rest of the
+    fall is the requirement identity moving to the authority where it belongs.
     """
     assert not _dependency_failures(PURPOSE_SEMANTICS)
 
@@ -19123,7 +18895,7 @@ def test_every_claim_declares_the_complete_set_of_inputs_it_is_built_from() -> N
     )
     assert len(PURPOSE_SEMANTICS) == 183
     assert sum(len(claims) for claims in PURPOSE_SEMANTICS.values()) == 201
-    assert edges == 573
+    assert edges == 266
 
     # the example the finding named, both bindings, complete
     for identifier in (
@@ -19152,7 +18924,6 @@ def test_every_claim_declares_the_complete_set_of_inputs_it_is_built_from() -> N
         "field",
         "input",
         "manifest",
-        "source-decision",
         "source-pointer",
         "target",
     }
@@ -19164,6 +18935,11 @@ def test_a_dependency_set_that_is_not_the_renderers_own_is_refused() -> None:
     Membership in either direction is not enough, and neither is a set that
     happens to be the right size. These are the shapes a hand-maintained list
     drifts into.
+
+    Under-declaration is reported as `renderer-raised` rather than as an
+    undeclared read, and that IS the architecture: the value a claim did not
+    declare is not withheld from the renderer for a watcher to notice, it is
+    absent, so the fragment cannot be built at all.
     """
     identifier = "history.valid.role-binding.base-canonical"
     (claim,) = PURPOSE_SEMANTICS[identifier]
@@ -19180,23 +18956,16 @@ def test_a_dependency_set_that_is_not_the_renderers_own_is_refused() -> None:
         )
         return _dependency_failures(ledger)
 
-    # an input the renderer really reads, undeclared
-    assert moved((role,)) == [(identifier, f"undeclared-dependency:{number}")]
-    assert moved((number,)) == [(identifier, f"undeclared-dependency:{role}")]
+    # an input the renderer really reads, undeclared: it is not there to read
+    assert moved((role,)) == [(identifier, "renderer-raised")]
+    assert moved((number,)) == [(identifier, "renderer-raised")]
     # a declared input the renderer never touches
     assert moved((number, role, "target")) == [
         (identifier, "dependency-not-consumed:target")
     ]
     # the set emptied, and the set of another claim entirely
-    assert len(moved(())) == 2
-    assert moved(("field:id", "target")) == sorted(
-        [
-            (identifier, f"undeclared-dependency:{number}"),
-            (identifier, f"undeclared-dependency:{role}"),
-            (identifier, "dependency-not-consumed:field:id"),
-            (identifier, "dependency-not-consumed:target"),
-        ]
-    )
+    assert moved(()) == [(identifier, "renderer-raised")]
+    assert moved(("field:id", "target")) == [(identifier, "renderer-raised")]
     # unordered and duplicated declarations are refused as written
     assert moved((role, number)) == [(identifier, "dependencies-not-in-order")]
     assert moved((number, number, role)) == [(identifier, "dependency-declared-twice")]
@@ -19212,13 +18981,16 @@ def test_a_dependency_set_that_is_not_the_renderers_own_is_refused() -> None:
             sibling.assurance,
             sibling.renderer,
             sibling.authority,
-            (number, role, "input_mode"),
+            (number, role, "target"),
         ),
     )
+    # the claim that lost the coordinate cannot render; the claim that gained
+    # one carries an input its own sentence never uses. The frontier is
+    # per-claim, so neither borrows the other's
     assert _dependency_failures(ledger) == sorted(
         [
-            (identifier, f"undeclared-dependency:{role}"),
-            (other, "dependency-not-consumed:input_mode"),
+            (identifier, "renderer-raised"),
+            (other, "dependency-not-consumed:target"),
         ]
     )
 
@@ -19226,37 +18998,49 @@ def test_a_dependency_set_that_is_not_the_renderers_own_is_refused() -> None:
 def test_a_renderer_that_changes_what_it_reads_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The declaration follows the code, so the code may not move alone."""
+    """The declaration follows the code, so the code may not move alone.
+
+    One direction is a test; the other is now a demonstration that the thing
+    cannot be written. A renderer that STOPS reading a declared input is caught
+    by removal, as before. A renderer that GAINS an undeclared input cannot be
+    authored at all -- there is no vector in scope to read `input_mode` out of,
+    and the frontier it is handed does not carry it. That is the V2 thesis
+    stated as code rather than asserted as prose.
+    """
     identifier = "history.valid.role-binding.base-canonical"
-    original = PURPOSE_RENDERERS["valid:role_binding_canonical"]
 
-    def stopped(vector: dict[str, Any], family: str) -> str:
+    def stopped(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
         """Stops consuming the pull request number the sentence is built from."""
-        return f"The canonical {vector['input']['role_assignment']['role'].upper()} binding"
+        role = cast(str, inputs["input:/role_assignment/role"])
+        return f"The canonical {role.upper()} binding"
 
-    def gained(vector: dict[str, Any], family: str) -> str:
-        """Reads a claim-bearing input nothing declared."""
-        return original(vector, family) + str(vector["input_mode"])
+    monkeypatch.setitem(PURPOSE_RENDERERS, "valid:role_binding_canonical", stopped)
+    try:
+        failures = _dependency_failures(PURPOSE_SEMANTICS)
+    finally:
+        monkeypatch.undo()
+    assert (
+        identifier,
+        "dependency-not-consumed:input:/pull_request/repository_scoped_number",
+    ) in failures
 
-    for replacement, reason in (
-        (
-            stopped,
-            "dependency-not-consumed:input:/pull_request/repository_scoped_number",
-        ),
-        (gained, "undeclared-dependency:input_mode"),
-    ):
-        monkeypatch.setitem(
-            PURPOSE_RENDERERS, "valid:role_binding_canonical", replacement
+    # the other direction: reaching for an undeclared input raises, because the
+    # frontier's key set IS the declared set and nothing else is in it
+    def gained(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
+        """Tries to read a claim-bearing input nothing declared."""
+        return str(inputs["field:id"]) + str(inputs["input:/role_assignment/role"])
+
+    monkeypatch.setitem(PURPOSE_RENDERERS, "valid:role_binding_canonical", gained)
+    try:
+        assert (identifier, "renderer-raised") in _dependency_failures(
+            PURPOSE_SEMANTICS
         )
-        try:
-            failures = _dependency_failures(PURPOSE_SEMANTICS)
-        finally:
-            monkeypatch.undo()
-        assert (identifier, reason) in failures, reason
+    finally:
+        monkeypatch.undo()
     assert not _dependency_failures(PURPOSE_SEMANTICS)
 
 
-def test_the_traced_coordinates_are_identity_addressed_and_order_free(
+def test_the_declared_coordinates_are_identity_addressed_and_order_free(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A dependency that moved when a neutral list was reordered would be a slot.
@@ -19287,20 +19071,33 @@ def test_the_traced_coordinates_are_identity_addressed_and_order_free(
         for claim in PURPOSE_SEMANTICS[CORRECTION_PURPOSE_VECTOR]
         if claim.renderer == "replay:second_independent_correction_link"
     ]
-    assert link.dependencies == (
-        "evidence-record-lock",
-        "manifest:/source_decisions",
-        "source-decision:acquisition:run-0001",
-        "source-decision:closure:s1-p03:evidence-envelope",
-        "source-decision:correction:s04-c01-acquisition-closure",
-        "source-decision:correction:s1-p05-s08-c01:owner-topology",
-        "source-decision:decision:s1-p05-s08:disposition",
-    )
+    # the collection, not five rows beside it: declaring an entry AND the
+    # collection it lives in let either mask the other under removal, so
+    # neither could be shown to be load-bearing
+    assert link.dependencies == ("evidence-record-lock", "manifest:/source_decisions")
+
+    sections = _purpose_sections()
+    vectors = {
+        cast(str, vector["id"]): vector
+        for section in sections.values()
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+    }
+    before = {
+        identifier: _render_purpose(vector) for identifier, vector in vectors.items()
+    }
 
     monkeypatch.setitem(
         MANIFEST, "source_decisions", list(reversed(_live_source_decisions()))
     )
     assert not _dependency_failures(PURPOSE_SEMANTICS)
+    # sharper than "no failures": every sentence in the corpus is byte-identical
+    # after the reversal, so no fragment rested on a position. The collection
+    # coordinate's own VALUE does move -- it is a list -- which is exactly why
+    # the renderer scans it by reference and requires a unique match.
+    after = {
+        identifier: _render_purpose(vector) for identifier, vector in vectors.items()
+    }
+    assert after == before
 
 
 def test_every_coordinate_claim_names_the_input_its_renderer_reads() -> None:
@@ -19338,38 +19135,35 @@ def test_every_coordinate_claim_names_the_input_its_renderer_reads() -> None:
     } == set(PURPOSE_EMBEDDED_FACT_SELECTORS)
 
 
-def test_every_declared_selection_is_code_its_renderer_runs() -> None:
-    """A selection the renderer never calls would be a parallel description."""
-    module = ast.parse(Path(__file__).read_text("utf-8"))
-    defined = {
-        node.name: node for node in module.body if isinstance(node, ast.FunctionDef)
-    }
+def test_every_declared_selection_is_code_the_gate_runs() -> None:
+    """A selection nothing calls would be a parallel description of the corpus.
 
-    def reaches(root: str, helper: str) -> bool:
-        frontier, seen = {root}, set[str]()
-        while frontier:
-            name = frontier.pop()
-            if name in seen:
-                continue
-            seen.add(name)
-            node = defined.get(name)
-            if node is None:
-                continue
-            for call in ast.walk(node):
-                if isinstance(call, ast.Call) and isinstance(call.func, ast.Name):
-                    if call.func.id in defined:
-                        frontier.add(call.func.id)
-        return helper in seen
-
+    These selectors answer a provenance question -- WHICH retained coordinate a
+    fragment is sourced from -- and that is settled in the gate, against the
+    raw vector, not inside a renderer whose whole world is its declared
+    frontier. So the reachability walked here is the gate's, and it follows
+    values rather than names: every one of these is dispatched out of a table,
+    which an AST call walk cannot see through.
+    """
     selections: dict[str, Callable[..., Any]] = {
         **PURPOSE_SOURCE_POINTER_SELECTORS,
         **PURPOSE_EMBEDDED_FACT_SELECTORS,
     }
+    gate, _names = _reachable_code([_purpose_authority_failures])
     for renderer, select in sorted(selections.items()):
-        root = PURPOSE_RENDERERS[renderer].__name__
-        assert reaches(root, select.__name__), (renderer, select.__name__)
-    # and the guard itself is not vacuous
-    assert not reaches("_PR_retained_changed_path_fact", "_pR_instant_pointer")
+        assert select.__code__ in gate, (renderer, select.__name__)
+
+    # and no selector is reachable from any renderer: the gate reads the
+    # vector, a renderer never does
+    renderers, _renderer_names = _reachable_code(PURPOSE_RENDERERS.values())
+    for renderer, select in sorted(selections.items()):
+        assert select.__code__ not in renderers, (renderer, select.__name__)
+
+    # the walk is not vacuous in either direction
+    assert _purpose_authority_failures.__code__ in gate
+    assert _pR_short.__code__ in renderers
+    assert _tracked_git_entries.__code__ not in gate
+    assert _tracked_git_entries.__code__ not in renderers
 
 
 def test_a_coordinate_the_renderer_never_reads_is_refused() -> None:
@@ -19533,26 +19327,27 @@ def test_every_declared_purpose_leaf_and_field_moves_its_own_fragment(
     """
     sections = _purpose_sections()
     vectors = {
-        cast(str, vector["id"]): (family, vector)
-        for family, section in sections.items()
+        cast(str, vector["id"]): vector
+        for section in sections.values()
         for vector in cast(list[dict[str, Any]], section["vectors"])
     }
     inert: list[tuple[str, str]] = []
 
     for identifier, claims in PURPOSE_SEMANTICS.items():
-        family, vector = vectors[identifier]
+        vector = vectors[identifier]
         for claim in claims:
-            render = PURPOSE_RENDERERS[claim.renderer]
-            baseline = render(vector, family)
+            # the frontier is rebuilt inside each perturbation, so what moves
+            # is the resolved value and not a copy taken before the edit
+            baseline = _render_claim(vector, claim)
             if claim.authority.startswith("manifest:"):
                 pointer = PURPOSE_MANIFEST_POINTERS[claim.renderer]
                 parent_path, _, leaf = pointer.rpartition("/")
                 parent = cast(dict[str, Any], _resolve_pointer(MANIFEST, parent_path))
                 monkeypatch.setitem(parent, leaf, _drifted(parent[leaf]))
                 try:
-                    if render(vector, family) == baseline:
+                    if _render_claim(vector, claim) == baseline:
                         inert.append((identifier, pointer))
-                except Exception:  # noqa: BLE001 - a renderer that stopped noticed
+                except Exception:  # noqa: BLE001 - a claim that stopped noticed
                     pass
                 finally:
                     monkeypatch.undo()
@@ -19566,11 +19361,22 @@ def test_every_declared_purpose_leaf_and_field_moves_its_own_fragment(
                 edited = copy.deepcopy(vector)
                 edited[field] = ""
                 try:
-                    if render(edited, family) == baseline:
+                    if _render_claim(edited, claim) == baseline:
                         inert.append((identifier, field))
-                except Exception:  # noqa: BLE001 - a renderer that stopped noticed
+                except Exception:  # noqa: BLE001 - a claim that stopped noticed
                     pass
     assert not inert, inert
+
+    # and a value edited AFTER resolution cannot reach the sentence: the
+    # frontier is a copy, so the corpus it came from is not what was rendered
+    identifier = "history.valid.role-binding.base-canonical"
+    vector = vectors[identifier]
+    (claim,) = PURPOSE_SEMANTICS[identifier]
+    frontier = _purpose_inputs(vector, claim)
+    assert _shares_nothing(frontier["input:/pull_request/repository_scoped_number"], 0)
+    edited = copy.deepcopy(vector)
+    edited["input"]["role_assignment"]["role"] = "drifted"
+    assert _render_claim(edited, claim) != _render_claim(vector, claim)
 
 
 # What binds each authority form to the code that spends it. Three findings in
@@ -19672,19 +19478,29 @@ def test_a_composed_binding_claim_may_not_name_a_selected_path() -> None:
     ]
 
 
-def test_removing_a_claimed_coordinate_moves_the_sentence_it_carries() -> None:
-    """A cited coordinate the renderer ignores is decoration, not provenance.
+def test_removing_a_claimed_coordinate_invalidates_the_claim_it_carries() -> None:
+    """A cited coordinate nothing answers to is decoration, not provenance.
 
-    The structural check above says the claim names the renderer's own
-    selection. This says the same thing from the other side, behaviourally:
-    delete the claimed coordinate and the fragment must move or stop rendering.
-    Both directions are kept because either alone could be satisfied by a
-    selection that has quietly stopped being read.
+    This used to demand that deleting the cited coordinate MOVE the fragment,
+    which conflated two different questions. Under the closed frontier they are
+    separate by construction, and both are still answered:
+
+      a declared DEPENDENCY must be load-bearing for the sentence -- proved by
+      leave-one-out in `_dependency_failures`;
+
+      a cited AUTHORITY must be load-bearing for the claim's admission -- proved
+      here, by deleting it and requiring the authority relation to refuse.
+
+    Three provenance claims show why the distinction matters. The retained
+    instant sentence is built from the independently authored dump, and its
+    authority is the retained coordinate that dump answers to. Under the old
+    reading the coordinate looked inert because the sentence did not move; it
+    is not inert, it is doing the other job.
     """
     inert: list[tuple[str, str]] = []
-    for identifier, _family, vector, claim in _coordinate_claims():
+    for identifier, family, vector, claim in _coordinate_claims():
         kind, cited = claim.authority.split(":", 1)
-        render = PURPOSE_RENDERERS[claim.renderer]
+        assert not _purpose_authority_failures(vector, family, claim), identifier
         edited = copy.deepcopy(vector)
         if kind == "source-pointer":
             edited["source_pointers"] = [
@@ -19698,28 +19514,36 @@ def test_removing_a_claimed_coordinate_moves_the_sentence_it_carries() -> None:
                 for key, value in cast(dict[str, Any], edited["embedded_facts"]).items()
                 if key != cited
             }
-        try:
-            moved = render(edited, "replay") != render(vector, "replay")
-        except Exception:  # noqa: BLE001 - a renderer that cannot run did notice
-            moved = True
-        if not moved:
+        if not _purpose_authority_failures(edited, family, claim):
             inert.append((identifier, claim.authority))
     assert not inert, inert
 
-    # the probe is not vacuous: removing the coordinate the finding proposed
-    # leaves the sentence exactly as it was
-    vector = next(
-        v for v in REPLAY["vectors"] if v["id"] == "history.replay.role-binding.base"
-    )
+    # and where the coordinate IS also a declared render input, deleting it
+    # still moves or breaks the sentence -- the two jobs are not exclusive
+    identifier = "history.replay.role-binding.base"
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == identifier)
+    (claim,) = PURPOSE_SEMANTICS[identifier]
+    assert "source-pointer:/observations/comparison" in claim.dependencies
+    stripped = copy.deepcopy(vector)
+    stripped["source_pointers"] = [
+        p
+        for p in cast(list[dict[str, Any]], stripped["source_pointers"])
+        if p["json_pointer"] != "/observations/comparison"
+    ]
+    with pytest.raises(AssertionError):
+        _render_claim(stripped, claim)
+
+    # the probe is not vacuous: a coordinate the claim never named is neither
+    # a dependency nor the authority, and removing it changes nothing
     ignored = copy.deepcopy(vector)
     ignored["source_pointers"] = [
         p
         for p in cast(list[dict[str, Any]], ignored["source_pointers"])
         if p["json_pointer"] != "/observations/repository"
     ]
-    assert _PR_retained_role_binding_fact(
-        ignored, "replay"
-    ) == _PR_retained_role_binding_fact(vector, "replay")
+    assert "source-pointer:/observations/repository" not in claim.dependencies
+    assert _render_claim(ignored, claim) == _render_claim(vector, claim)
+    assert not _purpose_authority_failures(ignored, "replay", claim)
 
 
 def test_the_purpose_ledger_is_bound_once_anywhere_in_the_module() -> None:
@@ -19884,12 +19708,12 @@ def test_moving_a_structured_fact_moves_the_rendered_purpose() -> None:
     edited = next(
         v for v in section["vectors"] if v["id"] == "history.valid.approval.canonical"
     )
-    original = _render_purpose(edited, "valid")
+    original = _render_purpose(edited)
     review = cast(dict[str, Any], cast(dict[str, Any], edited["input"])["review"])
     assert "176071572" in original, "the published review id is in the sentence"
     review["provider_global_id"] = "999999999"
 
-    moved = _render_purpose(edited, "valid")
+    moved = _render_purpose(edited)
     assert moved != original
     assert "999999999" in moved and "176071572" not in moved
     assert _purpose_failures(
