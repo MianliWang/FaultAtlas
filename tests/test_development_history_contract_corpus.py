@@ -17513,14 +17513,28 @@ _PURPOSE_VECTOR_SCALARS = {
 _PURPOSE_VECTOR_ROOTS = {"input:": "input", "expected:": "expected"}
 
 
+# A list step must be a canonical non-negative index. `-1` names a different
+# element for every length, and `01` is not the same token as `1`, so either
+# would make a coordinate that reads as a fixed address behave like a relative
+# one.
+_PURPOSE_INDEX = re.compile(r"0|[1-9][0-9]*")
+
+# The two manifest collections whose ORDER carries no meaning. A slot into one
+# of them names whichever record happens to sit there, which is the hazard
+# `_pR_authority_role` refuses by scanning for a unique reference and the
+# authority relation already refuses by name. The dependency grammar refuses it
+# too, so the two cannot disagree about what a coordinate may address.
+_PURPOSE_ORDER_NEUTRAL = ("/source_decisions/", "/target_symbols/")
+
+
 def _purpose_pointer(node: Any, pointer: str) -> Any:
     """Descend a JSON pointer, refusing anything that is not a step."""
     for token in [part for part in pointer.split("/") if part]:
-        node = (
-            cast(list[Any], node)[int(token)]
-            if isinstance(node, list)
-            else cast(dict[str, Any], node)[token]
-        )
+        if isinstance(node, list):
+            assert _PURPOSE_INDEX.fullmatch(token), pointer
+            node = cast(list[Any], node)[int(token)]
+        else:
+            node = cast(dict[str, Any], node)[token]
     return node
 
 
@@ -17572,6 +17586,12 @@ def _resolve_purpose_dependency(vector: dict[str, Any], coordinate: str) -> Any:
     if coordinate.startswith("manifest:"):
         pointer = coordinate.split(":", 1)[1]
         assert pointer.startswith("/"), coordinate
+        assert not [
+            prefix
+            for prefix in _PURPOSE_ORDER_NEUTRAL
+            if pointer.startswith(prefix)
+            and any(segment.isdigit() for segment in pointer.split("/"))
+        ], coordinate
         return _frozen(_purpose_pointer(MANIFEST, pointer))
 
     raise AssertionError(f"unknown dependency coordinate: {coordinate}")
@@ -18273,6 +18293,58 @@ def _live_containers(node: Any, found: set[int]) -> set[int]:
             found.add(id(sequence))
             stack.extend(sequence)
     return found
+
+
+def test_the_dependency_grammar_refuses_a_slot_into_a_neutral_collection() -> None:
+    """A coordinate that reads as an address must not behave like a position.
+
+    `manifest:/source_decisions/4` names whichever record happens to sit
+    fourth, and the corpus has already made that ordering semantically neutral:
+    the authority relation refuses the same shape by name, and the renderer
+    scans for a unique reference rather than taking a slot. The dependency
+    grammar refuses it too, so a claim cannot address by position what nothing
+    else may.
+
+    A negative index is the sharper case -- it names a different element for
+    every length, so it is not an address at all -- and a non-canonical one
+    (`01`) is a second spelling of a slot that already has one.
+    """
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == CORRECTION_PURPOSE_VECTOR)
+    for forbidden in (
+        "manifest:/source_decisions/0",
+        "manifest:/source_decisions/4/authority_role",
+        "manifest:/target_symbols/0/symbol",
+        "manifest:/source_decisions/-1",
+    ):
+        with pytest.raises(AssertionError):
+            _resolve_purpose_dependency(vector, forbidden)
+
+    # the collection itself stays addressable: its members are named by their
+    # own references, and that is what the correction link declares
+    rows = _resolve_purpose_dependency(vector, "manifest:/source_decisions")
+    assert len(cast(list[Any], rows)) == 5
+
+    # a negative or non-canonical index is refused wherever a list is stepped
+    # into, not only in the manifest
+    positional = "input:/changed_paths/0/head_object/algorithm"
+    stepped = next(
+        v
+        for v in INVALID["vectors"]
+        if any(
+            positional in claim.dependencies
+            for claim in PURPOSE_SEMANTICS[cast(str, v["id"])]
+        )
+    )
+    for forbidden in (
+        "input:/changed_paths/-1/head_object/algorithm",
+        "input:/changed_paths/00/head_object/algorithm",
+    ):
+        with pytest.raises(AssertionError):
+            _resolve_purpose_dependency(stepped, forbidden)
+
+    # and an ordinary positional step into a caller-supplied list still works,
+    # because there the order IS the meaning the vector carries
+    assert _resolve_purpose_dependency(stepped, positional)
 
 
 def test_no_resolved_value_shares_a_container_with_the_corpus() -> None:
