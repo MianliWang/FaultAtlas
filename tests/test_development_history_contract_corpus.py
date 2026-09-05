@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import ast
+import builtins
 import copy
 import hashlib
 import importlib
 import inspect
+import io
 import json
 import re
 import stat as stat_module
@@ -14,6 +16,7 @@ from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
 from pathlib import Path, PurePosixPath
+from string import ascii_letters, digits
 from types import UnionType
 from typing import Any, NamedTuple, SupportsIndex, Union, cast, get_origin
 
@@ -698,7 +701,6 @@ def _lexically_safe_repository_path(relative: str) -> PurePosixPath:
     # that then forms the repository root itself. The emptiness is the defect,
     # so it is refused before the components are looked at.
     assert pure.parts, relative
-    assert pure.parts[0] != "/", relative
     for part in pure.parts:
         assert part not in ("", ".", ".."), relative
     assert str(pure) == relative, relative
@@ -769,6 +771,9 @@ def _artifact_lock_path(lock: dict[str, Any]) -> Path:
     return path
 
 
+# Two families, because they are refused by two different rules and only one
+# of them was ever exercised. Every path below is refused on the string alone
+# by `_lexically_safe_repository_path`.
 _HOSTILE_CORPUS_PATHS = (
     ("device node", "/dev/zero"),
     ("parent escape", "../../outside.json"),
@@ -782,57 +787,139 @@ _HOSTILE_CORPUS_PATHS = (
     ("NUL byte", "reference_corpus/decision.json\x00.txt"),
 )
 
+# These are lexically impeccable, confined, tracked, and real. Nothing about
+# the STRING refuses them: each would hand back genuine bytes. Only the
+# authored-path identity comparison stands between them and a read, so these
+# are the entries that actually exercise it.
+_SUBSTITUTED_CORPUS_PATHS = (
+    (
+        "another sealed corpus file",
+        "reference_corpus/contracts/development-history/v1/manifest.json",
+    ),
+    (
+        "prose beside the same authority",
+        "reference_corpus/contracts/development-history/decisions/"
+        "s08-deferred-subject-disposition/decision.md",
+    ),
+    ("an unrelated repository file", "pyproject.toml"),
+)
+
 
 def test_no_corpus_supplied_path_reaches_the_filesystem_before_its_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The reads are sealed off, so the gate must refuse on the string alone.
+    """The reader is sealed, so a substituted path must be refused before it.
 
     Opening first and checking afterwards is not a smaller mistake: `/dev/zero`
     never returns, `../..` leaves the repository, and the digest that would
     have caught the substitution is computed from the bytes the substituted
-    path already handed back. Here every way this module could read a byte
-    raises instead, and each refusal is required to happen without one.
+    path already handed back.
+
+    Three things were wrong with the seal this replaces. It was installed
+    around `_authority_path`, which reads nothing -- so `reached == []` held
+    identically for a working gate, a gutted gate and a gate that opened the
+    file first. It patched `builtins.open`, which is not on `Path.read_bytes`'
+    path at all (`Path.open` calls `io.open`). And every hostile path in it was
+    refused lexically on the AUTHORED string, so the identity comparison that
+    is actually load-bearing here was never exercised by any of them.
+
+    So: the seal wraps the real reader, the substituted family is lexically
+    safe and real, and the authored read goes through the same seal -- which is
+    what distinguishes an armed sentinel from an absent one.
     """
     reference = "decision:s1-p05-s08:disposition"
     authored = REQUIRED_SOURCE_DECISION_BY_REFERENCE[reference][0]
+    authored_node = REPOSITORY_ROOT / authored
     live = _live_source_decisions()
-    reached: list[str] = []
+    opened: list[str] = []
 
-    def _sealed(target: Any, *_args: Any, **_kwargs: Any) -> Any:
-        reached.append(str(target))
-        raise AssertionError(f"a corpus path reached the filesystem: {target}")
+    def _seal(real: Any) -> Any:
+        def sealed(target: Any, *args: Any, **kwargs: Any) -> Any:
+            opened.append(str(target))
+            if not isinstance(target, str | Path) or Path(target) != authored_node:
+                raise AssertionError(f"a corpus path reached the filesystem: {target}")
+            return real(target, *args, **kwargs)
+
+        return sealed
 
     for name in ("open", "read_bytes", "read_text"):
-        monkeypatch.setattr(Path, name, _sealed)
-    monkeypatch.setattr("builtins.open", _sealed)
+        monkeypatch.setattr(Path, name, _seal(getattr(Path, name)))
+    monkeypatch.setattr("io.open", _seal(io.open))
+    monkeypatch.setattr("builtins.open", _seal(builtins.open))
 
-    # the lexical rule refuses each of these on the string alone, so the gate
-    # above is not the only thing standing between them and an open
+    # the lexical rule refuses the first family on the string alone
     for _label, hostile in _HOSTILE_CORPUS_PATHS:
         with pytest.raises(AssertionError):
             _lexically_safe_repository_path(hostile)
     assert _lexically_safe_repository_path(authored) == PurePosixPath(authored)
+    # and it admits every member of the second, which is the point of them
+    for label, substituted in _SUBSTITUTED_CORPUS_PATHS:
+        assert _lexically_safe_repository_path(substituted), label
+        assert _confined_repository_path(substituted).is_file(), label
 
-    for label, hostile in _HOSTILE_CORPUS_PATHS:
+    for label, hostile in _HOSTILE_CORPUS_PATHS + _SUBSTITUTED_CORPUS_PATHS:
         entries = copy.deepcopy(live)
         next(e for e in entries if e["decision_reference"] == reference)["path"] = (
             hostile
         )
         monkeypatch.setitem(MANIFEST, "source_decisions", entries)
+        # the READER, not the path builder: this is where a byte would be taken
         with pytest.raises(AssertionError) as refusal:
-            _authority_path(reference)
+            _authority_bytes(reference)
         assert "reached the filesystem" not in str(refusal.value), label
-        assert reached == [], (label, reached)
+        assert opened == [], (label, opened)
 
     # a reference this module never authored is refused before the lookup
     monkeypatch.setitem(MANIFEST, "source_decisions", live)
     with pytest.raises(AssertionError):
-        _authority_path("decision:invented")
-    # and the authored path is still accepted -- the gate refuses substitution,
-    # not access
-    assert _authority_path(reference) == REPOSITORY_ROOT / authored
-    assert reached == []
+        _authority_bytes("decision:invented")
+    assert opened == []
+
+    # and the authored read goes through the same seal, so the sentinel is
+    # demonstrably armed rather than merely unfired
+    assert _authority_path(reference) == authored_node
+    assert json.loads(_authority_bytes(reference))
+    assert set(opened) == {str(authored_node)}, opened
+
+
+def test_the_path_identity_gate_is_what_refuses_a_substituted_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The probe above must be able to fail, so here it is failing.
+
+    With the authored-path comparison removed -- the entry's own `path` used to
+    reach the filesystem, which is what the corpus did before this gate -- each
+    substituted path is lexically safe, confined and real, so nothing else
+    stops it and the bytes of an unrelated file come back.
+    """
+    reference = "decision:s1-p05-s08:disposition"
+    live = _live_source_decisions()
+
+    def _ungated(entry_reference: str) -> bytes:
+        """`_authority_path` with the identity comparison deleted."""
+        declared = [
+            entry
+            for entry in cast(list[dict[str, Any]], MANIFEST["source_decisions"])
+            if entry["decision_reference"] == entry_reference
+        ]
+        return _confined_repository_path(cast(str, declared[0]["path"])).read_bytes()
+
+    for label, substituted in _SUBSTITUTED_CORPUS_PATHS:
+        entries = copy.deepcopy(live)
+        next(e for e in entries if e["decision_reference"] == reference)["path"] = (
+            substituted
+        )
+        monkeypatch.setitem(MANIFEST, "source_decisions", entries)
+
+        # gutted: the substituted file is read, and its bytes are not the
+        # authority's
+        raw = _ungated(reference)
+        assert raw, label
+        assert hashlib.sha256(raw).hexdigest() != _authority(reference)["sha256"], label
+
+        # gated: refused, and no byte taken
+        with pytest.raises(AssertionError):
+            _authority_bytes(reference)
 
 
 def test_a_symlink_inside_the_repository_cannot_carry_a_read_outside_it(
@@ -913,6 +1000,39 @@ class EffectiveGovernance(NamedTuple):
     state: dict[str, int]
 
 
+def _corrected_subject_views(
+    base: dict[str, Any], correction: dict[str, Any]
+) -> dict[str, dict[str, str]]:
+    """The C01 view of each superseded subject, or a refusal.
+
+    A correction row is not free-standing: it supersedes a subject the S08
+    register carries. Both recomputations walk the REGISTER, so a correction
+    row naming a subject the register does not hold is counted by nobody -- it
+    vanishes and every published total still agrees. The authority role here is
+    literally an append-only owner-topology correction, so growth is the
+    direction this artifact moves in, and it was the invisible one.
+
+    The declared counts and the two uniqueness properties are checked here too:
+    a duplicated correction row was last-writer-wins in silence, and neither
+    artifact's own `count` was compared with the items it publishes.
+    """
+    register = cast(list[dict[str, Any]], base["inherited_subject_register"]["items"])
+    base_ids = [cast(str, entry["source"]["subject_id"]) for entry in register]
+    assert len(base_ids) == len(set(base_ids)), "a subject is registered twice"
+    assert base["inherited_subject_register"]["count"] == len(base_ids)
+
+    items = cast(list[dict[str, Any]], correction["superseded_dispositions"]["items"])
+    corrected = {
+        cast(str, item["source"]["subject_id"]): item["corrected"] for item in items
+    }
+    assert len(corrected) == len(items), "a subject is corrected twice"
+    assert correction["superseded_dispositions"]["count"] == len(items)
+
+    orphans = sorted(set(corrected) - set(base_ids))
+    assert not orphans, f"corrected subjects absent from the S08 register: {orphans}"
+    return cast(dict[str, dict[str, str]], corrected)
+
+
 def _recomputed_effective_governance() -> EffectiveGovernance:
     """The topology the two locked artifacts currently establish, recomputed.
 
@@ -930,10 +1050,7 @@ def _recomputed_effective_governance() -> EffectiveGovernance:
     correction = json.loads(
         _authority_bytes("correction:s1-p05-s08-c01:owner-topology")
     )
-    corrected = {
-        item["source"]["subject_id"]: item["corrected"]
-        for item in correction["superseded_dispositions"]["items"]
-    }
+    corrected = _corrected_subject_views(base, correction)
 
     totals: dict[str, dict[str, int]] = {
         "disposition": {},
@@ -1090,6 +1207,69 @@ def test_the_recomputation_claim_is_answered_by_performing_it(
         assert _effective_governance_failures() == [reason], reason
         with pytest.raises(AssertionError):
             _v_assurance()
+
+
+def test_a_correction_naming_an_unregistered_subject_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The additive direction was the invisible one.
+
+    The recomputation walks the S08 register and looks each subject up in the
+    correction, so a correction row for a subject the register does not carry
+    was consulted by nobody: the totals still agreed, the subject count still
+    read twelve, and the oracle reported no failure. The artifact whose role is
+    `append_only_owner_topology_correction` is exactly the one that grows.
+    """
+    base = json.loads(_authority_bytes("decision:s1-p05-s08:disposition"))
+    correction = json.loads(
+        _authority_bytes("correction:s1-p05-s08-c01:owner-topology")
+    )
+    # the control: the live artifacts resolve
+    assert len(_corrected_subject_views(base, correction)) == 6
+
+    template = copy.deepcopy(
+        cast(list[dict[str, Any]], correction["superseded_dispositions"]["items"])[0]
+    )
+
+    forged = copy.deepcopy(correction)
+    invented = copy.deepcopy(template)
+    invented["source"]["subject_id"] = "s9.invented-subject"
+    cast(list[Any], forged["superseded_dispositions"]["items"]).append(invented)
+    forged["superseded_dispositions"]["count"] += 1
+    with pytest.raises(AssertionError, match="absent from the S08 register"):
+        _corrected_subject_views(base, forged)
+
+    # a duplicated correction row was last-writer-wins in silence
+    doubled = copy.deepcopy(correction)
+    cast(list[Any], doubled["superseded_dispositions"]["items"]).append(
+        copy.deepcopy(template)
+    )
+    doubled["superseded_dispositions"]["count"] += 1
+    with pytest.raises(AssertionError, match="corrected twice"):
+        _corrected_subject_views(base, doubled)
+
+    # and each artifact's own declared count is now compared with its items
+    miscounted = copy.deepcopy(correction)
+    miscounted["superseded_dispositions"]["count"] = 99
+    with pytest.raises(AssertionError):
+        _corrected_subject_views(base, miscounted)
+    misbased = copy.deepcopy(base)
+    misbased["inherited_subject_register"]["count"] = 99
+    with pytest.raises(AssertionError):
+        _corrected_subject_views(misbased, correction)
+
+    # the whole recomputation fails closed on the forged artifact, not just the
+    # resolver in isolation
+    real = _authority_bytes
+
+    def _substituted(reference: str) -> bytes:
+        if reference == "correction:s1-p05-s08-c01:owner-topology":
+            return json.dumps(forged).encode("utf-8")
+        return real(reference)
+
+    monkeypatch.setitem(globals(), "_authority_bytes", _substituted)
+    with pytest.raises(AssertionError, match="absent from the S08 register"):
+        _recomputed_effective_governance()
 
 
 def test_governance_vocabulary_never_leaks_into_product_vectors() -> None:
@@ -3787,10 +3967,7 @@ def test_the_effective_governance_authority_split_is_recomputed() -> None:
     correction = json.loads(
         _authority_bytes("correction:s1-p05-s08-c01:owner-topology")
     )
-    corrected = {
-        item["source"]["subject_id"]
-        for item in correction["superseded_dispositions"]["items"]
-    }
+    corrected = set(_corrected_subject_views(base, correction))
 
     split = {"S1.P05.S08": 0, "S1.P05.S08.C01": 0}
     for entry in base["inherited_subject_register"]["items"]:
@@ -5941,7 +6118,14 @@ def _v_corpus_identity() -> None:
 
 def _tracked_git_entries() -> list[tuple[str, str]]:
     """`(repository-relative path, Git mode)` for every entry Git tracks."""
-    completed = subprocess.run(  # noqa: S603 - argv only, no shell, fixed program
+    # `git` is resolved through PATH by execvp, so the PROGRAM is not fixed --
+    # only the argument vector is. The narrower claim is the true one: no
+    # shell, no interpolated string, no corpus data anywhere in argv, and the
+    # only thing read is this repository's own index. No analyzed repository's
+    # code, build, hook or configuration-driven command is executed. A PATH
+    # that already shadows `git` has compromised the toolchain itself, which is
+    # not something a corpus oracle can adjudicate.
+    completed = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "--stage", "-z"],
         cwd=REPOSITORY_ROOT,
         capture_output=True,
@@ -5962,9 +6146,16 @@ def _tracked_git_entries() -> list[tuple[str, str]]:
         # is unresolved, and a corpus file has no meaningful mode until it is
         assert stage == b"0", f"{name!r} is at merge stage {stage!r}"
         try:
-            entries.append((name.decode("utf-8"), mode.decode("ascii")))
+            tracked_name = name.decode("utf-8")
         except UnicodeDecodeError as failure:  # pragma: no cover - named, not swallowed
             raise AssertionError(f"non-UTF-8 tracked path: {name!r}") from failure
+        try:
+            tracked_mode = mode.decode("ascii")
+        except UnicodeDecodeError as failure:  # pragma: no cover - named, not swallowed
+            raise AssertionError(
+                f"non-ASCII Git mode {mode!r} for {name!r}"
+            ) from failure
+        entries.append((tracked_name, tracked_mode))
     return entries
 
 
@@ -6109,6 +6300,8 @@ def test_the_tracked_entry_reader_refuses_what_it_cannot_read(
         ("no tab separator", _STAGE_ZERO.replace(b"\t", b" "), 0),
         ("truncated record", b"100644 0\tcorpus/manifest.json\x00", 0),
         ("non-utf8 path", b"100644 " + b"0" * 40 + b" 0\t\xff\xfe\x00", 0),
+        # an ASCII path with a corrupt mode: the diagnostic must name the mode
+        ("non-ascii mode", b"\xff\xfe44 " + b"0" * 40 + b" 0\tcorpus/x.json\x00", 0),
     ):
         monkeypatch.setattr(subprocess, "run", _fixed_git_answer(stdout, code))
         with pytest.raises(AssertionError):
@@ -8497,43 +8690,54 @@ def _markdown_cell(value: object) -> str:
     return text.replace("|", "\\|")
 
 
-# Characters that would make a value into inline structure where the renderer
-# meant prose. A code span and a table cell have their own encodings above; a
-# value written as bare sentence text has none, so the structural characters
-# are refused instead. Emphasis markers are included because nothing published
-# needs them -- naming them here is cheaper than deciding later whether an
-# italicised fragment of a canonical value was intended.
+# What a canonical value written as bare prose may BE, rather than what it may
+# not contain. A code span and a table cell have their own encodings above; a
+# value interpolated into a sentence has none.
 #
-# This is NOT a general Markdown sanitizer and does not try to be one. It is a
-# closed enumeration of GFM's INLINE constructs and the characters that open
-# them, so the list can be checked against the specification rather than
-# against intuition:
+# The previous rule was a deny-list of the characters that open a GFM inline
+# construct, and it leaked three times: `~` (strikethrough is a GFM extension,
+# not CommonMark), then the extended autolinks, which have no opening character
+# at all, then `ftp://` -- the third scheme GFM autolinks, missing from a list
+# that named the other two. Each repair answered "is the list complete yet?",
+# which is not a question a deny-list can settle.
 #
-#   code span                 `        emphasis, strong          * _
-#   link, image               [ ] !    raw HTML, autolink        < >
-#   entity reference          &        backslash escape          \
-#   strikethrough (GFM)       ~        table cell (GFM)          |
-#   email autolink (GFM)      @
+# The rule is inverted here. A prose value is a sequence of WORDS joined by
+# single spaces; a word is alphanumeric runs joined by single internal `.`, `/`
+# or `-`, with an optional word-final comma. Nothing else exists. The question
+# becomes "does this six-character alphabet contain the opener of any GFM
+# inline form?", which is answered once against the specification:
 #
-# `~` was the gap: GFM's strikethrough extension is not in CommonMark, so a
-# value carrying `~~text~~` published as struck-through prose while every
-# other construct was refused. The extended autolink below is the one GFM
-# construct with no single opening character -- it is triggered by a prefix --
-# so it is matched as a prefix. Line-level structure (headings, list markers,
-# fences) is not this function's business: the document closure owns which
-# lines exist and what may start one.
-_MARKDOWN_INLINE_STRUCTURE = frozenset("<>|`\\[]*_&~!@")
-_MARKDOWN_AUTOLINK_PREFIXES = ("www.", "http://", "https://", "mailto:")
+#   backslash escape  \        entity reference   &        code span      `
+#   emphasis, strong  * _      strikethrough      ~        link, image    [ ] ( ) !
+#   raw HTML          <        autolink           < >      table cell     |
+#   email autolink    @        scheme autolink    :  (http:// https:// ftp:// mailto:)
+#
+# None of them is in the alphabet, and `//` cannot be spelled because a
+# separator must be followed by an alphanumeric. Exactly one GFM construct
+# survives the alphabet -- the `www.` autolink, which is spelled entirely in
+# letters and a dot -- so it is the one form still named explicitly.
+#
+# Block structure comes free: the first character must be alphanumeric, so a
+# value can open no heading, quote, list or fence, and `1. ` is unspellable.
+#
+# This is NOT a general Markdown sanitizer. It is a closed alphabet, and the
+# assertion below keeps that alphabet disjoint from the enumerated openers.
+_PROSE_WORD = r"[A-Za-z0-9]+(?:[./-][A-Za-z0-9]+)*,?"
+_PROSE_VALUE = re.compile(rf"{_PROSE_WORD}(?: {_PROSE_WORD})*")
+_PROSE_ALPHABET = frozenset(ascii_letters + digits + " ,-./")
+_PROSE_WWW_AUTOLINK = re.compile(r"www\.", re.IGNORECASE)
+
+# The openers the alphabet above is required to exclude. This is a DERIVED
+# claim, not the enforcement: the grammar refuses everything outside its
+# alphabet whether or not a character is named here.
+_GFM_INLINE_OPENERS = frozenset("<>|`\\[]*_&~!@():")
 
 
 def _markdown_text(value: object) -> str:
-    """A canonical value written as prose, with no inline structure in it."""
+    """A canonical value written as prose: a closed alphabet, not a deny-list."""
     text = str(value)
-    assert "\n" not in text and "\r" not in text, text
-    intruders = sorted(_MARKDOWN_INLINE_STRUCTURE & set(text))
-    assert not intruders, (intruders, text)
-    folded = text.lower()
-    assert not [p for p in _MARKDOWN_AUTOLINK_PREFIXES if p in folded], text
+    assert _PROSE_VALUE.fullmatch(text), text
+    assert not _PROSE_WWW_AUTOLINK.search(text), text
     return text
 
 
@@ -12717,7 +12921,13 @@ def test_a_value_written_as_prose_may_not_become_inline_structure() -> None:
     The classification bullets, the forbidden-extra claims, the non-goals and
     the merge-revision surface put canonical values straight into prose, where
     a `<b>` or a pipe is published as structure. There is nothing to escape
-    into, so the structural characters are refused instead.
+    into, so the value is required to BE prose rather than checked for the
+    characters that would stop it being prose.
+
+    The deny-list this replaces leaked three times -- `~`, then the extended
+    autolinks, then `ftp://` -- because each repair could only answer "is the
+    list complete yet?". The grammar answers a question that closes: its
+    alphabet is disjoint from every GFM inline opener, asserted below.
     """
     for value in (
         "no evidence aggregation",
@@ -12750,23 +12960,43 @@ def test_a_value_written_as_prose_may_not_become_inline_structure() -> None:
         "see HTTPS://EXAMPLE.COM",
         "mailto:someone@example.com",
         "someone@example.com",
+        # the scheme the deny-list never named: GFM autolinks three, and the
+        # list carried two
+        "see ftp://example.com",
+        "see FTP://EXAMPLE.COM",
+        "WWW.EXAMPLE.COM",
+        # forms no deny-list entry covered, refused now by absence from the
+        # alphabet rather than by having been foreseen
+        "a(b)",
+        "a:b",
+        "a+b",
+        "a=b",
+        "a  b",
+        " leading",
+        "trailing ",
+        "",
+        "1. ordered",
+        "- bullet",
+        "# heading",
+        "> quote",
+        "a\tb",
+        "a\u200bb",
+        "trailing,,",
+        "a--b",
+        "a.",
     ):
         with pytest.raises(AssertionError):
             _markdown_text(hostile)
 
-    # the enumeration is the claim, so it is checked against the constructs it
-    # names rather than against the probes above
-    assert _MARKDOWN_INLINE_STRUCTURE == frozenset(
-        "`"  # code span
-        "*_"  # emphasis and strong
-        "[]!"  # link and image
-        "<>"  # raw HTML and autolink
-        "&"  # entity reference
-        "\\"  # backslash escape
-        "~"  # strikethrough
-        "|"  # table cell
-        "@"  # email autolink
-    )
+    # the closure is the alphabet, checked against the enumerated openers. This
+    # direction is the one that can be settled: every GFM inline form opens
+    # with one of these characters, and none of them can be written at all.
+    assert not (_GFM_INLINE_OPENERS & _PROSE_ALPHABET)
+    assert _PROSE_ALPHABET == frozenset(ascii_letters + digits + " ,-./")
+    # `www.` is the one form spelled entirely inside the alphabet, so it is the
+    # one form still named
+    assert _PROSE_WWW_AUTOLINK.search("www.example.com")
+    assert not [c for c in _GFM_INLINE_OPENERS if _PROSE_VALUE.fullmatch(f"a{c}b")]
 
     # every value the document publishes as prose passes it today
     classifications = cast(
@@ -12785,6 +13015,43 @@ def test_a_value_written_as_prose_may_not_become_inline_structure() -> None:
 _AUTHORED_CELL_EMPHASIS = "**"
 
 
+EXACT_CODE_SPAN = "EXACT_CODE_SPAN"
+SAFE_PROSE_CELL = "SAFE_PROSE_CELL"
+
+
+def _published_cell_class(cell: str) -> str:
+    """Exactly one admitted shape per cell, decided on the WHOLE cell.
+
+    Starting with a backtick is not being a code span. `` `ok` <b>x</b> ``
+    starts with one and pairs every run it contains, so a first-character test
+    plus a run-parity test admitted it and published raw HTML; the parity
+    question is "does every run pair", which is true of any string with two
+    backticks, and never was "is this cell one span".
+
+    So the complete cell must BE the canonical encoding of its own published
+    content before code-span semantics apply to it -- that pins the delimiter
+    length and the padding too, not just the parse. Anything else is held to
+    the prose grammar. The one authored exception is the totals row's emphasis,
+    structure the renderer means, unwrapped by name and its content held to the
+    same rule.
+    """
+    assert "\n" not in cell and "\r" not in cell, cell
+    if cell.startswith("`"):
+        assert _unmatched_code_span_runs(cell) == [], cell
+        content = _code_span_content(cell)
+        assert _markdown_code_span(content) == cell, cell
+        return EXACT_CODE_SPAN
+    content = cell
+    if (
+        len(cell) > 2 * len(_AUTHORED_CELL_EMPHASIS)
+        and cell.startswith(_AUTHORED_CELL_EMPHASIS)
+        and cell.endswith(_AUTHORED_CELL_EMPHASIS)
+    ):
+        content = cell[len(_AUTHORED_CELL_EMPHASIS) : -len(_AUTHORED_CELL_EMPHASIS)]
+    assert _markdown_text(content) == content, cell
+    return SAFE_PROSE_CELL
+
+
 def test_every_published_table_cell_is_a_span_or_prose_safe() -> None:
     """The same GFM audit, applied to the other context a value lands in.
 
@@ -12793,29 +13060,58 @@ def test_every_published_table_cell_is_a_span_or_prose_safe() -> None:
     canonical value written into one as bare text could publish as a link or as
     struck-through prose exactly as it could in a sentence.
 
-    It does not today, and that is what is checked rather than assumed: every
-    published cell is a code span, which is literal, or bare content that
-    satisfies the prose rule. The one authored exception is the totals row's
-    emphasis -- structure the renderer means -- so it is unwrapped by name and
-    its content is held to the same rule.
+    The census is a partition: two disjoint classes decided by one predicate,
+    total by exhaustion, counted rather than sampled.
     """
-    spans = 0
-    bare = 0
-    for label, _header, render in DERIVED_TABLES:
+    census: Counter[str] = Counter()
+    for label, header, render in DERIVED_TABLES:
         for row in render():
+            assert len(row) == len(header), (label, row)
+            rendered = _md_row(row)
+            # the pipe escaping and the column count survive the round trip
+            assert _markdown_row_cells(rendered) == list(row), (label, row)
+            assert len(_markdown_row_cells(rendered)) == len(header), (label, row)
             for cell in row:
-                if cell.startswith("`"):
-                    assert _unmatched_code_span_runs(cell) == [], (label, cell)
-                    spans += 1
-                    continue
-                content = cell
-                if content.startswith(_AUTHORED_CELL_EMPHASIS) and content.endswith(
-                    _AUTHORED_CELL_EMPHASIS
-                ):
-                    content = content[2:-2]
-                assert _markdown_text(content) == content, (label, cell)
-                bare += 1
-    assert spans and bare, (spans, bare)
+                census[_published_cell_class(cell)] += 1
+    assert set(census) == {EXACT_CODE_SPAN, SAFE_PROSE_CELL}
+    assert sum(census.values()) == 125
+    assert census[EXACT_CODE_SPAN] == 74
+    assert census[SAFE_PROSE_CELL] == 51
+
+
+def test_a_cell_that_merely_starts_with_a_backtick_is_not_a_code_span() -> None:
+    """The reproduction, kept permanently.
+
+    Each of these pairs its backtick runs and begins with one, so the test this
+    replaces counted it a code span and never applied the prose rule to the
+    text after it.
+    """
+    for forged in (
+        "`ok` <b>x</b>",
+        "`ok` [link](http://x)",
+        "`ok` ~~struck~~",
+        "`ok` www.example.com",
+        "`a` and `b`",
+        "``",
+        "`",
+    ):
+        with pytest.raises(AssertionError):
+            _published_cell_class(forged)
+    # and the run-parity test the old branch relied on says nothing about them:
+    # a string with two backticks pairs its runs whatever follows
+    assert _unmatched_code_span_runs("`ok` <b>x</b>") == []
+
+    # an authored emphasis wrapper is not a licence to publish structure
+    with pytest.raises(AssertionError):
+        _published_cell_class("**<b>x</b>**")
+    # and the empty wrapper unwraps to nothing, which is not prose
+    with pytest.raises(AssertionError):
+        _published_cell_class("**")
+
+    # the two admitted shapes still classify
+    assert _published_cell_class("`S1.P05.S09`") == EXACT_CODE_SPAN
+    assert _published_cell_class("**total**") == SAFE_PROSE_CELL
+    assert _published_cell_class("no evidence aggregation") == SAFE_PROSE_CELL
 
 
 def test_the_code_span_padding_publishes_the_value_itself() -> None:
