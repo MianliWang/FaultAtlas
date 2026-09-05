@@ -693,7 +693,12 @@ def _lexically_safe_repository_path(relative: str) -> PurePosixPath:
     assert "\x00" not in relative, relative
     pure = PurePosixPath(relative)
     assert not pure.is_absolute(), relative
-    assert not pure.parts or pure.parts[0] != "/", relative
+    # `PurePosixPath(".")` has NO parts at all, so a loop over them checks
+    # nothing and the round-trip below is satisfied by `"."` alone -- a path
+    # that then forms the repository root itself. The emptiness is the defect,
+    # so it is refused before the components are looked at.
+    assert pure.parts, relative
+    assert pure.parts[0] != "/", relative
     for part in pure.parts:
         assert part not in ("", ".", ".."), relative
     assert str(pure) == relative, relative
@@ -801,6 +806,13 @@ def test_no_corpus_supplied_path_reaches_the_filesystem_before_its_identity(
     for name in ("open", "read_bytes", "read_text"):
         monkeypatch.setattr(Path, name, _sealed)
     monkeypatch.setattr("builtins.open", _sealed)
+
+    # the lexical rule refuses each of these on the string alone, so the gate
+    # above is not the only thing standing between them and an open
+    for _label, hostile in _HOSTILE_CORPUS_PATHS:
+        with pytest.raises(AssertionError):
+            _lexically_safe_repository_path(hostile)
+    assert _lexically_safe_repository_path(authored) == PurePosixPath(authored)
 
     for label, hostile in _HOSTILE_CORPUS_PATHS:
         entries = copy.deepcopy(live)
