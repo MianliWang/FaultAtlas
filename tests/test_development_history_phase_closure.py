@@ -16,6 +16,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import subprocess
 import tomllib
 from pathlib import Path
@@ -99,27 +100,373 @@ PUBLISHED_STATE_VOCABULARY = frozenset(
     {"complete_published", "sealed_publication_candidate"}
 )
 
-# The eighteen publications, keyed by the slice each one published. A correction
-# or assurance follow-up publishes under its own id, so this is not one per slice.
-EXPECTED_PUBLICATIONS = (
-    ("S1.P05.S01", 54),
-    ("S1.P05.S02", 55),
-    ("S1.P05.S02.C01", 56),
-    ("S1.P05.S02.C01.A01", 57),
-    ("S1.P05.S03", 58),
-    ("S1.P05.S03.A01", 59),
-    ("S1.P05.S04", 60),
-    ("S1.P05.S04.A01", 61),
-    ("S1.P05.S05", 62),
-    ("S1.P05.S06", 63),
-    ("S1.P05.S06.A01", 64),
-    ("S1.P05.S06.A01.C01", 65),
-    ("S1.P05.S06.A01.C02", 66),
-    ("S1.P05.S07", 67),
-    ("S1.P05.S07.A01", 68),
-    ("S1.P05.S08", 69),
-    ("S1.P05.S08.C01", 70),
-    ("S1.P05.S09", 71),
+# Authored from the verified publication history, not from the document it
+# checks. Both are projections of the same gathered evidence, held in separate
+# files, so a later silent edit to either is caught by the other.
+EXPECTED_PUBLICATIONS: tuple[
+    tuple[str, int, str, str, str, int, int, int, int], ...
+] = (
+    (
+        "S1.P05.S01",
+        54,
+        "feat/s1-p05-s01-pull-request-revision-role-binding",
+        "6cb611fc5ea7b46ab355c61d437c87381bb4008d",
+        "7e5732eacc38aaeb844d40bdb66ff72b5ee38057",
+        1,
+        1,
+        2,
+        1,
+    ),
+    (
+        "S1.P05.S02",
+        55,
+        "feat/s1-p05-s02-pull-request-change-set",
+        "c5e0e3043ebe6dfeaa8b91657811eec1c0128ecc",
+        "21e6a48af3f568333bd41b216cdfabe749a00c6c",
+        1,
+        1,
+        2,
+        1,
+    ),
+    (
+        "S1.P05.S02.C01",
+        56,
+        "fix/s1-p05-s02-c01-change-set-boundary",
+        "d17b868c32c8887d30b527fdd2294046db389881",
+        "6430049374bcf660f058cf11e77123e237914722",
+        1,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S02.C01.A01",
+        57,
+        "test/s1-p05-s02-c01-a01-boundary-assurance",
+        "f7377b866c8515f180c9303c0bdfb1978c8a6907",
+        "b2cb023621288e7d11ff1dcdb4b87f15b2b18714",
+        1,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S03",
+        58,
+        "feat/s1-p05-s03-review-revision-approval",
+        "a34fee7a77a74bef9431c29570ad396b651d1e09",
+        "107e677534e50719d3b5c5d568d0b4ed7b977c0e",
+        1,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S03.A01",
+        59,
+        "test/s1-p05-s03-a01-approved-revision-child-boundary",
+        "f9fe795557e7ccbf6b64dd5b18312cc0ddc25af9",
+        "f4f58e87461764ba09c43dd332fe3861e5c90a87",
+        1,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S04",
+        60,
+        "feat/s1-p05-s04-merge-revision-outcome",
+        "e496cb6f9a6ed23a673dc7f5c9bf92003a68a95c",
+        "261d4c4685e73fb82380a13f34627377abb4e746",
+        1,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S04.A01",
+        61,
+        "test/s1-p05-s04-a01-parent-count-independence",
+        "9aa66ee2a1320ab294a35a6ddd49dc646db1dc45",
+        "816f70341078883c8c92f7a64c11f0a5a0d1da76",
+        1,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S05",
+        62,
+        "feat/s1-p05-s05-head-ref-deletion",
+        "6a9bfa170883a568860240296be2212293783710",
+        "57761ebf2bebf31155f4819d1a015ed7cdc55d33",
+        1,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S06",
+        63,
+        "s1-p05-s06-pull-request-historical-occurrence-time",
+        "12da03d7f5b938e5a26a534cfffc753884d01c28",
+        "3253e804f86f7d991e75f33f1c2ba4e034020a88",
+        1,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S06.A01",
+        64,
+        "s1-p05-s06-a01-occurrence-time-boundary-assurance",
+        "c262b13fd280bbd5ab1de236f0368ee10d1c125f",
+        "6fc04733fe1ecde78bc8f6df739656a6c58ed4f1",
+        1,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S06.A01.C01",
+        65,
+        "s1-p05-s06-a01-c01-remove-interpreter-sensitive-freeze",
+        "7a12d5519dc7883a6269be83ead28504c0f7a4ea",
+        "2c6fa40d47250cb8e66e6d7fe9604a98a29de377",
+        1,
+        1,
+        2,
+        1,
+    ),
+    (
+        "S1.P05.S06.A01.C02",
+        66,
+        "test/s1-p05-s06-a01-c02-remove-source-freeze",
+        "48ec5d5fa7a50bf15935ec1d48f3bbd6f9612c2e",
+        "def12890085c011d5b59b4843b7d67bf166af738",
+        1,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S07",
+        67,
+        "feat/s1-p05-s07-history-evidence-link",
+        "d28a37ded9552c72881c0a8bc1c2f81992c357dc",
+        "a090c3b342fe0432e7f19a2759afb52a42a51fdd",
+        1,
+        1,
+        4,
+        2,
+    ),
+    (
+        "S1.P05.S07.A01",
+        68,
+        "test/s1-p05-s07-a01-link-boundary-assurance",
+        "01a769c89bdbe2a4c739c972e4f292165e3e1e7f",
+        "75000a92696146d6476e68f51bcae176c533cf64",
+        2,
+        1,
+        0,
+        0,
+    ),
+    (
+        "S1.P05.S08",
+        69,
+        "docs/s1-p05-s08-deferred-subject-disposition",
+        "c0f44e413309b2a8bd043148bb8b6bbf3417cbe4",
+        "e1d673b2a26811b432bcf1a28e012100018edea5",
+        1,
+        1,
+        4,
+        2,
+    ),
+    (
+        "S1.P05.S08.C01",
+        70,
+        "docs/s1-p05-s08-c01-owner-topology-correction",
+        "f746210880f1f0bf1db7205a52a1c382a59ea02d",
+        "676a666bf0924f210107dc735fe8bc8bf56bfc7b",
+        1,
+        1,
+        12,
+        7,
+    ),
+    (
+        "S1.P05.S09",
+        71,
+        "feat/s1-p05-s09-development-history-contract-corpus",
+        "72b52f25f9cdb12a042325aa68b8bd17ce3dc3e7",
+        "61e1f67a1792b9eb20758d26988f8aa5988b163c",
+        1,
+        1,
+        165,
+        77,
+    ),
+)
+EXPECTED_REVIEW_TOTAL = 191
+EXPECTED_THREAD_TOTAL = 91
+
+EXPECTED_SUPERSEDED_CANDIDATES = ((53, 54, "closed", False),)
+
+PUBLICATION_FIELDS = frozenset(
+    {
+        "id",
+        "slice_id",
+        "pull_request",
+        "topic_branch",
+        "publication_state",
+        "merge_method",
+        "reviewed_head_sha",
+        "reviewed_tree",
+        "squash_sha",
+        "squash_tree",
+        "reviewed_tree_equals_squash_tree",
+        "pull_request_check",
+        "main_check",
+        "review_settlement",
+    }
+)
+EXPECTED_EXIT_CRITERION_COUNT = 25
+EXPECTED_EXIT_SUBJECTS = (
+    "S1.P05.S01_through_S1.P05.S09_are_published",
+    "every_reviewed_tree_equals_its_squash_tree",
+    "every_required_pull_request_and_natural_main_check_succeeded",
+    "every_publication_settled_with_zero_unresolved_review_threads",
+    "every_publication_used_protected_squash_merge",
+    "no_admin_or_ruleset_bypass_was_used",
+    "the_nine_owned_symbols_are_exported_by_the_two_owned_modules",
+    "every_owned_symbol_is_covered_by_the_S09_corpus",
+    "the_development_history_v1_corpus_is_sealed_and_its_four_digests_verify",
+    "the_corpus_is_excluded_from_the_built_package",
+    "the_corpus_introduces_no_production_capability",
+    "inherited_deferred_subjects_are_dispositioned_exactly_once",
+    "deferred_ownership_is_complete",
+    "S1.P05_owns_no_open_deferred_subject",
+    "the_S1.P05.S08_decision_bytes_are_unchanged_by_the_S08.C01_correction",
+    "every_predecessor_artifact_is_locked_unchanged",
+    "S1.P05.S10_adds_no_production_behaviour",
+    "the_closure_records_no_evidence_of_its_own_publication",
+    "every_S1.P06_entry_prerequisite_is_satisfied",
+    "S1.P06_implementation_has_not_started",
+    "every_source_lock_digest_matches_the_artifact_it_names",
+    "the_phase_adds_no_network_persistence_or_filesystem_capability",
+    "the_declared_non_goals_remain_non_goals",
+    "the_vector_totals_reconcile_with_the_declared_summary",
+    "PR53_is_recorded_as_a_closed_unmerged_superseded_candidate_not_a_publication",
+)
+EXPECTED_DISTINCT_EVIDENCE = 21
+EXPECTED_PREREQUISITE_COUNT = 10
+EXPECTED_PREREQUISITES = (
+    ("S1.P01", "stable_repository_identity_available"),
+    ("S1.P02", "immutable_revision_identity_available"),
+    ("S1.P02", "mutable_ref_observations_available"),
+    ("S1.P02", "revision_qualified_paths_and_bounded_locators_available"),
+    ("S1.P03", "evidence_provenance_and_durable_record_references_available"),
+    ("S1.P04", "repository_snapshot_contracts_published"),
+    ("S1.P05.S01-S07", "bounded_development_history_contracts_published"),
+    ("S1.P05.S08", "inherited_deferred_ownership_is_complete"),
+    ("S1.P05.S09", "development_history_contract_corpus_published"),
+    ("S1.P05.S10", "development_history_phase_closure_sealed"),
+)
+EXPECTED_HANDOFF_CONSTRAINT_COUNT = 6
+EXPECTED_ABSENT_CAPABILITIES = (
+    "production_contract_corpus_reader",
+    "production_contract_corpus_writer",
+    "production_contract_corpus_validator",
+    "production_development_history_reader",
+    "production_development_history_writer",
+    "durable_development_history_bytes",
+    "persistence",
+    "storage",
+    "migration",
+    "format_registry",
+    "git_or_filesystem_io",
+    "github_api_client",
+    "network_io",
+)
+EXPECTED_TARGET_CLASSES = (
+    "record_model_target",
+    "vocabulary_enum_target",
+    "record_model_target",
+    "record_model_target",
+    "record_model_target",
+    "record_model_target",
+    "record_model_target",
+    "record_model_target",
+    "record_model_target",
+)
+
+EXPECTED_SECTIONS = frozenset(
+    {
+        "assurance",
+        "canonical_vertical_assurance",
+        "contract_corpus_assurance",
+        "deferred_register",
+        "entry_readiness",
+        "exit_criteria",
+        "format",
+        "implementation_inventory",
+        "non_generalizations",
+        "p06_handoff",
+        "phase_identity",
+        "publication_contract",
+        "slice_ledger",
+        "source_locks",
+    }
+)
+ENTRY_FIELDS = frozenset({"ordinal", "publication_ids", "slice_id", "state", "title"})
+CANDIDATE_FIELDS = frozenset(
+    {
+        "head_sha",
+        "historical_threads_intentionally_preserved",
+        "merged",
+        "pull_request",
+        "state",
+        "status",
+        "superseded_by_pull_request",
+        "thread_count",
+        "unresolved_historical_thread_count",
+    }
+)
+# `S1.P05.S10` as a JSON string value appears exactly three times: the phase
+# identity, its slice-ledger entry, and the S1.P06 entry prerequisite whose
+# evidence owner is this closure. Any further occurrence is a fact about this
+# slice that a sealed publication candidate cannot yet hold.
+EXPECTED_S10_MENTIONS = 3
+
+UNLOCKED_WORKING_ARTIFACTS = frozenset(
+    {
+        # P00-era working material and the two acquisition-pair sidecars. The
+        # S1.P04 closure left exactly these unlocked; the rule is inherited, not
+        # invented here.
+        "reference_corpus/pytest-4412/acquisitions"
+        "/run-0001-s04-v1-base-4c9cde74-head-690a63b9/acquisition.sha256",
+        "reference_corpus/pytest-4412/analysis/s06-current-contract-gap-matrix"
+        "/gap-matrix.json",
+        "reference_corpus/pytest-4412/analysis/s06-current-contract-gap-matrix"
+        "/gap-matrix.md",
+        "reference_corpus/pytest-4412/analysis/s06-current-contract-gap-matrix"
+        "/gap-matrix.sha256",
+        "reference_corpus/pytest-4412/case/case.json",
+        "reference_corpus/pytest-4412/case/case.sha256",
+        "reference_corpus/pytest-4412/corrections/s04-c01-acquisition-closure"
+        "/correction.sha256",
+    }
+)
+
+CHECK_FIELDS = frozenset(
+    {"attempt", "conclusion", "context", "event", "job_id", "run_id", "workflow"}
+)
+SETTLEMENT_FIELDS = frozenset(
+    {
+        "actionable_unresolved_thread_count",
+        "changes_requested_count",
+        "review_count",
+        "settlement",
+        "thread_count",
+    }
 )
 
 EXPECTED_PUBLICATION_CONTRACT = {
@@ -149,6 +496,7 @@ EXPECTED_HEADINGS = (
     "## Phase identity and scope",
     "## Product surface",
     "## Ordered Slice and publication ledger",
+    "## Superseded publication candidates",
     "## S1.P05.S08 disposition summary",
     "## Deferred ownership",
     "## S1.P05.S09 contract corpus summary",
@@ -220,6 +568,36 @@ EXPECTED_MUTATIONS = (
     "network-capability-claim",
     "phase-marked-incomplete",
     "closure-owner-disagrees-with-corpus",
+    # the classes the reviews proved inert
+    "forged-merge-record-section",
+    "s10-publication-fact-smuggled-into-its-entry",
+    "immutable-lock-set-truncated",
+    "real-but-unlocked-corpus-file-added",
+    "production-observation-duplicated",
+    "production-observations-reordered",
+    "publication-squash-shas-swapped-between-slices",
+    "publication-reviewed-heads-swapped",
+    "review-count-inflated",
+    "thread-count-inflated",
+    "ci-attempt-falsified",
+    "run-identifier-falsified",
+    "topic-branch-falsified",
+    "check-event-swapped",
+    "exit-criteria-truncated",
+    "exit-evidence-all-point-at-one-address",
+    "exit-subject-replaced",
+    "entry-prerequisites-truncated",
+    "handoff-constraints-truncated",
+    "absent-capability-list-reordered",
+    "format-canonicalization-relaxed",
+    "format-marked-public-contract",
+    "assurance-lock-total-disagrees",
+    "assurance-exit-total-disagrees",
+    "sealed-at-disagrees-between-sections",
+    "superseded-candidate-marked-merged",
+    "superseded-candidate-claimed-as-publication",
+    "vocabulary-enum-relabelled-as-record-model",
+    "slice-entry-gains-a-field",
 )
 
 
@@ -248,7 +626,268 @@ def _resolve(document: Any, dotted: str) -> Any:
     return node
 
 
+def _cell(value: Any) -> str:
+    """A table cell is a code span or an em dash; nothing else reaches a table."""
+    if value is None or value == "":
+        return "—"
+    text = str(value)
+    assert "`" not in text and "|" not in text and "\n" not in text, text
+    return f"`{text}`"
+
+
+def _plain(value: Any) -> str:
+    text = str(value)
+    assert "|" not in text and "\n" not in text, text
+    return text
+
+
+def _render_markdown(document: dict[str, Any], digest: str) -> str:
+    """Rebuild closure.md from closure.json exactly as the publisher does.
+
+    The projection is regenerated and compared byte for byte, so a doctored
+    document fails rather than merely failing to contain a probed substring.
+    """
+    pi = cast(dict[str, Any], document["phase_identity"])
+    sl = cast(dict[str, Any], document["slice_ledger"])
+    ii = cast(dict[str, Any], document["implementation_inventory"])
+    dr = cast(dict[str, Any], document["deferred_register"])
+    cca = cast(dict[str, Any], document["contract_corpus_assurance"])
+    cva = cast(dict[str, Any], document["canonical_vertical_assurance"])
+    ec = cast(dict[str, Any], document["exit_criteria"])
+    er = cast(dict[str, Any], document["entry_readiness"])
+    hs = cast(dict[str, Any], document["p06_handoff"])
+    lk = cast(dict[str, Any], document["source_locks"])
+    pc = cast(dict[str, Any], document["publication_contract"])
+    manifest = json.loads(
+        (REPOSITORY_ROOT / CORPUS_RELATIVE / "manifest.json").read_bytes()
+    )
+    entries = cast(list[dict[str, Any]], sl["entries"])
+    publications = cast(list[dict[str, Any]], sl["publications"])
+
+    lines: list[str] = []
+    add = lines.append
+    add(f"# {pi['phase']} {pi['title']} Phase Closure\n")
+    add("## Exact primary JSON digest\n")
+    add(f"Primary JSON SHA-256: `{digest}`\n")
+    add("## Derived and non-authoritative warning\n")
+    add(
+        "`closure.json` is the sole durable semantic authority for this Phase "
+        "closure. This Markdown is a derived, non-authoritative view and never an "
+        "independent authority. Where the two differ, the JSON governs.\n"
+    )
+    add("## Executive Phase-closure verdict\n")
+    add(
+        f"`{pi['phase']} — {pi['title']}` is **{pi['phase_state']}** across "
+        f"{pi['slice_count']} Slices, `{entries[0]['slice_id']}` through "
+        f"`{entries[-1]['slice_id']}`. The Phase adds no production capability "
+        "beyond its published contracts, changed no production Python source in "
+        "its governance and corpus Slices, and closes with no deferred subject "
+        "still owned by itself.\n"
+    )
+    add("## Phase identity and scope\n")
+    modules = ", ".join(f"`{m}`" for m in cast(list[str], ii["owned_modules"]))
+    support = ", ".join(
+        f"`{m}`" for m in manifest["scope"]["supporting_authorities_not_owned"]
+    )
+    add(
+        f"Owned modules: {modules}. Owned product symbols: "
+        f"**{ii['owned_symbol_count']}** — {ii['record_model_count']} record models "
+        f"and {ii['vocabulary_enum_count']} vocabulary enum. Production Python "
+        f"sources observed: **{lk['production_observation_count']}**. Production "
+        "change in this Slice: `False`.\n"
+    )
+    add(f"Supporting authorities that `{pi['phase']}` does not own: {support}.\n")
+
+    add("## Product surface\n")
+    add("| Slice | Module | Symbol | Class |")
+    add("| --- | --- | --- | --- |")
+    for symbol in cast(list[dict[str, Any]], ii["owned_symbols"]):
+        add(
+            f"| {_cell(symbol['slice_layer'])} | {_cell(symbol['module'])} "
+            f"| {_cell(symbol['symbol'])} | {_cell(symbol['target_class'])} |"
+        )
+    add("")
+
+    add("## Ordered Slice and publication ledger\n")
+    add(f"{sl['entry_count']} Slice entries, {sl['publication_count']} published.\n")
+    add("| Slice | State | Title |")
+    add("| --- | --- | --- |")
+    for entry in entries:
+        add(
+            f"| {_cell(entry['slice_id'])} | {_cell(entry['state'])} "
+            f"| {_plain(entry['title'])} |"
+        )
+    add("")
+    add("| Publication | PR | Reviewed head | Squash | Trees equal |")
+    add("| --- | --- | --- | --- | --- |")
+    for publication in publications:
+        add(
+            f"| {_cell(publication['slice_id'])} | {_cell(publication['pull_request'])} "
+            f"| {_cell(publication['reviewed_head_sha'][:12])} "
+            f"| {_cell(publication['squash_sha'][:12])} "
+            f"| {_cell(publication['reviewed_tree_equals_squash_tree'])} |"
+        )
+    add("")
+
+    add("## Superseded publication candidates\n")
+    candidates = cast(list[dict[str, Any]], sl["superseded_candidates"])
+    add(
+        f"{sl['superseded_candidate_count']} closed, unmerged candidate opened and "
+        "abandoned inside the Phase. A superseded candidate is audit history, never "
+        "a Slice publication, and its historical threads are preserved unresolved "
+        "rather than tidied away.\n"
+    )
+    add("| PR | State | Merged | Superseded by | Threads | Unresolved |")
+    add("| --- | --- | --- | --- | --- | --- |")
+    for candidate in candidates:
+        add(
+            f"| {_cell(candidate['pull_request'])} | {_cell(candidate['state'])} "
+            f"| {_cell(candidate['merged'])} "
+            f"| {_cell(candidate['superseded_by_pull_request'])} "
+            f"| {_cell(candidate['thread_count'])} "
+            f"| {_cell(candidate['unresolved_historical_thread_count'])} |"
+        )
+    add("")
+
+    add("## S1.P05.S08 disposition summary\n")
+    totals = ", ".join(
+        f"{v} {k.replace('_', ' ')}"
+        for k, v in sorted(cast(dict[str, int], dr["disposition_totals"]).items())
+    )
+    add(
+        f"All **{dr['count']}** inherited subjects are dispositioned exactly once: "
+        f"{totals}. `self_owned_open == {dr['self_owned_open']}`.\n"
+    )
+    add("| ID | Subject | Disposition | State | Immediate | Long-term |")
+    add("| --- | --- | --- | --- | --- | --- |")
+    for item in cast(list[dict[str, Any]], dr["items"]):
+        add(
+            f"| {_cell(item['subject_id'])} | {_plain(item['subject'])} "
+            f"| {_cell(item['disposition'])} | {_cell(item.get('current_state'))} "
+            f"| {_cell(item.get('immediate_owner'))} "
+            f"| {_cell(item.get('preserved_long_term_owner'))} |"
+        )
+    add("")
+    add("## Deferred ownership\n")
+    add(
+        f"`ownership_complete: {dr['ownership_complete']}`. Immediate owners "
+        f"{dr['immediate_owner_totals']}; long-term owners "
+        f"{dr['long_term_owner_totals']}. No subject remains owned by "
+        f"`{pi['phase']}`.\n"
+    )
+    add("## S1.P05.S09 contract corpus summary\n")
+    vc = cast(dict[str, Any], cca["vector_counts"])
+    coverage = cast(dict[str, Any], cca["symbol_coverage"])
+    add(
+        f"`{cca['corpus_id']}` v{cca['version']} at `{cca['directory']}`: "
+        f"{cca['file_count']} files, {cca['canonical_json_files']} canonical JSON, "
+        f"{cca['sidecar_count']} sidecars. Vectors: **{vc['valid']} valid, "
+        f"{vc['invalid']} invalid, {vc['replay']} replay, {vc['total']} total** over "
+        f"{vc['fixtures']} fixtures. Symbol coverage "
+        f"{coverage['accounted_for']}/{coverage['expected']}. Executor "
+        f"`{cca['test_only_executor']}`; package excluded; no production capability; "
+        "unknown target, operation, and marker all rejected.\n"
+    )
+    add("## Canonical vertical assurance\n")
+    add("| Layer | Provenance |")
+    add("| --- | --- |")
+    for layer in cast(list[dict[str, Any]], cva["layers"]):
+        add(f"| {_cell(layer['layer'])} | {_cell(layer['classification'])} |")
+    add("")
+    limits = cast(dict[str, Any], cva["evidence_limits"])
+    add(
+        f"Retained role source positions: "
+        f"`{limits['retained_role_source_positions']}`. "
+        f"`flattened_evidence_derived_history_claimed: "
+        f"{cva['flattened_evidence_derived_history_claimed']}`; no product aggregate "
+        "is composed, no complete history graph is claimed, and no historical "
+        "default branch is inferred.\n"
+    )
+    add("## Non-generalizations\n")
+    for note in cast(list[dict[str, Any]], document["non_generalizations"]["items"]):
+        add(f"- `{note['non_generalization_id']}` — {_plain(note['subject'])}")
+    add("")
+    add("## Exit criteria\n")
+    add(
+        f"{ec['satisfied_count']} of {ec['count']} satisfied, "
+        f"{ec['unsatisfied_count']} unsatisfied.\n"
+    )
+    for item in cast(list[dict[str, Any]], ec["items"]):
+        add(
+            f"- `{item['criterion_id']}` — {_plain(item['subject'])} "
+            f"(`{item['status']}`, evidence `{item['evidence']}`)"
+        )
+    add("")
+    add(f"## {er['next_phase']} entry readiness\n")
+    add(
+        f"`{er['next_phase']}` is `{er['readiness']}` with implementation state "
+        f"`{er['implementation_state']}`. {er['prerequisite_count']} prerequisites, "
+        "all satisfied.\n"
+    )
+    for prerequisite in cast(list[dict[str, Any]], er["prerequisites"]):
+        add(
+            f"- `{prerequisite['prerequisite_id']}` — "
+            f"{_plain(prerequisite['subject'])} "
+            f"(owner `{prerequisite['evidence_owner']}`)"
+        )
+    add("")
+    add(f"## {er['next_phase']} handoff\n")
+    add(
+        f"`{er['next_phase']}` receives {hs['received_subject_count']} subject and "
+        f"{hs['requirement_count']} requirements from `{hs['source_handoff_id']}`, "
+        f"status `{hs['status']}`.\n"
+    )
+    for constraint in cast(list[dict[str, Any]], hs["constraints"]):
+        add(f"- `{constraint['constraint_id']}` — {_plain(constraint['statement'])}")
+    add("")
+    add("## Publication candidate boundary\n")
+    add(
+        f"This record is a `{document['format']['publication_state']}`. "
+        f"`actual_S10_publication_facts_in_candidate: "
+        f"{pc['actual_S10_publication_facts_in_candidate']}` — this closure records "
+        "no pull request, reviewed head, squash SHA, or natural-main run of its own, "
+        "because none exists when these bytes are sealed. Its publication evidence "
+        f"lives at `{pc['future_publication_evidence_location']}`.\n"
+    )
+    add("## Source locks\n")
+    add(
+        f"{lk['production_observation_count']} closure-baseline production "
+        f"observations and {lk['immutable_input_count']} immutable inputs, "
+        f"{lk['total_lock_count']} locks total. Production observations are baseline "
+        "records, not ownership claims; predecessor corpora, closures, and decisions "
+        "remain byte-identical."
+    )
+    return "\n".join(lines) + "\n"
+
+
 # --- independent validators --------------------------------------------------
+
+
+def _assert_closed_world(document: dict[str, Any]) -> None:
+    """The document publishes these sections and no others.
+
+    Without this, a sealed candidate can be handed real evidence of its own
+    merge in a section nobody enumerated, and every existing assertion still
+    passes.
+    """
+    assert set(document) == EXPECTED_SECTIONS, {
+        "unexpected": sorted(set(document) - EXPECTED_SECTIONS),
+        "missing": sorted(EXPECTED_SECTIONS - set(document)),
+    }
+    ledger = cast(dict[str, Any], document["slice_ledger"])
+    for entry in cast(list[dict[str, Any]], ledger["entries"]):
+        assert set(entry) == ENTRY_FIELDS, entry["slice_id"]
+    for candidate in cast(list[dict[str, Any]], ledger["superseded_candidates"]):
+        assert set(candidate) == CANDIDATE_FIELDS, candidate["pull_request"]
+
+    # No section may smuggle in publication facts about S1.P05.S10 itself.
+    forbidden = ("squash_sha", "merge_commit", "merged_at", "merge_record")
+    serialized = json.dumps(document, sort_keys=True)
+    closing = cast(list[dict[str, Any]], ledger["entries"])[-1]
+    assert closing["slice_id"] == "S1.P05.S10"
+    assert not (set(closing) & set(forbidden)), closing
+    # The closing slice's own identifiers must appear nowhere in the record.
+    assert serialized.count('"S1.P05.S10"') == EXPECTED_S10_MENTIONS
 
 
 def _assert_format(document: dict[str, Any]) -> None:
@@ -301,18 +940,14 @@ def _assert_inventory(document: dict[str, Any]) -> None:
     assert observed == EXPECTED_OWNED_SYMBOLS
     assert {entry["module"] for entry in symbols} == set(OWNED_MODULES)
 
-    absent = cast(list[str], inventory["absent_capabilities"])
-    for capability in (
-        "persistence",
-        "storage",
-        "migration",
-        "network_io",
-        "github_api_client",
-        "git_or_filesystem_io",
-        "production_development_history_reader",
-        "production_development_history_writer",
-    ):
-        assert capability in absent, capability
+    assert tuple(cast(list[str], inventory["absent_capabilities"])) == (
+        EXPECTED_ABSENT_CAPABILITIES
+    )
+    assert (
+        inventory["record_model_count"] + inventory["vocabulary_enum_count"]
+        == (inventory["owned_symbol_count"])
+    )
+    assert tuple(entry["target_class"] for entry in symbols) == EXPECTED_TARGET_CLASSES
 
 
 def _assert_source_locks(document: dict[str, Any], *, verify_files: bool) -> None:
@@ -331,8 +966,33 @@ def _assert_source_locks(document: dict[str, Any], *, verify_files: bool) -> Non
     # The closure cannot lock itself: its own bytes are not sealed yet.
     assert not any(path.startswith(CLOSURE_RELATIVE) for path in paths)
 
-    observed_sources = {entry["path"] for entry in observations}
-    assert observed_sources == set(CURRENT_PRODUCTION_FILES)
+    # An ordered list, not a set: a set collapses a duplicate and lets the
+    # counts inflate consistently around it.
+    assert [entry["path"] for entry in observations] == sorted(CURRENT_PRODUCTION_FILES)
+
+    # Membership, not merely arithmetic. The immutable set is derived from the
+    # same inclusion rule the S1.P04 closure used -- every tracked
+    # reference_corpus path except this closure, the P00-era working artifacts,
+    # and the two acquisition-pair sidecars -- so dropping a predecessor
+    # artifact is a failure rather than a smaller consistent number.
+    if verify_files:
+        tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
+            ["git", "ls-files", "reference_corpus/"],
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            check=False,
+        )
+        assert tracked.returncode == 0, tracked.stderr
+        expected = {
+            path
+            for path in tracked.stdout.decode("utf-8").split()
+            if path not in UNLOCKED_WORKING_ARTIFACTS
+            and not path.startswith(CLOSURE_RELATIVE)
+        }
+        assert set(paths) == expected, {
+            "unlocked": sorted(expected - set(paths)),
+            "unexpected": sorted(set(paths) - expected),
+        }
 
     if verify_files:
         for entry in immutable + observations:
@@ -523,15 +1183,38 @@ def _assert_ledger(document: dict[str, Any]) -> None:
     assert len(set(declared)) == len(declared), "a publication is claimed twice"
     assert set(declared) == {pub["id"] for pub in publications}
 
-    assert tuple((p["slice_id"], p["pull_request"]) for p in publications) == (
-        EXPECTED_PUBLICATIONS
+    observed = tuple(
+        (
+            pub["slice_id"],
+            pub["pull_request"],
+            pub["topic_branch"],
+            pub["reviewed_head_sha"],
+            pub["squash_sha"],
+            pub["pull_request_check"]["attempt"],
+            pub["main_check"]["attempt"],
+            pub["review_settlement"]["review_count"],
+            pub["review_settlement"]["thread_count"],
+        )
+        for pub in publications
     )
-    numbers = [p["pull_request"] for p in publications]
+    # Every identifier is pinned, so evidence cannot be reattributed between
+    # slices while the internal cross-checks stay self-consistent.
+    assert observed == EXPECTED_PUBLICATIONS
+    numbers = [pub["pull_request"] for pub in publications]
     assert numbers == sorted(numbers), "publications are not in publication order"
     assert len(set(numbers)) == len(numbers)
+    assert (
+        sum(pub["review_settlement"]["review_count"] for pub in publications)
+        == EXPECTED_REVIEW_TOTAL
+    )
+    assert (
+        sum(pub["review_settlement"]["thread_count"] for pub in publications)
+        == EXPECTED_THREAD_TOTAL
+    )
 
     for publication in publications:
         where = publication["slice_id"]
+        assert set(publication) == PUBLICATION_FIELDS, where
         assert publication["publication_state"] == "merged", where
         assert publication["merge_method"] == "protected_pull_request_squash_merge", (
             where
@@ -548,22 +1231,75 @@ def _assert_ledger(document: dict[str, Any]) -> None:
             value = cast(str, publication[field])
             assert len(value) == 40 and set(value) <= set("0123456789abcdef"), where
 
-        for key in ("pull_request_check", "main_check"):
+        for key, event in (
+            ("pull_request_check", "pull_request"),
+            ("main_check", "push"),
+        ):
             check = cast(dict[str, Any], publication[key])
+            assert set(check) == CHECK_FIELDS, (where, key)
             assert check["conclusion"] == "success", (where, key)
             assert check["context"] == "validate", (where, key)
             assert check["workflow"] == "CI", (where, key)
+            assert check["event"] == event, (where, key)
+            # A run and job identifier that is not a plausible identifier is not
+            # evidence anyone could follow back to the run it names.
+            for field in ("run_id", "job_id"):
+                identifier = check[field]
+                assert isinstance(identifier, int) and identifier > 10**9, (
+                    where,
+                    field,
+                )
+            assert isinstance(check["attempt"], int) and check["attempt"] >= 1, (
+                where,
+                key,
+            )
 
         settlement = cast(dict[str, Any], publication["review_settlement"])
+        assert set(settlement) == SETTLEMENT_FIELDS, where
         assert settlement["settlement"] == "clean", where
         assert settlement["actionable_unresolved_thread_count"] == 0, where
         assert settlement["changes_requested_count"] == 0, where
+        # A thread cannot exist without a review that opened it.
+        if settlement["thread_count"]:
+            assert settlement["review_count"] >= settlement["thread_count"], where
+
+    candidates = cast(list[dict[str, Any]], ledger["superseded_candidates"])
+    assert ledger["superseded_candidate_count"] == len(candidates)
+    assert (
+        tuple(
+            (
+                candidate["pull_request"],
+                candidate["superseded_by_pull_request"],
+                candidate["state"],
+                candidate["merged"],
+            )
+            for candidate in candidates
+        )
+        == EXPECTED_SUPERSEDED_CANDIDATES
+    )
+    published_numbers = set(numbers)
+    for candidate in candidates:
+        # A superseded candidate is audit history, never a publication.
+        assert candidate["merged"] is False, candidate["pull_request"]
+        assert candidate["state"] == "closed", candidate["pull_request"]
+        assert candidate["pull_request"] not in published_numbers
+        assert candidate["superseded_by_pull_request"] in published_numbers
+        assert candidate["status"] == (
+            "superseded_publication_candidate_not_a_slice_publication"
+        )
+        assert candidate["historical_threads_intentionally_preserved"] is True
 
 
 def _assert_exit_criteria(document: dict[str, Any]) -> None:
     criteria = cast(dict[str, Any], document["exit_criteria"])
     items = cast(list[dict[str, Any]], criteria["items"])
     assert criteria["count"] == len(items)
+    # Pinned, because a count derived from the list it describes survives
+    # truncation with every internal cross-check intact.
+    assert criteria["count"] == EXPECTED_EXIT_CRITERION_COUNT
+    assert tuple(entry["subject"] for entry in items) == EXPECTED_EXIT_SUBJECTS
+    # A criterion pointing at an address that proves nothing is not evidence.
+    assert len({entry["evidence"] for entry in items}) >= EXPECTED_DISTINCT_EVIDENCE
     assert criteria["satisfied_count"] == sum(
         1 for entry in items if entry["status"] == "satisfied"
     )
@@ -587,6 +1323,11 @@ def _assert_entry_readiness(document: dict[str, Any]) -> None:
     assert readiness["implementation_state"] == "not_started"
     prerequisites = cast(list[dict[str, Any]], readiness["prerequisites"])
     assert readiness["prerequisite_count"] == len(prerequisites)
+    assert readiness["prerequisite_count"] == EXPECTED_PREREQUISITE_COUNT
+    assert (
+        tuple((entry["evidence_owner"], entry["subject"]) for entry in prerequisites)
+        == EXPECTED_PREREQUISITES
+    )
     identifiers = [entry["prerequisite_id"] for entry in prerequisites]
     assert identifiers == [
         f"p06-entry:{i:02d}" for i in range(1, len(prerequisites) + 1)
@@ -601,6 +1342,7 @@ def _assert_handoff(document: dict[str, Any]) -> None:
     handoff = cast(dict[str, Any], document["p06_handoff"])
     constraints = cast(list[dict[str, Any]], handoff["constraints"])
     assert handoff["constraint_count"] == len(constraints)
+    assert handoff["constraint_count"] == EXPECTED_HANDOFF_CONSTRAINT_COUNT
     identifiers = [entry["constraint_id"] for entry in constraints]
     assert identifiers == [
         f"p06-handoff:{i:02d}" for i in range(1, len(constraints) + 1)
@@ -674,6 +1416,7 @@ def _assert_assurance(document: dict[str, Any]) -> None:
 
 
 VALIDATORS = (
+    _assert_closed_world,
     _assert_format,
     _assert_phase_identity,
     _assert_inventory,
@@ -739,6 +1482,18 @@ def test_closure_json_carries_no_self_digest() -> None:
     assert _digest(CLOSURE_ROOT / "closure.json") not in raw
 
 
+def test_markdown_is_exactly_the_projection_of_the_json() -> None:
+    """Regenerate the document and compare bytes.
+
+    A substring probe accepts anything it does not look for: a forged merge
+    record, a swapped publication row, a flipped verdict. Regeneration accepts
+    exactly one document for a given closure.json.
+    """
+    published = (CLOSURE_ROOT / "closure.md").read_text(encoding="utf-8")
+    rebuilt = _render_markdown(_closure(), _digest(CLOSURE_ROOT / "closure.json"))
+    assert published == rebuilt
+
+
 def test_markdown_is_derived_digest_synchronized_and_non_authoritative() -> None:
     markdown = (CLOSURE_ROOT / "closure.md").read_text(encoding="utf-8")
     assert "\r" not in markdown
@@ -752,35 +1507,11 @@ def test_markdown_is_derived_digest_synchronized_and_non_authoritative() -> None
     assert "Where the two differ, the JSON governs." in markdown
 
 
-def test_markdown_restates_only_figures_the_json_carries() -> None:
-    """Every headline number in the projection is read back out of the JSON."""
+def test_markdown_headings_are_exactly_the_published_set() -> None:
+    """A forged section is a heading the projection does not produce."""
     markdown = (CLOSURE_ROOT / "closure.md").read_text(encoding="utf-8")
-    document = _closure()
-    ledger = cast(dict[str, Any], document["slice_ledger"])
-    locks = cast(dict[str, Any], document["source_locks"])
-    register = cast(dict[str, Any], document["deferred_register"])
-    corpus = cast(dict[str, Any], document["contract_corpus_assurance"])
-    counts = cast(dict[str, Any], corpus["vector_counts"])
-
-    assert (
-        f"{ledger['entry_count']} Slice entries, "
-        f"{ledger['publication_count']} published." in markdown
-    )
-    assert f"All **{register['count']}** inherited subjects" in markdown
-    assert f"`self_owned_open == {register['self_owned_open']}`" in markdown
-    assert (
-        f"**{counts['valid']} valid, {counts['invalid']} invalid, "
-        f"{counts['replay']} replay, {counts['total']} total**" in markdown
-    )
-    assert (
-        f"{locks['production_observation_count']} closure-baseline production "
-        f"observations and {locks['immutable_input_count']} immutable inputs, "
-        f"{locks['total_lock_count']} locks total." in markdown
-    )
-    for symbol in EXPECTED_OWNED_SYMBOLS:
-        assert f"| `{symbol[0]}` | `{symbol[1]}` | `{symbol[2]}` |" in markdown
-    for publication in cast(list[dict[str, Any]], ledger["publications"]):
-        assert f"`{publication['squash_sha'][:12]}`" in markdown
+    observed = tuple(line for line in markdown.splitlines() if line.startswith("#"))
+    assert observed == EXPECTED_HEADINGS
 
 
 def test_markdown_publishes_no_bare_pipe_or_unclosed_span() -> None:
@@ -824,6 +1555,7 @@ def test_each_required_closure_mutation_is_rejected(mutation: str) -> None:
     corpus = cast(dict[str, Any], document["contract_corpus_assurance"])
     vertical = cast(dict[str, Any], document["canonical_vertical_assurance"])
     readiness = cast(dict[str, Any], document["entry_readiness"])
+    ledger = cast(dict[str, Any], document["slice_ledger"])
 
     if mutation == "closure-source-digest-drift":
         cast(list[dict[str, Any]], locks["production_observations"])[0]["sha256"] = (
@@ -940,6 +1672,128 @@ def test_each_required_closure_mutation_is_rejected(mutation: str) -> None:
         cast(dict[str, Any], document["phase_identity"])["phase_state"] = "in_progress"
     elif mutation == "closure-owner-disagrees-with-corpus":
         cast(dict[str, Any], document["phase_identity"])["slice"] = "S1.P05.S11"
+    elif mutation == "forged-merge-record-section":
+        document["s10_publication"] = {"pull_request": 72, "merged": True}
+    elif mutation == "s10-publication-fact-smuggled-into-its-entry":
+        entries[-1]["squash_sha"] = "9" * 40
+    elif mutation == "immutable-lock-set-truncated":
+        immutable = cast(list[dict[str, Any]], locks["immutable_inputs"])
+        del immutable[2:]
+        locks["immutable_input_count"] = len(immutable)
+        locks["total_lock_count"] = len(immutable) + len(
+            cast(list[dict[str, Any]], locks["production_observations"])
+        )
+        total = locks["total_lock_count"]
+        cast(dict[str, Any], document["assurance"])["source_locks"] = (
+            f"passed_{total}_of_{total}"
+        )
+    elif mutation == "real-but-unlocked-corpus-file-added":
+        immutable = cast(list[dict[str, Any]], locks["immutable_inputs"])
+        smuggled = "reference_corpus/pytest-4412/case/case.json"
+        extra = copy.deepcopy(immutable[0])
+        extra["path"] = smuggled
+        extra["sha256"] = _digest(REPOSITORY_ROOT / smuggled)
+        extra["byte_length"] = (REPOSITORY_ROOT / smuggled).stat().st_size
+        immutable.append(extra)
+        immutable.sort(key=lambda entry: cast(str, entry["path"]))
+        locks["immutable_input_count"] = len(immutable)
+        locks["total_lock_count"] += 1
+        total = locks["total_lock_count"]
+        cast(dict[str, Any], document["assurance"])["source_locks"] = (
+            f"passed_{total}_of_{total}"
+        )
+    elif mutation == "production-observation-duplicated":
+        observations = cast(list[dict[str, Any]], locks["production_observations"])
+        observations.append(copy.deepcopy(observations[0]))
+        locks["production_observation_count"] = len(observations)
+        locks["total_lock_count"] += 1
+        total = locks["total_lock_count"]
+        cast(dict[str, Any], document["assurance"])["source_locks"] = (
+            f"passed_{total}_of_{total}"
+        )
+    elif mutation == "production-observations-reordered":
+        cast(list[dict[str, Any]], locks["production_observations"]).reverse()
+    elif mutation == "publication-squash-shas-swapped-between-slices":
+        publications[0]["squash_sha"], publications[1]["squash_sha"] = (
+            publications[1]["squash_sha"],
+            publications[0]["squash_sha"],
+        )
+    elif mutation == "publication-reviewed-heads-swapped":
+        publications[0]["reviewed_head_sha"], publications[1]["reviewed_head_sha"] = (
+            publications[1]["reviewed_head_sha"],
+            publications[0]["reviewed_head_sha"],
+        )
+    elif mutation == "review-count-inflated":
+        cast(dict[str, Any], publications[0]["review_settlement"])["review_count"] = (
+            9999
+        )
+    elif mutation == "thread-count-inflated":
+        cast(dict[str, Any], publications[0]["review_settlement"])["thread_count"] = (
+            4242
+        )
+    elif mutation == "ci-attempt-falsified":
+        for publication in publications:
+            cast(dict[str, Any], publication["pull_request_check"])["attempt"] = 1
+    elif mutation == "run-identifier-falsified":
+        cast(dict[str, Any], publications[0]["main_check"])["run_id"] = 2
+    elif mutation == "topic-branch-falsified":
+        publications[0]["topic_branch"] = "feat/not-the-branch-that-published-this"
+    elif mutation == "check-event-swapped":
+        cast(dict[str, Any], publications[0]["pull_request_check"])["event"] = "push"
+    elif mutation == "exit-criteria-truncated":
+        criteria = cast(dict[str, Any], document["exit_criteria"])
+        items = cast(list[dict[str, Any]], criteria["items"])
+        del items[3:]
+        criteria["count"] = len(items)
+        criteria["satisfied_count"] = len(items)
+        criteria["unsatisfied_count"] = 0
+        cast(dict[str, Any], document["assurance"])["exit_criteria"] = (
+            f"passed_{len(items)}_of_{len(items)}"
+        )
+    elif mutation == "exit-evidence-all-point-at-one-address":
+        for entry in cast(list[dict[str, Any]], document["exit_criteria"]["items"]):
+            entry["evidence"] = "format.version"
+    elif mutation == "exit-subject-replaced":
+        cast(list[dict[str, Any]], document["exit_criteria"]["items"])[0]["subject"] = (
+            "everything_is_fine"
+        )
+    elif mutation == "entry-prerequisites-truncated":
+        prerequisites = cast(list[dict[str, Any]], readiness["prerequisites"])
+        del prerequisites[1:]
+        readiness["prerequisite_count"] = len(prerequisites)
+        cast(dict[str, Any], document["assurance"])["entry_readiness"] = "passed_1_of_1"
+    elif mutation == "handoff-constraints-truncated":
+        handoff = cast(dict[str, Any], document["p06_handoff"])
+        constraints = cast(list[dict[str, Any]], handoff["constraints"])
+        del constraints[1:]
+        handoff["constraint_count"] = len(constraints)
+    elif mutation == "absent-capability-list-reordered":
+        cast(list[str], inventory["absent_capabilities"]).reverse()
+    elif mutation == "format-canonicalization-relaxed":
+        cast(dict[str, Any], document["format"]["canonicalization"])[
+            "floats_NaN_and_Infinity_permitted"
+        ] = True
+    elif mutation == "format-marked-public-contract":
+        cast(dict[str, Any], document["format"])["public_contract"] = True
+    elif mutation == "assurance-lock-total-disagrees":
+        cast(dict[str, Any], document["assurance"])["source_locks"] = "passed_1_of_1"
+    elif mutation == "assurance-exit-total-disagrees":
+        cast(dict[str, Any], document["assurance"])["exit_criteria"] = "passed_1_of_1"
+    elif mutation == "sealed-at-disagrees-between-sections":
+        cast(dict[str, Any], document["assurance"])["sealed_at"] = (
+            "1999-01-01T00:00:00Z"
+        )
+    elif mutation == "superseded-candidate-marked-merged":
+        cast(list[dict[str, Any]], ledger["superseded_candidates"])[0]["merged"] = True
+    elif mutation == "superseded-candidate-claimed-as-publication":
+        cast(list[dict[str, Any]], ledger["superseded_candidates"])[0][
+            "superseded_by_pull_request"
+        ] = 999
+    elif mutation == "vocabulary-enum-relabelled-as-record-model":
+        for entry in cast(list[dict[str, Any]], inventory["owned_symbols"]):
+            entry["target_class"] = "record_model_target"
+    elif mutation == "slice-entry-gains-a-field":
+        entries[0]["note"] = "added later"
     else:  # pragma: no cover - guarded by the parametrization
         raise AssertionError(f"unhandled mutation: {mutation}")
 
@@ -1033,10 +1887,16 @@ def test_roadmap_records_phase_completion_and_p06_readiness() -> None:
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in roadmap
     # The sequence is closed, so the provisional caveat must not still stand.
     assert "The remaining `S1.P05` sequence is PROVISIONAL" not in roadmap
-    # The states the closure has left behind must not survive anywhere.
+    # Every state this closure retired must be gone, not merely outvoted by a
+    # newer sentence sitting beside it.
     assert "`S1.P05` is active and incomplete" not in roadmap
     assert "`S1.P05.S10` is next and not started" not in roadmap
-    assert "S1.P06 implementation has begun" not in roadmap
+    assert "`S1.P06` is not eligible to begin" not in roadmap
+    assert (
+        "`S1.P05.S10` — Integration and Phase Closure (provisional; next, not started)"
+        not in roadmap
+    )
+    assert "`S1.P06` implementation has begun" not in roadmap
 
 
 def test_roadmap_narrative_restates_the_closure_figures() -> None:
@@ -1057,6 +1917,32 @@ def test_roadmap_narrative_restates_the_closure_figures() -> None:
         f"{criteria['satisfied_count']} satisfied exit criteria, and "
         f"{handoff['constraint_count']} `S1.P06` handoff constraints." in roadmap
     )
+
+
+def test_the_roadmap_carries_exactly_one_live_gate() -> None:
+    """A superseded gate left in the present tense reports the wrong gate.
+
+    The earlier guard only scanned lines containing "next and not started", so
+    a stale `eligible_to_begin` sentence in a predecessor section stood beside
+    the live one unnoticed. Present-tense claims are collected by their own
+    grammar here, and every one must name the phase that is actually next.
+    """
+    roadmap = " ".join(
+        (REPOSITORY_ROOT / ROADMAP_RELATIVE).read_text(encoding="utf-8").split()
+    )
+    live_gates = re.findall(r"`(S1\.P\d\d)` is `eligible_to_begin`", roadmap)
+    assert live_gates == ["S1.P06"], live_gates
+
+    live_next = re.findall(
+        r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
+    )
+    assert live_next, "the roadmap names no next gate"
+    assert set(live_next) == {"S1.P06"}, sorted(set(live_next))
+
+    # A phase this closure records as complete must not also be claimed open.
+    for phase in ("S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05"):
+        assert f"`{phase}` is active and incomplete" not in roadmap, phase
+        assert f"`{phase}` is `eligible_to_begin`" not in roadmap, phase
 
 
 def test_closure_and_roadmap_agree_on_readiness() -> None:

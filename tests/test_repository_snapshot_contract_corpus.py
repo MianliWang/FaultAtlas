@@ -1270,4 +1270,4 @@ def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     assert "`S1.P05` is complete" in roadmap
     assert "`S1.P05.S10` are complete" in roadmap
     assert "`S1.P06` is next and not started" in roadmap
-    assert "S1.P06 implementation has begun" not in roadmap
+    assert "`S1.P06` implementation has begun" not in roadmap

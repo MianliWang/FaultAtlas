@@ -620,14 +620,17 @@ own, because none exists when its bytes are sealed, and it states so explicitly.
 Its own publication evidence lives in Git history, GitHub, and the final
 execution report.
 
-`S1.P05` is `eligible_to_begin` with implementation state `not_started` and zero
-unresolved blockers across nine satisfied prerequisites. Eligibility is not
-commencement. The closure publishes six handoff constraints `S1.P05` inherits:
+At that sealed closure, `S1.P05` was `eligible_to_begin` with implementation
+state `not_started` and zero unresolved blockers across nine satisfied
+prerequisites. Eligibility was not commencement. `S1.P05` has since been
+implemented and closed by `S1.P05.S10`. The closure published six handoff
+constraints `S1.P05` inherited:
 mutable refs remain observations and never snapshot identity; the snapshot
 subject remains a stable `RepositoryIdentity` plus an immutable
 `GitCommitIdentity` that history may reference but must not redefine;
-`deferred:19` default-branch observation is owned by `S1.P05` while the
-historical default branch stays unknown and owned by `S2`; whole-repository
+`deferred:19` default-branch observation was assigned to `S1.P05`, which
+`S1.P05.S08` has since carried forward to `S5`, while the historical default
+branch stays unknown and owned by `S2`; whole-repository
 completeness and repository membership remain transferred to `S2` and `S5` and
 cannot be derived from `S1.P04` values; the S07 evidence association is LEVEL 1
 only and must not be implicitly upgraded; and the published `S1.P04` contracts
@@ -645,9 +648,9 @@ deferred — semantic location of a fact inside a record, fact-level support,
 verification, corroboration, derivation, proposition-specific exact-byte
 relations, support role and strength, multi-record support collections,
 collection-level and coverage-level provenance, and the confidence and review
-provenance owned by `S1.P09`. `S1.P05` through `S1.P10` remain not started;
-`S1.P04.S10` closure makes `S1.P05` `eligible_to_begin` while its
-implementation state remains `not_started`. The subjects S08 transferred to
+provenance owned by `S1.P09`. At that sealed closure `S1.P05` through `S1.P10`
+were not started, and the `S1.P04.S10` closure made `S1.P05` `eligible_to_begin`
+while its implementation state was `not_started`. The subjects S08 transferred to
 `S2`, `S5`, and `S1.P05` establish ownership only and confer no eligibility
 on any receiving phase.
 
@@ -1095,7 +1098,7 @@ rather than trusting a stored table, and both remain byte-identical.
 `S1.P05.S10` changed no production source: it published the sealed Phase closure
 under `reference_corpus/contracts/development-history/closures/s1-p05-phase-closure`,
 recording 97 locks, 12 finalized deferred entries with
-`self_owned_open == 0`, 32 non-generalizations, 24 satisfied exit criteria,
+`self_owned_open == 0`, 32 non-generalizations, 25 satisfied exit criteria,
 and 6 `S1.P06` handoff constraints. It is a sealed publication candidate: it
 records no pull request, reviewed head, squash SHA, or natural-main run of its
 own, because none exists when its bytes are sealed. Its own publication evidence
@@ -1123,7 +1126,7 @@ deliberately not scheduled as an `S1.P05` product relation.
 
 `S1.P06` is `eligible_to_begin` with implementation state `not_started`.
 `S1.P05` is complete and the `S1.P05.S10` closure establishes that readiness.
-Eligibility is not commencement: no `S1.P06` implementation has begun.
+Eligibility is not commencement: `S1.P06` implementation has not started.
 
 ## Preserved later Stage 1 phases
 

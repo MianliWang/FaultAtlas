@@ -2,7 +2,7 @@
 
 ## Exact primary JSON digest
 
-Primary JSON SHA-256: `bcc536abdd259fb4b88a556007758c6d6a135f869546f11df8301fd519f7ed27`
+Primary JSON SHA-256: `9f5ff594a841ccca1c9ff05d286f3cf774a87ebdd4b7da4c07facf7a62afed23`
 
 ## Derived and non-authoritative warning
 
@@ -14,23 +14,23 @@ Primary JSON SHA-256: `bcc536abdd259fb4b88a556007758c6d6a135f869546f11df8301fd51
 
 ## Phase identity and scope
 
-Owned modules: `faultatlas.domain.history`, `faultatlas.domain.history_evidence_link`. Owned product symbols: **9**. Production Python sources observed: **13**. Production change in this Slice: `False`.
+Owned modules: `faultatlas.domain.history`, `faultatlas.domain.history_evidence_link`. Owned product symbols: **9** — 8 record models and 1 vocabulary enum. Production Python sources observed: **13**. Production change in this Slice: `False`.
 
 Supporting authorities that `S1.P05` does not own: `faultatlas.domain.evidence`, `faultatlas.domain.identity`, `faultatlas.domain.revision`.
 
 ## Product surface
 
-| Slice | Module | Symbol |
-| --- | --- | --- |
-| `S1.P05.S01` | `faultatlas.domain.history` | `PullRequestRevisionRoleBinding` |
-| `S1.P05.S02` | `faultatlas.domain.history` | `ChangedPathStatus` |
-| `S1.P05.S02` | `faultatlas.domain.history` | `PullRequestChangedPath` |
-| `S1.P05.S02` | `faultatlas.domain.history` | `PullRequestChangeSet` |
-| `S1.P05.S03` | `faultatlas.domain.history` | `PullRequestReviewRevisionApproval` |
-| `S1.P05.S04` | `faultatlas.domain.history` | `PullRequestMergeRevisionOutcome` |
-| `S1.P05.S05` | `faultatlas.domain.history` | `PullRequestHeadRefDeletion` |
-| `S1.P05.S06` | `faultatlas.domain.history` | `PullRequestHistoricalOccurrenceTime` |
-| `S1.P05.S07` | `faultatlas.domain.history_evidence_link` | `PullRequestHistoryFactEvidenceLink` |
+| Slice | Module | Symbol | Class |
+| --- | --- | --- | --- |
+| `S1.P05.S01` | `faultatlas.domain.history` | `PullRequestRevisionRoleBinding` | `record_model_target` |
+| `S1.P05.S02` | `faultatlas.domain.history` | `ChangedPathStatus` | `vocabulary_enum_target` |
+| `S1.P05.S02` | `faultatlas.domain.history` | `PullRequestChangedPath` | `record_model_target` |
+| `S1.P05.S02` | `faultatlas.domain.history` | `PullRequestChangeSet` | `record_model_target` |
+| `S1.P05.S03` | `faultatlas.domain.history` | `PullRequestReviewRevisionApproval` | `record_model_target` |
+| `S1.P05.S04` | `faultatlas.domain.history` | `PullRequestMergeRevisionOutcome` | `record_model_target` |
+| `S1.P05.S05` | `faultatlas.domain.history` | `PullRequestHeadRefDeletion` | `record_model_target` |
+| `S1.P05.S06` | `faultatlas.domain.history` | `PullRequestHistoricalOccurrenceTime` | `record_model_target` |
+| `S1.P05.S07` | `faultatlas.domain.history_evidence_link` | `PullRequestHistoryFactEvidenceLink` | `record_model_target` |
 
 ## Ordered Slice and publication ledger
 
@@ -69,6 +69,14 @@ Supporting authorities that `S1.P05` does not own: `faultatlas.domain.evidence`,
 | `S1.P05.S08` | `69` | `c0f44e413309` | `e1d673b2a268` | `True` |
 | `S1.P05.S08.C01` | `70` | `f746210880f1` | `676a666bf092` | `True` |
 | `S1.P05.S09` | `71` | `72b52f25f9cd` | `61e1f67a1792` | `True` |
+
+## Superseded publication candidates
+
+1 closed, unmerged candidate opened and abandoned inside the Phase. A superseded candidate is audit history, never a Slice publication, and its historical threads are preserved unresolved rather than tidied away.
+
+| PR | State | Merged | Superseded by | Threads | Unresolved |
+| --- | --- | --- | --- | --- | --- |
+| `53` | `closed` | `False` | `54` | `1` | `1` |
 
 ## S1.P05.S08 disposition summary
 
@@ -146,7 +154,7 @@ Retained role source positions: `{'/observations/comparison/base_sha': 'base', '
 
 ## Exit criteria
 
-24 of 24 satisfied, 0 unsatisfied.
+25 of 25 satisfied, 0 unsatisfied.
 
 - `exit:01` — S1.P05.S01_through_S1.P05.S09_are_published (`satisfied`, evidence `slice_ledger.publications`)
 - `exit:02` — every_reviewed_tree_equals_its_squash_tree (`satisfied`, evidence `slice_ledger.publications`)
@@ -172,6 +180,7 @@ Retained role source positions: `{'/observations/comparison/base_sha': 'base', '
 - `exit:22` — the_phase_adds_no_network_persistence_or_filesystem_capability (`satisfied`, evidence `implementation_inventory.absent_capabilities`)
 - `exit:23` — the_declared_non_goals_remain_non_goals (`satisfied`, evidence `non_generalizations.items`)
 - `exit:24` — the_vector_totals_reconcile_with_the_declared_summary (`satisfied`, evidence `contract_corpus_assurance.vector_counts`)
+- `exit:25` — PR53_is_recorded_as_a_closed_unmerged_superseded_candidate_not_a_publication (`satisfied`, evidence `slice_ledger.superseded_candidates`)
 
 ## S1.P06 entry readiness
 
@@ -192,7 +201,7 @@ Retained role source positions: `{'/observations/comparison/base_sha': 'base', '
 
 `S1.P06` receives 1 subject and 2 requirements from `handoff:s1-p05-s08-c01:s1-p06`, status `not_started`.
 
-- `p06-handoff:01` — The nine published S1.P05 record models are a bounded pull-request history surface. S1.P06 must consume them without redefining them and must not read the surface as a complete development history.
+- `p06-handoff:01` — The 8 published S1.P05 record models and 1 vocabulary enum are a bounded pull-request history surface. S1.P06 must consume them without redefining them and must not read the surface as a complete development history.
 - `p06-handoff:02` — S1.P05.S07 evidence association is LEVEL 1 record-level only and must not be implicitly upgraded by S1.P06.
 - `p06-handoff:03` — S1.P06 does not own a generic Git ancestry or reachability graph.
 - `p06-handoff:04` — The historical default branch remains unknown and is owned by S2. A current observation must never be substituted for historical truth.
