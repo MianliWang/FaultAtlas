@@ -17529,7 +17529,6 @@ _PURPOSE_VECTOR_ROOTS = {"input:": "input", "expected:": "expected"}
 # exactly -- so one address has one spelling, and normalising a second spelling
 # into the first is refused rather than performed.
 _PURPOSE_INDEX = re.compile(r"0|[1-9][0-9]*")
-_PURPOSE_INTEGERISH = re.compile(r"-?[0-9]+")
 
 # The two manifest collections whose ORDER carries no meaning. A numeric child
 # of either names whichever record happens to sit there; `_pR_authority_role`
@@ -17561,8 +17560,20 @@ def _parse_purpose_pointer(raw: str) -> PurposePointer:
     segments = tuple(raw[1:].split("/"))
     for segment in segments:
         assert segment, raw
-        if _PURPOSE_INTEGERISH.fullmatch(segment):
-            assert _PURPOSE_INDEX.fullmatch(segment), raw
+        # A segment that Python would read as an integer must be a canonical
+        # one. `int()` is far more permissive than it looks -- it accepts
+        # `+1`, ` 1`, `1 `, `1_0` and the full-width digits -- so a parser that
+        # only refused `-1` and `01` would admit five more spellings of the
+        # same list index and leave the descent to notice. The descent does
+        # notice, but a parser and its consumer disagreeing about what a
+        # segment IS is the defect this grammar was written to end.
+        if _PURPOSE_INDEX.fullmatch(segment):
+            continue
+        try:
+            int(segment)
+        except ValueError:
+            continue
+        raise AssertionError(raw)
     return PurposePointer(segments)
 
 
@@ -18481,12 +18492,26 @@ def test_every_purpose_address_has_exactly_one_spelling() -> None:
         "/source_decisions/-1",
         "/source_decisions/01",
         "/changed_paths/00",
+        "/changed_paths/-0",
+        # `int()` is far more permissive than it looks, and each of these is a
+        # second spelling of an index that already has one
+        "/changed_paths/+1",
+        "/changed_paths/1_0",
+        "/changed_paths/ 1",
+        "/changed_paths/1 ",
+        "/changed_paths/\uff10",
         "/a/~0/b",
         "/a/~1/b",
         "/a~b",
     ):
         with pytest.raises(AssertionError):
             _parse_purpose_pointer(raw)
+
+    # a segment `int()` would not read as a number is an ordinary key and
+    # stays admissible, so the rule is about spellings of an index and not
+    # about what a key may look like
+    assert _parse_purpose_pointer("/a/0x1").segments == ("a", "0x1")
+    assert _parse_purpose_pointer("/a/1a").segments == ("a", "1a")
 
     # JSON-Pointer escapes are refused outright rather than half-implemented:
     # no authored address contains one, so a partial escape grammar would be a
