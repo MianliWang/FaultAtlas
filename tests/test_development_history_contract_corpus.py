@@ -8627,7 +8627,34 @@ FRAMEWORK_CONSTRAINT_LEDGER: tuple[tuple[str, str, str, str, str], ...] = (
     ("FC-09", "nested identity construction", "predecessor schema", PREDECESSOR, ""),
     ("FC-10", "every target", "frozen assignment", UNIT_OWNED, ""),
     ("FC-11", "every target", "revalidate_instances", GENERIC_OWNED, ""),
-    ("FC-12", "seven targets", "strict=True on model-typed fields", EQUIVALENT, ""),
+    # FC-12 said "seven targets ... EQUIVALENT" and was wrong twice. There are
+    # EIGHT owned model targets carrying `strict=True`, and relaxing it is not
+    # equivalent on two of them: the corpus stops rejecting a vector. One of
+    # those is the raw-status boundary this ledger was written to record, so
+    # the row filed the corpus's own new enforcement as having nothing to
+    # witness. Measured by relaxing each target's `strict` at runtime and
+    # re-running its invalid vectors.
+    (
+        "FC-12",
+        "six of eight targets",
+        "strict=True on model-typed fields, where relaxing it changes nothing",
+        EQUIVALENT,
+        "",
+    ),
+    (
+        "FC-13",
+        "PullRequestChangedPath",
+        "strict=True is what refuses the raw status lexeme in Python input",
+        P05_OWNED,
+        "history.invalid.changed-path.raw-python-status",
+    ),
+    (
+        "FC-14",
+        "PullRequestHistoricalOccurrenceTime",
+        "strict=True is what refuses a raw instant lexeme in Python input",
+        P05_OWNED,
+        "history.invalid.occurrence-time.raw-python-instant",
+    ),
 )
 
 
@@ -8649,6 +8676,44 @@ def test_the_framework_constraint_ledger_is_closed() -> None:
             assert witness in by_id, (row_id, witness)
         else:
             assert not witness, row_id
+
+    # the strict rows are a measurement, not an opinion: relaxing `strict` on a
+    # target is EQUIVALENT only if no vector stops being rejected, and a target
+    # where one does must carry that vector as its witness
+    strict_rows = {
+        row[1]: (row[3], row[4])
+        for row in FRAMEWORK_CONSTRAINT_LEDGER
+        if "strict=True" in row[2]
+    }
+    detected: dict[str, list[str]] = {}
+    for name, target in sorted(OWNED.items()):
+        if not (isinstance(target, type) and issubclass(target, BaseModel)):
+            continue
+        configuration = dict(target.model_config)
+        assert configuration.get("strict") is True, name
+        # a runtime relaxation only: `src/` is untouched and the original
+        # configuration is restored in the `finally` below
+        target.model_config = {**configuration, "strict": False}  # type: ignore[misc]
+        target.model_rebuild(force=True)
+        try:
+            relaxed = [
+                cast(str, vector["id"])
+                for vector in cast(list[dict[str, Any]], INVALID["vectors"])
+                if vector["target"] == name and _execute(vector)["outcome"] != REJECTED
+            ]
+        finally:
+            target.model_config = configuration  # type: ignore[misc]
+            target.model_rebuild(force=True)
+        if relaxed:
+            detected[name] = relaxed
+
+    assert len(detected) == 2, detected
+    for name, witnesses in detected.items():
+        ownership, witness = strict_rows[name]
+        assert ownership == P05_OWNED, name
+        assert witness in witnesses, (name, witness, witnesses)
+    equivalent = strict_rows["six of eight targets"]
+    assert equivalent == (EQUIVALENT, "")
 
 
 def test_the_enum_field_requires_its_published_member_in_python() -> None:
@@ -19746,6 +19811,215 @@ def _claim_class_failures(
         if REQUIRED_ASSURANCE_BY_AUTHORITY_FORM.get(_authority_form(claim.authority))
         != claim.assurance
     )
+
+
+def test_every_authority_and_governance_reason_is_reachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refusal nothing ever produces is a refusal nobody has checked.
+
+    Each of these was named once, at its own raise site, and no test drove the
+    input that produces it -- so deleting the branch left the suite green. That
+    is the same defect as an unwitnessed trust gate: the rule is present and
+    stands for nothing.
+    """
+    sections = _purpose_sections()
+    vectors = {
+        cast(str, vector["id"]): vector
+        for section in sections.values()
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+    }
+    seen: set[str] = set()
+
+    def observe(vector: dict[str, Any], claim: PurposeClaim) -> None:
+        seen.update(_purpose_authority_failures(vector, "valid", claim))
+
+    # a claim whose class or renderer is not one this module publishes
+    identifier = "history.valid.role-binding.base-canonical"
+    vector = vectors[identifier]
+    (claim,) = PURPOSE_SEMANTICS[identifier]
+    observe(vector, PurposeClaim("INVENTED", claim.renderer, claim.authority, ()))
+    observe(
+        vector, PurposeClaim(claim.assurance, "invented:renderer", claim.authority, ())
+    )
+
+    # a secondary-witness authority on a vector that is not one
+    observe(
+        vector, PurposeClaim(claim.assurance, claim.renderer, "secondary-witness", ())
+    )
+
+    # a secondary witness whose registry entry no longer matches the derivation
+    witness = next(
+        identity
+        for identity, claims in PURPOSE_SEMANTICS.items()
+        if any(c.authority == "secondary-witness" for c in claims)
+    )
+    secondary = next(
+        c for c in PURPOSE_SEMANTICS[witness] if c.authority == "secondary-witness"
+    )
+    monkeypatch.setitem(SECONDARY_WITNESS_REGISTRY, witness, "an authored substitute")
+    observe(vectors[witness], secondary)
+    monkeypatch.undo()
+
+    # a requirement id carried by two ledger rows
+    ledger_claim = next(
+        c
+        for claims in PURPOSE_SEMANTICS.values()
+        for c in claims
+        if c.authority.startswith("requirement:")
+    )
+    row = next(
+        r for r in REQUIREMENT_LEDGER if r[0] == ledger_claim.authority.split(":", 1)[1]
+    )
+    monkeypatch.setitem(globals(), "REQUIREMENT_LEDGER", (*REQUIREMENT_LEDGER, row))
+    observe(vectors[row[4]], ledger_claim)
+    monkeypatch.undo()
+
+    # a `target` authority on a vector that carries no such key at all
+    target_claim = next(
+        (identity, c)
+        for identity, claims in PURPOSE_SEMANTICS.items()
+        for c in claims
+        if c.authority == "target"
+    )
+    without_target = copy.deepcopy(vectors[target_claim[0]])
+    del without_target["target"]
+    observe(without_target, target_claim[1])
+
+    # a provenance authority whose field is present but empty
+    provenance = next(
+        (identity, c)
+        for identity, claims in PURPOSE_SEMANTICS.items()
+        for c in claims
+        if c.authority in ("evidence-record-lock", "evidence-classification")
+    )
+    blanked = copy.deepcopy(vectors[provenance[0]])
+    blanked["evidence_record_lock"] = ""
+    blanked["evidence_classification"] = ""
+    observe(blanked, provenance[1])
+
+    # a source-pointer authority whose selector cannot resolve on this vector
+    pointer_claim = next(
+        (identity, c)
+        for identity, claims in PURPOSE_SEMANTICS.items()
+        for c in claims
+        if c.authority.startswith("source-pointer:")
+        and c.renderer in PURPOSE_SOURCE_POINTER_SELECTORS
+    )
+    emptied = copy.deepcopy(vectors[pointer_claim[0]])
+    kept = pointer_claim[1].authority.split(":", 1)[1]
+    # the cited pointer is still cited, but every other retained coordinate is
+    # gone, so the renderer's own selector can no longer resolve one
+    emptied["source_pointers"] = [
+        entry
+        for entry in cast(list[dict[str, Any]], emptied["source_pointers"])
+        if entry["json_pointer"] == kept
+    ]
+    for entry in emptied["source_pointers"]:
+        entry["source_fields"] = {}
+        entry.pop("role_implications", None)
+    observe(emptied, pointer_claim[1])
+
+    required = {
+        "unknown-assurance",
+        "unknown-renderer",
+        "not-a-secondary-witness",
+        "secondary-witness-derivation-differs",
+        "requirement-row-not-unique",
+        "field-absent",
+        "provenance-field-absent",
+        "renderer-input-coordinate-unresolvable",
+    }
+    assert required <= seen, sorted(required - seen)
+
+    # and the governance reasons, each driven by its own drift
+    published = cast(dict[str, Any], MANIFEST["effective_governance"])
+    totals = cast(dict[str, Any], published["totals"])
+    governance: set[str] = set()
+    for key, replacement in (
+        ("inherited_subject_count", 99),
+        ("totals", {**totals, "disposition": {"carried_forward": 99}}),
+        ("totals", {**totals, "preserved_long_term_owner": {"S5": 99}}),
+    ):
+        monkeypatch.setitem(
+            MANIFEST, "effective_governance", {**published, key: replacement}
+        )
+        governance.update(_effective_governance_failures())
+        monkeypatch.undo()
+    assert {
+        "declared-subject-count",
+        "disposition-totals",
+        "long-term-owner-totals",
+    } <= governance, sorted(governance)
+
+
+def test_a_leaf_authority_must_be_a_non_root_input_of_its_own_claim() -> None:
+    """Both halves of the rule, over the whole population.
+
+    The rule was added and left unwitnessed: deleting either half kept the
+    suite green, which is the same defect as the citation it was written to
+    refuse -- present, and standing for nothing.
+
+    A citation must name a location the renderer is given, so a leaf the
+    fragment never reads is refused; and it may not be a whole document root,
+    because `input:` covers every leaf the vector supplies and would satisfy
+    the first half for any claim at all.
+    """
+    sections = _purpose_sections()
+    vectors = {
+        cast(str, vector["id"]): vector
+        for section in sections.values()
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+    }
+    leaf_claims = [
+        (identifier, claim)
+        for identifier, claims in PURPOSE_SEMANTICS.items()
+        for claim in claims
+        if claim.authority.startswith(("input:", "expected:"))
+    ]
+    assert len(leaf_claims) == 31
+
+    outside = 0
+    roots = 0
+    for identifier, claim in leaf_claims:
+        vector = vectors[identifier]
+        assert not _purpose_authority_failures(vector, "valid", claim), identifier
+
+        # a leaf that resolves for THIS vector but that this claim's renderer
+        # never receives -- drawn from what the corpus actually addresses
+        for candidate in sorted(
+            coordinate
+            for claims in PURPOSE_SEMANTICS.values()
+            for other in claims
+            for coordinate in other.dependencies
+            if coordinate.startswith(("input:/", "expected:/"))
+        ):
+            if _authority_is_supplied(candidate, claim.dependencies):
+                continue
+            try:
+                _resolve_purpose_dependency(vector, candidate)
+            except (AssertionError, KeyError, IndexError, TypeError):
+                continue  # not a leaf this vector even has
+            forged = PurposeClaim(
+                claim.assurance, claim.renderer, candidate, claim.dependencies
+            )
+            assert "cited-leaf-is-not-a-renderer-input" in _purpose_authority_failures(
+                vector, "valid", forged
+            ), (identifier, candidate)
+            outside += 1
+
+        # and the whole-document root, which the first half would admit
+        root = f"{claim.authority.split(':', 1)[0]}:"
+        widened = PurposeClaim(
+            claim.assurance, claim.renderer, root, claim.dependencies
+        )
+        assert "cited-leaf-is-a-whole-document-root" in _purpose_authority_failures(
+            vector, "valid", widened
+        ), identifier
+        roots += 1
+
+    assert outside == 135, outside
+    assert roots == 31
 
 
 def test_a_derived_claim_moves_when_the_field_it_cites_moves() -> None:
