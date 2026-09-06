@@ -15293,19 +15293,17 @@ _PR_CHANGE_SET_COMPLETENESS = (
 )
 
 
-def _pR_resolve(node: Any, pointer: str) -> Any:
-    for token in [part for part in pointer.split("/") if part]:
-        node = (
-            cast(list[Any], node)[int(token)]
-            if isinstance(node, list)
-            else cast(dict[str, Any], node)[token]
-        )
-    return node
-
-
 def _pR_replayed(vector: dict[str, Any], pointer: str) -> Any:
-    """Read a replayed leaf out of the vector's independently authored dump."""
-    return _pR_resolve(vector["expected"]["semantic_dump"], pointer)
+    """Read a replayed leaf out of the vector's independently authored dump.
+
+    Through the canonical parser, like every other Purpose address. This
+    descended a corpus-supplied pointer with a private copy of the loose
+    grammar -- `[part for part in pointer.split("/") if part]`, empty segments
+    discarded, no canonicality check -- so the retained `source_fields` of a
+    resealed vector could address the dump by a spelling the rest of the
+    Purpose path refuses.
+    """
+    return _purpose_pointer(vector["expected"]["semantic_dump"], pointer)
 
 
 def _pR_source_position(pointer: dict[str, Any]) -> str:
@@ -18594,13 +18592,32 @@ def test_a_second_spelling_of_a_neutral_slot_is_refused_everywhere() -> None:
     )
 
 
+def _descends_a_pointer(candidate: Callable[..., Any]) -> bool:
+    """Whether a function walks a `/`-separated address into a document.
+
+    Found by behaviour rather than by name. The first version of this guard
+    asserted `"_resolve_pointer" not in names`, which a verbatim copy of
+    `_resolve_pointer` under another name walks straight past -- and one was
+    there: `_pR_resolve`, reachable from the authority relation.
+    """
+    document: Any = {"a": {"b": [10, 20]}}
+    try:
+        return candidate(document, "/a/b/0") == 10
+    except Exception:  # noqa: BLE001 - not a pointer descent at all
+        return False
+
+
 def test_the_purpose_path_carries_no_second_pointer_parser() -> None:
-    """Two raw-pointer parsers that can disagree is the defect, not a detail.
+    """Two grammars that can disagree is the defect, not a detail.
 
     The general `_resolve_pointer` discards empty segments; the Purpose parser
-    refuses them. While the authority relation used the first and the
-    dependency resolver the second, one address was refused by one and resolved
-    by the other. Neither Purpose surface may reach the general parser now.
+    refuses them. While two Purpose surfaces used different ones, a single
+    address was refused by one and resolved by the other.
+
+    So every pointer-descending function reachable from a Purpose surface is
+    found by CALLING it, and each must agree with the canonical parser on the
+    spellings that separate the two grammars. Naming the one known offender
+    was how the second one survived.
     """
     purpose_surfaces = (
         _resolve_purpose_dependency,
@@ -18608,25 +18625,39 @@ def test_the_purpose_path_carries_no_second_pointer_parser() -> None:
         _resolve_purpose_authority,
         _purpose_inputs,
         _purpose_manifest_pointer,
+        *PURPOSE_RENDERERS.values(),
     )
-    for surface in purpose_surfaces:
-        codes, names = _reachable_code([surface])
-        assert "_resolve_pointer" not in names, surface.__name__
-        assert codes
-
-    # and the descent is the canonical one everywhere in the Purpose path: the
-    # general resolver is unreachable from every Purpose surface, so the two
-    # grammars cannot be applied to the same address again
     reachable, _names = _reachable_code(list(purpose_surfaces))
-    assert _purpose_pointer.__code__ in reachable
-    assert _resolve_pointer.__code__ not in reachable
-    assert _parse_purpose_pointer.__code__ in reachable
+    assert reachable
 
-    # the general resolver still exists and still differs -- which is why the
-    # separation has to be asserted rather than assumed
-    assert _resolve_pointer(cast(Any, {"a": {"b": 1}}), "//a//b") == 1
-    with pytest.raises(AssertionError):
-        _parse_purpose_pointer("//a//b")
+    descenders = {
+        name: value
+        for name, value in globals().items()
+        if isinstance(value, FunctionType)
+        and value.__code__ in reachable
+        and _descends_a_pointer(value)
+    }
+    assert descenders, "the probe found nothing, so it proves nothing"
+
+    # the spellings the two grammars disagree about
+    divergent = ("//a//b//0", "/a/b/", "/a/b/-1", "/a/b/01", "/a/b/+1")
+    document: Any = {"a": {"b": [10, 20]}}
+    for name, descend in sorted(descenders.items()):
+        for raw in divergent:
+            with pytest.raises(AssertionError):
+                descend(document, raw)
+            assert name
+
+    # the canonical parser is among them, and the general resolver is not
+    assert "_purpose_pointer" in descenders
+    assert "_resolve_pointer" not in descenders
+    assert _resolve_pointer.__code__ not in reachable
+
+    # the probe is not vacuous: the general resolver IS a descender and DOES
+    # accept every spelling above, which is why this has to be checked
+    assert _descends_a_pointer(_resolve_pointer)
+    for raw in divergent:
+        assert _resolve_pointer(document, raw) is not None
 
 
 def test_the_requirement_authority_is_selected_by_the_claim_not_the_vector() -> None:
@@ -18662,10 +18693,33 @@ def test_the_requirement_authority_is_selected_by_the_claim_not_the_vector() -> 
         ("empty requirement id", "requirement:"),
         # the form itself changed while the vector stands still
         ("wrong authority form", "secondary-witness"),
+        # near misses. Without these the match could be case-folded, stripped
+        # or a suffix test and nothing would notice: the live ledger has no
+        # two ids where one contains the other, so a loose matcher stays
+        # unambiguous on today's data and wrong on tomorrow's.
+        ("lower case", "requirement:cs-18"),
+        ("leading space", "requirement: CS-18"),
+        ("trailing space", "requirement:CS-18 "),
+        ("tab", "requirement:\tCS-18"),
+        ("newline", "requirement:CS-18\n"),
+        ("id as a suffix", "requirement:XCS-18"),
+        ("id as a prefix", "requirement:CS-180"),
+        ("truncated id", "requirement:CS-1"),
+        ("doubled prefix", "requirement:requirement:CS-18"),
+        ("extra colon", "requirement::CS-18"),
     ):
         with pytest.raises((AssertionError, KeyError)):
             _resolve_purpose_authority(vector, forged(authority))
         assert label
+
+    # an unrecognised FORM is not a refusal, it is simply not a requirement
+    # authority, so it carries no requirement -- which is the other half of the
+    # same rule and would otherwise read as a hole
+    for unrecognised in ("REQUIREMENT:CS-18", "requirements:CS-18", "literal"):
+        assert (
+            _resolve_purpose_authority(vector, forged(unrecognised))
+            == EMPTY_PURPOSE_AUTHORITY
+        ), unrecognised
 
     # and the fragment follows the authority, so the claim is load-bearing for
     # the sentence and not only for the payload
