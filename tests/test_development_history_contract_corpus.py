@@ -6838,11 +6838,39 @@ def _v_assurance() -> None:
     assert assurance["sidecar_count"] == len(
         [f for f in CORPUS_FILES if f.endswith(".sha256")]
     )
-    locked = [e for e in MANIFEST["corpus_files"] if "sha256" in e]
-    assert assurance["corpus_files_digest_locked"] is bool(locked)
-    for entry in locked:
-        raw = _corpus_file_path(cast(str, entry["filename"])).read_bytes()
-        assert hashlib.sha256(raw).hexdigest() == entry["sha256"]
+    # `corpus_files_digest_locked` was checked as `is bool(locked)`, which one
+    # digest anywhere satisfies -- the same "true because something exists"
+    # shape this module refuses elsewhere. Which files carry a digest is a
+    # decision, so it is stated: the three sealed vector documents. The
+    # manifest cannot lock its own digest, its sidecar carries it, and
+    # `contract.md` is derived prose bound by projection rather than by seal,
+    # as in all four precedent corpora.
+    locked = {
+        cast(str, e["filename"]): cast(str, e["sha256"])
+        for e in cast(list[dict[str, Any]], MANIFEST["corpus_files"])
+        if "sha256" in e
+    }
+    assert set(locked) == {
+        "invalid-vectors.json",
+        "replay-vectors.json",
+        "valid-vectors.json",
+    }, sorted(locked)
+    assert assurance["corpus_files_digest_locked"] is True
+    unlocked = {
+        cast(str, e["filename"])
+        for e in cast(list[dict[str, Any]], MANIFEST["corpus_files"])
+    } - set(locked)
+    assert unlocked == {
+        "contract.md",
+        "invalid-vectors.sha256",
+        "manifest.json",
+        "manifest.sha256",
+        "replay-vectors.sha256",
+        "valid-vectors.sha256",
+    }, sorted(unlocked)
+    for filename, expected in sorted(locked.items()):
+        raw = _corpus_file_path(filename).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == expected, filename
     assert assurance["symbol_coverage_derived_from_live_dunder_all"] is True
     assert {cast(str, e["symbol"]) for e in MANIFEST["target_symbols"]} == set(OWNED)
     # the recomputation claim is answered by performing it: the effective owner
