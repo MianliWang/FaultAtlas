@@ -11752,6 +11752,18 @@ def test_a_pointer_that_only_breaks_a_renderer_may_not_be_declared(
     assert _declared_pointer_failures(scope, key) == [
         "only-an-addressing-key-may-break-the-render"
     ]
+    monkeypatch.undo()
+
+    # and the other half of the rule: a region declaring a leaf whose drift
+    # neither moves nor breaks its render is claiming an authority it does not
+    # spend. The reason existed and nothing produced it.
+    inert = next(
+        (region, pointer)
+        for region in CONTRACT_PROJECTION_REGISTRY
+        for pointer in sorted(set(_leaf_paths(MANIFEST)) - set(region.authority))
+        if not _drift_outcomes(region, pointer) & {"moved", "broke"}
+    )
+    assert _declared_pointer_failures(*inert) == ["declared-authority-moves-nothing"]
 
 
 def test_a_declared_authority_that_moves_nothing_is_refused(
@@ -19846,6 +19858,125 @@ def _claim_class_failures(
         for claim in claims
         if REQUIRED_ASSURANCE_BY_AUTHORITY_FORM.get(_authority_form(claim.authority))
         != claim.assurance
+    )
+
+
+def test_every_corpus_shape_refusal_is_reachable() -> None:
+    """The rest of the refusals, each driven by the state that causes it.
+
+    Eleven collectors named a reason once, at their own raise site, with no
+    test producing it -- so each was deletable in silence. A rule nothing can
+    make fire is a rule nobody has checked, and the module refuses that shape
+    everywhere else.
+    """
+    sections = _purpose_sections()
+
+    # a duplicated vector id, in the attachment relation as well as the ledger:
+    # counting 183 on each side would accept a corpus that repeated one
+    duplicated = {
+        family: {**section, "vectors": [*section["vectors"], section["vectors"][0]]}
+        for family, section in sections.items()
+    }
+    attachment = _attachment_failures(
+        duplicated,
+        {cast(str, v["id"]): "x" for s in sections.values() for v in s["vectors"]},
+    )
+    assert any(reason == "vector-id-repeated" for _identity, reason in attachment)
+
+    # a duplicated vector id, and a ledger entry no section populates
+    doubled = {
+        family: {**section, "vectors": [*section["vectors"], section["vectors"][0]]}
+        for family, section in sections.items()
+    }
+    repeated = _purpose_failures(doubled, PURPOSE_SEMANTICS)
+    assert any(reason == "vector-id-repeated" for _identity, reason in repeated)
+
+    orphaned = {**PURPOSE_SEMANTICS, "history.valid.invented": ()}
+    assert (
+        "history.valid.invented",
+        "ledger-entry-unpopulated",
+    ) in _purpose_failures(sections, orphaned)
+
+    # a vector the ledger does not carry, and one whose entry is empty
+    first = cast(str, sections["valid"]["vectors"][0]["id"])
+    without = {k: v for k, v in PURPOSE_SEMANTICS.items() if k != first}
+    assert (first, "vector-absent-from-ledger") in _purpose_failures(sections, without)
+    emptied = {**PURPOSE_SEMANTICS, first: ()}
+    assert (first, "no-claim") in _purpose_failures(sections, emptied)
+
+    # a family the corpus does not publish
+    taxonomy = {
+        family: {
+            cast(str, v["category"]): cast(str, v["id"])
+            for v in cast(list[dict[str, Any]], section["vectors"])
+        }
+        for family, section in sections.items()
+    }
+    assert any(
+        reason == "family-absent-from-corpus"
+        for _family, _identity, reason in _taxonomy_failures(
+            {k: v for k, v in sections.items() if k != "replay"},
+            taxonomy,
+        )
+    )
+
+    # a summary whose count disagrees with its own histogram
+    manifest = copy.deepcopy(MANIFEST)
+    cast(dict[str, Any], manifest["vector_summary"])["valid"]["count"] = 999
+    assert ("valid", "manifest-count-differs") in _manifest_histogram_failures(
+        manifest, sections
+    )
+
+    # a published table whose family set is not the corpus's
+    text = (CORPUS / "contract.md").read_text("utf-8")
+    trimmed = {k: v for k, v in sections.items() if k != "replay"}
+    assert ("*", "markdown-family-set-differs") in _markdown_histogram_failures(
+        text, {**trimmed, "replay": {**sections["replay"], "vectors": []}}
+    )
+
+    # a manifest authority that resolves nowhere, and one spelled two ways
+    correction = next(
+        v for v in REPLAY["vectors"] if v["id"] == CORRECTION_PURPOSE_VECTOR
+    )
+    limit = next(
+        c
+        for claims in PURPOSE_SEMANTICS.values()
+        for c in claims
+        if c.renderer == "replay:supersession_limit"
+    )
+    absent = PurposeClaim(
+        limit.assurance, limit.renderer, "manifest:/no/such/leaf", limit.dependencies
+    )
+    assert "manifest-pointer-does-not-resolve" in _purpose_authority_failures(
+        correction, "replay", absent
+    )
+    doubled_slash = PurposeClaim(
+        limit.assurance,
+        limit.renderer,
+        f"manifest:/{_PR_SUPERSESSION_FOLLOWED_LEAF}",
+        limit.dependencies,
+    )
+    assert "manifest-pointer-is-not-canonical" in _purpose_authority_failures(
+        correction, "replay", doubled_slash
+    )
+
+    # a role implication that resolves to the right value through a path which
+    # is not a role path -- the position implies the role, but the citation no
+    # longer rides the mapping that supplies the revision it names
+    binding = next(
+        v for v in REPLAY["vectors"] if v["id"] == "history.replay.role-binding.base"
+    )
+    assert not _role_implication_failures(binding)
+    malformed = copy.deepcopy(binding)
+    dump = cast(dict[str, Any], malformed["expected"])["semantic_dump"]
+    for entry in cast(list[dict[str, Any]], malformed["source_pointers"]):
+        implications = cast(dict[str, str], entry.get("role_implications") or {})
+        for source_field, role_path in list(implications.items()):
+            dump["alias"] = _resolve_pointer(dump, role_path)
+            implications[source_field] = "/alias"
+    assert any(
+        reason == "malformed-role-path"
+        for _position, _path, reason, _observed in _role_implication_failures(malformed)
     )
 
 
