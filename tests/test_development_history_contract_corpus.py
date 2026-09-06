@@ -930,6 +930,53 @@ def test_the_path_identity_gate_is_what_refuses_a_substituted_authority(
             _authority_bytes(reference)
 
 
+def test_a_corpus_filename_the_module_never_authored_is_refused() -> None:
+    """A filename out of the manifest is data, and data does not name files.
+
+    `_corpus_file_path` requires membership in `CORPUS_FILES` before forming a
+    path at all, so a resealed `corpus_files` entry cannot point the digest
+    check at a tenth file, a sibling directory, or a source document.
+    """
+    for authored in CORPUS_FILES:
+        assert _corpus_file_path(authored).is_file(), authored
+    for forged in (
+        "tenth.json",
+        "../manifest.json",
+        "contract.md.bak",
+        "",
+        "manifest.json ",
+    ):
+        with pytest.raises(AssertionError):
+            _corpus_file_path(forged)
+
+
+def test_a_symlinked_corpus_directory_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The directory is a corpus node too, and a link is not a directory.
+
+    Every per-file check underneath would pass on a linked directory whose
+    contents are byte-identical, while the tracked snapshot depended on bytes
+    the corpus does not own.
+    """
+    real = tmp_path / "real"
+    real.mkdir()
+    # byte-identical contents, so every per-file check underneath would pass
+    # and only the directory's own kind can object
+    for filename in CORPUS_FILES:
+        (real / filename).write_bytes((CORPUS / filename).read_bytes())
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    assert alias.is_dir() and alias.is_symlink()
+    assert {p.name for p in alias.iterdir()} == set(CORPUS_FILES)
+
+    monkeypatch.setitem(globals(), "CORPUS", alias)
+    with pytest.raises(AssertionError, match="alias"):
+        _v_corpus_files()
+    monkeypatch.undo()
+    _v_corpus_files()
+
+
 def test_a_symlink_inside_the_repository_cannot_carry_a_read_outside_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1120,6 +1167,14 @@ def _effective_governance_failures() -> list[str]:
     recomputed = _recomputed_effective_governance()
     declared = cast(dict[str, Any], MANIFEST["effective_governance"])
     published = cast(dict[str, dict[str, int]], declared["totals"])
+    # `/effective_governance/recomputation_required` is DECLARED DESCRIPTIVE and
+    # is deliberately absent from this list. The manifest's own published
+    # contract says a descriptive leaf is "never counted as verified
+    # assurance", and this function is called by an objective validator -- so
+    # letting the obligation flag decide it would make a descriptive
+    # declaration the reason an assurance check passes, which is the exact
+    # thing the partition forbids. The recomputation is what is checked; the
+    # claim that one is required is pinned elsewhere as the declaration it is.
     return [
         reason
         for reason, agrees in (
@@ -1141,7 +1196,6 @@ def _effective_governance_failures() -> list[str]:
                 == recomputed.preserved_long_term_owner,
             ),
             ("state-totals", published["state"] == recomputed.state),
-            ("recomputation-required", declared["recomputation_required"] is True),
         )
         if not agrees
     ]
@@ -1186,7 +1240,16 @@ def test_the_recomputation_claim_is_answered_by_performing_it(
     claim = "/assurance/effective_governance_recomputed_by_oracle"
     assert claim not in DESCRIPTIVE_PATHS
     assert claim in _objective_leaf_paths()
+    # its sibling stays descriptive, and being descriptive means it decides
+    # nothing objective: flipping it must leave every objective validator's
+    # answer exactly as it was
     assert "/effective_governance/recomputation_required" in DESCRIPTIVE_PATHS
+    governance = cast(dict[str, Any], MANIFEST["effective_governance"])
+    monkeypatch.setitem(governance, "recomputation_required", False)
+    assert _effective_governance_failures() == []
+    for _prefix, validate in OBJECTIVE_VALIDATORS:
+        validate()
+    monkeypatch.undo()
     assert _unowned_objective_paths() == []
 
     # the boolean is load-bearing: a manifest that stops claiming it is refused
@@ -1208,7 +1271,6 @@ def test_the_recomputation_claim_is_answered_by_performing_it(
         ("declared-subject-count", {**published, "inherited_subject_count": 11}),
         ("self-introduced-count", {**published, "self_introduced_count": 1}),
         ("self-owned-open", {**published, "self_owned_open": 1}),
-        ("recomputation-required", {**published, "recomputation_required": False}),
         (
             "immediate-owner-totals",
             {
@@ -7016,7 +7078,35 @@ def test_descriptive_metadata_cannot_justify_an_assurance_claim() -> None:
 
     # Mutating a descriptive leaf must change no objective validator's outcome:
     # descriptive data can never be the reason an assurance check passes.
+    #
+    # This stated the rule and then ran the validators on UNMUTATED data, so it
+    # could not have noticed a violation -- and there was one:
+    # `/effective_governance/recomputation_required` is declared descriptive and
+    # was a failure reason inside `_effective_governance_failures`, which
+    # `_v_assurance` calls. Every descriptive leaf is now actually moved.
     assert "/corpus_identity/classification" in DESCRIPTIVE_PATHS
+    deciding: list[str] = []
+    for path in sorted(DESCRIPTIVE_PATHS):
+        parent_path, _, leaf = path.rpartition("/")
+        try:
+            parent = _resolve_pointer(MANIFEST, parent_path)
+        except (KeyError, IndexError, TypeError):  # pragma: no cover - none today
+            continue
+        container = cast(dict[str, Any] | list[Any], parent)
+        key: Any = int(leaf) if isinstance(container, list) else leaf
+        original = container[key]  # type: ignore[index]
+        container[key] = _moved_value(original)  # type: ignore[index]
+        try:
+            for _prefix, validate in OBJECTIVE_VALIDATORS:
+                try:
+                    validate()
+                except Exception:  # noqa: BLE001 - any objection is the defect
+                    deciding.append(path)
+                    break
+        finally:
+            container[key] = original  # type: ignore[index]
+    assert not deciding, deciding
+
     for _, validator in OBJECTIVE_VALIDATORS:
         validator()
 
@@ -15387,7 +15477,9 @@ def _pR_replayed(vector: dict[str, Any], pointer: str) -> Any:
     resealed vector could address the dump by a spelling the rest of the
     Purpose path refuses.
     """
-    return _purpose_pointer(vector["expected"]["semantic_dump"], pointer)
+    return _purpose_descend(
+        vector["expected"]["semantic_dump"], _parse_purpose_pointer(pointer)
+    )
 
 
 def _pR_source_position(pointer: dict[str, Any]) -> str:
@@ -17673,23 +17765,43 @@ def _identity_collection_slots(pointer: PurposePointer) -> list[str]:
     ]
 
 
-def _purpose_pointer(node: Any, raw: str) -> Any:
-    """Descend one canonical Purpose address."""
-    for segment in _parse_purpose_pointer(raw).segments:
+def _purpose_descend(node: Any, pointer: PurposePointer) -> Any:
+    """Descend a PARSED Purpose address.
+
+    This takes a `PurposePointer`, never a string, and that signature is the
+    architecture rather than a convenience. Three previous attempts to keep one
+    address grammar were syntactic -- forbid a name, forbid a call shape,
+    enumerate the functions holding a separator -- and each was walked past by
+    a spelling nobody had thought of: a copy under another name, a copy with
+    another signature, a separator taken from a global or built with `chr(47)`.
+    Every one of those is a way to turn a STRING into segments somewhere other
+    than the parser.
+
+    So no Purpose consumer accepts a raw address at all. There is exactly one
+    function in the Purpose path whose parameter is address TEXT, and it is
+    `_parse_purpose_pointer`; everything downstream is typed to the result. A
+    second grammar is not forbidden here, it is unusable -- whatever it parses,
+    it has nothing to hand its segments to.
+    """
+    for segment in pointer.segments:
         if isinstance(node, list):
-            assert _PURPOSE_INDEX.fullmatch(segment), raw
+            assert _PURPOSE_INDEX.fullmatch(segment), pointer
             node = cast(list[Any], node)[int(segment)]
         else:
             node = cast(dict[str, Any], node)[segment]
     return node
 
 
-def _purpose_manifest_pointer(raw: str) -> PurposePointer:
-    """A manifest address: canonical, and never a slot into a neutral list."""
-    pointer = _parse_purpose_pointer(raw)
-    assert pointer.segments, raw
-    assert _render_purpose_pointer(pointer) == raw, raw
-    assert not _identity_collection_slots(pointer), raw
+def _purpose_manifest_address(pointer: PurposePointer) -> PurposePointer:
+    """A manifest address: non-root, and never a slot into a neutral list.
+
+    Takes the PARSED address, like every other consumer. Canonicality is not
+    rechecked here because it is a property of anything the parser returns:
+    every non-canonical spelling is refused there, so `render(parse(raw))` is
+    `raw` for everything that gets this far.
+    """
+    assert pointer.segments, pointer
+    assert not _identity_collection_slots(pointer), pointer
     return pointer
 
 
@@ -17717,7 +17829,7 @@ def _resolve_purpose_dependency(vector: dict[str, Any], coordinate: str) -> Any:
             assert prefix == "input:" or raw, coordinate
             pointer = _parse_purpose_pointer(raw)
             assert _render_purpose_pointer(pointer) == raw, coordinate
-            return _frozen(_purpose_pointer(vector[field], raw))
+            return _frozen(_purpose_descend(vector[field], pointer))
 
     if coordinate.startswith("source-pointer:"):
         wanted = coordinate.split(":", 1)[1]
@@ -17744,8 +17856,10 @@ def _resolve_purpose_dependency(vector: dict[str, Any], coordinate: str) -> Any:
         return _frozen(matching[0])
 
     if coordinate.startswith("manifest:"):
-        pointer = _purpose_manifest_pointer(coordinate.split(":", 1)[1])
-        return _frozen(_purpose_pointer(MANIFEST, _render_purpose_pointer(pointer)))
+        pointer = _purpose_manifest_address(
+            _parse_purpose_pointer(coordinate.split(":", 1)[1])
+        )
+        return _frozen(_purpose_descend(MANIFEST, pointer))
 
     raise AssertionError(f"unknown dependency coordinate: {coordinate}")
 
@@ -17930,7 +18044,7 @@ def _purpose_authority_failures(
         # is how `manifest://source_decisions/4` came to be refused by one and
         # resolved by the other
         try:
-            _purpose_pointer(vector[root], pointer)
+            _purpose_descend(vector[root], _parse_purpose_pointer(pointer))
         except (AssertionError, KeyError, IndexError, TypeError):
             reasons.append("pointer-does-not-resolve")
         # resolving was the whole rule, which is the defect class every other
@@ -18012,7 +18126,7 @@ def _purpose_authority_failures(
             if _identity_collection_slots(parsed):
                 reasons.append("positional-source-decision-authority-forbidden")
         try:
-            _purpose_pointer(MANIFEST, pointer)
+            _purpose_descend(MANIFEST, _parse_purpose_pointer(pointer))
         except (AssertionError, KeyError, IndexError, TypeError):
             reasons.append("manifest-pointer-does-not-resolve")
         else:
@@ -18709,120 +18823,138 @@ def test_a_second_spelling_of_a_neutral_slot_is_refused_everywhere() -> None:
     )
 
 
-# Every function reachable from a Purpose surface that holds a `/` literal,
-# and what it does with it. This is the closure that keeps the address grammar
-# singular, and it is structural: a second parser cannot be written without
-# holding the separator, so it cannot be written without appearing here.
+# The Purpose surfaces that accept an ADDRESS from outside. There are two, and
+# the closure below is a property of them rather than a census of how many
+# parsers exist behind them.
 #
-# The guard this replaces looked for descenders by CALLING each candidate with
-# a bare document and keeping the ones that returned the leaf. `_pR_replayed`
-# takes a vector, so the probe raised and the function was skipped -- and the
-# private copy of the loose grammar that had just been deleted from it could be
-# pasted back with every test still green. Naming the offender let the second
-# one through; probing by call shape let the same one back in. A discriminator
-# narrower than the thing it must catch is not a guard.
-PURPOSE_SLASH_READERS: dict[str, str] = {
-    "_parse_purpose_pointer": "the one parser: an address becomes segments here",
-    "_render_purpose_pointer": "and becomes an address again here",
-    "_resolve_purpose_dependency": "splits a coordinate from its form prefix",
-    "_pR_source_position": "names a retained node from its pointer's shape",
-    "_pR_target_ending": "selects a replayed target by its last segment",
-    "_pR_pointer_supplying": "selects a cited pointer by its last segment",
-    "_pR_instant_target": "tests whether a target is top-level",
-    "_pR_composed_bindings": "counts the separators in an embedded-fact key",
-    "_PR_supersession_limit": "reads a leaf name out of an authored constant",
-    "_PR_retained_merge_event_fact": "takes the first segment of a replayed target",
-    "_PR_caller_association_to_locked_record": "strips a bound fact's leading slash",
-    "_authority_is_supplied": "tests whether a citation encloses a declared coordinate",
-}
+# Three earlier attempts were censuses and each was walked past: forbidding the
+# name `_resolve_pointer` (a copy called `_pR_resolve` survived), probing the
+# call shape `(document, pointer)` (a copy taking `(vector, pointer)`
+# survived), enumerating functions holding a `/` constant (a separator read
+# from a module global or built with `chr(47)` survived, and one such
+# reintroduction passed the entire repository suite). Each asked "is this
+# particular spelling of a parser present?", which has no last answer -- and a
+# detector for STRICT parsers cannot see a loose one, because not
+# distinguishing canonical from non-canonical is what makes it loose.
+#
+# The question that does close is what the surfaces DO. A second grammar is
+# only reachable if some entry point accepts an address it should refuse, so
+# every entry point is fed the spellings the grammar rejects and must refuse
+# each one. How many parsers sit behind it stops mattering.
+_NON_CANONICAL_ADDRESSES = (
+    "//changed_paths//0/head_object/algorithm",
+    "/changed_paths//0/head_object/algorithm",
+    "/changed_paths/0/head_object/algorithm/",
+    "/changed_paths/-1/head_object/algorithm",
+    "/changed_paths/01/head_object/algorithm",
+    "/changed_paths/+1/head_object/algorithm",
+    "///changed_paths/0",
+    "/changed_paths/\uff10/head_object/algorithm",
+)
 
 
-def _slash_holding_functions(reachable: set[CodeType]) -> set[str]:
-    """Reachable functions whose code carries the separator, nested code too."""
+def test_no_purpose_entry_point_accepts_a_non_canonical_address() -> None:
+    """One grammar, proved at the surfaces rather than counted behind them.
 
-    def units(code: CodeType) -> list[CodeType]:
-        found = [code]
-        for constant in code.co_consts:
-            if isinstance(constant, CodeType):
-                found.extend(units(constant))
-        return found
-
-    return {
-        name
-        for name, value in globals().items()
-        if isinstance(value, FunctionType)
-        and value.__code__ in reachable
-        and any(
-            "/" in [c for c in unit.co_consts if isinstance(c, str)]
-            for unit in units(value.__code__)
-        )
-    }
-
-
-def test_the_purpose_path_carries_no_second_pointer_parser() -> None:
-    """Two grammars that can disagree is the defect, not a detail.
-
-    The general `_resolve_pointer` discards empty segments; the Purpose parser
-    refuses them. While two Purpose surfaces used different ones, a single
-    address was refused by one and resolved by the other.
-
-    The closure is over the separator itself. A function cannot walk an address
-    without holding a `/`, so every reachable function that holds one is
-    enumerated here with what it does with it, and the set must be exactly
-    this. Restoring the loose descent anywhere in the Purpose path adds a name
-    to that set and fails, whatever its signature and whatever it is called.
+    Descent is typed -- `_purpose_descend` takes a `PurposePointer`, so
+    segments can only come from the parser that produces one -- and this is the
+    property that makes the typing worth something: whatever a surface does
+    internally, an address the grammar refuses must not resolve through it.
     """
+    identifier = "history.invalid.change-set.mismatched-revision-algorithms"
+    vector = next(v for v in INVALID["vectors"] if v["id"] == identifier)
+    claim = next(
+        c
+        for c in PURPOSE_SEMANTICS[identifier]
+        if c.authority.startswith(("input:", "expected:"))
+    )
+    canonical = claim.authority
+    root = canonical.split(":", 1)[0]
+
+    # the control: the canonical spelling resolves through both entry points
+    assert _resolve_purpose_dependency(vector, canonical) is not None
+    assert not _purpose_authority_failures(vector, "invalid", claim)
+
+    for spelling in _NON_CANONICAL_ADDRESSES:
+        address = f"{root}:{spelling}"
+
+        # entry point 1 -- the dependency resolver
+        with pytest.raises(AssertionError):
+            _resolve_purpose_dependency(vector, address)
+
+        # entry point 2 -- the authority relation. The claim declares the same
+        # non-canonical spelling, so the "is this a renderer input" rule is
+        # satisfied and only the address grammar can object; the reason is
+        # named, because "some reason" would be answered by the other rule.
+        forged = PurposeClaim(claim.assurance, claim.renderer, address, (address,))
+        assert "pointer-does-not-resolve" in _purpose_authority_failures(
+            vector, "invalid", forged
+        ), spelling
+
+        # and entry point 3 -- the manifest address rule, on the same spellings
+    # entry point 3 -- the manifest address rule. These are non-canonical
+    # spellings of an address that REALLY EXISTS, so a loose descent would
+    # resolve them and only the grammar can object; a spelling of a path the
+    # manifest does not hold would be refused for having no such key.
+    real = _PR_SUPERSESSION_FOLLOWED_LEAF
+    for spelling in (
+        real.replace("/replay_contract/", "//replay_contract//"),
+        f"/{real}",
+        f"{real}/",
+        real.replace("/evidence_limits/", "/evidence_limits//"),
+    ):
+        with pytest.raises(AssertionError):
+            _resolve_purpose_dependency(vector, f"manifest:{spelling}")
+
+        manifest_forged = PurposeClaim(
+            CANONICAL_DECLARATION_ONLY,
+            "replay:supersession_limit",
+            f"manifest:{spelling}",
+            claim.dependencies,
+        )
+        reasons = _purpose_authority_failures(vector, "invalid", manifest_forged)
+        assert {
+            "manifest-pointer-is-not-canonical",
+            "manifest-pointer-does-not-resolve",
+        } & set(reasons), (spelling, reasons)
+
+    # the descent itself cannot be handed text at all, so a caller that wanted
+    # to bypass the parser has nothing to pass it to
+    signature = inspect.signature(_purpose_descend)
+    assert list(signature.parameters) == ["node", "pointer"]
+    assert signature.parameters["pointer"].annotation == "PurposePointer"
+    with pytest.raises(AttributeError):
+        _purpose_descend({"a": 1}, cast(Any, "/a"))
+
+    # the general resolver stays unreachable, and still disagrees
     purpose_surfaces = (
         _resolve_purpose_dependency,
         _purpose_authority_failures,
         _resolve_purpose_authority,
         _purpose_inputs,
-        _purpose_manifest_pointer,
         *PURPOSE_RENDERERS.values(),
     )
     reachable, _names = _reachable_code(list(purpose_surfaces))
-    assert reachable
-
-    holders = _slash_holding_functions(reachable)
-    assert holders == set(PURPOSE_SLASH_READERS), (
-        sorted(holders - set(PURPOSE_SLASH_READERS)),
-        sorted(set(PURPOSE_SLASH_READERS) - holders),
-    )
-    assert all(PURPOSE_SLASH_READERS.values()), "every reader states its role"
-
-    # exactly one of them turns an address into segments, and the descent goes
-    # through it: `_purpose_pointer` holds no separator of its own
-    assert "_purpose_pointer" not in holders
-    assert "_parse_purpose_pointer" in _purpose_pointer.__code__.co_names
-    assert _pR_replayed.__code__.co_names == ("_purpose_pointer",)
-
-    # the general resolver is not reachable, and still disagrees -- which is
-    # why the separation has to be asserted rather than assumed
     assert _resolve_pointer.__code__ not in reachable
     document: Any = {"a": {"b": [10, 20]}}
-    divergent = ("//a//b//0", "/a/b/", "/a/b/-1", "/a/b/01", "/a/b/+1")
-    for raw in divergent:
-        assert _resolve_pointer(document, raw) is not None
-        with pytest.raises(AssertionError):
-            _purpose_pointer(document, raw)
+    assert _resolve_pointer(document, "//a//b//0") == 10
 
-    # and no reader can be handed a corpus address the parser would refuse:
-    # every pointer the corpus publishes is already canonical
+    # no corpus address the parser would refuse can reach a reader
     published = {
         cast(str, entry["json_pointer"])
-        for vector in cast(list[dict[str, Any]], REPLAY["vectors"])
-        for entry in cast(list[dict[str, Any]], vector.get("source_pointers") or [])
+        for v in cast(list[dict[str, Any]], REPLAY["vectors"])
+        for entry in cast(list[dict[str, Any]], v.get("source_pointers") or [])
     }
     published |= {
         target
-        for vector in cast(list[dict[str, Any]], REPLAY["vectors"])
-        for entry in cast(list[dict[str, Any]], vector.get("source_pointers") or [])
+        for v in cast(list[dict[str, Any]], REPLAY["vectors"])
+        for entry in cast(list[dict[str, Any]], v.get("source_pointers") or [])
         for target in cast(dict[str, str], entry["source_fields"]).values()
     }
     published |= {
         key
-        for vector in cast(list[dict[str, Any]], REPLAY["vectors"])
-        for key in cast(dict[str, Any], vector.get("embedded_facts") or {})
+        for v in cast(list[dict[str, Any]], REPLAY["vectors"])
+        for key in cast(dict[str, Any], v.get("embedded_facts") or {})
     }
     assert len(published) >= 42
     for address in sorted(published):
