@@ -981,15 +981,15 @@ def test_roadmap_records_phase_completion_and_p05_readiness() -> None:
     )
     assert "`S1.P04` is complete" in roadmap
     assert "`S1.P04.S10` is complete" in roadmap
-    assert "`S1.P05` is active and incomplete" in roadmap
-    assert "`S1.P05.S09` are complete" in roadmap
-    assert "`S1.P05.S10` is next and not started" in roadmap
+    assert "`S1.P05` is complete" in roadmap
+    assert "`S1.P05.S10` are complete" in roadmap
+    assert "`S1.P06` is next and not started" in roadmap
     assert "`S1.P06` through `S1.P10` remain not started" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P04` is active and incomplete" not in roadmap
     assert "`S1.P04.S10` is next and not started" not in roadmap
-    assert "`S1.P05` is complete" not in roadmap
-    assert "S1.P05 implementation has begun" not in roadmap
+    assert "`S1.P06` is complete" not in roadmap
+    assert "S1.P06 implementation has begun" not in roadmap
     # A precondition that forbids the closure this file records would leave the
     # roadmap self-contradictory, so its retirement is asserted, not assumed.
     assert "closure cannot be presumed reachable" not in roadmap

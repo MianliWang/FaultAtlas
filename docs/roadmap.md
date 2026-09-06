@@ -37,11 +37,11 @@ aspirational Slice as scheduled work.
   `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
   `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
   `S1.P04` is complete.
-  `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
+  `S1.P05` is complete; `S1.P05.S01`, `S1.P05.S02` including the
   `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
   `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
-  correction, and `S1.P05.S09` are complete, and
-  `S1.P05.S10` is next and not started.
+  correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
+  `S1.P06` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -85,11 +85,11 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04.S07` is complete, `S1.P04.S08` is complete, and
 `S1.P04.S09` is complete, and `S1.P04.S10` is complete.
 `S1.P04` is complete.
-`S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
+`S1.P05` is complete; `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
-correction, and `S1.P05.S09` are complete, and
-`S1.P05.S10` is next and not started.
+correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
+`S1.P06` is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -681,11 +681,11 @@ otherwise.
 
 ## S1.P05 — Development History Model
 
-`S1.P05` is active and incomplete. `S1.P05.S01`, `S1.P05.S02` including the
+`S1.P05` is complete. `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
-correction, and `S1.P05.S09` are complete, and
-`S1.P05.S10` is next and not started.
+correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
+`S1.P06` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1070,7 +1070,7 @@ so a later published symbol forces deliberate review, and names
 `faultatlas.domain.evidence` as supporting authorities it does not own. The
 `S1.P04` snapshot modules are outside it: no `S1.P05` value consumes them.
 
-Nine files hold 183 vectors over 19 declared fixtures -- 48 valid, 111 invalid,
+Three vector files hold 183 vectors over 19 declared fixtures -- 48 valid, 111 invalid,
 and 24 replay -- each occupying a semantic partition that is distinct in
 behaviour, not merely in label. Invalid vectors
 lock a failure category, an error location, a location mode, and an error type,
@@ -1092,9 +1092,17 @@ source authorities and are never vectorized as product behaviour. The corpus
 executor recomputes the effective disposition projection from both artifacts
 rather than trusting a stored table, and both remain byte-identical.
 
-The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
-implementation and may split, merge, renumber, or drop after later read-only
-orientations. It is evidence-driven rather than fixed at ten Slices:
+`S1.P05.S10` changed no production source: it published the sealed Phase closure
+under `reference_corpus/contracts/development-history/closures/s1-p05-phase-closure`,
+recording 97 locks, 12 finalized deferred entries with
+`self_owned_open == 0`, 32 non-generalizations, 24 satisfied exit criteria,
+and 6 `S1.P06` handoff constraints. It is a sealed publication candidate: it
+records no pull request, reviewed head, squash SHA, or natural-main run of its
+own, because none exists when its bytes are sealed. Its own publication evidence
+lives in Git history, GitHub, and the final execution report.
+
+The `S1.P05` sequence is final. It was evidence-driven rather than fixed at ten
+Slices in advance, and closed at ten:
 
 1. `S1.P05.S01` — Pull Request Revision Role Binding (complete)
 2. `S1.P05.S02` — Pull Request Supplied Change Set (complete)
@@ -1107,15 +1115,15 @@ orientations. It is evidence-driven rather than fixed at ten Slices:
 8. `S1.P05.S08` — Deferred-Subject Disposition (complete)
 - `S1.P05.S08.C01` — Deferred-Subject Owner-Topology Correction (complete)
 9. `S1.P05.S09` — Development History Contract Corpus (complete)
-10. `S1.P05.S10` — Integration and Phase Closure (provisional; next, not
-    started)
+10. `S1.P05.S10` — Integration and Phase Closure (complete)
 
 The Issue-to-Pull-Request pairing is retained case material classified as a
 reviewed derived interpretation rather than a provider fact, and it is
 deliberately not scheduled as an `S1.P05` product relation.
 
-`S1.P06` is not eligible to begin. `S1.P05` is incomplete, and no `S1.P06`
-readiness is claimed here.
+`S1.P06` is `eligible_to_begin` with implementation state `not_started`.
+`S1.P05` is complete and the `S1.P05.S10` closure establishes that readiness.
+Eligibility is not commencement: no `S1.P06` implementation has begun.
 
 ## Preserved later Stage 1 phases
 
@@ -1209,11 +1217,11 @@ verification, confidence, primary designation, or evidence-record aggregate
 exists. `faultatlas.domain.history` and `faultatlas.domain.evidence` are
 unchanged by `S1.P05.S07` and neither imports the bridge. Production Python
 sources are 13.
-`S1.P05` is active and incomplete: `S1.P05.S01`, `S1.P05.S02` including the
+`S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
-correction, and `S1.P05.S09` are complete, and
-`S1.P05.S10` is next and not started.
+correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
+`S1.P06` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
