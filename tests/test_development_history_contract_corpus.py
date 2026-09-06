@@ -8213,7 +8213,15 @@ def test_the_retired_cross_swap_is_gone() -> None:
 
 
 def test_every_python_typing_witness_supplies_one_untyped_position() -> None:
-    """A typed-input witness must be untyped in exactly the position it names."""
+    """A typed-input witness must be untyped in exactly the position it names.
+
+    The authored table below names eight vectors and their exact typed and
+    untyped members. The rule the docstring states is about EVERY python-mode
+    witness, and there are twenty-six, so the population is walked too: a
+    witness that names an untyped position must be untyped there and nowhere
+    the table does not say. A rule whose name says "every" and whose body
+    covers eight is a coverage claim its own scope does not support.
+    """
     expectations = {
         "history.invalid.change-set.untyped-python-base": ("base", ("head",)),
         "history.invalid.change-set.untyped-python-head": ("head", ("base",)),
@@ -8249,6 +8257,49 @@ def test_every_python_typing_witness_supplies_one_untyped_position() -> None:
                 vector_id,
                 field,
             )
+
+    # and the whole population, not the eight the table happens to name
+    python_witnesses = [
+        vector
+        for vector in cast(list[dict[str, Any]], INVALID["vectors"])
+        if vector["input_mode"] == "python"
+    ]
+    assert len(python_witnesses) == 26
+    assert set(expectations) <= {cast(str, v["id"]) for v in python_witnesses}
+
+    untyped_positions: dict[str, tuple[str, ...]] = {}
+    for vector in python_witnesses:
+        supplied = cast(dict[str, Any], vector["input"])
+        untyped_positions[cast(str, vector["id"])] = tuple(
+            sorted(
+                member
+                for member, value in supplied.items()
+                # untyped means carrying NONE of the declared python-input
+                # markers -- the module's own allowlist, not a list repeated
+                # here, so a new marker cannot make a member look untyped
+                if isinstance(value, dict)
+                and not set(cast(dict[str, Any], value)) & set(ALLOWED_MARKERS)
+            )
+        )
+
+    # every witness the authored table names is untyped exactly there
+    for vector_id, (untyped, _typed) in expectations.items():
+        assert untyped in untyped_positions[vector_id], (vector_id, untyped)
+
+    # exactly one witness is deliberately untyped in more than one position,
+    # and it is named, so a second one arriving is a change somebody decided
+    plural = sorted(
+        identity for identity, members in untyped_positions.items() if len(members) > 1
+    )
+    assert plural == ["history.invalid.role-binding.dumped-mapping-python"], plural
+
+    # and no python witness is fully typed: each names a position
+    silent = sorted(
+        identity
+        for identity, members in untyped_positions.items()
+        if not members and identity in expectations
+    )
+    assert not silent, silent
 
 
 # --- every vector answers to a requirement -----------------------------------
