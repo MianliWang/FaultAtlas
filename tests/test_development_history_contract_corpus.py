@@ -18181,8 +18181,16 @@ def _purpose_authority_failures(
                 )
                 if attachment:
                     reasons.append("source-decision-identity-differs")
+            # Being registered was the whole rule whenever the vector carried
+            # no lock, which is 171 of 183 vectors -- so any claim at all could
+            # cite any of the five registered references and publish an
+            # evidentiary provenance its renderer never reads. The lock is the
+            # tie between the citation and the record, so it is required, not
+            # merely checked when present.
             lock = cast(str, vector.get("evidence_record_lock") or "")
-            if lock and lock != reference:
+            if not lock:
+                reasons.append("source-decision-cited-by-a-vector-with-no-lock")
+            elif lock != reference:
                 reasons.append("claim-cites-another-source-than-the-renderer")
     elif authority.startswith("manifest:"):
         pointer = authority.split(":", 1)[1]
@@ -19920,7 +19928,27 @@ def test_every_authority_and_governance_reason_is_reachable(
         entry.pop("role_implications", None)
     observe(emptied, pointer_claim[1])
 
+    # a source decision cited by a vector that locks no record: registered was
+    # the whole rule for 171 of 183 vectors
+    literal_claim = next(
+        (identity, c)
+        for identity, claims in PURPOSE_SEMANTICS.items()
+        for c in claims
+        if c.authority == "literal"
+        and not vectors[identity].get("evidence_record_lock")
+    )
+    observe(
+        vectors[literal_claim[0]],
+        PurposeClaim(
+            literal_claim[1].assurance,
+            literal_claim[1].renderer,
+            "source-decision-role:correction:s04-c01-acquisition-closure",
+            literal_claim[1].dependencies,
+        ),
+    )
+
     required = {
+        "source-decision-cited-by-a-vector-with-no-lock",
         "unknown-assurance",
         "unknown-renderer",
         "not-a-secondary-witness",
@@ -20867,6 +20895,88 @@ _AUTHORITY_SELECTOR_TABLES: dict[str, tuple[str, ...]] = {
         "evidence-record-lock",
     ),
 }
+
+
+def _authority_forms_the_resolver_handles() -> set[str]:
+    """The authority forms `_purpose_authority_failures` actually branches on.
+
+    Read from its own code rather than from the table beside it, so the two can
+    be compared. A new form arrives as a new branch, and a branch the authored
+    vocabulary does not name is the thing to catch.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(_purpose_authority_failures)))
+    forms: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr != "startswith":
+                continue
+            for argument in node.args:
+                literals = (
+                    argument.elts if isinstance(argument, ast.Tuple) else [argument]
+                )
+                for literal in literals:
+                    if isinstance(literal, ast.Constant) and isinstance(
+                        literal.value, str
+                    ):
+                        forms.add(literal.value.rstrip(":"))
+        if isinstance(node, ast.Compare) and isinstance(node.left, ast.Name):
+            if node.left.id != "authority":
+                continue
+            for comparator in node.comparators:
+                literals = (
+                    comparator.elts
+                    if isinstance(comparator, ast.Tuple)
+                    else [comparator]
+                )
+                for literal in literals:
+                    if isinstance(literal, ast.Constant) and isinstance(
+                        literal.value, str
+                    ):
+                        forms.add(literal.value)
+    return forms
+
+
+def test_the_authority_form_vocabulary_is_closed() -> None:
+    """A form the vocabulary does not name cannot be resolved into existence.
+
+    The entry-point address guard enumerates the prefixes it knows about, so a
+    NEW address-bearing authority form -- with its own parser and its own
+    descent -- was reachable by adding a branch here: it never touches the
+    canonical parser, so nothing about typed descent constrains it, and the
+    published spelling could be a positional slot into an order-neutral
+    collection.
+    """
+    handled = _authority_forms_the_resolver_handles()
+    authored = set(REQUIRED_ASSURANCE_BY_AUTHORITY_FORM)
+    assert handled == authored, (
+        sorted(handled - authored),
+        sorted(authored - handled),
+    )
+    assert len(authored) == 13
+
+    # and every published claim uses one of them
+    used = {
+        claim.authority.split(":", 1)[0] if ":" in claim.authority else claim.authority
+        for claims in PURPOSE_SEMANTICS.values()
+        for claim in claims
+    }
+    assert used <= authored, sorted(used - authored)
+
+    # an authority whose form is not in the vocabulary is refused outright
+    sections = _purpose_sections()
+    vector = next(
+        v
+        for section in sections.values()
+        for v in cast(list[dict[str, Any]], section["vectors"])
+    )
+    (claim,) = PURPOSE_SEMANTICS[cast(str, vector["id"])][:1]
+    for invented in ("row:/source_decisions/4", "slot:0", "anything"):
+        forged = PurposeClaim(
+            claim.assurance, claim.renderer, invented, claim.dependencies
+        )
+        assert "unrecognised-authority" in _purpose_authority_failures(
+            vector, "valid", forged
+        ), invented
 
 
 def test_every_authority_form_is_bound_to_the_code_that_reads_it() -> None:
