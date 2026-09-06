@@ -18049,11 +18049,19 @@ def _purpose_authority_failures(
             reasons.append("pointer-does-not-resolve")
         # resolving was the whole rule, which is the defect class every other
         # authority form had already closed: a leaf that merely EXISTS is not
-        # a leaf the fragment rests on. The citation had to name a location the
+        # a leaf the fragment rests on. The citation must name a location the
         # renderer is actually given -- either a declared coordinate, or the
         # container one of them lives inside.
         if not _authority_is_supplied(authority, claim.dependencies):
             reasons.append("cited-leaf-is-not-a-renderer-input")
+        # and it may not be a whole document root. `input:` covers every leaf
+        # the vector supplies, so citing it is a catch-all: it satisfies the
+        # rule above for any claim at all, and answers no question about which
+        # value the fragment rests on. A dependency may legitimately BE the
+        # root -- a renderer that tests for a missing key needs the container
+        # -- but a citation may not.
+        if not pointer:
+            reasons.append("cited-leaf-is-a-whole-document-root")
     elif authority.startswith("source-pointer:"):
         pointer = authority.split(":", 1)[1]
         cited = {
@@ -19744,7 +19752,10 @@ def test_a_derived_claim_moves_when_the_field_it_cites_moves() -> None:
     """A cited pointer that the renderer ignores is not an authority.
 
     Every `input:`/`expected:` claim names a leaf. Blanking that leaf must
-    change the sentence, otherwise the citation is decoration.
+    change THIS CLAIM's fragment, not merely the sentence it sits in: a vector
+    whose purpose is built from several claims would otherwise let any claim
+    cite any leaf that any of the others reads, and the sentence would move for
+    a reason that has nothing to do with the citing claim.
     """
     inert: list[tuple[str, str]] = []
     for section in _purpose_sections().values():
@@ -19764,12 +19775,25 @@ def test_a_derived_claim_moves_when_the_field_it_cites_moves() -> None:
                         cast(list[Any], parent)[int(leaf)] = "-"
                     else:
                         cast(dict[str, Any], parent)[leaf] = "-"
-                    moved = _render_purpose(edited)
+                    moved = _render_claim(edited, claim)
+                    before = _render_claim(vector, claim)
                 except Exception:  # noqa: BLE001 - a raising renderer did notice
                     continue
-                if moved == vector["purpose"]:
+                if moved == before:
                     inert.append((identifier, claim.authority))
     assert not inert, inert[:5]
+
+    # and the narrowing is load-bearing: for a vector whose purpose is built
+    # from more than one claim, the whole sentence moves for either claim's
+    # leaf, so comparing sentences would have admitted a citation belonging to
+    # the other claim
+    multi = [
+        identifier
+        for identifier, claims in PURPOSE_SEMANTICS.items()
+        if len(claims) > 1
+        and sum(c.authority.startswith(("input:", "expected:")) for c in claims) >= 1
+    ]
+    assert multi, "the narrowing would be vacuous with no multi-claim vector"
 
 
 CORRECTION_PURPOSE_VECTOR = (
@@ -20532,12 +20556,22 @@ def test_every_declared_purpose_leaf_and_field_moves_its_own_fragment(
 # a row were the same shape -- a form checked for EXISTENCE rather than for
 # being read -- so the forms are enumerated against the resolver's own table and
 # each one has to name its binding. A form arriving with none is the defect.
+# What binds each authority form to the code that spends it.
+#
+# The four selector-table forms name the EXACT coordinate their renderer reads,
+# so the citation is unique. The two leaf forms cannot be: a fragment built
+# from two values rests on both, and either is a truthful citation of where it
+# came from. What is enforced is therefore stated precisely -- the citation is
+# a non-root render input of THIS claim, and moving it moves THIS claim's
+# fragment -- rather than as a uniqueness the data does not support. Screened
+# over 992 repointings, exactly one survives, and it is the one two-input
+# fragment where both leaves are genuinely load-bearing.
 PURPOSE_AUTHORITY_BINDINGS: dict[str, str] = {
     "embedded-fact": "PURPOSE_EMBEDDED_FACT_SELECTORS",
     "evidence-classification": "PURPOSE_SCALAR_FIELDS",
     "evidence-record-lock": "PURPOSE_SCALAR_FIELDS",
-    "expected": "the cited leaf is a declared render input, and moving it moves the fragment",
-    "input": "the cited leaf is a declared render input, and moving it moves the fragment",
+    "expected": "a non-root render input of this claim whose movement moves its fragment",
+    "input": "a non-root render input of this claim whose movement moves its fragment",
     "input_mode": "PURPOSE_SCALAR_FIELDS",
     "literal": "no source: admitted only as CANONICAL_DECLARATION_ONLY",
     "manifest": "PURPOSE_MANIFEST_POINTERS",
