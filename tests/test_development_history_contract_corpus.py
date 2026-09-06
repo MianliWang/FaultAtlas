@@ -7045,21 +7045,38 @@ RESTORED_PUBLICATIONS = frozenset(
 )
 
 
+def _originating_publication_failures(declared: list[str]) -> list[str]:
+    """Every way a declared inventory is not the published basis.
+
+    Each rule reports its own reason rather than being folded into one equality,
+    because an equality subsumes everything beside it: weakening any of the
+    narrower rules left the suite green while the equality carried them all, so
+    none of them was actually guarded.
+    """
+    authored = [slice_id for slice_id, _pr, _sha in ORIGINATING_PUBLICATIONS]
+    reasons: list[str] = []
+    if len(declared) != len(set(declared)):
+        reasons.append("entry-repeated")
+    if not RESTORED_PUBLICATIONS <= set(declared):
+        reasons.append("restored-publication-absent")
+    if {"S1.P05.S09", "S1.P05.S10"} & set(declared):
+        reasons.append("own-publication-cited-as-predecessor")
+    if not all(entry.startswith("S1.P05.S") for entry in declared):
+        reasons.append("entry-from-another-phase")
+    if set(declared) != set(authored):
+        reasons.append("membership-differs")
+    elif declared != authored:
+        reasons.append("order-differs")
+    return sorted(reasons)
+
+
 def test_the_originating_publication_inventory_is_the_published_basis() -> None:
     """Membership, not a count: an equal-sized wrong list is still wrong."""
     declared = cast(list[str], MANIFEST["originating_publications"])
     authored = [slice_id for slice_id, _pr, _sha in ORIGINATING_PUBLICATIONS]
 
+    assert _originating_publication_failures(declared) == []
     assert declared == authored
-    assert len(declared) == len(set(declared)), "an entry is repeated"
-    assert RESTORED_PUBLICATIONS <= set(declared)
-
-    # this corpus's own publication is not its own predecessor, and neither is
-    # the closure that will follow it
-    assert "S1.P05.S09" not in declared
-    assert "S1.P05.S10" not in declared
-    # nor is any entry from another phase
-    assert all(entry.startswith("S1.P05.S") for entry in declared)
 
     # the provenance is recorded once, and uniquely
     numbers = [pr for _slice, pr, _sha in ORIGINATING_PUBLICATIONS]
@@ -7081,33 +7098,51 @@ def test_dropping_or_substituting_a_publication_is_refused(
     """
     authored = [slice_id for slice_id, _pr, _sha in ORIGINATING_PUBLICATIONS]
 
+    # each corruption names the rule that catches it, so no rule rides on
+    # another: dropping one of these reasons cannot be hidden by the equality
     for restored in sorted(RESTORED_PUBLICATIONS):
         without = [entry for entry in authored if entry != restored]
-        monkeypatch.setitem(MANIFEST, "originating_publications", without)
-        with pytest.raises(AssertionError):
-            test_the_originating_publication_inventory_is_the_published_basis()
-        monkeypatch.undo()
+        assert _originating_publication_failures(without) == [
+            "membership-differs",
+            "restored-publication-absent",
+        ], restored
 
     # equal count, one entry replaced by a real publication of another phase
     substituted = [*authored[:-1], "S1.P04.S10"]
     assert len(substituted) == len(authored)
-    monkeypatch.setitem(MANIFEST, "originating_publications", substituted)
-    with pytest.raises(AssertionError):
-        test_the_originating_publication_inventory_is_the_published_basis()
-    monkeypatch.undo()
+    assert _originating_publication_failures(substituted) == [
+        "entry-from-another-phase",
+        "membership-differs",
+    ]
 
     # equal count, one entry duplicated
     doubled = [*authored[:-1], authored[0]]
-    monkeypatch.setitem(MANIFEST, "originating_publications", doubled)
-    with pytest.raises(AssertionError):
-        test_the_originating_publication_inventory_is_the_published_basis()
-    monkeypatch.undo()
+    assert _originating_publication_failures(doubled) == [
+        "entry-repeated",
+        "membership-differs",
+    ]
 
-    # and the corpus's own future publication may not be its own predecessor
-    circular = [*authored, "S1.P05.S09"]
-    monkeypatch.setitem(MANIFEST, "originating_publications", circular)
-    with pytest.raises(AssertionError):
-        test_the_originating_publication_inventory_is_the_published_basis()
+    # the corpus's own publication, and the closure that will follow it
+    for future in ("S1.P05.S09", "S1.P05.S10"):
+        assert "own-publication-cited-as-predecessor" in (
+            _originating_publication_failures([*authored, future])
+        ), future
+
+    # the same members in another order is still not the published sequence
+    assert _originating_publication_failures(
+        [authored[1], authored[0], *authored[2:]]
+    ) == ["order-differs"]
+
+    # and the live inventory passes every one of them
+    declared = cast(list[str], MANIFEST["originating_publications"])
+    assert _originating_publication_failures(declared) == []
+    monkeypatch.setitem(MANIFEST, "originating_publications", authored)
+    assert (
+        _originating_publication_failures(
+            cast(list[str], MANIFEST["originating_publications"])
+        )
+        == []
+    )
 
 
 def test_the_declared_descriptive_paths_are_real_and_non_objective() -> None:
@@ -14013,7 +14048,7 @@ def _leaf_slots(
 
 
 # One sweep per registry, because six tests ask the same pure question of the
-# same 386 leaves and this module is the project's fastest feedback loop. The
+# same 389 leaves and this module is the project's fastest feedback loop. The
 # key is the registry itself: the probes below hand in a modified one and must
 # get a fresh answer rather than this one.
 _CONSUMER_SWEEPS: dict[
