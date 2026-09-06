@@ -13,6 +13,7 @@ import re
 import stat as stat_module
 import subprocess
 import sys
+import textwrap
 from collections import Counter
 from collections.abc import Callable, Iterable
 from datetime import datetime
@@ -18730,42 +18731,37 @@ def test_only_a_requirement_claim_receives_a_requirement_payload() -> None:
             )
 
 
-def test_the_authority_resolver_reads_the_claim_it_is_given() -> None:
-    """A resolver that ignores its claim cannot be selecting by it.
+def _backward_authority(
+    vector: dict[str, Any], claim: PurposeClaim
+) -> PurposeAuthority:
+    """The resolver this repair replaced, kept as a control.
 
-    Checked on the bytecode rather than the text: `claim` must be read, and the
-    authored registries must not be the thing that chooses the payload. The
-    previous resolver took `claim` and never touched it, which is exactly what
-    a reader would fail to notice.
+    It reads `claim.authority` and then ignores it, selecting by vector id the
+    way the original did. Any guard that this passes is not a guard.
     """
-    code = _resolve_purpose_authority.__code__
-    assert "claim" in code.co_varnames[: code.co_argcount]
-    assert "authority" in code.co_names, "claim.authority is never read"
-
-    # the vector-keyed ledger index may not be the selection path any more
-    assert "_pI_LEDGER_BY_WITNESS" not in code.co_names
-    # the registry is still read -- a secondary witness has no other source --
-    # but only after the authority form has been established
-    assert "SECONDARY_WITNESS_REGISTRY" in code.co_names
-    assert "REQUIREMENT_LEDGER" in code.co_names
-
-    # the derivation belongs to validation, never to the payload
-    assert "_derived_requirement" not in code.co_names
-    evidence = _purpose_authority_evidence.__code__
-    assert "_derived_requirement" in evidence.co_names
-    assert evidence.co_flags & 0x20 == 0  # not a generator
-    source = inspect.getsource(_purpose_authority_evidence)
-    assert "return" not in source.replace("returns", ""), "validation returns nothing"
+    _ = claim.authority
+    identifier = cast(str, vector["id"])
+    rows = [row for row in REQUIREMENT_LEDGER if row[4] == identifier]
+    if rows:
+        return PurposeAuthority(rows[0][2], rows[0][0])
+    registered = SECONDARY_WITNESS_REGISTRY.get(identifier)
+    if registered is not None:
+        return PurposeAuthority(registered, None)
+    return EMPTY_PURPOSE_AUTHORITY
 
 
-def test_every_authority_payload_component_comes_from_the_declared_authority(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The second channel, varied on its own.
+def test_the_authority_resolver_selects_by_the_claim_over_the_population() -> None:
+    """Stated behaviourally, because the structural version was defeatable.
 
-    Leave-one-out varies the frontier and says nothing about the payload. This
-    varies the payload and says nothing about the frontier. Between them every
-    value a renderer can see has been moved and accounted for.
+    A first attempt asserted that `claim` was a parameter, that `authority`
+    appeared in `co_names`, and that the vector-keyed index did not. The
+    control above passes every one of those and still selects backward -- it
+    reads `claim.authority` into a discard. A name appearing in a code object
+    says the name was mentioned, not that it decided anything.
+
+    So the law is over the whole population instead: give every claim an
+    authority that is not its own, and the resolver must refuse or answer
+    differently. The backward control fails this on the first claim.
     """
     sections = _purpose_sections()
     vectors = {
@@ -18773,73 +18769,55 @@ def test_every_authority_payload_component_comes_from_the_declared_authority(
         for section in sections.values()
         for vector in cast(list[dict[str, Any]], section["vectors"])
     }
-    inert: list[tuple[str, str]] = []
-    consumed: dict[str, set[str]] = {}
-    for identifier, claims in PURPOSE_SEMANTICS.items():
-        vector = vectors[identifier]
-        for claim in claims:
-            payload = _resolve_purpose_authority(vector, claim)
-            if payload == EMPTY_PURPOSE_AUTHORITY:
-                continue
-            fragment = _render_claim(vector, claim)
-            frontier = _purpose_inputs(vector, claim)
-            # move the AUTHORED payload, holding the frontier exactly still
-            moves = 0
-            for index, component in enumerate(payload):
-                if component is None:
-                    continue
-                moved = PurposeAuthority(
-                    *(
-                        "an authored substitute" if position == index else value
-                        for position, value in enumerate(payload)
-                    )
-                )
-                try:
-                    after = PURPOSE_RENDERERS[claim.renderer](dict(frontier), moved)
-                except Exception:  # noqa: BLE001 - failing closed is a move
-                    moves += 1
-                    consumed.setdefault(claim.renderer, set()).add(
-                        payload._fields[index]
-                    )
-                    continue
-                if after != fragment:
-                    moves += 1
-                    consumed.setdefault(claim.renderer, set()).add(
-                        payload._fields[index]
-                    )
-            # a populated payload must be load-bearing for the sentence. Which
-            # COMPONENT carries it is the renderer's business -- the sentence
-            # renderer selects by requirement id, the gloss by requirement text
-            # -- so the law is on the payload, not on each field of it.
-            if moves == 0:
-                inert.append((identifier, claim.renderer))
-    assert not inert, inert
-    assert consumed == {
-        "valid:requirement_sentence": {"requirement_id"},
-        "invalid:requirement_gloss": {"requirement"},
-    }, consumed
-
-    # and the corpus cannot substitute a payload while the claim stands: the
-    # only way a corpus edit changes the requirement is by refusing the claim
-    identifier = "history.invalid.occurrence-time.missing-occurrence"
-    gloss = next(
-        c
-        for c in PURPOSE_SEMANTICS[identifier]
-        if c.renderer == "invalid:requirement_gloss"
+    authorities = sorted(
+        {claim.authority for claims in PURPOSE_SEMANTICS.values() for claim in claims}
     )
-    vector = vectors[identifier]
-    authored = _resolve_purpose_authority(vector, gloss)
-    for field in ("error_location", "error_type"):
-        edited = copy.deepcopy(vector)
-        current = edited["expected"][field]
-        edited["expected"][field] = (
-            ["occurred_at", *current[1:]] if isinstance(current, list) else "moved"
+
+    def blind(resolve: Callable[..., PurposeAuthority]) -> list[str]:
+        """Claims whose payload does not follow their own authority."""
+        insensitive: list[str] = []
+        for identifier, claims in PURPOSE_SEMANTICS.items():
+            vector = vectors[identifier]
+            for claim in claims:
+                own = resolve(vector, claim)
+                for authority in authorities:
+                    if authority == claim.authority:
+                        continue
+                    substituted = PurposeClaim(
+                        claim.assurance, claim.renderer, authority, claim.dependencies
+                    )
+                    try:
+                        other = resolve(vector, substituted)
+                    except (AssertionError, KeyError):
+                        continue  # refused, which is the answer following the claim
+                    if other == own and own != EMPTY_PURPOSE_AUTHORITY:
+                        insensitive.append(f"{identifier}:{authority}")
+        return insensitive
+
+    assert not blind(_resolve_purpose_authority)
+    # and the control, which is the shape this replaced, is caught
+    caught = blind(_backward_authority)
+    assert len(caught) > 100, len(caught)
+
+    # the derivation belongs to validation and never computes a payload
+    payload_path, payload_names = _reachable_code([_resolve_purpose_authority])
+    assert _purpose_authority_evidence.__code__ in payload_path
+    assert "_derived_requirement" not in _resolve_purpose_authority.__code__.co_names
+    assert "_derived_requirement" in _purpose_authority_evidence.__code__.co_names
+    assert payload_names
+
+    # validation answers valid or invalid and nothing else: no return statement
+    evidence = ast.parse(
+        textwrap.dedent(inspect.getsource(_purpose_authority_evidence))
+    )
+    assert not [n for n in ast.walk(evidence) if isinstance(n, ast.Return)]
+    assert (
+        _purpose_authority_evidence(
+            vectors["history.valid.status.added"],
+            PURPOSE_SEMANTICS["history.valid.status.added"][0],
         )
-        try:
-            substituted = _resolve_purpose_authority(edited, gloss)
-        except AssertionError:
-            continue  # refused, which is the required behaviour
-        assert substituted == authored, (field, substituted)
+        is None
+    )
 
 
 # --- the two-channel law -----------------------------------------------------
