@@ -17513,29 +17513,90 @@ _PURPOSE_VECTOR_SCALARS = {
 _PURPOSE_VECTOR_ROOTS = {"input:": "input", "expected:": "expected"}
 
 
-# A list step must be a canonical non-negative index. `-1` names a different
-# element for every length, and `01` is not the same token as `1`, so either
-# would make a coordinate that reads as a fixed address behave like a relative
-# one.
+# --- one canonical address grammar for every Purpose coordinate --------------
+#
+# `_purpose_pointer` used to descend `[part for part in pointer.split("/") if
+# part]`, discarding empty segments, while every guard that decided what a
+# pointer NAMED matched the raw string. The two disagreed, and `//` was the
+# wedge: `manifest://source_decisions/4/authority_role` was refused by no guard
+# and resolved to the same value as the spelling they all refuse. A second
+# parser beside the first is how that happens, so there is one here and the
+# guards read its OUTPUT rather than the string.
+#
+# A pointer is parsed into segments once. Every rule below is a property of
+# those segments, and rendering them back must reproduce the authored string
+# exactly -- so one address has one spelling, and normalising a second spelling
+# into the first is refused rather than performed.
 _PURPOSE_INDEX = re.compile(r"0|[1-9][0-9]*")
+_PURPOSE_INTEGERISH = re.compile(r"-?[0-9]+")
 
-# The two manifest collections whose ORDER carries no meaning. A slot into one
-# of them names whichever record happens to sit there, which is the hazard
-# `_pR_authority_role` refuses by scanning for a unique reference and the
-# authority relation already refuses by name. The dependency grammar refuses it
-# too, so the two cannot disagree about what a coordinate may address.
-_PURPOSE_ORDER_NEUTRAL = ("/source_decisions/", "/target_symbols/")
+# The two manifest collections whose ORDER carries no meaning. A numeric child
+# of either names whichever record happens to sit there; `_pR_authority_role`
+# scans for a unique reference precisely so it never does, and the authority
+# relation refuses the same shape. This is checked on parsed SEGMENTS, so no
+# spelling of the address can slip past it.
+_PURPOSE_IDENTITY_COLLECTIONS = frozenset({"source_decisions", "target_symbols"})
 
 
-def _purpose_pointer(node: Any, pointer: str) -> Any:
-    """Descend a JSON pointer, refusing anything that is not a step."""
-    for token in [part for part in pointer.split("/") if part]:
+class PurposePointer(NamedTuple):
+    """A parsed Purpose address. The empty tuple is the root."""
+
+    segments: tuple[str, ...]
+
+
+def _parse_purpose_pointer(raw: str) -> PurposePointer:
+    """The segments an authored Purpose address names, or a refusal.
+
+    JSON-Pointer escapes are not implemented, and `~` is refused outright
+    rather than half-supported: no authored coordinate in this corpus contains
+    one, so a partial escape grammar would be a second address vocabulary with
+    no reader.
+    """
+    assert "~" not in raw, raw
+    if not raw:
+        return PurposePointer(())
+    assert raw.startswith("/"), raw
+    assert not raw.endswith("/"), raw
+    segments = tuple(raw[1:].split("/"))
+    for segment in segments:
+        assert segment, raw
+        if _PURPOSE_INTEGERISH.fullmatch(segment):
+            assert _PURPOSE_INDEX.fullmatch(segment), raw
+    return PurposePointer(segments)
+
+
+def _render_purpose_pointer(pointer: PurposePointer) -> str:
+    """The one spelling of a parsed address."""
+    return "".join(f"/{segment}" for segment in pointer.segments)
+
+
+def _identity_collection_slots(pointer: PurposePointer) -> list[str]:
+    """Every place this address indexes an order-neutral collection."""
+    return [
+        child
+        for parent, child in zip(pointer.segments, pointer.segments[1:], strict=False)
+        if parent in _PURPOSE_IDENTITY_COLLECTIONS and _PURPOSE_INDEX.fullmatch(child)
+    ]
+
+
+def _purpose_pointer(node: Any, raw: str) -> Any:
+    """Descend one canonical Purpose address."""
+    for segment in _parse_purpose_pointer(raw).segments:
         if isinstance(node, list):
-            assert _PURPOSE_INDEX.fullmatch(token), pointer
-            node = cast(list[Any], node)[int(token)]
+            assert _PURPOSE_INDEX.fullmatch(segment), raw
+            node = cast(list[Any], node)[int(segment)]
         else:
-            node = cast(dict[str, Any], node)[token]
+            node = cast(dict[str, Any], node)[segment]
     return node
+
+
+def _purpose_manifest_pointer(raw: str) -> PurposePointer:
+    """A manifest address: canonical, and never a slot into a neutral list."""
+    pointer = _parse_purpose_pointer(raw)
+    assert pointer.segments, raw
+    assert _render_purpose_pointer(pointer) == raw, raw
+    assert not _identity_collection_slots(pointer), raw
+    return pointer
 
 
 def _resolve_purpose_dependency(vector: dict[str, Any], coordinate: str) -> Any:
@@ -17556,15 +17617,20 @@ def _resolve_purpose_dependency(vector: dict[str, Any], coordinate: str) -> Any:
 
     for prefix, field in _PURPOSE_VECTOR_ROOTS.items():
         if coordinate.startswith(prefix):
-            pointer = coordinate[len(prefix) :]
+            raw = coordinate[len(prefix) :]
             # bare `expected:` is the whole independently authored dump, which
             # is a root by any other name; bare `input:` is one declared field
-            assert prefix == "input:" or pointer, coordinate
-            return _frozen(_purpose_pointer(vector[field], pointer))
+            assert prefix == "input:" or raw, coordinate
+            pointer = _parse_purpose_pointer(raw)
+            assert _render_purpose_pointer(pointer) == raw, coordinate
+            return _frozen(_purpose_pointer(vector[field], raw))
 
     if coordinate.startswith("source-pointer:"):
         wanted = coordinate.split(":", 1)[1]
         assert wanted, coordinate
+        assert _render_purpose_pointer(_parse_purpose_pointer(wanted)) == wanted, (
+            coordinate
+        )
         cited = cast(list[dict[str, Any]], vector.get("source_pointers") or [])
         matching = [entry for entry in cited if entry["json_pointer"] == wanted]
         assert len(matching) == 1, coordinate
@@ -17584,15 +17650,8 @@ def _resolve_purpose_dependency(vector: dict[str, Any], coordinate: str) -> Any:
         return _frozen(matching[0])
 
     if coordinate.startswith("manifest:"):
-        pointer = coordinate.split(":", 1)[1]
-        assert pointer.startswith("/"), coordinate
-        assert not [
-            prefix
-            for prefix in _PURPOSE_ORDER_NEUTRAL
-            if pointer.startswith(prefix)
-            and any(segment.isdigit() for segment in pointer.split("/"))
-        ], coordinate
-        return _frozen(_purpose_pointer(MANIFEST, pointer))
+        pointer = _purpose_manifest_pointer(coordinate.split(":", 1)[1])
+        return _frozen(_purpose_pointer(MANIFEST, _render_purpose_pointer(pointer)))
 
     raise AssertionError(f"unknown dependency coordinate: {coordinate}")
 
@@ -17602,41 +17661,74 @@ class PurposeAuthority(NamedTuple):
 
     Kept apart from the dependencies on purpose. A dependency is a structured
     value the sentence is built from; an authority is why the sentence is
-    admitted at all. The requirement a gloss names is the second kind: the
-    ledger row that witnesses this vector, or the registry entry cross-checked
-    against the derivation. Collapsing it into the dependency set would make
-    the vector id look like a render input, when what the id does is locate the
-    authority -- and `_purpose_authority_failures` already proves that binding
-    independently.
+    admitted at all.
+
+    This payload is the renderer's SECOND channel, and it is authored: every
+    field on it comes from a table this module writes down, selected by
+    `claim.authority`. Nothing the corpus says can change what is in it. The
+    corpus can only make the claim FAIL -- see `_purpose_authority_evidence`.
     """
 
     requirement: str | None
     requirement_id: str | None
 
 
+EMPTY_PURPOSE_AUTHORITY = PurposeAuthority(None, None)
+
+
+def _purpose_authority_evidence(vector: dict[str, Any], claim: PurposeClaim) -> None:
+    """Prove the authored authority applies to this vector, or refuse.
+
+    The validation-only channel. It reads raw corpus and it may only answer
+    valid or invalid -- it never supplies a value to the renderer. That
+    separation is the repair: `_derived_requirement` reads structural corpus
+    leaves such as `expected.error_location`, and if its result were the
+    payload then moving one of those leaves would quietly hand the renderer a
+    different requirement string while the declared frontier stood still.
+    Nothing here returns anything.
+    """
+    identifier = cast(str, vector["id"])
+    if claim.authority == "secondary-witness":
+        registered = SECONDARY_WITNESS_REGISTRY.get(identifier)
+        assert registered is not None, identifier
+        # the derivation is EVIDENCE that the authored text still applies. If a
+        # structural field moves, this fails; it does not substitute.
+        assert _derived_requirement(vector) == registered, identifier
+
+
 def _resolve_purpose_authority(
     vector: dict[str, Any], claim: PurposeClaim
 ) -> PurposeAuthority:
-    """The immutable payload a claim's authority supplies to its renderer.
+    """The authored payload `claim.authority` names, or nothing.
 
-    The identity is derived FROM THE VECTOR, so `claim.authority` stays an
-    independent assertion that `_purpose_authority_failures` cross-checks
-    rather than the single authored path both would rest on.
+    Selection runs FORWARD from the claim: the authority names a requirement
+    id, the id names exactly one ledger row, and that row must witness this
+    vector. The shape this replaces ran backward -- vector id to ledger row to
+    payload -- so `claim.authority` was inert: pointing it at a different real
+    requirement changed nothing at all.
+
+    Every other authority form resolves to an empty payload. A claim whose
+    authority is a source pointer or a canonical declaration has no requirement
+    to carry, and must not be handed one merely because its vector happens to
+    appear in a requirement registry.
     """
+    _purpose_authority_evidence(vector, claim)
     identifier = cast(str, vector["id"])
-    row = _pI_LEDGER_BY_WITNESS.get(identifier)
-    if row is not None:
-        # the ledger row that witnesses this vector supplies both the
-        # requirement's identity and the sentence key authored against it
-        return PurposeAuthority(cast(str, row[2]), cast(str, row[0]))
-    registered = SECONDARY_WITNESS_REGISTRY.get(identifier)
-    if registered is not None:
-        # a secondary witness has no row of its own; the requirement it
-        # witnesses is derived from the vector and cross-checked here
-        derived = _derived_requirement(vector)
-        assert registered == derived, identifier
-        return PurposeAuthority(registered, None)
-    return PurposeAuthority(None, None)
+
+    if claim.authority.startswith("requirement:"):
+        requirement_id = claim.authority.split(":", 1)[1]
+        assert requirement_id, claim.authority
+        rows = [row for row in REQUIREMENT_LEDGER if row[0] == requirement_id]
+        # unknown and duplicated ids fail here, not by picking one
+        assert len(rows) == 1, claim.authority
+        assert rows[0][4] == identifier, (claim.authority, identifier)
+        return PurposeAuthority(rows[0][2], rows[0][0])
+
+    if claim.authority == "secondary-witness":
+        # the AUTHORED registry entry, never the derivation that validated it
+        return PurposeAuthority(SECONDARY_WITNESS_REGISTRY[identifier], None)
+
+    return EMPTY_PURPOSE_AUTHORITY
 
 
 def _purpose_inputs(vector: dict[str, Any], claim: PurposeClaim) -> dict[str, Any]:
@@ -17727,9 +17819,12 @@ def _purpose_authority_failures(
             reasons.append("secondary-witness-derivation-differs")
     elif authority.startswith(("input:", "expected:")):
         root, pointer = authority.split(":", 1)
+        # the SAME parser the dependency resolver uses: a second grammar here
+        # is how `manifest://source_decisions/4` came to be refused by one and
+        # resolved by the other
         try:
-            _resolve_pointer(vector[root], pointer)
-        except (KeyError, IndexError, TypeError):
+            _purpose_pointer(vector[root], pointer)
+        except (AssertionError, KeyError, IndexError, TypeError):
             reasons.append("pointer-does-not-resolve")
     elif authority.startswith("source-pointer:"):
         pointer = authority.split(":", 1)[1]
@@ -17790,15 +17885,21 @@ def _purpose_authority_failures(
                 reasons.append("claim-cites-another-source-than-the-renderer")
     elif authority.startswith("manifest:"):
         pointer = authority.split(":", 1)[1]
-        # `source_decisions` ordering is semantically neutral, so a numeric slot
-        # into it names whichever record happens to sit there
-        if pointer.startswith("/source_decisions/") and any(
-            segment.isdigit() for segment in pointer.split("/")
-        ):
-            reasons.append("positional-source-decision-authority-forbidden")
+        # one parser, and the order-neutral rule is a property of its parsed
+        # SEGMENTS. The string test this replaces read `/source_decisions/` off
+        # the raw address, so a second spelling of the same address slipped it
         try:
-            _resolve_pointer(MANIFEST, pointer)
-        except (KeyError, IndexError, TypeError):
+            parsed = _parse_purpose_pointer(pointer)
+        except AssertionError:
+            reasons.append("manifest-pointer-is-not-canonical")
+        else:
+            if _render_purpose_pointer(parsed) != pointer:
+                reasons.append("manifest-pointer-is-not-canonical")
+            if _identity_collection_slots(parsed):
+                reasons.append("positional-source-decision-authority-forbidden")
+        try:
+            _purpose_pointer(MANIFEST, pointer)
+        except (AssertionError, KeyError, IndexError, TypeError):
             reasons.append("manifest-pointer-does-not-resolve")
         else:
             # resolving is not reading: the leaf must be the one this renderer
@@ -18345,6 +18446,590 @@ def test_the_dependency_grammar_refuses_a_slot_into_a_neutral_collection() -> No
     # and an ordinary positional step into a caller-supplied list still works,
     # because there the order IS the meaning the vector carries
     assert _resolve_purpose_dependency(stepped, positional)
+
+
+def test_every_purpose_address_has_exactly_one_spelling() -> None:
+    """One canonical grammar, and a second spelling is refused not normalised.
+
+    `manifest://source_decisions/4/authority_role` resolved to the same value
+    as the spelling every guard refuses, because the descent discarded empty
+    segments while the guards matched the raw string. Normalising the two into
+    one would have been the wrong repair -- it makes an address that should not
+    exist mean something -- so the parser refuses it and the guards read parsed
+    segments rather than the string.
+    """
+    for raw, segments in (
+        ("", ()),
+        ("/a", ("a",)),
+        ("/a/b", ("a", "b")),
+        ("/source_decisions", ("source_decisions",)),
+        ("/changed_paths/0/head_object", ("changed_paths", "0", "head_object")),
+    ):
+        parsed = _parse_purpose_pointer(raw)
+        assert parsed.segments == segments, raw
+        assert _render_purpose_pointer(parsed) == raw, raw
+
+    for raw in (
+        "//source_decisions/4",
+        "/source_decisions//4",
+        "/source_decisions/4/",
+        "///a",
+        "a/b",
+        "/",
+        "/a//",
+        "/source_decisions/-1",
+        "/source_decisions/01",
+        "/changed_paths/00",
+        "/a/~0/b",
+        "/a/~1/b",
+        "/a~b",
+    ):
+        with pytest.raises(AssertionError):
+            _parse_purpose_pointer(raw)
+
+    # JSON-Pointer escapes are refused outright rather than half-implemented:
+    # no authored address contains one, so a partial escape grammar would be a
+    # second address vocabulary with no reader
+    addresses = {
+        coordinate
+        for claims in PURPOSE_SEMANTICS.values()
+        for claim in claims
+        for coordinate in (*claim.dependencies, claim.authority)
+    }
+    assert not [a for a in addresses if "~" in a]
+
+    # every authored Purpose address round-trips
+    checked = 0
+    for address in sorted(addresses):
+        for prefix in ("input:", "expected:", "manifest:", "source-pointer:"):
+            if not address.startswith(prefix):
+                continue
+            tail = address[len(prefix) :]
+            if not tail:
+                continue
+            assert _render_purpose_pointer(_parse_purpose_pointer(tail)) == tail, (
+                address
+            )
+            checked += 1
+    assert checked == 45
+
+
+def test_a_second_spelling_of_a_neutral_slot_is_refused_everywhere() -> None:
+    """The bypass, kept permanently, on both surfaces that used to disagree."""
+    vector = next(v for v in REPLAY["vectors"] if v["id"] == CORRECTION_PURPOSE_VECTOR)
+    claim = next(
+        c
+        for c in PURPOSE_SEMANTICS[CORRECTION_PURPOSE_VECTOR]
+        if c.renderer == "replay:second_independent_correction_link"
+    )
+    for forbidden in (
+        "manifest:/source_decisions/4/authority_role",
+        "manifest://source_decisions/4/authority_role",
+        "manifest:/source_decisions//4/authority_role",
+        "manifest:/source_decisions/4/",
+        "manifest:/source_decisions/-1/authority_role",
+        "manifest:/source_decisions/01/authority_role",
+        "manifest:///source_decisions/0",
+        "manifest://target_symbols/0/symbol",
+    ):
+        # the dependency resolver refuses it
+        with pytest.raises(AssertionError):
+            _resolve_purpose_dependency(vector, forbidden)
+        # and so does the authority relation, which used to carry its own
+        # grammar and its own idea of what a slot looked like
+        forged = PurposeClaim(
+            claim.assurance, claim.renderer, forbidden, claim.dependencies
+        )
+        reasons = _purpose_authority_failures(vector, "replay", forged)
+        assert reasons, forbidden
+        assert {
+            "manifest-pointer-is-not-canonical",
+            "positional-source-decision-authority-forbidden",
+        } & set(reasons), (forbidden, reasons)
+
+    # the collection itself remains addressable by identity
+    assert (
+        len(
+            cast(
+                list[Any],
+                _resolve_purpose_dependency(vector, "manifest:/source_decisions"),
+            )
+        )
+        == 5
+    )
+    # and a position in a retained array whose order IS semantic still resolves
+    replay_vector = next(
+        v
+        for v in REPLAY["vectors"]
+        if v["id"] == "history.replay.changed-path.changelog"
+    )
+    assert _resolve_purpose_dependency(
+        replay_vector, "source-pointer:/observations/pr/changed_files/items/0"
+    )
+
+
+def test_the_purpose_path_carries_no_second_pointer_parser() -> None:
+    """Two raw-pointer parsers that can disagree is the defect, not a detail.
+
+    The general `_resolve_pointer` discards empty segments; the Purpose parser
+    refuses them. While the authority relation used the first and the
+    dependency resolver the second, one address was refused by one and resolved
+    by the other. Neither Purpose surface may reach the general parser now.
+    """
+    purpose_surfaces = (
+        _resolve_purpose_dependency,
+        _purpose_authority_failures,
+        _resolve_purpose_authority,
+        _purpose_inputs,
+        _purpose_manifest_pointer,
+    )
+    for surface in purpose_surfaces:
+        codes, names = _reachable_code([surface])
+        assert "_resolve_pointer" not in names, surface.__name__
+        assert codes
+
+    # and the descent is the canonical one everywhere in the Purpose path: the
+    # general resolver is unreachable from every Purpose surface, so the two
+    # grammars cannot be applied to the same address again
+    reachable, _names = _reachable_code(list(purpose_surfaces))
+    assert _purpose_pointer.__code__ in reachable
+    assert _resolve_pointer.__code__ not in reachable
+    assert _parse_purpose_pointer.__code__ in reachable
+
+    # the general resolver still exists and still differs -- which is why the
+    # separation has to be asserted rather than assumed
+    assert _resolve_pointer(cast(Any, {"a": {"b": 1}}), "//a//b") == 1
+    with pytest.raises(AssertionError):
+        _parse_purpose_pointer("//a//b")
+
+
+def test_the_requirement_authority_is_selected_by_the_claim_not_the_vector() -> None:
+    """`claim.authority` decides the payload, or it decides nothing.
+
+    The shape this replaces ran backward -- vector id to ledger row to payload
+    -- so the authority a claim published was inert: pointing it at a different
+    real requirement produced the same string, and a claim could name any row
+    it liked. Selection runs forward now, and the row it names must witness
+    this vector.
+    """
+    identifier = "history.valid.change-set.supplied-order-preserved"
+    vector = next(v for v in VALID["vectors"] if v["id"] == identifier)
+    claim = next(
+        c
+        for c in PURPOSE_SEMANTICS[identifier]
+        if c.authority.startswith("requirement:")
+    )
+    assert claim.authority == "requirement:CS-18"
+    assert _resolve_purpose_authority(vector, claim) == PurposeAuthority(
+        "supplied order is preserved", "CS-18"
+    )
+
+    def forged(authority: str) -> PurposeClaim:
+        return PurposeClaim(
+            claim.assurance, claim.renderer, authority, claim.dependencies
+        )
+
+    for label, authority in (
+        # a real row that witnesses a different vector
+        ("another real requirement", "requirement:MO-04"),
+        ("unknown requirement", "requirement:ZZ-99"),
+        ("empty requirement id", "requirement:"),
+        # the form itself changed while the vector stands still
+        ("wrong authority form", "secondary-witness"),
+    ):
+        with pytest.raises((AssertionError, KeyError)):
+            _resolve_purpose_authority(vector, forged(authority))
+        assert label
+
+    # and the fragment follows the authority, so the claim is load-bearing for
+    # the sentence and not only for the payload
+    (sentence,) = [
+        c
+        for c in PURPOSE_SEMANTICS[identifier]
+        if c.renderer == "valid:requirement_sentence"
+    ]
+    assert _render_claim(vector, sentence) == _PV_REQUIREMENT_SENTENCES["CS-18"]
+
+
+def test_a_duplicated_requirement_id_is_refused_rather_than_chosen_between(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two rows with one id is an ambiguous authority, not a first match."""
+    identifier = "history.valid.change-set.supplied-order-preserved"
+    vector = next(v for v in VALID["vectors"] if v["id"] == identifier)
+    claim = next(
+        c for c in PURPOSE_SEMANTICS[identifier] if c.authority == "requirement:CS-18"
+    )
+    original = next(row for row in REQUIREMENT_LEDGER if row[0] == "CS-18")
+    monkeypatch.setitem(
+        globals(), "REQUIREMENT_LEDGER", (*REQUIREMENT_LEDGER, original)
+    )
+    with pytest.raises(AssertionError):
+        _resolve_purpose_authority(vector, claim)
+
+
+def test_only_a_requirement_claim_receives_a_requirement_payload() -> None:
+    """The whole population, not a sample.
+
+    A claim whose authority is a source pointer or a canonical declaration has
+    no requirement to carry. It used to be handed one anyway, because the
+    payload was selected by vector id and ten such vectors also appear in a
+    requirement registry -- so the renderer of a `literal` claim could have read
+    a requirement string that nothing in its own claim named.
+    """
+    sections = _purpose_sections()
+    vectors = {
+        cast(str, vector["id"]): vector
+        for section in sections.values()
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+    }
+    populated = 0
+    empty = 0
+    for identifier, claims in PURPOSE_SEMANTICS.items():
+        for claim in claims:
+            payload = _resolve_purpose_authority(vectors[identifier], claim)
+            requirement_form = (
+                claim.authority.startswith("requirement:")
+                or claim.authority == "secondary-witness"
+            )
+            if requirement_form:
+                assert payload != EMPTY_PURPOSE_AUTHORITY, identifier
+                assert payload.requirement, identifier
+                # only a ledger row carries an id; a secondary witness has none
+                assert (payload.requirement_id is not None) == (
+                    claim.authority.startswith("requirement:")
+                ), identifier
+                populated += 1
+            else:
+                assert payload == EMPTY_PURPOSE_AUTHORITY, (identifier, claim.authority)
+                empty += 1
+    assert populated == 116
+    assert empty == 85
+    assert populated + empty == 201
+
+    # the ten that used to be handed a payload they never named
+    borrowed = [
+        identifier
+        for identifier, claims in PURPOSE_SEMANTICS.items()
+        for claim in claims
+        if not claim.authority.startswith("requirement:")
+        and claim.authority != "secondary-witness"
+        and identifier
+        in SECONDARY_WITNESS_REGISTRY | dict.fromkeys(_pI_LEDGER_BY_WITNESS)
+    ]
+    assert borrowed, "the overlap that made this reachable still exists"
+    for identifier in borrowed:
+        for claim in PURPOSE_SEMANTICS[identifier]:
+            if claim.authority.startswith("requirement:") or claim.authority == (
+                "secondary-witness"
+            ):
+                continue
+            assert (
+                _resolve_purpose_authority(vectors[identifier], claim)
+                == EMPTY_PURPOSE_AUTHORITY
+            )
+
+
+def test_the_authority_resolver_reads_the_claim_it_is_given() -> None:
+    """A resolver that ignores its claim cannot be selecting by it.
+
+    Checked on the bytecode rather than the text: `claim` must be read, and the
+    authored registries must not be the thing that chooses the payload. The
+    previous resolver took `claim` and never touched it, which is exactly what
+    a reader would fail to notice.
+    """
+    code = _resolve_purpose_authority.__code__
+    assert "claim" in code.co_varnames[: code.co_argcount]
+    assert "authority" in code.co_names, "claim.authority is never read"
+
+    # the vector-keyed ledger index may not be the selection path any more
+    assert "_pI_LEDGER_BY_WITNESS" not in code.co_names
+    # the registry is still read -- a secondary witness has no other source --
+    # but only after the authority form has been established
+    assert "SECONDARY_WITNESS_REGISTRY" in code.co_names
+    assert "REQUIREMENT_LEDGER" in code.co_names
+
+    # the derivation belongs to validation, never to the payload
+    assert "_derived_requirement" not in code.co_names
+    evidence = _purpose_authority_evidence.__code__
+    assert "_derived_requirement" in evidence.co_names
+    assert evidence.co_flags & 0x20 == 0  # not a generator
+    source = inspect.getsource(_purpose_authority_evidence)
+    assert "return" not in source.replace("returns", ""), "validation returns nothing"
+
+
+def test_every_authority_payload_component_comes_from_the_declared_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The second channel, varied on its own.
+
+    Leave-one-out varies the frontier and says nothing about the payload. This
+    varies the payload and says nothing about the frontier. Between them every
+    value a renderer can see has been moved and accounted for.
+    """
+    sections = _purpose_sections()
+    vectors = {
+        cast(str, vector["id"]): vector
+        for section in sections.values()
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+    }
+    inert: list[tuple[str, str]] = []
+    consumed: dict[str, set[str]] = {}
+    for identifier, claims in PURPOSE_SEMANTICS.items():
+        vector = vectors[identifier]
+        for claim in claims:
+            payload = _resolve_purpose_authority(vector, claim)
+            if payload == EMPTY_PURPOSE_AUTHORITY:
+                continue
+            fragment = _render_claim(vector, claim)
+            frontier = _purpose_inputs(vector, claim)
+            # move the AUTHORED payload, holding the frontier exactly still
+            moves = 0
+            for index, component in enumerate(payload):
+                if component is None:
+                    continue
+                moved = PurposeAuthority(
+                    *(
+                        "an authored substitute" if position == index else value
+                        for position, value in enumerate(payload)
+                    )
+                )
+                try:
+                    after = PURPOSE_RENDERERS[claim.renderer](dict(frontier), moved)
+                except Exception:  # noqa: BLE001 - failing closed is a move
+                    moves += 1
+                    consumed.setdefault(claim.renderer, set()).add(
+                        payload._fields[index]
+                    )
+                    continue
+                if after != fragment:
+                    moves += 1
+                    consumed.setdefault(claim.renderer, set()).add(
+                        payload._fields[index]
+                    )
+            # a populated payload must be load-bearing for the sentence. Which
+            # COMPONENT carries it is the renderer's business -- the sentence
+            # renderer selects by requirement id, the gloss by requirement text
+            # -- so the law is on the payload, not on each field of it.
+            if moves == 0:
+                inert.append((identifier, claim.renderer))
+    assert not inert, inert
+    assert consumed == {
+        "valid:requirement_sentence": {"requirement_id"},
+        "invalid:requirement_gloss": {"requirement"},
+    }, consumed
+
+    # and the corpus cannot substitute a payload while the claim stands: the
+    # only way a corpus edit changes the requirement is by refusing the claim
+    identifier = "history.invalid.occurrence-time.missing-occurrence"
+    gloss = next(
+        c
+        for c in PURPOSE_SEMANTICS[identifier]
+        if c.renderer == "invalid:requirement_gloss"
+    )
+    vector = vectors[identifier]
+    authored = _resolve_purpose_authority(vector, gloss)
+    for field in ("error_location", "error_type"):
+        edited = copy.deepcopy(vector)
+        current = edited["expected"][field]
+        edited["expected"][field] = (
+            ["occurred_at", *current[1:]] if isinstance(current, list) else "moved"
+        )
+        try:
+            substituted = _resolve_purpose_authority(edited, gloss)
+        except AssertionError:
+            continue  # refused, which is the required behaviour
+        assert substituted == authored, (field, substituted)
+
+
+# --- the two-channel law -----------------------------------------------------
+#
+# A renderer has exactly two semantic channels -- the declared frontier and the
+# authored authority payload -- and the corpus has one validation-only channel
+# that may answer nothing but valid or invalid. So for any corpus field and any
+# claim, exactly one of three things must happen:
+#
+#   the field is a declared dependency        -> the ordinary rules apply
+#   the field invalidates the authority       -> the claim fails closed
+#   otherwise                                 -> the fragment is byte-identical
+#
+# The forbidden fourth outcome is an undeclared field moving the fragment while
+# the authority still validates. That was reachable before this repair, because
+# the payload was selected from the vector and built by `_derived_requirement`,
+# which reads structural corpus leaves: move one and the renderer received a
+# different requirement string with the frontier standing still.
+_PURPOSE_MUTATION_SENTINEL = "__mutated__"
+
+
+def _mutated_leaf(vector: dict[str, Any], path: tuple[Any, ...]) -> dict[str, Any]:
+    """The vector with one leaf moved to something it certainly was not."""
+    edited: dict[str, Any] = copy.deepcopy(vector)
+    node: Any = edited
+    for step in path[:-1]:
+        node = node[step]
+    current = node[path[-1]]
+    if isinstance(current, bool):
+        node[path[-1]] = not current
+    elif isinstance(current, int):
+        node[path[-1]] = current + 1
+    else:
+        node[path[-1]] = _PURPOSE_MUTATION_SENTINEL
+    return edited
+
+
+def _vector_leaf_paths(
+    node: Any, prefix: tuple[Any, ...] = ()
+) -> list[tuple[Any, ...]]:
+    """Every addressable leaf of a vector, as a path of steps."""
+    if isinstance(node, dict) and node:
+        return [
+            path
+            for key, value in cast(dict[str, Any], node).items()
+            for path in _vector_leaf_paths(value, (*prefix, key))
+        ]
+    if isinstance(node, list) and node:
+        return [
+            path
+            for index, value in enumerate(cast(list[Any], node))
+            for path in _vector_leaf_paths(value, (*prefix, index))
+        ]
+    return [prefix]
+
+
+def _two_channel_census() -> dict[str, int]:
+    """Classify every claim against every leaf of its own vector."""
+    sections = _purpose_sections()
+    vectors = {
+        cast(str, vector["id"]): vector
+        for section in sections.values()
+        for vector in cast(list[dict[str, Any]], section["vectors"])
+    }
+    census: dict[str, int] = {
+        "declared": 0,
+        "authority-invalid": 0,
+        "identical": 0,
+        "undeclared-moves": 0,
+    }
+    for identifier, claims in PURPOSE_SEMANTICS.items():
+        vector = vectors[identifier]
+        paths = [p for p in _vector_leaf_paths(vector) if p and p[0] != "purpose"]
+        for claim in claims:
+            frontier = _purpose_inputs(vector, claim)
+            fragment = _render_claim(vector, claim)
+            for path in paths:
+                edited = _mutated_leaf(vector, path)
+                try:
+                    moved_frontier = _purpose_inputs(edited, claim) != frontier
+                except Exception:  # noqa: BLE001 - a dependency that stopped resolving
+                    census["declared"] += 1
+                    continue
+                if moved_frontier:
+                    census["declared"] += 1
+                    continue
+                try:
+                    after = _render_claim(edited, claim)
+                except Exception:  # noqa: BLE001 - failing closed is the pass
+                    census["authority-invalid"] += 1
+                    continue
+                key = "identical" if after == fragment else "undeclared-moves"
+                census[key] += 1
+    return census
+
+
+def test_no_undeclared_field_moves_a_fragment_while_authority_holds() -> None:
+    """The law, over every claim and every leaf of its vector.
+
+    This is the oracle the reported defect class needed and did not have. The
+    dependency check varies the frontier; the authority check varies the
+    claim. Neither on its own can see a field that reaches the renderer through
+    the OTHER channel, which is what an authority payload built out of corpus
+    leaves was doing.
+    """
+    census = _two_channel_census()
+    assert census["undeclared-moves"] == 0, census
+    # and the census is not vacuous in any of its three admitted outcomes
+    assert census["declared"] > 0
+    assert census["authority-invalid"] > 0
+    assert census["identical"] > 0
+    assert sum(census.values()) > 7000
+
+
+def test_a_renderer_cannot_take_its_subject_from_the_authority_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The leak this repair closes, attempted from both sides.
+
+    The shape was: a renderer reads its subject out of the requirement string
+    instead of out of its declared coordinate, and the ledger stops declaring
+    that coordinate. The corpus leaf still decides the sentence; nothing
+    declares it; the frontier check cannot see it because the value arrives
+    through the other channel.
+
+    Both halves are now closed, and for different reasons.
+    """
+    # 1. a claim whose authority is not a requirement form receives NO
+    #    requirement payload, so there is nothing to read the subject out of
+    identifier = "history.invalid.occurrence-time.missing-occurrence"
+    claims = PURPOSE_SEMANTICS[identifier]
+    omission = next(
+        c for c in claims if c.renderer == "invalid:true_omission_not_union"
+    )
+    vector = next(v for v in INVALID["vectors"] if v["id"] == identifier)
+    assert not omission.authority.startswith("requirement:")
+    assert omission.authority != "secondary-witness"
+    assert _resolve_purpose_authority(vector, omission) == EMPTY_PURPOSE_AUTHORITY
+
+    # 2. a claim that DOES carry one gets an AUTHORED string, and a corpus leaf
+    #    that would have changed it refuses the claim instead of substituting
+    gloss = next(c for c in claims if c.renderer == "invalid:requirement_gloss")
+    assert gloss.authority == "secondary-witness"
+    payload = _resolve_purpose_authority(vector, gloss)
+    assert payload.requirement == SECONDARY_WITNESS_REGISTRY[identifier]
+    assert "expected:/error_location/0" not in gloss.dependencies
+
+    moved = copy.deepcopy(vector)
+    moved["expected"]["error_location"][0] = "occurred_at"
+    with pytest.raises(AssertionError):
+        _resolve_purpose_authority(moved, gloss)
+    with pytest.raises(AssertionError):
+        _render_claim(moved, gloss)
+
+    # and the derivation that validated it is never what the renderer is given
+    assert _derived_requirement(vector) == payload.requirement
+    monkeypatch.setitem(
+        SECONDARY_WITNESS_REGISTRY, identifier, "an authored requirement"
+    )
+    with pytest.raises(AssertionError):
+        # the authored text and the derivation now disagree, so the claim is
+        # refused -- the derivation does not win, and neither does the registry
+        _resolve_purpose_authority(vector, gloss)
+
+
+def test_the_two_channel_census_is_able_to_report_a_violation() -> None:
+    """The oracle is worth exactly its ability to fail, so here it fails.
+
+    A renderer wired to a corpus leaf that its claim does not declare, with the
+    authority left valid, is the forbidden fourth outcome. The census reports
+    it.
+    """
+    identifier = "history.valid.role-binding.base-canonical"
+    vector = next(v for v in VALID["vectors"] if v["id"] == identifier)
+    (claim,) = PURPOSE_SEMANTICS[identifier]
+
+    def undeclared(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
+        """Would read a leaf the claim does not declare."""
+        return str(inputs["input:/role_assignment/revision/full_digest"])
+
+    # the value is simply not in the frontier, so the renderer cannot run at all
+    with pytest.raises(KeyError):
+        undeclared(_purpose_inputs(vector, claim), EMPTY_PURPOSE_AUTHORITY)
+
+    # and the census reports a violation when a fragment does move on a leaf
+    # the frontier does not carry -- checked on a synthetic claim rather than
+    # by weakening a published one
+    census = _two_channel_census()
+    assert census["undeclared-moves"] == 0
+    assert census["authority-invalid"] > 200
 
 
 def test_no_resolved_value_shares_a_container_with_the_corpus() -> None:
