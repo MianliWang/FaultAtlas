@@ -724,6 +724,11 @@ def _confined_repository_path(relative: str) -> Path:
     for part in pure.parts:
         walked = walked / part
         assert not walked.is_symlink(), str(walked)
+    # Redundant given the two rules above -- `resolve()` can only leave the
+    # root through a `..` the lexical rule refuses or a symlink the walk
+    # refuses -- and kept anyway. It is the check that still holds if either of
+    # those is ever narrowed, and no mutation-coverage figure is worth removing
+    # a confinement test to improve.
     assert candidate.resolve().is_relative_to(root), relative
     return candidate
 
@@ -950,9 +955,28 @@ def test_a_symlink_inside_the_repository_cannot_carry_a_read_outside_it(
     with pytest.raises(AssertionError):
         _confined_repository_path("linked/decision.json")
 
+    # Both escapes above point OUTSIDE the root, so the resolve-and-confine
+    # check refuses them on its own and the component walk is unwitnessed by
+    # them. A link that stays INSIDE the root is refused by the walk alone --
+    # deleting the walk admits it, so the two checks are not redundant.
+    inside = root / "corpus" / "sibling.json"
+    inside.write_text('{"real":true}', encoding="utf-8")
+    (root / "corpus" / "alias.json").symlink_to(inside)
+    assert (root / "corpus" / "alias.json").resolve().is_relative_to(root.resolve())
+    with pytest.raises(AssertionError):
+        _confined_repository_path("corpus/alias.json")
+
+    # and an intermediate link that also stays inside
+    (root / "corpus" / "here").mkdir()
+    (root / "corpus" / "there").symlink_to(root / "corpus" / "here")
+    (root / "corpus" / "here" / "leaf.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(AssertionError):
+        _confined_repository_path("corpus/there/leaf.json")
+
     plain = root / "corpus" / "plain.json"
     plain.write_text("{}", encoding="utf-8")
     assert _confined_repository_path("corpus/plain.json") == plain
+    assert _confined_repository_path("corpus/here/leaf.json").is_file()
 
 
 def _retained_document_path(document_path: str) -> Path:
@@ -989,7 +1013,7 @@ def test_every_source_authority_digest_matches_live_bytes(reference: str) -> Non
     assert entry["authority_role"]
 
 
-def test_the_authority_set_is_exactly_five_and_minimal() -> None:
+def test_the_authority_set_is_exactly_five() -> None:
     assert len(MANIFEST["source_decisions"]) == 5
 
 
@@ -6810,6 +6834,16 @@ def test_each_objective_manifest_family_is_independently_validated(
     validator()
 
 
+# Objective leaves whose guard is not an `OBJECTIVE_VALIDATORS` entry. Each is
+# published prose projected into the document, so the projection registry and
+# the pairing check below own it: moving one is refused by 25 separate checks,
+# none of them a validator. Recorded here so "guarded" stays a measured claim
+# and the routing rule above stays a routing rule.
+OBJECTIVE_LEAVES_GUARDED_ELSEWHERE: frozenset[str] = frozenset(
+    f"/s07_forbidden_extra_ledger/{index}/published_non_claim" for index in range(11)
+)
+
+
 def test_every_objective_manifest_declaration_has_exactly_one_consumer() -> None:
     """A declaration nothing checks is decoration wearing an assurance costume.
 
@@ -6817,6 +6851,15 @@ def test_every_objective_manifest_declaration_has_exactly_one_consumer() -> None
     the manifest says what it says. Every objective leaf must therefore fall to
     a validator that consults something outside the manifest, and every leaf
     that genuinely cannot must be declared descriptive instead.
+
+    What this establishes precisely: every objective leaf is claimed by exactly
+    one validator PREFIX, and no leaf is claimed by two. It does not establish
+    that each leaf is individually read by its owning validator -- 21 are
+    guarded by a different check under the same prefix, the governance totals
+    by the recomputation and the forbidden-extra prose by its own pairing test
+    and the table projection. Prefix ownership is the routing rule; being
+    guarded is proved by the mutation census below, which does not care which
+    validator objects.
     """
     duplicated = [
         path
@@ -6826,6 +6869,47 @@ def test_every_objective_manifest_declaration_has_exactly_one_consumer() -> None
 
     assert not _unowned_objective_paths(), _unowned_objective_paths()
     assert not duplicated, duplicated
+
+    # and the substantive claim: every objective leaf is guarded by SOMETHING.
+    # Drift each one in place and require an objective validator to object,
+    # except for the leaves named below, whose guard lives elsewhere and is
+    # recorded rather than assumed.
+    unguarded: list[str] = []
+    for path in sorted(_objective_leaf_paths()):
+        parent_path, _, leaf = path.rpartition("/")
+        try:
+            parent = _resolve_pointer(MANIFEST, parent_path)
+        except (KeyError, IndexError, TypeError):
+            continue
+        container = cast(dict[str, Any] | list[Any], parent)
+        key: Any = int(leaf) if isinstance(container, list) else leaf
+        original = container[key]  # type: ignore[index]
+        container[key] = _moved_value(original)  # type: ignore[index]
+        try:
+            objected = False
+            for _prefix, validate in OBJECTIVE_VALIDATORS:
+                try:
+                    validate()
+                except Exception:  # noqa: BLE001 - any objection counts
+                    objected = True
+                    break
+            if not objected:
+                unguarded.append(path)
+        finally:
+            container[key] = original  # type: ignore[index]
+    assert unguarded == sorted(OBJECTIVE_LEAVES_GUARDED_ELSEWHERE), unguarded
+
+    # and the named exceptions really are guarded, by the check that owns them
+    for path in sorted(OBJECTIVE_LEAVES_GUARDED_ELSEWHERE):
+        index = int(path.split("/")[2])
+        ledger = cast(list[dict[str, Any]], MANIFEST["s07_forbidden_extra_ledger"])
+        original = ledger[index]["published_non_claim"]
+        ledger[index]["published_non_claim"] = _moved_value(original)
+        try:
+            with pytest.raises(AssertionError):
+                test_each_forbidden_extra_is_paired_with_its_own_non_claim()
+        finally:
+            ledger[index]["published_non_claim"] = original
 
 
 def test_the_declared_descriptive_paths_are_real_and_non_objective() -> None:
@@ -17804,6 +17888,19 @@ def _scalar_field_failures(claim: PurposeClaim, field: str) -> list[str]:
     return []
 
 
+def _authority_is_supplied(authority: str, dependencies: tuple[str, ...]) -> bool:
+    """Whether a cited leaf is a location the renderer actually receives.
+
+    Either the coordinate itself, or the container a declared coordinate lives
+    inside -- a claim may legitimately cite `input:/changed_paths` while its
+    renderer reads `input:/changed_paths/0/head_object/algorithm`, because the
+    citation names the corpus location and the dependency names the read.
+    """
+    if authority in dependencies:
+        return True
+    return any(coordinate.startswith(f"{authority}/") for coordinate in dependencies)
+
+
 def _purpose_authority_failures(
     vector: dict[str, Any], family: str, claim: PurposeClaim
 ) -> list[str]:
@@ -17836,6 +17933,13 @@ def _purpose_authority_failures(
             _purpose_pointer(vector[root], pointer)
         except (AssertionError, KeyError, IndexError, TypeError):
             reasons.append("pointer-does-not-resolve")
+        # resolving was the whole rule, which is the defect class every other
+        # authority form had already closed: a leaf that merely EXISTS is not
+        # a leaf the fragment rests on. The citation had to name a location the
+        # renderer is actually given -- either a declared coordinate, or the
+        # container one of them lives inside.
+        if not _authority_is_supplied(authority, claim.dependencies):
+            reasons.append("cited-leaf-is-not-a-renderer-input")
     elif authority.startswith("source-pointer:"):
         pointer = authority.split(":", 1)[1]
         cited = {
@@ -18629,6 +18733,7 @@ PURPOSE_SLASH_READERS: dict[str, str] = {
     "_PR_supersession_limit": "reads a leaf name out of an authored constant",
     "_PR_retained_merge_event_fact": "takes the first segment of a replayed target",
     "_PR_caller_association_to_locked_record": "strips a bound fact's leading slash",
+    "_authority_is_supplied": "tests whether a citation encloses a declared coordinate",
 }
 
 
@@ -18991,16 +19096,6 @@ def _moved_value(current: Any) -> Any:
     return _PURPOSE_MUTATION_SENTINEL
 
 
-def _mutated_leaf(vector: dict[str, Any], path: tuple[Any, ...]) -> dict[str, Any]:
-    """The vector with one leaf moved to something it certainly was not."""
-    edited: dict[str, Any] = copy.deepcopy(vector)
-    node: Any = edited
-    for step in path[:-1]:
-        node = node[step]
-    node[path[-1]] = _moved_value(node[path[-1]])
-    return edited
-
-
 def _vector_leaf_paths(
     node: Any, prefix: tuple[Any, ...] = ()
 ) -> list[tuple[Any, ...]]:
@@ -19064,19 +19159,24 @@ def _two_channel_census() -> dict[str, int]:
                     return "authority-invalid"
                 return "identical" if after == fragment else "undeclared-moves"
 
-            for path in vector_paths:
-                census[classify(_mutated_leaf(vector, path))] += 1
-
-            for path in manifest_paths:
-                node: Any = MANIFEST
-                for step in path[:-1]:
-                    node = node[step]
-                original = node[path[-1]]
-                node[path[-1]] = _moved_value(original)
-                try:
-                    census[classify(vector)] += 1
-                finally:
-                    node[path[-1]] = original
+            # BOTH surfaces are mutated IN PLACE. Handing `classify` a deep
+            # copy of the vector would make the vector channel blind to the
+            # very thing it exists to catch: a renderer that bypasses its
+            # frontier and reads the live vector leaves the copy untouched, so
+            # the fragment never moves and the census reports nothing. The
+            # manifest channel was already in place and did catch it, which is
+            # how the asymmetry showed.
+            for surface, paths in ((vector, vector_paths), (MANIFEST, manifest_paths)):
+                for path in paths:
+                    node: Any = surface
+                    for step in path[:-1]:
+                        node = node[step]
+                    original = node[path[-1]]
+                    node[path[-1]] = _moved_value(original)
+                    try:
+                        census[classify(vector)] += 1
+                    finally:
+                        node[path[-1]] = original
     return census
 
 
@@ -19150,31 +19250,46 @@ def test_a_renderer_cannot_take_its_subject_from_the_authority_payload(
         _resolve_purpose_authority(vector, gloss)
 
 
-def test_the_two_channel_census_is_able_to_report_a_violation() -> None:
-    """The oracle is worth exactly its ability to fail, so here it fails.
+def test_the_two_channel_census_is_able_to_report_a_violation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The oracle is worth exactly its ability to report a positive.
 
-    A renderer wired to a corpus leaf that its claim does not declare, with the
-    authority left valid, is the forbidden fourth outcome. The census reports
-    it.
+    Asserting that the census reads zero says nothing about whether it COULD
+    read anything else. So a renderer is given a read that bypasses its own
+    frontier and reaches the live vector -- the shape the frontier exists to
+    make impossible -- and the census must count it.
+
+    This is also why both surfaces are mutated in place. While the vector was
+    deep-copied and only the manifest was not, this exact leak moved the
+    fragment and the census reported nothing, because the copy the renderer
+    never consulted was the only thing that changed.
     """
     identifier = "history.valid.role-binding.base-canonical"
-    vector = next(v for v in VALID["vectors"] if v["id"] == identifier)
     (claim,) = PURPOSE_SEMANTICS[identifier]
+    honest = PURPOSE_RENDERERS[claim.renderer]
 
-    def undeclared(inputs: dict[str, Any], _a: PurposeAuthority) -> str:
-        """Would read a leaf the claim does not declare."""
-        return str(inputs["input:/role_assignment/revision/full_digest"])
+    def leaking(inputs: dict[str, Any], authority: PurposeAuthority) -> str:
+        """Reaches the live corpus for a leaf its claim does not declare."""
+        undeclared = cast(list[dict[str, Any]], VALID["vectors"])[0]["input"]
+        digest = cast(str, undeclared["role_assignment"]["revision"]["full_digest"])
+        return f"{honest(inputs, authority)} {digest[:8]}"
 
-    # the value is simply not in the frontier, so the renderer cannot run at all
+    monkeypatch.setitem(PURPOSE_RENDERERS, claim.renderer, leaking)
+    leaked = _two_channel_census()
+    monkeypatch.undo()
+
+    assert leaked["undeclared-moves"] > 0, leaked
+    # and with the leak removed the same census reads zero again
+    assert _two_channel_census()["undeclared-moves"] == 0
+
+    # the value it reached is genuinely undeclared, and genuinely absent from
+    # the frontier the renderer was handed
+    vector = next(v for v in VALID["vectors"] if v["id"] == identifier)
+    frontier = _purpose_inputs(vector, claim)
+    assert set(frontier) == set(claim.dependencies)
     with pytest.raises(KeyError):
-        undeclared(_purpose_inputs(vector, claim), EMPTY_PURPOSE_AUTHORITY)
-
-    # and the census reports a violation when a fragment does move on a leaf
-    # the frontier does not carry -- checked on a synthetic claim rather than
-    # by weakening a published one
-    census = _two_channel_census()
-    assert census["undeclared-moves"] == 0
-    assert census["authority-invalid"] > 200
+        frontier["input:/role_assignment/revision/full_digest"]  # noqa: B018
 
 
 def test_no_resolved_value_shares_a_container_with_the_corpus() -> None:
@@ -20289,8 +20404,8 @@ PURPOSE_AUTHORITY_BINDINGS: dict[str, str] = {
     "embedded-fact": "PURPOSE_EMBEDDED_FACT_SELECTORS",
     "evidence-classification": "PURPOSE_SCALAR_FIELDS",
     "evidence-record-lock": "PURPOSE_SCALAR_FIELDS",
-    "expected": "the cited leaf is perturbed and the fragment must move",
-    "input": "the cited leaf is perturbed and the fragment must move",
+    "expected": "the cited leaf is a declared render input, and moving it moves the fragment",
+    "input": "the cited leaf is a declared render input, and moving it moves the fragment",
     "input_mode": "PURPOSE_SCALAR_FIELDS",
     "literal": "no source: admitted only as CANONICAL_DECLARATION_ONLY",
     "manifest": "PURPOSE_MANIFEST_POINTERS",
