@@ -729,12 +729,12 @@ def test_every_phase_status_summary_records_the_correction() -> None:
     text = " ".join(
         (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
     )
-    complete = text.count("`S1.P05.S08` are complete")
+    complete = text.count("`S1.P05.S09` are complete")
     recorded = text.count("including the `S1.P05.S08.C01` correction")
 
     assert complete >= 4
     assert recorded == complete
-    assert text.count("`S1.P05.S09` is next and not started") == complete
+    assert text.count("`S1.P05.S10` is next and not started") == complete
 
 
 def test_the_derived_summary_preserves_whole_rationale_sentences() -> None:
@@ -764,8 +764,11 @@ def test_the_roadmap_records_the_correction_and_holds_the_phase_state() -> None:
     )
 
     assert "`S1.P05.S08.C01`" in text
-    assert "`S1.P05.S09` is next and not started" in text
-    assert "`S1.P05.S09` — Contract Corpus (provisional; next, not started)" in text
-    assert "`S1.P05.S10` — Integration and Phase Closure (provisional)" in text
+    assert "`S1.P05.S10` is next and not started" in text
+    assert "`S1.P05.S09` — Development History Contract Corpus (complete)" in text
+    assert (
+        "`S1.P05.S10` — Integration and Phase Closure (provisional; next, not started)"
+        in text
+    )
     assert "`S1.P05` is active and incomplete" in text
     assert "`S1.P06` is not eligible to begin" in text

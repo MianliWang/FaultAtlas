@@ -39,8 +39,9 @@ aspirational Slice as scheduled work.
   `S1.P04` is complete.
   `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
   `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-  `S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, including the
-  `S1.P05.S08.C01` correction, and `S1.P05.S09` is next and not started.
+  `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
+  correction, and `S1.P05.S09` are complete, and
+  `S1.P05.S10` is next and not started.
   `S1.P06` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -86,8 +87,9 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P04` is complete.
 `S1.P05` is active and incomplete; `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, including the
-`S1.P05.S08.C01` correction, and `S1.P05.S09` is next and not started.
+`S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
+correction, and `S1.P05.S09` are complete, and
+`S1.P05.S10` is next and not started.
 `S1.P06` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -681,8 +683,9 @@ otherwise.
 
 `S1.P05` is active and incomplete. `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, including the
-`S1.P05.S08.C01` correction, and `S1.P05.S09` is next and not started.
+`S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
+correction, and `S1.P05.S09` are complete, and
+`S1.P05.S10` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1055,8 +1058,39 @@ The effective projection keeps all twelve inherited subjects dispositioned
 exactly once with no self-introduced subject and `self_owned_open == 0`, under
 `S1.P05.S08` for six subjects and `S1.P05.S08.C01` for six. Immediate owners
 are `S2` six, `S5` five, and `S1.P06` one; long-term owners are `S5` eleven and
-`S1.P06` one. No product semantics change, no production source changes, and
-`S1.P05.S09` remains next and not started.
+`S1.P06` one. No product semantics change and no production source changes.
+
+`S1.P05.S09` publishes the source-only development-history contract corpus at
+`reference_corpus/contracts/development-history/v1`, freezing the published
+product surface before Phase closure. It changed no production source. The
+corpus covers the two `S1.P05` production modules and all nine published
+product symbols, derives that coverage from the live `__all__` of each module
+so a later published symbol forces deliberate review, and names
+`faultatlas.domain.identity`, `faultatlas.domain.revision`, and
+`faultatlas.domain.evidence` as supporting authorities it does not own. The
+`S1.P04` snapshot modules are outside it: no `S1.P05` value consumes them.
+
+Nine files hold 183 vectors over 19 declared fixtures -- 48 valid, 111 invalid,
+and 24 replay -- each occupying a semantic partition that is distinct in
+behaviour, not merely in label. Invalid vectors
+lock a failure category, an error location, a location mode, and an error type,
+and deliberately lock no prose, no validator name, and no Pydantic internal
+union branch label; the prefix location mode is used only for the two
+discriminatorless unions, the `S1.P05.S06` occurrence union and the
+`S1.P05.S07` fact union.
+
+The canonical replay uses three provenance classifications and deliberately no
+fourth: `S1.P05` publishes no deterministic derivation, so the retained ahead,
+behind, and merge-base values stay deferred with `S1.P02` `deferred:22`. Eleven
+history facts are individually linkable, while `PullRequestChangeSet` is
+replayed as a caller-supplied composition that `S1.P05.S07` does not admit as
+an evidence-link fact, and the replay preserves that asymmetry rather than
+flattening every value into evidence-derived history.
+
+`S1.P05.S08` and its append-only `S1.P05.S08.C01` correction are consumed as
+source authorities and are never vectorized as product behaviour. The corpus
+executor recomputes the effective disposition projection from both artifacts
+rather than trusting a stored table, and both remain byte-identical.
 
 The remaining `S1.P05` sequence is PROVISIONAL. It authorizes no future
 implementation and may split, merge, renumber, or drop after later read-only
@@ -1072,8 +1106,9 @@ orientations. It is evidence-driven rather than fixed at ten Slices:
 7. `S1.P05.S07` — Pull Request History Fact Evidence Association (complete)
 8. `S1.P05.S08` — Deferred-Subject Disposition (complete)
 - `S1.P05.S08.C01` — Deferred-Subject Owner-Topology Correction (complete)
-9. `S1.P05.S09` — Contract Corpus (provisional; next, not started)
-10. `S1.P05.S10` — Integration and Phase Closure (provisional)
+9. `S1.P05.S09` — Development History Contract Corpus (complete)
+10. `S1.P05.S10` — Integration and Phase Closure (provisional; next, not
+    started)
 
 The Issue-to-Pull-Request pairing is retained case material classified as a
 reviewed derived interpretation rather than a provider fact, and it is
@@ -1176,8 +1211,9 @@ unchanged by `S1.P05.S07` and neither imports the bridge. Production Python
 sources are 13.
 `S1.P05` is active and incomplete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
-`S1.P05.S06`, `S1.P05.S07`, and `S1.P05.S08` are complete, including the
-`S1.P05.S08.C01` correction, and `S1.P05.S09` is next and not started.
+`S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
+correction, and `S1.P05.S09` are complete, and
+`S1.P05.S10` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
