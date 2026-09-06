@@ -7002,6 +7002,114 @@ def test_every_objective_manifest_declaration_has_exactly_one_consumer() -> None
             ledger[index]["published_non_claim"] = original
 
 
+# The published S1.P05 work that forms this corpus's predecessor basis: S01
+# through S08 with the corrections and assurance follow-ups that were merged
+# alongside them. Authored here from the verified publication history rather
+# than read from the manifest, so the two are independent and can disagree.
+#
+# The inventory shipped with fourteen entries and omitted three -- #57, #59 and
+# #61 -- while including four assurance follow-ups of identical shape. A
+# tests-only publication is not excluded when equivalent tests-only
+# publications are already included, so there was no rule under which the list
+# was complete; it was simply short. `originating_publications` remains a
+# DESCRIPTIVE declaration: nothing here promotes it to verified assurance, and
+# being descriptive was never permission to keep a known omission.
+#
+# These are declaration checks. Nothing in this module contacts GitHub, and the
+# squash identities below are recorded provenance, not something a test
+# resolves at runtime.
+ORIGINATING_PUBLICATIONS: tuple[tuple[str, int, str], ...] = (
+    ("S1.P05.S01", 54, "7e5732eacc38aaeb844d40bdb66ff72b5ee38057"),
+    ("S1.P05.S02", 55, "21e6a48af3f568333bd41b216cdfabe749a00c6c"),
+    ("S1.P05.S02.C01", 56, "6430049374bcf660f058cf11e77123e237914722"),
+    ("S1.P05.S02.C01.A01", 57, "b2cb023621288e7d11ff1dcdb4b87f15b2b18714"),
+    ("S1.P05.S03", 58, "107e677534e50719d3b5c5d568d0b4ed7b977c0e"),
+    ("S1.P05.S03.A01", 59, "f4f58e87461764ba09c43dd332fe3861e5c90a87"),
+    ("S1.P05.S04", 60, "261d4c4685e73fb82380a13f34627377abb4e746"),
+    ("S1.P05.S04.A01", 61, "816f70341078883c8c92f7a64c11f0a5a0d1da76"),
+    ("S1.P05.S05", 62, "57761ebf2bebf31155f4819d1a015ed7cdc55d33"),
+    ("S1.P05.S06", 63, "3253e804f86f7d991e75f33f1c2ba4e034020a88"),
+    ("S1.P05.S06.A01", 64, "6fc04733fe1ecde78bc8f6df739656a6c58ed4f1"),
+    ("S1.P05.S06.A01.C01", 65, "2c6fa40d47250cb8e66e6d7fe9604a98a29de377"),
+    ("S1.P05.S06.A01.C02", 66, "def12890085c011d5b59b4843b7d67bf166af738"),
+    ("S1.P05.S07", 67, "a090c3b342fe0432e7f19a2759afb52a42a51fdd"),
+    ("S1.P05.S07.A01", 68, "75000a92696146d6476e68f51bcae176c533cf64"),
+    ("S1.P05.S08", 69, "e1d673b2a26811b432bcf1a28e012100018edea5"),
+    ("S1.P05.S08.C01", 70, "676a666bf0924f210107dc735fe8bc8bf56bfc7b"),
+)
+
+# The three the shipped inventory omitted, kept by name so their absence
+# cannot reopen quietly.
+RESTORED_PUBLICATIONS = frozenset(
+    {"S1.P05.S02.C01.A01", "S1.P05.S03.A01", "S1.P05.S04.A01"}
+)
+
+
+def test_the_originating_publication_inventory_is_the_published_basis() -> None:
+    """Membership, not a count: an equal-sized wrong list is still wrong."""
+    declared = cast(list[str], MANIFEST["originating_publications"])
+    authored = [slice_id for slice_id, _pr, _sha in ORIGINATING_PUBLICATIONS]
+
+    assert declared == authored
+    assert len(declared) == len(set(declared)), "an entry is repeated"
+    assert RESTORED_PUBLICATIONS <= set(declared)
+
+    # this corpus's own publication is not its own predecessor, and neither is
+    # the closure that will follow it
+    assert "S1.P05.S09" not in declared
+    assert "S1.P05.S10" not in declared
+    # nor is any entry from another phase
+    assert all(entry.startswith("S1.P05.S") for entry in declared)
+
+    # the provenance is recorded once, and uniquely
+    numbers = [pr for _slice, pr, _sha in ORIGINATING_PUBLICATIONS]
+    squashes = [sha for _slice, _pr, sha in ORIGINATING_PUBLICATIONS]
+    assert len(set(numbers)) == len(numbers)
+    assert len(set(squashes)) == len(squashes)
+    assert all(
+        len(sha) == 40 and set(sha) <= set("0123456789abcdef") for sha in squashes
+    )
+
+
+def test_dropping_or_substituting_a_publication_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The three omissions reopen, and an equal-sized wrong list still fails.
+
+    A count alone accepted the shipped inventory for as long as it stood, so
+    the check is membership and the count is a consequence.
+    """
+    authored = [slice_id for slice_id, _pr, _sha in ORIGINATING_PUBLICATIONS]
+
+    for restored in sorted(RESTORED_PUBLICATIONS):
+        without = [entry for entry in authored if entry != restored]
+        monkeypatch.setitem(MANIFEST, "originating_publications", without)
+        with pytest.raises(AssertionError):
+            test_the_originating_publication_inventory_is_the_published_basis()
+        monkeypatch.undo()
+
+    # equal count, one entry replaced by a real publication of another phase
+    substituted = [*authored[:-1], "S1.P04.S10"]
+    assert len(substituted) == len(authored)
+    monkeypatch.setitem(MANIFEST, "originating_publications", substituted)
+    with pytest.raises(AssertionError):
+        test_the_originating_publication_inventory_is_the_published_basis()
+    monkeypatch.undo()
+
+    # equal count, one entry duplicated
+    doubled = [*authored[:-1], authored[0]]
+    monkeypatch.setitem(MANIFEST, "originating_publications", doubled)
+    with pytest.raises(AssertionError):
+        test_the_originating_publication_inventory_is_the_published_basis()
+    monkeypatch.undo()
+
+    # and the corpus's own future publication may not be its own predecessor
+    circular = [*authored, "S1.P05.S09"]
+    monkeypatch.setitem(MANIFEST, "originating_publications", circular)
+    with pytest.raises(AssertionError):
+        test_the_originating_publication_inventory_is_the_published_basis()
+
+
 def test_the_declared_descriptive_paths_are_real_and_non_objective() -> None:
     every = set(_leaf_paths(MANIFEST))
     meta = set(_meta_schema_leaf_paths())
@@ -7027,7 +7135,7 @@ def test_the_meta_schema_is_exactly_the_classifier_and_its_paths() -> None:
     ]
 
     assert sorted(_meta_schema_leaf_paths()) == sorted(expected)
-    assert len(_meta_schema_leaf_paths()) == len(declared) + 1 == 74
+    assert len(_meta_schema_leaf_paths()) == len(declared) + 1 == 77
 
 
 def test_the_declaration_universe_excludes_the_meta_schema() -> None:
@@ -7039,13 +7147,13 @@ def test_the_declaration_universe_excludes_the_meta_schema() -> None:
     assert not universe & meta
     # the classifier's own path list is manifest data, so shortening it moves
     # the total and the meta-schema together; the universe it classifies does not
-    assert len(every) == 460
-    assert len(meta) == 74
-    assert len(universe) == 386
+    assert len(every) == 466
+    assert len(meta) == 77
+    assert len(universe) == 389
 
 
 def test_the_declaration_universe_is_partitioned_in_two_kinds() -> None:
-    """386 = 313 + 73, with nothing unclassified and nothing counted twice."""
+    """389 = 313 + 76, with nothing unclassified and nothing counted twice."""
     universe = set(_declaration_universe())
     objective = set(_objective_leaf_paths())
     descriptive = set(DESCRIPTIVE_PATHS)
@@ -7055,7 +7163,7 @@ def test_the_declaration_universe_is_partitioned_in_two_kinds() -> None:
     assert not objective & descriptive
     assert len(universe) == len(objective) + len(descriptive)
     assert len(objective) == 313
-    assert len(descriptive) == 73
+    assert len(descriptive) == 76
     # no meta-schema leaf reaches either side of the accounting
     assert not (objective | descriptive) & set(_meta_schema_leaf_paths())
 
@@ -11432,7 +11540,7 @@ def test_the_epistemic_counts_come_from_their_own_sources() -> None:
     summary = cast(dict[str, Any], MANIFEST["vector_summary"])
 
     # the ordered list, so a duplicated entry could not hide behind a set
-    assert len(declared) == len(set(declared)) == len(DESCRIPTIVE_PATHS) == 73
+    assert len(declared) == len(set(declared)) == len(DESCRIPTIVE_PATHS) == 76
     assert f"({len(declared)} of them)" in _render_epistemic_split()[0]
     assert summary["fixtures"] == 19 == len(cast(list[Any], VALID["fixtures"]))
     assert summary["fixtures"] == len(FIXTURE_BINDINGS)
@@ -14161,10 +14269,10 @@ def test_the_declaration_universe_is_partitioned_by_what_the_document_shows() ->
     # partition of something else
     assert set(shown) == set(structural) == set(universe)
     assert projected | structural_only | unseen == set(universe)
-    assert len(universe) == 386
+    assert len(universe) == 389
     assert len(projected) == 151
     assert len(structural_only) == 11
-    assert len(unseen) == 224
+    assert len(unseen) == 227
     # the meta-schema stays outside the universe it classifies
     assert not set(shown) & set(_meta_schema_leaf_paths())
 
