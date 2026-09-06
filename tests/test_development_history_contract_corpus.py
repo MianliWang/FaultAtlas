@@ -18498,6 +18498,11 @@ def test_every_purpose_address_has_exactly_one_spelling() -> None:
         "/changed_paths/ 1",
         "/changed_paths/1 ",
         "/changed_paths/\uff10",
+        # the other unicode decimal digits int() reads as numbers
+        "/changed_paths/\u0660",
+        "/changed_paths/\u096a",
+        "/changed_paths/\u1040",
+        "/changed_paths/\uff11\uff10",
         "/a/~0/b",
         "/a/~1/b",
         "/a~b",
@@ -18525,7 +18530,15 @@ def test_every_purpose_address_has_exactly_one_spelling() -> None:
     # every authored Purpose address round-trips
     checked = 0
     for address in sorted(addresses):
-        for prefix in ("input:", "expected:", "manifest:", "source-pointer:"):
+        # `embedded-fact:` was missing here, so one authored pointer-shaped
+        # address went unchecked: the count read 45 where 46 exist
+        for prefix in (
+            "input:",
+            "expected:",
+            "manifest:",
+            "source-pointer:",
+            "embedded-fact:",
+        ):
             if not address.startswith(prefix):
                 continue
             tail = address[len(prefix) :]
@@ -18535,7 +18548,7 @@ def test_every_purpose_address_has_exactly_one_spelling() -> None:
                 address
             )
             checked += 1
-    assert checked == 45
+    assert checked == 46
 
 
 def test_a_second_spelling_of_a_neutral_slot_is_refused_everywhere() -> None:
@@ -18592,19 +18605,53 @@ def test_a_second_spelling_of_a_neutral_slot_is_refused_everywhere() -> None:
     )
 
 
-def _descends_a_pointer(candidate: Callable[..., Any]) -> bool:
-    """Whether a function walks a `/`-separated address into a document.
+# Every function reachable from a Purpose surface that holds a `/` literal,
+# and what it does with it. This is the closure that keeps the address grammar
+# singular, and it is structural: a second parser cannot be written without
+# holding the separator, so it cannot be written without appearing here.
+#
+# The guard this replaces looked for descenders by CALLING each candidate with
+# a bare document and keeping the ones that returned the leaf. `_pR_replayed`
+# takes a vector, so the probe raised and the function was skipped -- and the
+# private copy of the loose grammar that had just been deleted from it could be
+# pasted back with every test still green. Naming the offender let the second
+# one through; probing by call shape let the same one back in. A discriminator
+# narrower than the thing it must catch is not a guard.
+PURPOSE_SLASH_READERS: dict[str, str] = {
+    "_parse_purpose_pointer": "the one parser: an address becomes segments here",
+    "_render_purpose_pointer": "and becomes an address again here",
+    "_resolve_purpose_dependency": "splits a coordinate from its form prefix",
+    "_pR_source_position": "names a retained node from its pointer's shape",
+    "_pR_target_ending": "selects a replayed target by its last segment",
+    "_pR_pointer_supplying": "selects a cited pointer by its last segment",
+    "_pR_instant_target": "tests whether a target is top-level",
+    "_pR_composed_bindings": "counts the separators in an embedded-fact key",
+    "_PR_supersession_limit": "reads a leaf name out of an authored constant",
+    "_PR_retained_merge_event_fact": "takes the first segment of a replayed target",
+    "_PR_caller_association_to_locked_record": "strips a bound fact's leading slash",
+}
 
-    Found by behaviour rather than by name. The first version of this guard
-    asserted `"_resolve_pointer" not in names`, which a verbatim copy of
-    `_resolve_pointer` under another name walks straight past -- and one was
-    there: `_pR_resolve`, reachable from the authority relation.
-    """
-    document: Any = {"a": {"b": [10, 20]}}
-    try:
-        return candidate(document, "/a/b/0") == 10
-    except Exception:  # noqa: BLE001 - not a pointer descent at all
-        return False
+
+def _slash_holding_functions(reachable: set[CodeType]) -> set[str]:
+    """Reachable functions whose code carries the separator, nested code too."""
+
+    def units(code: CodeType) -> list[CodeType]:
+        found = [code]
+        for constant in code.co_consts:
+            if isinstance(constant, CodeType):
+                found.extend(units(constant))
+        return found
+
+    return {
+        name
+        for name, value in globals().items()
+        if isinstance(value, FunctionType)
+        and value.__code__ in reachable
+        and any(
+            "/" in [c for c in unit.co_consts if isinstance(c, str)]
+            for unit in units(value.__code__)
+        )
+    }
 
 
 def test_the_purpose_path_carries_no_second_pointer_parser() -> None:
@@ -18614,10 +18661,11 @@ def test_the_purpose_path_carries_no_second_pointer_parser() -> None:
     refuses them. While two Purpose surfaces used different ones, a single
     address was refused by one and resolved by the other.
 
-    So every pointer-descending function reachable from a Purpose surface is
-    found by CALLING it, and each must agree with the canonical parser on the
-    spellings that separate the two grammars. Naming the one known offender
-    was how the second one survived.
+    The closure is over the separator itself. A function cannot walk an address
+    without holding a `/`, so every reachable function that holds one is
+    enumerated here with what it does with it, and the set must be exactly
+    this. Restoring the loose descent anywhere in the Purpose path adds a name
+    to that set and fails, whatever its signature and whatever it is called.
     """
     purpose_surfaces = (
         _resolve_purpose_dependency,
@@ -18630,34 +18678,50 @@ def test_the_purpose_path_carries_no_second_pointer_parser() -> None:
     reachable, _names = _reachable_code(list(purpose_surfaces))
     assert reachable
 
-    descenders = {
-        name: value
-        for name, value in globals().items()
-        if isinstance(value, FunctionType)
-        and value.__code__ in reachable
-        and _descends_a_pointer(value)
-    }
-    assert descenders, "the probe found nothing, so it proves nothing"
+    holders = _slash_holding_functions(reachable)
+    assert holders == set(PURPOSE_SLASH_READERS), (
+        sorted(holders - set(PURPOSE_SLASH_READERS)),
+        sorted(set(PURPOSE_SLASH_READERS) - holders),
+    )
+    assert all(PURPOSE_SLASH_READERS.values()), "every reader states its role"
 
-    # the spellings the two grammars disagree about
-    divergent = ("//a//b//0", "/a/b/", "/a/b/-1", "/a/b/01", "/a/b/+1")
-    document: Any = {"a": {"b": [10, 20]}}
-    for name, descend in sorted(descenders.items()):
-        for raw in divergent:
-            with pytest.raises(AssertionError):
-                descend(document, raw)
-            assert name
+    # exactly one of them turns an address into segments, and the descent goes
+    # through it: `_purpose_pointer` holds no separator of its own
+    assert "_purpose_pointer" not in holders
+    assert "_parse_purpose_pointer" in _purpose_pointer.__code__.co_names
+    assert _pR_replayed.__code__.co_names == ("_purpose_pointer",)
 
-    # the canonical parser is among them, and the general resolver is not
-    assert "_purpose_pointer" in descenders
-    assert "_resolve_pointer" not in descenders
+    # the general resolver is not reachable, and still disagrees -- which is
+    # why the separation has to be asserted rather than assumed
     assert _resolve_pointer.__code__ not in reachable
-
-    # the probe is not vacuous: the general resolver IS a descender and DOES
-    # accept every spelling above, which is why this has to be checked
-    assert _descends_a_pointer(_resolve_pointer)
+    document: Any = {"a": {"b": [10, 20]}}
+    divergent = ("//a//b//0", "/a/b/", "/a/b/-1", "/a/b/01", "/a/b/+1")
     for raw in divergent:
         assert _resolve_pointer(document, raw) is not None
+        with pytest.raises(AssertionError):
+            _purpose_pointer(document, raw)
+
+    # and no reader can be handed a corpus address the parser would refuse:
+    # every pointer the corpus publishes is already canonical
+    published = {
+        cast(str, entry["json_pointer"])
+        for vector in cast(list[dict[str, Any]], REPLAY["vectors"])
+        for entry in cast(list[dict[str, Any]], vector.get("source_pointers") or [])
+    }
+    published |= {
+        target
+        for vector in cast(list[dict[str, Any]], REPLAY["vectors"])
+        for entry in cast(list[dict[str, Any]], vector.get("source_pointers") or [])
+        for target in cast(dict[str, str], entry["source_fields"]).values()
+    }
+    published |= {
+        key
+        for vector in cast(list[dict[str, Any]], REPLAY["vectors"])
+        for key in cast(dict[str, Any], vector.get("embedded_facts") or {})
+    }
+    assert len(published) >= 42
+    for address in sorted(published):
+        assert _render_purpose_pointer(_parse_purpose_pointer(address)) == address
 
 
 def test_the_requirement_authority_is_selected_by_the_claim_not_the_vector() -> None:
