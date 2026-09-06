@@ -18861,19 +18861,22 @@ def test_every_authority_payload_component_comes_from_the_declared_authority(
 _PURPOSE_MUTATION_SENTINEL = "__mutated__"
 
 
+def _moved_value(current: Any) -> Any:
+    """Something the leaf certainly was not, whatever the leaf was."""
+    if isinstance(current, bool):
+        return not current
+    if isinstance(current, int):
+        return current + 1
+    return _PURPOSE_MUTATION_SENTINEL
+
+
 def _mutated_leaf(vector: dict[str, Any], path: tuple[Any, ...]) -> dict[str, Any]:
     """The vector with one leaf moved to something it certainly was not."""
     edited: dict[str, Any] = copy.deepcopy(vector)
     node: Any = edited
     for step in path[:-1]:
         node = node[step]
-    current = node[path[-1]]
-    if isinstance(current, bool):
-        node[path[-1]] = not current
-    elif isinstance(current, int):
-        node[path[-1]] = current + 1
-    else:
-        node[path[-1]] = _PURPOSE_MUTATION_SENTINEL
+    node[path[-1]] = _moved_value(node[path[-1]])
     return edited
 
 
@@ -18897,7 +18900,13 @@ def _vector_leaf_paths(
 
 
 def _two_channel_census() -> dict[str, int]:
-    """Classify every claim against every leaf of its own vector."""
+    """Classify every claim against every corpus leaf that could reach it.
+
+    Both surfaces, because a renderer's frontier can carry either. Covering
+    only the vector would leave the four manifest-addressed claims -- and the
+    question of whether any OTHER claim can see the manifest -- unasked, which
+    is the shape of hole this oracle exists to rule out.
+    """
     sections = _purpose_sections()
     vectors = {
         cast(str, vector["id"]): vector
@@ -18910,29 +18919,43 @@ def _two_channel_census() -> dict[str, int]:
         "identical": 0,
         "undeclared-moves": 0,
     }
+    manifest_paths = [path for path in _vector_leaf_paths(MANIFEST) if path]
     for identifier, claims in PURPOSE_SEMANTICS.items():
         vector = vectors[identifier]
-        paths = [p for p in _vector_leaf_paths(vector) if p and p[0] != "purpose"]
+        # the sentence being rebuilt is not an input to its own reconstruction,
+        # and every renderer is separately proved blind to it
+        vector_paths = [
+            p for p in _vector_leaf_paths(vector) if p and p[0] != "purpose"
+        ]
         for claim in claims:
             frontier = _purpose_inputs(vector, claim)
             fragment = _render_claim(vector, claim)
-            for path in paths:
-                edited = _mutated_leaf(vector, path)
+
+            def classify(edited: dict[str, Any], bound: PurposeClaim = claim) -> str:
                 try:
-                    moved_frontier = _purpose_inputs(edited, claim) != frontier
+                    if _purpose_inputs(edited, bound) != frontier:
+                        return "declared"
                 except Exception:  # noqa: BLE001 - a dependency that stopped resolving
-                    census["declared"] += 1
-                    continue
-                if moved_frontier:
-                    census["declared"] += 1
-                    continue
+                    return "declared"
                 try:
-                    after = _render_claim(edited, claim)
+                    after = _render_claim(edited, bound)
                 except Exception:  # noqa: BLE001 - failing closed is the pass
-                    census["authority-invalid"] += 1
-                    continue
-                key = "identical" if after == fragment else "undeclared-moves"
-                census[key] += 1
+                    return "authority-invalid"
+                return "identical" if after == fragment else "undeclared-moves"
+
+            for path in vector_paths:
+                census[classify(_mutated_leaf(vector, path))] += 1
+
+            for path in manifest_paths:
+                node: Any = MANIFEST
+                for step in path[:-1]:
+                    node = node[step]
+                original = node[path[-1]]
+                node[path[-1]] = _moved_value(original)
+                try:
+                    census[classify(vector)] += 1
+                finally:
+                    node[path[-1]] = original
     return census
 
 
@@ -18951,7 +18974,8 @@ def test_no_undeclared_field_moves_a_fragment_while_authority_holds() -> None:
     assert census["declared"] > 0
     assert census["authority-invalid"] > 0
     assert census["identical"] > 0
-    assert sum(census.values()) > 7000
+    # both surfaces: 201 claims over every vector leaf and every manifest leaf
+    assert sum(census.values()) > 99000
 
 
 def test_a_renderer_cannot_take_its_subject_from_the_authority_payload(
