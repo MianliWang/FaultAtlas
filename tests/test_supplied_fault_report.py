@@ -1669,7 +1669,8 @@ def test_constructing_a_report_requires_nothing_beyond_the_four_supplied_fields(
     assert not set(LATER_OWNED_FIELD_NAMES) & set(fields)
     assert all(field.is_required() for field in fields.values())
     assert all(field.default_factory is None for field in fields.values())
-    # The four supplied values alone construct a complete record of this Slice.
+    # The four supplied values alone construct the whole report; nothing owned by
+    # a later Slice or Phase is required.
     assert _report() == SuppliedFaultReport.model_validate(_typed_mapping())
 
 

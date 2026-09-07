@@ -1237,12 +1237,13 @@ no FaultAtlas verification, no known cause, no existing or correct repair, no
 failed before-run or passed after-run, no reviewed expected property, and no
 evidence support. `S1.P06.S02` publishes no run, outcome, expected-property,
 root-cause, confidence, review, repair-candidate, source-relationship,
-evidence-link, scenario, or environment model and no complete `FaultInstance`;
-those remain owned by `S1.P06.S03` through `S1.P06.S09`, `S1.P07`, `S1.P09`,
-and `S1.P10`. The two model-valued child positions are guarded against
-untyped Python input exactly as the context's are, the raw text fields carry
-no nominal guard, and a report round-trips through JSON while refusing its own
-`model_dump` as Python input. The module still performs no I/O.
+evidence-link, scenario, or environment model, no reusable pattern or
+invariant, and no complete `FaultInstance`; those remain owned by `S1.P06.S03`
+through `S1.P06.S09`, `S1.P07`, `S1.P09`, and `S1.P10`. The two model-valued
+child positions are guarded against untyped Python input exactly as the
+context's are, the raw text fields carry no nominal guard, and a report
+round-trips through JSON while refusing its own `model_dump` as Python input.
+The module still performs no I/O.
 
 The `S1.P06` route is provisional beyond `S1.P06.S02`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
