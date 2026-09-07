@@ -1881,7 +1881,7 @@ def test_roadmap_records_phase_completion_and_p06_readiness() -> None:
     roadmap = (REPOSITORY_ROOT / ROADMAP_RELATIVE).read_text(encoding="utf-8")
     assert "`S1.P05` is complete" in roadmap
     assert "`S1.P05.S10` are complete" in roadmap
-    assert "`S1.P06` is next and not started" in roadmap
+    assert "`S1.P06.S02` is next and not started" in roadmap
     assert "`S1.P04` is complete" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in roadmap
@@ -1896,7 +1896,11 @@ def test_roadmap_records_phase_completion_and_p06_readiness() -> None:
         "`S1.P05.S10` — Integration and Phase Closure (provisional; next, not started)"
         not in roadmap
     )
-    assert "`S1.P06` implementation has begun" not in roadmap
+    # The closure sealed P06 as eligible but not commenced. That eligibility has
+    # since been exercised by `S1.P06.S01`, so the roadmap records the entry
+    # state in the past tense and names the phase as begun.
+    assert "`S1.P06` implementation has begun with `S1.P06.S01`" in roadmap
+    assert "`S1.P06` implementation has not started" not in roadmap
 
 
 def test_roadmap_narrative_restates_the_closure_figures() -> None:
@@ -1930,14 +1934,21 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
     roadmap = " ".join(
         (REPOSITORY_ROOT / ROADMAP_RELATIVE).read_text(encoding="utf-8").split()
     )
+    # No phase is awaiting entry any more: P06 has commenced, so its sealed
+    # eligibility now reads in the past tense and the live gate is a Slice.
     live_gates = re.findall(r"`(S1\.P\d\d)` is `eligible_to_begin`", roadmap)
-    assert live_gates == ["S1.P06"], live_gates
+    assert live_gates == [], live_gates
+    exercised = re.findall(r"`(S1\.P\d\d)` was `eligible_to_begin`", roadmap)
+    assert exercised == ["S1.P05", "S1.P06"], exercised
 
     live_next = re.findall(
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P06.S02"}, sorted(set(live_next))
+
+    live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
+    assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
 
     # A phase this closure records as complete must not also be claimed open.
     for phase in ("S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05"):
@@ -1950,7 +1961,10 @@ def test_closure_and_roadmap_agree_on_readiness() -> None:
     readiness = cast(dict[str, Any], document["entry_readiness"])
     roadmap = (REPOSITORY_ROOT / ROADMAP_RELATIVE).read_text(encoding="utf-8")
     assert readiness["implementation_state"] == "not_started"
+    # The sealed bytes still record the entry state at closure time. The roadmap
+    # reports the same state historically, because P06 has since commenced.
     assert (
-        f"`{readiness['next_phase']}` is `{readiness['readiness']}` with "
-        f"implementation state `{readiness['implementation_state']}`" in roadmap
+        f"`{readiness['next_phase']}` was `{readiness['readiness']}` with "
+        f"implementation\nstate `{readiness['implementation_state']}`" in roadmap
     )
+    assert f"`{readiness['next_phase']}` is `{readiness['readiness']}`" not in roadmap

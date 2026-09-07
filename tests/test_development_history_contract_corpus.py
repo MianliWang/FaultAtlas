@@ -55,7 +55,11 @@ SUPPORTING_AUTHORITIES = (
     "faultatlas.domain.identity",
     "faultatlas.domain.revision",
 )
-PRODUCTION_SOURCE_COUNT = 13
+# The corpus froze 13 production sources. S1.P06.S01 added a fourteenth,
+# faultatlas.domain.fault, which the corpus deliberately does not cover.
+PRODUCTION_SOURCE_COUNT_AT_PUBLICATION = 13
+CURRENT_PRODUCTION_SOURCE_COUNT = 14
+FAULT_MODULE = "src/faultatlas/domain/fault.py"
 
 # Support values a python-mode vector may materialise. Deliberately closed.
 SUPPORT_MODELS = {
@@ -1462,15 +1466,17 @@ def test_the_corpus_is_source_only_and_package_excluded() -> None:
     )
 
 
-def test_the_production_surface_is_unchanged_by_this_corpus() -> None:
+def test_the_corpus_modules_remain_present_beside_the_added_fault_module() -> None:
     observed = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
 
-    assert len(observed) == PRODUCTION_SOURCE_COUNT
+    assert len(observed) == CURRENT_PRODUCTION_SOURCE_COUNT
+    assert len(observed) - PRODUCTION_SOURCE_COUNT_AT_PUBLICATION == 1
     assert "src/faultatlas/domain/history.py" in observed
     assert "src/faultatlas/domain/history_evidence_link.py" in observed
+    assert FAULT_MODULE in observed
 
 
 def test_no_production_module_reads_the_corpus() -> None:
@@ -1632,16 +1638,18 @@ def test_the_roadmap_names_exactly_one_next_gate() -> None:
 
     assert claims
     for claim in claims:
-        assert "`S1.P06`" in claim, claim
+        assert "`S1.P06.S02`" in claim, claim
         assert "`S1.P05.S10`" not in claim, claim
+        assert "`S1.P06` is next and not started" not in claim, claim
 
 
 def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     text = " ".join((REPOSITORY_ROOT / "docs/roadmap.md").read_text("utf-8").split())
 
     assert "`S1.P05.S09` — Development History Contract Corpus (complete)" in text
-    assert "`S1.P06` is next and not started" in text
-    assert "`S1.P06` is `eligible_to_begin`" in text
+    assert "`S1.P06.S02` is next and not started" in text
+    assert "`S1.P06` was `eligible_to_begin`" in text
+    assert "`S1.P06` is `eligible_to_begin`" not in text
     assert "reference_corpus/contracts/development-history/v1" in text
 
     # The roadmap is another projection of the counts and must not drift from

@@ -41,8 +41,9 @@ aspirational Slice as scheduled work.
   `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
   `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
   correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-  `S1.P06` is next and not started.
-  `S1.P06` through `S1.P10` remain not started.
+  `S1.P06` is active and incomplete; `S1.P06.S01` is complete, and
+  `S1.P06.S02` is next and not started.
+  `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -89,8 +90,9 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-`S1.P06` is next and not started.
-`S1.P06` through `S1.P10` remain not started, and `S2-S9`
+`S1.P06` is active and incomplete; `S1.P06.S01` is complete, and
+`S1.P06.S02` is next and not started.
+`S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
@@ -688,7 +690,7 @@ otherwise.
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-`S1.P06` is next and not started.
+`S1.P06` is active and incomplete.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1124,13 +1126,102 @@ The Issue-to-Pull-Request pairing is retained case material classified as a
 reviewed derived interpretation rather than a provider fact, and it is
 deliberately not scheduled as an `S1.P05` product relation.
 
-`S1.P06` is `eligible_to_begin` with implementation state `not_started`.
-`S1.P05` is complete and the `S1.P05.S10` closure establishes that readiness.
-Eligibility is not commencement: `S1.P06` implementation has not started.
+At that sealed closure, `S1.P06` was `eligible_to_begin` with implementation
+state `not_started`. `S1.P05` is complete and the `S1.P05.S10` closure
+establishes that readiness. Eligibility was not commencement, and the sealed
+bytes still record the state they recorded; that eligibility has since been
+exercised, so `S1.P06` implementation has begun with `S1.P06.S01`.
+
+## S1.P06 — Fault Instance Model
+
+`S1.P06` is active and incomplete. `S1.P06.S01` is complete and
+`S1.P06.S02` is next and not started.
+
+`S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
+whose initial `__all__` is exactly `FaultInstanceIdentity` and
+`FaultRepositoryContext`.
+
+`FaultInstanceIdentity` is a named `RootModel[uuid.UUID]` that names a
+caller-designated FaultAtlas knowledge subject, possibly only suspected. It
+does not establish that a real-world fault exists, was observed, reproduced,
+verified, or repaired, and it decides no same-defect or different-defect
+equivalence. UUID assignment and collision are the caller's responsibility: the
+value model cannot detect two independent callers reusing one identifier, equal
+assigned identifiers are equal within this contract, and no repository or
+tenant namespace is silently added. No allocator is published, no identifier is
+derived from content, and an identity is not an authorization token or a
+security boundary. No Issue, pull request, run, or evidence identity is
+converted, matched, deduplicated, alias-merged, or looked up.
+
+The identifier is a UUID as the locked ordinary UUID validator admits it,
+including the Nil and Max UUIDs, neither of which is a missing, unknown, or
+tombstone sentinel here. No generation version is required or inferred, so no
+time or ordering may be read out of an identity. Pydantic's own UUID parser and
+serializer are used rather than a second grammar: JSON output is a lowercase
+hyphenated string, and the guarantee is a semantic round trip, not preservation
+of the spelling accepted on input. Raw identity JSON is a bare scalar and is
+not self-describing; untyped interchange or a union of several UUID-rooted
+identities will need an explicit owning field or discriminator, which
+`S1.P06.S01` deliberately does not publish.
+
+`FaultRepositoryContext` carries exactly `fault` and `repository`, reusing the
+published `S1.P01` `RepositoryIdentity` whole with its own child validation and
+its own schema version. The context restates no provider, repository
+identifier, alias, or schema version, and declares none of its own. Repository
+context is separate from logical fault identity, so one fault subject may be
+placed in several repository contexts and one repository may hold several fault
+subjects. Such a placement asserts no affected, causal, owning, repair, or
+applicability repository, no commit membership, no verified fault, no root
+cause, no successful reproduction, no repair correctness, and no evidence
+support. It carries no role, primary flag, source or evidence field, revision,
+time, state, collection, completeness, ordering, or cross-repository
+deduplication rule. An identity paired with a repository is not yet a complete
+`FaultInstance`.
+
+Both models declare `frozen=True`, `strict=True`,
+`revalidate_instances="always"`, and `validate_default=True`; the context adds
+`extra="forbid"`, which a `RootModel` has no equivalent of. Narrow
+before-validators guard both immediate child positions in Python mode, so a raw
+UUID, a string, a mapping, an attribute-backed lookalike, or a foreign model is
+refused there while JSON mode reconstructs the declared types normally. A
+context therefore round-trips through JSON but deliberately does not accept its
+own `model_dump` back as Python input, because those are different input
+languages. The module performs no I/O, reads no clock, and consults no registry
+or environment.
+
+The `S1.P06` route is provisional beyond `S1.P06.S01`. Later exact schemas are
+not authorized by appearing here, and every product Slice owns its focused
+tests before the corpus Slice:
+
+1. `S1.P06.S01` — Fault Instance Identity and Repository Context (complete)
+2. `S1.P06.S02` — Minimal supplied fault report and deviation, actually
+   consuming `S1.P06.S01` (next, not started)
+3. `S1.P06.S03` — Scenario and occurrence context (not started)
+4. `S1.P06.S04` — Bounded source relationships (not started)
+5. `S1.P06.S05` — Repair candidates (not started)
+6. `S1.P06.S06` — Test material, reported outcomes, and comparability
+   (not started)
+7. `S1.P06.S07` — Case-local explanation, hypothesis, and expected property
+   (not started)
+8. `S1.P06.S08` — Bounded `FaultInstance` composition and reference integrity
+   (not started)
+9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical (not started)
+10. `S1.P06.S10` — Deferred disposition and readiness (not started)
+11. `S1.P06.S11` — Accumulated contract corpus (not started)
+12. `S1.P06.S12` — Integration and Phase closure (not started)
+
+`S1.P06` consumes the bounded `S1.P05` history facts without redefining them
+and does not read them as a complete development history. It does not own a
+generic Git ancestry or reachability graph, which remains `S5` ownership, and
+it does not implicitly upgrade the record-level `S1.P05.S07` evidence
+association. The historical default branch remains unknown and owned by `S2`.
+The published `S1.P05` contracts and the development-history v1 corpus stay
+frozen. `S1.P06` receives exactly one immediate deferred subject, the universal
+relationship vocabulary, and absorbs no subject owned by `S2` or `S5`. That
+subject is not resolved by `S1.P06.S01`.
 
 ## Preserved later Stage 1 phases
 
-- **S1.P06 — Fault Instance Model**
 - **S1.P07 — Pattern & Invariant Model**
 - **S1.P08 — Transfer & Applicability Model**
 - **S1.P09 — Provenance, Confidence & Review**
@@ -1218,13 +1309,27 @@ supplied `DurableEvidenceRecordReference`. `PullRequestChangeSet` and
 pointer, field path, locator, or byte span, and no support role, strength,
 verification, confidence, primary designation, or evidence-record aggregate
 exists. `faultatlas.domain.history` and `faultatlas.domain.evidence` are
-unchanged by `S1.P05.S07` and neither imports the bridge. Production Python
-sources are 13.
+unchanged by `S1.P05.S07` and neither imports the bridge.
+The current live surface also adds the module `faultatlas.domain.fault`,
+published by `S1.P06.S01`, whose `FaultInstanceIdentity` names one
+caller-designated, possibly only suspected fault subject as a
+`RootModel[uuid.UUID]`, and whose `FaultRepositoryContext` places one such
+identity in one published `S1.P01` `RepositoryIdentity`. The identity
+establishes no real-world fault existence and no same-defect equivalence,
+allocates nothing, derives nothing from content, and converts no Issue, pull
+request, run, or evidence identity. The context asserts no affected, causal,
+owning, repair, or applicability repository, no commit membership, no verified
+fault, no root cause, no reproduction, no repair correctness, and no evidence
+support, and an identity/context pair is not yet a complete `FaultInstance`.
+Both models are frozen and strict, both revalidate always, the context forbids
+extra keys and guards each immediate child against untyped Python input, and
+neither performs I/O. Production Python sources are 14.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-`S1.P06` is next and not started.
+`S1.P06` is active and incomplete; `S1.P06.S01` is complete and
+`S1.P06.S02` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
