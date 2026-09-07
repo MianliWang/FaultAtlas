@@ -988,7 +988,8 @@ def test_roadmap_records_phase_completion_and_p05_readiness() -> None:
     assert "`S1.P05.S10` are complete" in roadmap
     assert "`S1.P06` is active and incomplete" in roadmap
     assert "`S1.P06.S01` is complete" in roadmap
-    assert "`S1.P06.S02` is next and not started" in roadmap
+    assert "`S1.P06.S02` is complete" in roadmap
+    assert "`S1.P06.S03` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P04` is active and incomplete" not in roadmap
