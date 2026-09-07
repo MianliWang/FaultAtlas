@@ -1304,12 +1304,14 @@ def test_the_roadmap_records_the_s06_transition() -> None:
 
     assert "PullRequestHistoricalOccurrenceTime" in current
     assert "`S1.P05.S10` are complete" in current
-    assert "`S1.P06.S02` is next and not started" in current
+    assert "`S1.P06.S02` is complete" in current
+    assert "`S1.P06.S03` is next and not started" in current
     assert (
         "`S1.P05.S06` — Pull Request Historical Occurrence Time (complete)" in roadmap
     )
     assert "`S1.P05.S10` are complete" in roadmap
-    assert "`S1.P06.S02` is next and not started" in roadmap
+    assert "`S1.P06.S02` is complete" in roadmap
+    assert "`S1.P06.S03` is next and not started" in roadmap
     # The superseded provisional title and status must not survive.
     assert "Bounded Development Chronology" not in roadmap
     assert "`S1.P05.S06` is next and not started" not in roadmap

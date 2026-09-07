@@ -60,7 +60,14 @@ ADMITTED_UUID_TEXT: tuple[tuple[str, int | None], ...] = (
     ("ffffffff-ffff-ffff-ffff-ffffffffffff", None),
 )
 
-EXPECTED_EXPORTS = ["FaultInstanceIdentity", "FaultRepositoryContext"]
+# The module's CURRENT surface. S01 published the first two; S02 extended the
+# same module in place with the last two. Per-model S01 tests are unchanged.
+EXPECTED_EXPORTS = [
+    "FaultInstanceIdentity",
+    "FaultRepositoryContext",
+    "FaultReportIdentity",
+    "SuppliedFaultReport",
+]
 
 FORBIDDEN_IMPORTS = frozenset(
     {
@@ -475,7 +482,9 @@ def test_context_equality_uses_both_complete_canonical_children() -> None:
     # the other cases happen to vary.
     assert supplied != other_provider
     assert hash(supplied) == hash(_context())
-    assert hash(supplied) != hash(other_provider)
+    # Unequal values are permitted to hash-collide, so distinctness is witnessed
+    # as two set members rather than as unequal hashes.
+    assert _distinct_value_count(supplied, other_provider) == 2
 
 
 def test_one_fault_may_be_placed_in_two_repositories() -> None:
@@ -1034,7 +1043,7 @@ def test_a_nested_predecessor_extra_field_is_refused_in_json() -> None:
 # --- the module's own declared surface ---------------------------------------
 
 
-def test_the_module_publishes_exactly_two_symbols() -> None:
+def test_the_module_publishes_exactly_four_symbols() -> None:
     assert fault_module.__all__ == EXPECTED_EXPORTS
     assert [
         node.name
@@ -1046,8 +1055,8 @@ def test_the_module_publishes_exactly_two_symbols() -> None:
 def test_the_module_binds_no_other_name_at_module_level() -> None:
     """`__all__` and a class scan do not see an alias, a factory or a registry.
 
-    The authorized surface is two models. An alias, a lambda factory, a generic
-    type alias, or a module-level collection would each add a third public thing
+    The authorized surface is four models. An alias, a lambda factory, a generic
+    type alias, or a module-level collection would each add a fifth public thing
     while leaving `__all__` and the class list untouched, so the binding sites
     themselves are enumerated here.
     """
@@ -1122,7 +1131,7 @@ def test_the_module_performs_no_io_and_allocates_no_identifier() -> None:
         elif isinstance(node, ast.ImportFrom) and node.module is not None:
             imported.add(node.module.split(".")[0])
 
-    assert imported == {"uuid", "pydantic", "faultatlas"}
+    assert imported == {"typing", "uuid", "pydantic", "faultatlas"}
     assert not imported & FORBIDDEN_IMPORTS
 
     called: set[str] = set()
@@ -1140,7 +1149,7 @@ def test_the_module_performs_no_io_and_allocates_no_identifier() -> None:
     assert "TypeAdapter" not in called
 
 
-def test_the_module_defines_only_the_two_declared_child_validators() -> None:
+def test_the_module_defines_only_the_declared_validators() -> None:
     defined = [
         node.name
         for node in ast.walk(_fault_source_tree())
@@ -1150,6 +1159,9 @@ def test_the_module_defines_only_the_two_declared_child_validators() -> None:
     assert defined == [
         "_require_typed_python_fault",
         "_require_typed_python_repository",
+        "_require_typed_python_report",
+        "_require_typed_python_context",
+        "_require_unpadded_text",
     ]
 
 
@@ -1201,7 +1213,8 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
         "`S1.P06.S01` — Fault Instance Identity and Repository Context (complete)"
         in roadmap
     )
-    assert "`S1.P06.S02` is next and not started" in roadmap
+    assert "`S1.P06.S02` is complete" in roadmap
+    assert "`S1.P06.S03` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
 
     assert "faultatlas.domain.fault" in current
@@ -1221,12 +1234,12 @@ def test_the_roadmap_route_is_provisional_beyond_this_slice() -> None:
         (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
     )
 
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S01`." in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S02`." in roadmap
     for index in range(2, 13):
         assert f"`S1.P06.S{index:02d}`" in roadmap
     assert "`S1.P06.S13`" not in roadmap
-    # Only S01 is claimed complete in the route.
-    for index in range(2, 13):
+    # Only S01 and S02 are claimed complete in the route.
+    for index in range(3, 13):
         assert f"`S1.P06.S{index:02d}` is complete" not in roadmap
 
 
@@ -1256,7 +1269,12 @@ from faultatlas.domain.identity import (
 resolved = Path(fault_module.__file__).resolve()
 assert resolved.is_relative_to(installed), resolved
 assert not resolved.is_relative_to(checkout), resolved
-assert fault_module.__all__ == ["FaultInstanceIdentity", "FaultRepositoryContext"]
+assert fault_module.__all__ == [
+    "FaultInstanceIdentity",
+    "FaultRepositoryContext",
+    "FaultReportIdentity",
+    "SuppliedFaultReport",
+]
 
 supplied = uuid.UUID("12345678-1234-4234-8234-123456789abc")
 identity = FaultInstanceIdentity(supplied)

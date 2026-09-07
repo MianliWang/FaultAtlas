@@ -41,8 +41,8 @@ aspirational Slice as scheduled work.
   `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
   `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
   correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-  `S1.P06` is active and incomplete; `S1.P06.S01` is complete, and
-  `S1.P06.S02` is next and not started.
+  `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
+  `S1.P06.S02` is complete, and `S1.P06.S03` is next and not started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -90,8 +90,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-`S1.P06` is active and incomplete; `S1.P06.S01` is complete, and
-`S1.P06.S02` is next and not started.
+`S1.P06` is active and incomplete; `S1.P06.S01` is complete,
+`S1.P06.S02` is complete, and `S1.P06.S03` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -690,8 +690,8 @@ otherwise.
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-`S1.P06` is active and incomplete; `S1.P06.S01` is complete and
-`S1.P06.S02` is next and not started.
+`S1.P06` is active and incomplete; `S1.P06.S01` is complete,
+`S1.P06.S02` is complete, and `S1.P06.S03` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1135,8 +1135,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 
 ## S1.P06 — Fault Instance Model
 
-`S1.P06` is active and incomplete. `S1.P06.S01` is complete and
-`S1.P06.S02` is next and not started.
+`S1.P06` is active and incomplete. `S1.P06.S01` is complete,
+`S1.P06.S02` is complete, and `S1.P06.S03` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1190,14 +1190,67 @@ own `model_dump` back as Python input, because those are different input
 languages. The module performs no I/O, reads no clock, and consults no registry
 or environment.
 
-The `S1.P06` route is provisional beyond `S1.P06.S01`. Later exact schemas are
+`S1.P06.S02` extends `faultatlas.domain.fault` in place rather than adding a
+module, so production Python sources remain 14 and the module's current
+`__all__` is exactly `FaultInstanceIdentity`, `FaultRepositoryContext`,
+`FaultReportIdentity`, and `SuppliedFaultReport`, in that order. The two
+`S1.P06.S01` models are unchanged.
+
+`FaultReportIdentity` is a second, independent named `RootModel[uuid.UUID]`
+under the same value-model configuration as `FaultInstanceIdentity`. It names
+one caller-designated supplied-report record and is neither a subclass nor an
+alias of the fault identity: the two stay nominally distinct even when their
+scalars coincide, and nothing requires the scalars to differ. It is not an
+external Issue, comment, or provider identity, not an evidence-record, run, or
+fault identity, not a digest, and not a security capability. The caller
+supplies the UUID; nothing generates, derives, reserves, looks up,
+deduplicates, merges, or registers it, Nil and Max are ordinary values, no
+generation version is required or inferred, and its JSON is the same bare
+scalar string with no wrapper. Equality is equality of the assigned value
+within this contract and establishes no same-source-report equivalence; no
+collision or global-uniqueness policy exists.
+
+`SuppliedFaultReport` is a frozen, strict, extra-forbidding `BaseModel`
+carrying exactly `report`, `context`, `problem_statement`, and
+`behavioral_deviation`, in that order. It consumes the published
+`FaultRepositoryContext` whole, so the fault subject of a report is
+`report.context.fault` and no fault, repository, provider, repository
+identifier, or schema version is restated at report level. Both texts are
+required caller-supplied prose of one to 4096 characters: leading or trailing
+whitespace is refused rather than trimmed, whitespace-only text therefore
+fails, text that cannot encode as UTF-8 is refused, and admitted Unicode and
+interior whitespace including newlines are preserved exactly with no
+lowercasing, normalization, parsing, tokenizing, classification, or rewriting.
+The two texts may be identical, and the deviation text may describe returned
+values, exceptions, side-effect count or ordering, callback or event ordering,
+resource or timing behavior, or any combination without a closed
+deviation-kind vocabulary. The 4096 limit is a character bound of this
+internal contract, not a durable `S1.P10` byte-format promise.
+
+A report and its deviation are supplied claims, not verification. Creating one
+means only that the caller supplied this report identity, placed its fault
+subject in this repository context, and supplied these two texts; a report may
+describe a suspected, latent, unreproduced, unfixed, or cause-unknown problem.
+It implies no affected repository, no existing fault, no executed or observed
+deviation, no external reporter's words, no originating Issue or pull request,
+no FaultAtlas verification, no known cause, no existing or correct repair, no
+failed before-run or passed after-run, no reviewed expected property, and no
+evidence support. `S1.P06.S02` publishes no run, outcome, expected-property,
+root-cause, confidence, review, repair-candidate, source-relationship,
+evidence-link, scenario, or environment model and no complete `FaultInstance`;
+those remain owned by `S1.P06.S03` through `S1.P06.S09`, `S1.P07`, `S1.P09`,
+and `S1.P10`. The two model-valued child positions are guarded against
+untyped Python input exactly as the context's are, the raw text fields carry
+no nominal guard, and a report round-trips through JSON while refusing its own
+`model_dump` as Python input. The module still performs no I/O.
+
+The `S1.P06` route is provisional beyond `S1.P06.S02`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
 1. `S1.P06.S01` — Fault Instance Identity and Repository Context (complete)
-2. `S1.P06.S02` — Minimal supplied fault report and deviation, actually
-   consuming `S1.P06.S01` (next, not started)
-3. `S1.P06.S03` — Scenario and occurrence context (not started)
+2. `S1.P06.S02` — Supplied Fault Report and Behavioral Deviation (complete)
+3. `S1.P06.S03` — Scenario and occurrence context (next, not started)
 4. `S1.P06.S04` — Bounded source relationships (not started)
 5. `S1.P06.S05` — Repair candidates (not started)
 6. `S1.P06.S06` — Test material, reported outcomes, and comparability
@@ -1219,7 +1272,7 @@ association. The historical default branch remains unknown and owned by `S2`.
 The published `S1.P05` contracts and the development-history v1 corpus stay
 frozen. `S1.P06` receives exactly one immediate deferred subject, the universal
 relationship vocabulary, and absorbs no subject owned by `S2` or `S5`. That
-subject is not resolved by `S1.P06.S01`.
+subject is not resolved by `S1.P06.S01` or `S1.P06.S02`.
 
 ## Preserved later Stage 1 phases
 
@@ -1324,13 +1377,26 @@ fault, no root cause, no reproduction, no repair correctness, and no evidence
 support, and an identity/context pair is not yet a complete `FaultInstance`.
 Both models are frozen and strict, both revalidate always, the context forbids
 extra keys and guards each immediate child against untyped Python input, and
-neither performs I/O. Production Python sources are 14.
+neither performs I/O.
+`S1.P06.S02` extends that module in place with `FaultReportIdentity`, a
+second independent `RootModel[uuid.UUID]` naming one caller-designated
+supplied-report record and nominally distinct from the fault identity, and
+`SuppliedFaultReport`, which binds one report identity to one published
+`FaultRepositoryContext` consumed whole and to required caller-supplied
+`problem_statement` and `behavioral_deviation` text of one to 4096 characters
+that is neither trimmed nor normalized. The fault subject of a report is
+`report.context.fault`. A report and its deviation are supplied claims, not
+verification: they establish no affected repository, existing fault, executed
+or observed deviation, originating Issue or pull request, known cause, repair,
+run outcome, expected property, confidence, source relationship, or evidence
+support, and no such model is published. The module's current `__all__` is
+four symbols and it still performs no I/O. Production Python sources are 14.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-`S1.P06` is active and incomplete; `S1.P06.S01` is complete and
-`S1.P06.S02` is next and not started.
+`S1.P06` is active and incomplete; `S1.P06.S01` is complete,
+`S1.P06.S02` is complete, and `S1.P06.S03` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
