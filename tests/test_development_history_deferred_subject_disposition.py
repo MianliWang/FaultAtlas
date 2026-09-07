@@ -532,7 +532,7 @@ def test_predecessor_artifacts_are_unmodified_and_the_register_is_append_only() 
 # --- governance-only ----------------------------------------------------------
 
 
-def test_the_slice_changed_no_production_source() -> None:
+def test_the_slice_changed_no_production_source_and_the_tree_moved_on() -> None:
     observed = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")

@@ -742,7 +742,16 @@ def test_every_phase_status_summary_records_the_correction() -> None:
 
     assert complete >= 4
     assert recorded == complete
-    assert text.count("`S1.P06.S02` is next and not started") == complete
+
+    # Counting next-gate claims across the whole document let an unrelated
+    # section stand in for a summary that had dropped its own, so each summary
+    # is inspected where it stands rather than in aggregate.
+    summaries = text.split("`S1.P05.S10` are complete")[1:]
+    assert len(summaries) == complete
+    for summary in summaries:
+        head = summary[:240]
+        assert "`S1.P06` is active and incomplete" in head, head
+        assert "`S1.P06.S02` is next and not started" in head, head
 
 
 def test_the_derived_summary_preserves_whole_rationale_sentences() -> None:

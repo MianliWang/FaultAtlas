@@ -60,6 +60,25 @@ SUPPORTING_AUTHORITIES = (
 PRODUCTION_SOURCE_COUNT_AT_PUBLICATION = 13
 CURRENT_PRODUCTION_SOURCE_COUNT = 14
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
+# The production surface present when this corpus was published. It is a
+# historical fact about the corpus and stays at 13.
+COVERED_PRODUCTION_FILES = frozenset(
+    {
+        "src/faultatlas/__init__.py",
+        "src/faultatlas/__main__.py",
+        "src/faultatlas/cli.py",
+        "src/faultatlas/domain/__init__.py",
+        "src/faultatlas/domain/compatibility.py",
+        "src/faultatlas/domain/evidence.py",
+        "src/faultatlas/domain/history.py",
+        "src/faultatlas/domain/history_evidence_link.py",
+        "src/faultatlas/domain/identity.py",
+        "src/faultatlas/domain/revision.py",
+        "src/faultatlas/domain/snapshot.py",
+        "src/faultatlas/domain/snapshot_evidence_link.py",
+        "src/faultatlas/domain/source.py",
+    }
+)
 
 # Support values a python-mode vector may materialise. Deliberately closed.
 SUPPORT_MODELS = {
@@ -1466,17 +1485,25 @@ def test_the_corpus_is_source_only_and_package_excluded() -> None:
     )
 
 
-def test_the_corpus_modules_remain_present_beside_the_added_fault_module() -> None:
+def test_the_corpus_changed_no_production_source_and_names_what_followed() -> None:
+    """The corpus added nothing; a later Slice did, and it is named here.
+
+    Publishing this corpus changed no production source, and the surface it
+    froze is still present. The live tree has since gained exactly one module,
+    which is named rather than absorbed into a count, so a second unexplained
+    module would fail here.
+    """
     observed = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
 
+    assert MANIFEST["scope"]["source_only"] is True
     assert len(observed) == CURRENT_PRODUCTION_SOURCE_COUNT
-    assert len(observed) - PRODUCTION_SOURCE_COUNT_AT_PUBLICATION == 1
     assert "src/faultatlas/domain/history.py" in observed
     assert "src/faultatlas/domain/history_evidence_link.py" in observed
-    assert FAULT_MODULE in observed
+    assert observed - COVERED_PRODUCTION_FILES == {FAULT_MODULE}
+    assert len(COVERED_PRODUCTION_FILES) == PRODUCTION_SOURCE_COUNT_AT_PUBLICATION
 
 
 def test_no_production_module_reads_the_corpus() -> None:

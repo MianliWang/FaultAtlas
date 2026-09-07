@@ -57,6 +57,9 @@ PREDECESSOR_DIGESTS = {
     "reference_corpus/pytest-4412/closures/s1-p00-phase-closure/closure.json": "8c02d79c4a5a1d52b9fc2a3718e1b47888da6195588e62ab927388dbe972189e",
 }
 
+# The production surface this closure sealed as its observed inventory. It is a
+# historical lock, compared below against the closure's own `observations`, so it
+# stays at 13 even though the live tree has since gained S1.P06.S01's module.
 CURRENT_PRODUCTION_FILES = frozenset(
     {
         "src/faultatlas/__init__.py",
@@ -74,6 +77,9 @@ CURRENT_PRODUCTION_FILES = frozenset(
         "src/faultatlas/domain/source.py",
     }
 )
+
+# Published after this closure was sealed, by S1.P06.S01.
+FAULT_MODULE = "src/faultatlas/domain/fault.py"
 
 EXPECTED_OWNED_SYMBOLS = (
     ("S1.P05.S01", "faultatlas.domain.history", "PullRequestRevisionRoleBinding"),
@@ -1811,7 +1817,7 @@ def test_predecessor_and_governance_bytes_are_unchanged(relative: str) -> None:
     assert _digest(REPOSITORY_ROOT / relative) == PREDECESSOR_DIGESTS[relative]
 
 
-def test_this_closure_adds_no_production_source() -> None:
+def test_this_closure_adds_no_production_source_and_names_what_followed() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -1820,8 +1826,13 @@ def test_this_closure_adds_no_production_source() -> None:
     )
     assert tracked.returncode == 0, tracked.stderr
     observed = set(tracked.stdout.decode("utf-8").split())
-    assert observed == set(CURRENT_PRODUCTION_FILES)
-    assert len(observed) == 13
+    # This closure added no production source, and the set it sealed is intact.
+    # What the live tree gained since is named rather than absorbed, so a second
+    # unexplained module would fail here instead of inflating a count.
+    assert CURRENT_PRODUCTION_FILES - observed == set()
+    assert observed - CURRENT_PRODUCTION_FILES == {FAULT_MODULE}
+    assert len(CURRENT_PRODUCTION_FILES) == 13
+    assert len(observed) == 14
 
 
 def test_owned_symbols_match_the_live_published_modules() -> None:
@@ -1939,7 +1950,7 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
     live_gates = re.findall(r"`(S1\.P\d\d)` is `eligible_to_begin`", roadmap)
     assert live_gates == [], live_gates
     exercised = re.findall(r"`(S1\.P\d\d)` was `eligible_to_begin`", roadmap)
-    assert exercised == ["S1.P05", "S1.P06"], exercised
+    assert sorted(exercised) == ["S1.P05", "S1.P06"], exercised
 
     live_next = re.findall(
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
@@ -1959,12 +1970,15 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
 def test_closure_and_roadmap_agree_on_readiness() -> None:
     document = _closure()
     readiness = cast(dict[str, Any], document["entry_readiness"])
-    roadmap = (REPOSITORY_ROOT / ROADMAP_RELATIVE).read_text(encoding="utf-8")
+    roadmap = " ".join(
+        (REPOSITORY_ROOT / ROADMAP_RELATIVE).read_text(encoding="utf-8").split()
+    )
     assert readiness["implementation_state"] == "not_started"
     # The sealed bytes still record the entry state at closure time. The roadmap
-    # reports the same state historically, because P06 has since commenced.
+    # reports the same state historically, because P06 has since commenced. The
+    # text is normalized first: this is a semantic agreement, not a line wrap.
     assert (
         f"`{readiness['next_phase']}` was `{readiness['readiness']}` with "
-        f"implementation\nstate `{readiness['implementation_state']}`" in roadmap
+        f"implementation state `{readiness['implementation_state']}`" in roadmap
     )
     assert f"`{readiness['next_phase']}` is `{readiness['readiness']}`" not in roadmap

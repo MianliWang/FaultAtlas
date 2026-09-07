@@ -231,10 +231,13 @@ def test_identity_revalidates_an_existing_identity_through_model_validate() -> N
 def test_the_identity_constructor_is_not_an_instance_copy_api() -> None:
     supplied = _identity()
 
-    with pytest.raises(ValidationError) as failure:
+    with pytest.raises(ValidationError) as positional:
         FaultInstanceIdentity(supplied)  # pyright: ignore[reportArgumentType]
+    with pytest.raises(ValidationError) as keyword:
+        FaultInstanceIdentity(root=supplied)  # pyright: ignore[reportArgumentType]
 
-    assert _failures(failure.value) == (((), "is_instance_of"),)
+    assert _failures(positional.value) == (((), "is_instance_of"),)
+    assert _failures(keyword.value) == (((), "is_instance_of"),)
 
 
 @pytest.mark.parametrize(
@@ -339,6 +342,19 @@ def test_the_nil_and_max_uuids_are_ordinary_admitted_subjects() -> None:
     )
 
 
+@pytest.mark.parametrize("special", (NIL_FAULT, MAX_FAULT))
+def test_the_special_uuids_are_ordinary_subjects_inside_a_context(
+    special: uuid.UUID,
+) -> None:
+    placed = _context(fault=special)
+
+    restored = FaultRepositoryContext.model_validate_json(placed.model_dump_json())
+
+    assert restored == placed
+    assert restored != _context()
+    assert json.loads(placed.model_dump_json()) == _context_payload(str(special))
+
+
 @pytest.mark.parametrize(
     ("document", "expected"),
     (
@@ -376,6 +392,17 @@ def test_earlier_object_shaped_identity_proposals_have_no_json_form(
     assert "extra" not in FaultInstanceIdentity.model_config
 
 
+@pytest.mark.parametrize("wrapper", ("root", "fault_id"))
+def test_the_retired_wrappers_have_no_nested_json_form_either(wrapper: str) -> None:
+    payload = _context_payload()
+    payload["fault"] = {wrapper: SUPPLIED_FAULT_TEXT}
+
+    with pytest.raises(ValidationError) as failure:
+        FaultRepositoryContext.model_validate_json(json.dumps(payload))
+
+    assert _failures(failure.value) == ((("fault",), "uuid_type"),)
+
+
 def test_python_mapping_input_is_not_an_identity_construction_form() -> None:
     with pytest.raises(ValidationError) as failure:
         FaultInstanceIdentity.model_validate({"root": SUPPLIED_FAULT})
@@ -410,7 +437,9 @@ def test_different_uuids_are_different_identities() -> None:
         SUPPLIED_FAULT,
         SUPPLIED_FAULT_TEXT,
         ForeignUuidRoot(SUPPLIED_FAULT),
-        ProviderRepositoryId(RETAINED_REPOSITORY_ID),
+        # An unrelated published identifier whose scalar content is the fault's
+        # own text. Content equality must not become value equality.
+        ProviderRepositoryId(SUPPLIED_FAULT_TEXT),
     ),
 )
 def test_an_identity_is_not_equal_to_a_carrier_that_merely_matches(
@@ -431,11 +460,22 @@ def test_identities_are_unordered_and_carry_no_sequence_meaning() -> None:
 
 def test_context_equality_uses_both_complete_canonical_children() -> None:
     supplied = _context()
+    other_provider = FaultRepositoryContext(
+        fault=_identity(),
+        repository=RepositoryIdentity(
+            provider=ProviderKey("gitlab"),
+            provider_repository_id=ProviderRepositoryId(RETAINED_REPOSITORY_ID),
+        ),
+    )
 
     assert supplied == _context()
     assert supplied != _context(repository_id=OTHER_REPOSITORY_ID)
     assert supplied != _context(fault=SECOND_FAULT)
+    # Every field of the embedded predecessor participates, not just the one
+    # the other cases happen to vary.
+    assert supplied != other_provider
     assert hash(supplied) == hash(_context())
+    assert hash(supplied) != hash(other_provider)
 
 
 def test_one_fault_may_be_placed_in_two_repositories() -> None:
@@ -656,6 +696,47 @@ def test_a_top_level_mapping_with_from_attributes_still_guards_the_repository_ch
     assert _failures(failure.value) == ((("repository",), "value_error"),)
 
 
+def test_each_child_position_refuses_the_other_declared_child_type() -> None:
+    """One shared predicate over both child types would admit a swap.
+
+    Each supplied value below is a valid published child, just in the wrong
+    position, so the refusal isolates the position rather than the value.
+    """
+    with pytest.raises(ValidationError) as fault_failure:
+        FaultRepositoryContext.model_validate(
+            {"fault": _repository(), "repository": _repository()}
+        )
+    with pytest.raises(ValidationError) as repository_failure:
+        FaultRepositoryContext.model_validate(
+            {"fault": _identity(), "repository": _identity()}
+        )
+    with pytest.raises(ValidationError) as both_failure:
+        FaultRepositoryContext.model_validate(
+            {"fault": _repository(), "repository": _identity()}
+        )
+
+    assert _failures(fault_failure.value) == ((("fault",), "value_error"),)
+    assert _failures(repository_failure.value) == ((("repository",), "value_error"),)
+    assert _failures(both_failure.value) == (
+        (("fault",), "value_error"),
+        (("repository",), "value_error"),
+    )
+
+
+def test_each_child_guard_reports_its_own_field() -> None:
+    with pytest.raises(ValidationError) as fault_failure:
+        FaultRepositoryContext.model_validate(
+            {"fault": SUPPLIED_FAULT, "repository": _repository()}
+        )
+    with pytest.raises(ValidationError) as repository_failure:
+        FaultRepositoryContext.model_validate(
+            {"fault": _identity(), "repository": RETAINED_REPOSITORY_ID}
+        )
+
+    assert "fault must be a FaultInstanceIdentity" in str(fault_failure.value)
+    assert "repository must be a RepositoryIdentity" in str(repository_failure.value)
+
+
 def test_a_top_level_mapping_with_from_attributes_still_accepts_typed_children() -> (
     None
 ):
@@ -842,6 +923,15 @@ def test_inherited_predecessor_normalization_of_valid_raw_children_is_preserved(
     assert accepted == _context()
     assert accepted.repository.provider == ProviderKey(RETAINED_PROVIDER)
 
+    # The leniency is the predecessor's own published behavior rather than an
+    # artefact of the bypass API: its ordinary constructor accepts the same
+    # raw but valid children, and this Slice tightens neither.
+    ordinary = RepositoryIdentity(
+        provider="github",  # pyright: ignore[reportArgumentType]
+        provider_repository_id=RETAINED_REPOSITORY_ID,  # pyright: ignore[reportArgumentType]
+    )
+    assert FaultRepositoryContext(fault=_identity(), repository=ordinary) == _context()
+
 
 # --- subclasses: acceptance without a preservation promise -------------------
 
@@ -884,15 +974,22 @@ def test_a_predecessor_subclass_extra_field_remains_refused() -> None:
     assert _failures(failure.value) == ((("repository", "note"), "extra_forbidden"),)
 
 
-def test_a_base_identity_and_a_subclass_instance_need_not_compare_equal() -> None:
+def test_a_subclass_value_is_equal_only_after_base_normalization() -> None:
+    """Equality before normalization is not something this Slice promises.
+
+    A base and a subclass instance need not compare equal, and model equality is
+    not redefined to force it. What is promised is that a subclass value
+    normalizes to the declared base value at every supported entry point, so the
+    assertions below are made on the normalized result rather than on the
+    supplied instance.
+    """
     base = _identity()
     subclass = UnextendedFaultInstanceIdentity(SUPPLIED_FAULT)
 
-    # Whatever Pydantic's class-sensitive equality decides for these two values,
-    # both normalize to the same base value once validated through the context.
     normalized = FaultRepositoryContext(fault=subclass, repository=_repository()).fault
     assert normalized == base
     assert FaultInstanceIdentity.model_validate(subclass) == base
+    assert type(FaultInstanceIdentity.model_validate(subclass)) is FaultInstanceIdentity
 
 
 # --- extra fields under the declared policy -----------------------------------
@@ -946,6 +1043,39 @@ def test_the_module_publishes_exactly_two_symbols() -> None:
     ] == EXPECTED_EXPORTS
 
 
+def test_the_module_binds_no_other_name_at_module_level() -> None:
+    """`__all__` and a class scan do not see an alias, a factory or a registry.
+
+    The authorized surface is two models. An alias, a lambda factory, a generic
+    type alias, or a module-level collection would each add a third public thing
+    while leaving `__all__` and the class list untouched, so the binding sites
+    themselves are enumerated here.
+    """
+    tree = _fault_source_tree()
+    bound: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                assert isinstance(target, ast.Name), ast.dump(target)
+                bound.append(target.id)
+        elif isinstance(node, ast.AnnAssign):
+            assert isinstance(node.target, ast.Name), ast.dump(node.target)
+            bound.append(node.target.id)
+        elif isinstance(node, ast.TypeAlias):
+            raise AssertionError(f"unexpected type alias: {ast.unparse(node)}")
+
+    assert bound == ["__all__"]
+    assert not [node for node in ast.walk(tree) if isinstance(node, ast.Lambda)]
+
+    locally_defined = {
+        name
+        for name, value in vars(fault_module).items()
+        if not name.startswith("_")
+        and getattr(value, "__module__", None) == fault_module.__name__
+    }
+    assert locally_defined == set(EXPECTED_EXPORTS)
+
+
 def test_the_requirement_to_witness_matrix_is_exact() -> None:
     identity_root = FaultInstanceIdentity.model_fields["root"]
     context_fields = FaultRepositoryContext.model_fields
@@ -973,13 +1103,13 @@ def test_the_requirement_to_witness_matrix_is_exact() -> None:
         "revalidate_instances": "always",
         "validate_default": True,
     }
-    assert {
-        name: (validator.info.fields, validator.info.mode)
-        for name, validator in validators.items()
-    } == {
-        "_require_typed_python_fault": (("fault",), "before"),
-        "_require_typed_python_repository": (("repository",), "before"),
-    }
+    # The binding is the requirement: one before-validator standing over each
+    # declared child. The private method names are the module's own business
+    # and are checked structurally elsewhere, not frozen twice here.
+    assert sorted(
+        (validator.info.fields, validator.info.mode)
+        for validator in validators.values()
+    ) == [(("fault",), "before"), (("repository",), "before")]
     assert not FaultRepositoryContext.__pydantic_decorators__.model_validators
 
 
@@ -1048,10 +1178,11 @@ def test_the_context_reuses_the_predecessor_type_itself() -> None:
         repository_scoped_number=RepositoryScopedNumber(RETAINED_PULL_REQUEST_NUMBER),
     )
     assert _identity() != numbered
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as failure:
         FaultRepositoryContext.model_validate(
             {"fault": numbered, "repository": _repository()}
         )
+    assert _failures(failure.value) == ((("fault",), "value_error"),)
 
 
 # --- roadmap transition -------------------------------------------------------

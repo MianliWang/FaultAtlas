@@ -65,6 +65,18 @@ there the declared child schemas reconstruct the typed values normally, so a
 context's JSON round trip succeeds while a Python round trip through
 `model_dump` deliberately does not.
 
+That closure is stated over the declared default validation policy, and the
+guards test Python mode explicitly, as every published module here does.
+Deliberately relaxing the policy is a different question this module does not
+answer: `strict=False`, an altered `extra` setting, a schema or serializer
+override, and the string-parsing entry point are not entry points designed
+here, and no guarantee above is offered for them. The string-parsing mode in
+particular is neither Python nor JSON input, so a caller that reaches for it
+leaves the language this contract describes. Narrowing that third mode is a
+repository-wide question about the shared validator idiom rather than a
+property of this module, and it is deliberately not decided by one module
+diverging from the published surface.
+
 Raw fault-identity JSON is a bare UUID string and is not self-describing.
 Interchange that must distinguish this identity from another UUID-rooted
 identity needs an explicit owning field or a discriminator supplied by the

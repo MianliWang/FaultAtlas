@@ -690,7 +690,8 @@ otherwise.
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-`S1.P06` is active and incomplete.
+`S1.P06` is active and incomplete; `S1.P06.S01` is complete and
+`S1.P06.S02` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1126,11 +1127,11 @@ The Issue-to-Pull-Request pairing is retained case material classified as a
 reviewed derived interpretation rather than a provider fact, and it is
 deliberately not scheduled as an `S1.P05` product relation.
 
-At that sealed closure, `S1.P06` was `eligible_to_begin` with implementation
-state `not_started`. `S1.P05` is complete and the `S1.P05.S10` closure
-establishes that readiness. Eligibility was not commencement, and the sealed
-bytes still record the state they recorded; that eligibility has since been
-exercised, so `S1.P06` implementation has begun with `S1.P06.S01`.
+At the sealed `S1.P05.S10` closure, `S1.P06` was `eligible_to_begin` with
+implementation state `not_started`, and that closure establishes the readiness
+on which `S1.P05` is complete. Eligibility was not commencement, and the sealed
+bytes still record the state they recorded. That eligibility has since been
+exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 
 ## S1.P06 — Fault Instance Model
 

@@ -995,9 +995,9 @@ def test_roadmap_records_phase_completion_and_p05_readiness() -> None:
     assert "`S1.P04.S10` is next and not started" not in roadmap
     assert "`S1.P06` is complete" not in roadmap
     # P06 has since commenced, so the prohibition this closure recorded is
-    # retired: what must not stand is a claim that P06 is COMPLETE.
+    # retired. The claim that must not stand, that P06 is complete, is already
+    # asserted above and is not restated here.
     assert "`S1.P06` implementation has begun with `S1.P06.S01`" in roadmap
-    assert "`S1.P06` is complete" not in roadmap
     # A precondition that forbids the closure this file records would leave the
     # roadmap self-contradictory, so its retirement is asserted, not assumed.
     assert "closure cannot be presumed reachable" not in roadmap
