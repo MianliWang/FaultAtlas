@@ -90,10 +90,12 @@ EXPECTED_PRODUCTION_FILES = {
 
 HISTORY_MODULE = "src/faultatlas/domain/history.py"
 HISTORY_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/history_evidence_link.py"
+FAULT_MODULE = "src/faultatlas/domain/fault.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION_FILES,
     HISTORY_MODULE,
     HISTORY_EVIDENCE_LINK_MODULE,
+    FAULT_MODULE,
 }
 
 EXPECTED_OWNED_SYMBOLS = (
@@ -881,16 +883,17 @@ def test_predecessor_and_governance_bytes_are_unchanged(relative: str) -> None:
     assert _digest(REPOSITORY_ROOT / relative) == PREDECESSOR_DIGESTS[relative]
 
 
-def test_production_surface_adds_only_history_after_this_closure() -> None:
+def test_production_surface_adds_history_and_fault_after_this_closure() -> None:
     observed = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert observed == CURRENT_PRODUCTION_FILES
-    assert len(observed) == 13
+    assert len(observed) == 14
     assert observed - EXPECTED_PRODUCTION_FILES == {
         HISTORY_MODULE,
         HISTORY_EVIDENCE_LINK_MODULE,
+        FAULT_MODULE,
     }
     assert EXPECTED_PRODUCTION_FILES - observed == set()
     assert len(EXPECTED_PRODUCTION_FILES) == 11
@@ -983,13 +986,18 @@ def test_roadmap_records_phase_completion_and_p05_readiness() -> None:
     assert "`S1.P04.S10` is complete" in roadmap
     assert "`S1.P05` is complete" in roadmap
     assert "`S1.P05.S10` are complete" in roadmap
-    assert "`S1.P06` is next and not started" in roadmap
-    assert "`S1.P06` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06.S01` is complete" in roadmap
+    assert "`S1.P06.S02` is next and not started" in roadmap
+    assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P04` is active and incomplete" not in roadmap
     assert "`S1.P04.S10` is next and not started" not in roadmap
     assert "`S1.P06` is complete" not in roadmap
-    assert "`S1.P06` implementation has begun" not in roadmap
+    # P06 has since commenced, so the prohibition this closure recorded is
+    # retired. The claim that must not stand, that P06 is complete, is already
+    # asserted above and is not restated here.
+    assert "`S1.P06` implementation has begun with `S1.P06.S01`" in roadmap
     # A precondition that forbids the closure this file records would leave the
     # roadmap self-contradictory, so its retirement is asserted, not assumed.
     assert "closure cannot be presumed reachable" not in roadmap

@@ -296,6 +296,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/__init__.py",
     "src/faultatlas/domain/compatibility.py",
     "src/faultatlas/domain/evidence.py",
+    "src/faultatlas/domain/fault.py",
     "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/history_evidence_link.py",
     "src/faultatlas/domain/identity.py",
@@ -3758,8 +3759,10 @@ def test_roadmap_records_p03_complete_and_p04_s02_complete() -> None:
     assert "`S1.P04.S10` is complete" in roadmap
     assert "`S1.P05` is complete" in roadmap
     assert "`S1.P05.S10` are complete" in roadmap
-    assert "`S1.P06` is next and not started" in roadmap
-    assert "`S1.P06` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06.S01` is complete" in roadmap
+    assert "`S1.P06.S02` is next and not started" in roadmap
+    assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap
     reference_case = (
         REPOSITORY_ROOT / "docs/reference_cases/pytest-4412.md"

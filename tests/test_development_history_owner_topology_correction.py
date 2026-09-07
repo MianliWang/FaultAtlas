@@ -34,7 +34,11 @@ PRECEDENT_STATES = (
     "unsupported_current_scope",
 )
 VALID_OWNERS = ("S1.P06", "S2", "S5")
-PRODUCTION_SOURCE_COUNT = 13
+# The sealed governance count is a historical fact about this artifact.
+# The live inventory moved on: S1.P06.S01 published faultatlas.domain.fault.
+PRODUCTION_SOURCE_COUNT_AT_CORRECTION = 13
+CURRENT_PRODUCTION_SOURCE_COUNT = 14
+FAULT_MODULE = "src/faultatlas/domain/fault.py"
 
 
 def _correction() -> dict[str, Any]:
@@ -669,8 +673,12 @@ def test_the_correction_introduces_no_product_semantics() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
 
-    assert len(observed) == PRODUCTION_SOURCE_COUNT
-    assert governance["production_python_source_count"] == PRODUCTION_SOURCE_COUNT
+    assert len(observed) == CURRENT_PRODUCTION_SOURCE_COUNT
+    assert FAULT_MODULE in observed
+    assert (
+        governance["production_python_source_count"]
+        == PRODUCTION_SOURCE_COUNT_AT_CORRECTION
+    )
     assert governance["no_production_source_changed"] is True
     assert governance["no_production_module_added"] is True
     assert governance["no_dependency_or_lockfile_change"] is True
@@ -734,7 +742,16 @@ def test_every_phase_status_summary_records_the_correction() -> None:
 
     assert complete >= 4
     assert recorded == complete
-    assert text.count("`S1.P06` is next and not started") == complete
+
+    # Counting next-gate claims across the whole document let an unrelated
+    # section stand in for a summary that had dropped its own, so each summary
+    # is inspected where it stands rather than in aggregate.
+    summaries = text.split("`S1.P05.S10` are complete")[1:]
+    assert len(summaries) == complete
+    for summary in summaries:
+        head = summary[:240]
+        assert "`S1.P06` is active and incomplete" in head, head
+        assert "`S1.P06.S02` is next and not started" in head, head
 
 
 def test_the_derived_summary_preserves_whole_rationale_sentences() -> None:
@@ -764,8 +781,9 @@ def test_the_roadmap_records_the_correction_and_holds_the_phase_state() -> None:
     )
 
     assert "`S1.P05.S08.C01`" in text
-    assert "`S1.P06` is next and not started" in text
+    assert "`S1.P06.S02` is next and not started" in text
     assert "`S1.P05.S09` — Development History Contract Corpus (complete)" in text
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in text
     assert "`S1.P05` is complete" in text
-    assert "`S1.P06` is `eligible_to_begin`" in text
+    assert "`S1.P06` was `eligible_to_begin`" in text
+    assert "`S1.P06` is `eligible_to_begin`" not in text

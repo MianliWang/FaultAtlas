@@ -139,6 +139,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/__init__.py",
     "src/faultatlas/domain/compatibility.py",
     "src/faultatlas/domain/evidence.py",
+    "src/faultatlas/domain/fault.py",
     "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/history_evidence_link.py",
     "src/faultatlas/domain/identity.py",
@@ -1226,7 +1227,7 @@ def test_corpus_is_excluded_from_the_packaged_source_root() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert observed == EXPECTED_PRODUCTION_FILES
-    assert len(observed) == 13
+    assert len(observed) == 14
 
 
 @pytest.mark.parametrize("relative", tuple(sorted(PREDECESSOR_DIGESTS)))
@@ -1262,12 +1263,17 @@ def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     assert "`S1.P04` is complete" in roadmap
     assert "`S1.P05` is complete" in roadmap
     assert "`S1.P05.S10` are complete" in roadmap
-    assert "`S1.P06` is next and not started" in roadmap
-    assert "`S1.P06` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06.S01` is complete" in roadmap
+    assert "`S1.P06.S02` is next and not started" in roadmap
+    assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert CORPUS_RELATIVE in roadmap
     assert "`S1.P04` is complete" in roadmap
     # S1.P04.S10 closure makes S1.P05 eligible; S09 itself did not.
     assert "`S1.P05` is complete" in roadmap
     assert "`S1.P05.S10` are complete" in roadmap
-    assert "`S1.P06` is next and not started" in roadmap
-    assert "`S1.P06` implementation has begun" not in roadmap
+    assert "`S1.P06.S02` is next and not started" in roadmap
+    # P06 has since commenced, so the prohibition this closure recorded is
+    # retired: what must not stand is a claim that P06 is COMPLETE.
+    assert "`S1.P06` implementation has begun with `S1.P06.S01`" in roadmap
+    assert "`S1.P06` is complete" not in roadmap

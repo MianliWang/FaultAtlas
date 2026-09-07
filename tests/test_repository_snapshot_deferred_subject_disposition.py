@@ -76,10 +76,12 @@ EXPECTED_PRODUCTION_FILES = {
 
 HISTORY_MODULE = "src/faultatlas/domain/history.py"
 HISTORY_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/history_evidence_link.py"
+FAULT_MODULE = "src/faultatlas/domain/fault.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION_FILES,
     HISTORY_MODULE,
     HISTORY_EVIDENCE_LINK_MODULE,
+    FAULT_MODULE,
 }
 
 # Every deferred-subject state published by S1.P00 through S1.P03. S08 may not
@@ -715,16 +717,17 @@ def test_p02_still_assigns_exactly_four_subjects_to_p04() -> None:
 # --- governance-only boundary ----------------------------------------------
 
 
-def test_production_surface_adds_only_history_after_this_decision() -> None:
+def test_production_surface_adds_history_and_fault_after_this_decision() -> None:
     observed = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert observed == CURRENT_PRODUCTION_FILES
-    assert len(observed) == 13
+    assert len(observed) == 14
     assert observed - EXPECTED_PRODUCTION_FILES == {
         HISTORY_MODULE,
         HISTORY_EVIDENCE_LINK_MODULE,
+        FAULT_MODULE,
     }
     assert EXPECTED_PRODUCTION_FILES - observed == set()
     assert len(EXPECTED_PRODUCTION_FILES) == 11
@@ -789,8 +792,10 @@ def test_roadmap_records_the_s08_disposition_and_transition() -> None:
     assert "`S1.P04` is complete" in roadmap
     assert "`S1.P05` is complete" in roadmap
     assert "`S1.P05.S10` are complete" in roadmap
-    assert "`S1.P06` is next and not started" in roadmap
-    assert "`S1.P06` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06.S01` is complete" in roadmap
+    assert "`S1.P06.S02` is next and not started" in roadmap
+    assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert "inherited exactly seven such subjects" in roadmap
     assert "`self_owned_open == 0`" in roadmap
     assert "S08 is governance-only" in roadmap

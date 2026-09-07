@@ -218,6 +218,7 @@ CURRENT_PRODUCTION_FILES = {
     "src/faultatlas/domain/snapshot_evidence_link.py",
     "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/history_evidence_link.py",
+    "src/faultatlas/domain/fault.py",
 }
 EVIDENCE_MODULE = "src/faultatlas/domain/evidence.py"
 SNAPSHOT_MODULE = "src/faultatlas/domain/snapshot.py"
@@ -1995,8 +1996,10 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P04.S10` is complete" in roadmap
     assert "`S1.P05` is complete" in roadmap
     assert "`S1.P05.S10` are complete" in roadmap
-    assert "`S1.P06` is next and not started" in roadmap
-    assert "`S1.P06` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06.S01` is complete" in roadmap
+    assert "`S1.P06.S02` is next and not started" in roadmap
+    assert "`S1.P07` through `S1.P10` remain not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:
