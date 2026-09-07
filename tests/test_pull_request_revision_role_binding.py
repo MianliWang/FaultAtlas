@@ -1399,7 +1399,7 @@ def test_the_roadmap_current_code_mapping_names_this_module() -> None:
 
     assert "faultatlas.domain.history" in current
     assert "PullRequestRevisionRoleBinding" in current
-    assert "`S1.P05` is active and incomplete" in current
+    assert "`S1.P05` is complete" in current
     assert (
         "`S1.P05` is `eligible_to_begin` with implementation state `not_started`"
         not in current

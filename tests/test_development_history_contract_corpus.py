@@ -1632,16 +1632,16 @@ def test_the_roadmap_names_exactly_one_next_gate() -> None:
 
     assert claims
     for claim in claims:
-        assert "`S1.P05.S10`" in claim, claim
-        assert "`S1.P05.S09`" not in claim, claim
+        assert "`S1.P06`" in claim, claim
+        assert "`S1.P05.S10`" not in claim, claim
 
 
 def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     text = " ".join((REPOSITORY_ROOT / "docs/roadmap.md").read_text("utf-8").split())
 
     assert "`S1.P05.S09` — Development History Contract Corpus (complete)" in text
-    assert "`S1.P05.S10` is next and not started" in text
-    assert "`S1.P06` is not eligible to begin" in text
+    assert "`S1.P06` is next and not started" in text
+    assert "`S1.P06` is `eligible_to_begin`" in text
     assert "reference_corpus/contracts/development-history/v1" in text
 
     # The roadmap is another projection of the counts and must not drift from
