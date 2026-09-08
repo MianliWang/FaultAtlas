@@ -2517,6 +2517,9 @@ def _docstrings() -> tuple[str, str, str]:
 # object to weakly reference, and no scan of module bindings, class members or
 # top-level statements reads a validator body. This lock does: any code added
 # anywhere in the module, at any nesting depth, changes it.
+# Taken under CPython 3.13, the version this project requires and builds on:
+# the digest covers `ast.unparse` output, so an interpreter change may move it
+# without any source change, unlike the byte digests elsewhere in this file.
 RELATIONSHIP_CODE_SHA256 = (
     "0ce2be814d2e54c35473edc18d9514575319d3b9922d1fb89b0020717ad7cc0a"
 )
@@ -2707,13 +2710,15 @@ def _s04_roadmap_sections() -> tuple[str, str]:
 def test_no_prose_in_this_slice_makes_a_stronger_claim(claim: str) -> None:
     """No published prose may state as a claim what the contract refuses.
 
-    Both roadmap narratives are scanned beside the docstrings: the Slice states
-    its meaning in the phase section and again in the current-code mapping, and
-    a claim inserted in either would otherwise stand unopposed beside the
-    paragraph that denies it. Matching is case-insensitive so that capitalising
-    a sentence is not a way past the list.
+    The whole roadmap is read, not the two sections this Slice owns. Naming the
+    sections was the same enumeration in another form: a claim placed one line
+    above a section start, in the gap between two sections, or in a status
+    bullet reads as though it governed the contract while sitting outside every
+    named span. The module's own body is read for the same reason, since a
+    comment or a helper's docstring is prose the code locks do not govern.
+    Matching is case-insensitive so capitalising a sentence is not a way past.
     """
-    for prose in (*_docstrings(), *_s04_roadmap_sections()):
+    for prose in (*_docstrings(), _roadmap(), _module_body()):
         assert claim not in prose.lower(), claim
 
 
