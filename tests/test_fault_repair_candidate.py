@@ -631,10 +631,13 @@ def test_equal_identities_hash_equally_and_carry_no_ordering() -> None:
     assert hash(first) == hash(second)
     assert first != other
     assert _distinct_value_count(first, second, other) == 2
-    for compare in (
+    comparisons: tuple[Any, ...] = (
         lambda: cast(Any, first) < cast(Any, other),
         lambda: cast(Any, first) > cast(Any, other),
-    ):
+        lambda: cast(Any, first) <= cast(Any, other),
+        lambda: cast(Any, first) >= cast(Any, other),
+    )
+    for compare in comparisons:
         with pytest.raises(TypeError):
             compare()
 
@@ -711,9 +714,15 @@ def test_a_candidate_accepts_its_own_typed_instance() -> None:
 
 def test_a_candidate_needs_no_scenario_occurrence_or_root_cause() -> None:
     """A proposal may precede diagnosis, reproduction and implementation."""
-    declared = set(SuppliedFaultRepairCandidate.model_fields)
+    assert set(SuppliedFaultRepairCandidate.model_fields) == set(CANDIDATE_FIELDS)
 
-    assert declared == set(CANDIDATE_FIELDS)
+    # Independent of the equality above: none of these reaches any record here,
+    # as a field of any of the three models or as a key of any payload.
+    payloads = [
+        _payload(_candidate()),
+        _payload(_revision_association()),
+        _payload(_change_set_association()),
+    ]
     for absent in (
         "scenario",
         "occurrence",
@@ -722,7 +731,10 @@ def test_a_candidate_needs_no_scenario_occurrence_or_root_cause() -> None:
         "explanation",
         "hypothesis",
     ):
-        assert absent not in declared
+        for model in _published_models():
+            assert absent not in model.model_fields, (model.__name__, absent)
+        for payload in payloads:
+            assert absent not in payload, absent
     assert _candidate().repair_statement == REPAIR_STATEMENT
 
 
@@ -1051,13 +1063,20 @@ def test_a_str_subclass_repair_statement_normalizes_to_str() -> None:
     assert type(candidate.repair_statement) is str
 
 
-def test_an_unencodable_repair_statement_is_refused() -> None:
-    with pytest.raises((ValidationError, UnicodeEncodeError)):
-        _candidate(repair_statement="lone surrogate \ud800").model_dump_json()
+def test_an_unencodable_repair_statement_is_refused_at_the_field() -> None:
+    """Text that cannot encode as UTF-8 is refused where it is supplied."""
+    with pytest.raises(ValidationError) as failure:
+        _candidate(repair_statement="lone surrogate \ud800")
+
+    assert _failures(failure.value) == ((("repair_statement",), "string_unicode"),)
 
 
 def test_the_repair_statement_bound_is_declared_inline_on_the_field() -> None:
-    """No shared module-level text alias, base class, or factory is published."""
+    """The bound is stated on the field, not through a shared alias.
+
+    That no shared public alias is exported is held by the `__all__` lock; this
+    asserts only that the literal bound is declared where the field is.
+    """
     (candidate_class,) = [
         node
         for node in _repair_tree().body
@@ -1190,6 +1209,12 @@ def test_no_collection_field_and_no_module_registry_is_published() -> None:
             # plain class instead.
             assert typing.get_origin(annotation) is None, (model.__name__, name)
             assert isinstance(annotation, type), (model.__name__, name)
+            # A bare `list` is a plain class with no origin, so the two checks
+            # above admit it; the declared type must not be a container at all.
+            assert annotation not in (list, tuple, set, frozenset, dict), (
+                model.__name__,
+                name,
+            )
 
     # A module-level container is the shape a candidate registry would take.
     for name, value in vars(repair_module).items():
@@ -1386,11 +1411,23 @@ def test_a_revision_association_claims_no_repository_membership_or_role() -> Non
         assert absent not in payload["revision"]
 
 
-def test_a_revision_from_another_repository_context_is_admitted() -> None:
-    """Nothing requires the commit to belong to the report's repository."""
-    candidate = _candidate()
-    association = _revision_association(candidate=candidate, revision=_commit())
+def test_a_revision_unrelated_to_the_reports_repository_is_admitted() -> None:
+    """Nothing requires the commit to belong to the report's repository.
 
+    A commit identity carries no repository at all, so an association cannot be
+    repository-incoherent; the claim is that no such requirement was added. The
+    digest here belongs to no pull request this file names.
+    """
+    unrelated = _commit("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+    association = _revision_association(revision=unrelated)
+
+    assert association.revision == unrelated
+    assert set(_payload(association)["revision"]) == {
+        "schema_version",
+        "kind",
+        "algorithm",
+        "full_digest",
+    }
     assert association.candidate.report.context.repository == _repository()
     assert (
         FaultRepairCandidateRevisionAssociation.model_validate_json(
@@ -1768,7 +1805,6 @@ def test_no_published_model_relates_a_candidate_to_a_source_object() -> None:
 
 def test_the_module_publishes_exactly_four_symbols_in_order() -> None:
     assert repair_module.__all__ == EXPECTED_EXPORTS
-    assert len(repair_module.__all__) == 4
     assert [
         node.name for node in ast.walk(_repair_tree()) if isinstance(node, ast.ClassDef)
     ] == EXPECTED_EXPORTS
@@ -1848,6 +1884,8 @@ def test_the_module_imports_only_its_declared_predecessors() -> None:
         for alias in node.names
     }
 
+    # An exact set: the evidence layer, the S1.P06.S04 bridge and every other
+    # module are excluded by this equality rather than by a name list.
     assert imported == {
         "uuid",
         "typing",
@@ -1856,9 +1894,6 @@ def test_the_module_imports_only_its_declared_predecessors() -> None:
         "faultatlas.domain.history",
         "faultatlas.domain.revision",
     }
-    assert "faultatlas.domain.evidence" not in imported
-    assert "faultatlas.domain.history_evidence_link" not in imported
-    assert "faultatlas.domain.fault_source_relationship" not in imported
 
 
 def test_the_module_performs_no_io() -> None:
