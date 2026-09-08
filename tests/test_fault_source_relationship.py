@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import gc
 import hashlib
 import json
 import os
@@ -12,8 +13,9 @@ import tarfile
 import types
 import typing
 import uuid
+import weakref
 import zipfile
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Hashable, Sized
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, cast
@@ -939,6 +941,73 @@ def test_no_module_level_value_carries_an_unexpected_attribute() -> None:
             if member.startswith("_require")
         }
         assert own == declared | PYDANTIC_CLASS_ATTRIBUTES, (name, sorted(own))
+
+
+def _construct_and_weakly_reference() -> dict[str, weakref.ReferenceType[Any]]:
+    """Build one of each association and return weak references to the parts."""
+    report = _report()
+    source_object = _issue()
+    history_fact = _outcome()
+    source = FaultReportSourceObjectAssociation(
+        report=report, source_object=source_object
+    )
+    history = FaultReportHistoryFactAssociation(
+        report=report, history_fact=history_fact
+    )
+    return {
+        "report": weakref.ref(report),
+        "source_object": weakref.ref(source_object),
+        "history_fact": weakref.ref(history_fact),
+        "source_association": weakref.ref(source),
+        "history_association": weakref.ref(history),
+    }
+
+
+def test_constructing_an_association_retains_nothing_anywhere() -> None:
+    """No relation registry can exist, wherever one might be hidden.
+
+    Every check above names the places a container may live -- a module
+    binding, a class member, a value's attributes -- and each such list has in
+    turn been beaten by a place it did not name: a tuple target, a type alias,
+    a function attribute, an adapter attribute, a dunder global, a dunder class
+    attribute, an attribute on an imported object, an attribute on `BaseModel`
+    itself. Enumerating hiding places does not converge, so this asserts the
+    property instead of the locations.
+
+    A relation registry has to retain what it registers. Nothing here does, so
+    once the caller drops an association every part of it becomes unreachable,
+    whatever code ran during validation and wherever it tried to store the
+    result. A registry keyed on the report and holding source objects keeps the
+    source object alive and fails here; so does one holding the report, the
+    fact, or the association.
+    """
+    references = _construct_and_weakly_reference()
+    gc.collect()
+
+    retained = sorted(name for name, ref in references.items() if ref() is not None)
+
+    assert retained == []
+
+
+def test_repeated_construction_adds_no_reachable_module_state() -> None:
+    """A registry that survived collection would still have to grow."""
+    for _ in range(2):
+        _source_association()
+
+    def _container_sizes() -> dict[str, int]:
+        return {
+            name: len(cast("Sized", value))
+            for name, value in vars(relationship_module).items()
+            if isinstance(value, dict | list | set | bytearray)
+        }
+
+    before = _container_sizes()
+    for _ in range(25):
+        _source_association(source_object=_issue())
+        _source_association(source_object=_pull_request())
+        _history_association()
+
+    assert _container_sizes() == before
 
 
 def test_neither_association_publishes_an_attribute_beyond_its_fields() -> None:
@@ -2441,6 +2510,48 @@ def _docstrings() -> tuple[str, str, str]:
     )
 
 
+# The published meaning of this Slice is its prose, and five rounds of review
+# showed that pinning selected phrases leaves every unpinned sentence free to
+# be inverted. These digests lock the three statements whole: any edit fails,
+# and an intended edit updates the digest deliberately.
+RELATIONSHIP_DOCSTRING_SHA256 = (
+    "d7aa8ab472c516795788507720d060ed3217ddc6fa6f68d74d11906d95548469"
+)
+ROADMAP_S04_PHASE_SHA256 = (
+    "5d2c248284b0f3552fddc88c2d7e274fe99792c9ab9c009147f33b9163e10920"
+)
+ROADMAP_S04_MAPPING_SHA256 = (
+    "7fd9d0d9984269b6e46adb0a88e2ebf5a9a87a5ccfc23ce16e7b23d847ad8576"
+)
+
+
+def _narrow_s04_roadmap_spans() -> tuple[str, str]:
+    """The two `S1.P06.S04` narratives themselves, without their surroundings."""
+    roadmap = _roadmap()
+    return (
+        _span(
+            roadmap,
+            "`S1.P06.S04` adds one new production module",
+            "The `S1.P06` route is provisional beyond `S1.P06.S04`.",
+        ),
+        _span(
+            roadmap,
+            "`S1.P06.S04` adds the module `faultatlas.domain.fault_source_relationship`",
+            "`S1.P05` is complete:",
+        ),
+    )
+
+
+def test_the_published_prose_of_this_slice_is_locked() -> None:
+    """Whole-text locks, because a phrase list cannot cover every sentence."""
+    module, *_ = _docstrings()
+    phase, mapping = _narrow_s04_roadmap_spans()
+
+    assert _sha256(module.encode("utf-8")) == RELATIONSHIP_DOCSTRING_SHA256
+    assert _sha256(phase.encode("utf-8")) == ROADMAP_S04_PHASE_SHA256
+    assert _sha256(mapping.encode("utf-8")) == ROADMAP_S04_MAPPING_SHA256
+
+
 def test_the_module_docstring_states_its_load_bearing_non_claims() -> None:
     """In this repository the published meaning is the prose, so it is pinned.
 
@@ -2539,11 +2650,6 @@ def _s04_roadmap_sections() -> tuple[str, str]:
     )
 
 
-def _s04_roadmap_section() -> str:
-    """The roadmap's `S1.P06` phase section, which carries the S04 narrative."""
-    return _s04_roadmap_sections()[0]
-
-
 @pytest.mark.parametrize("claim", FORBIDDEN_DOCSTRING_CLAIMS)
 def test_no_prose_in_this_slice_makes_a_stronger_claim(claim: str) -> None:
     """No published prose may state as a claim what the contract refuses.
@@ -2559,8 +2665,13 @@ def test_no_prose_in_this_slice_makes_a_stronger_claim(claim: str) -> None:
 
 
 def test_the_roadmap_section_states_the_same_non_claims_as_the_module() -> None:
-    """The two published statements of the meaning must not drift apart."""
-    section = _s04_roadmap_section()
+    """The two published statements of the meaning must not drift apart.
+
+    The narrow span is used here so a claim cannot be satisfied by text in the
+    `S1.P06.S01` to `S1.P06.S03` narratives; the wide spans are for the
+    forbidden scan, which must also see text placed just outside this one.
+    """
+    section = _narrow_s04_roadmap_spans()[0]
 
     for claim in (
         "Association is not proof, support, causation, or repair correctness.",
