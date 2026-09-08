@@ -661,9 +661,14 @@ def _module_body() -> str:
 
     Splitting on a bare delimiter stops at the LAST triple quote in the file,
     which is the end of the second class docstring, so it would scan only the
-    final class body. The maxsplit keeps the whole body in view.
+    final class body. The maxsplit keeps the whole body in view. Whitespace is
+    normalized as it is for the roadmap and comment markers are dropped, so a
+    phrase wrapped across two comment lines at the line-length bound is still
+    one phrase to a reader of this.
     """
-    return RELATIONSHIP_SOURCE.read_text(encoding="utf-8").split('"""', 2)[-1]
+    body = RELATIONSHIP_SOURCE.read_text(encoding="utf-8").split('"""', 2)[-1]
+    unmarked = [line.lstrip().removeprefix("#") for line in body.splitlines()]
+    return " ".join(" ".join(unmarked).split())
 
 
 def _relationship_tree() -> ast.Module:
@@ -2707,16 +2712,19 @@ def _s04_roadmap_sections() -> tuple[str, str]:
 
 
 @pytest.mark.parametrize("claim", FORBIDDEN_DOCSTRING_CLAIMS)
-def test_no_prose_in_this_slice_makes_a_stronger_claim(claim: str) -> None:
-    """No published prose may state as a claim what the contract refuses.
+def test_no_prose_in_this_slice_states_a_listed_stronger_claim(claim: str) -> None:
+    """No published prose may carry one of these phrases as a claim.
 
-    The whole roadmap is read, not the two sections this Slice owns. Naming the
-    sections was the same enumeration in another form: a claim placed one line
-    above a section start, in the gap between two sections, or in a status
-    bullet reads as though it governed the contract while sitting outside every
-    named span. The module's own body is read for the same reason, since a
-    comment or a helper's docstring is prose the code locks do not govern.
-    Matching is case-insensitive so capitalising a sentence is not a way past.
+    This is a backstop, not the lock. A fixed list of phrases cannot decide
+    whether an English sentence asserts a forbidden meaning, and a reworded
+    inversion will pass it; the digests above are what actually hold the prose
+    this Slice owns, unconditionally and whatever the wording. What the list
+    adds is reach beyond those digests -- the rest of the roadmap and the
+    module body, which no digest covers -- so it is read over the whole roadmap
+    rather than over named sections, because a claim placed one line above a
+    section start or in a status bullet reads as though it governed the
+    contract while sitting outside every named span. Matching is
+    case-insensitive so capitalising a sentence is not a way past.
     """
     for prose in (*_docstrings(), _roadmap(), _module_body()):
         assert claim not in prose.lower(), claim
