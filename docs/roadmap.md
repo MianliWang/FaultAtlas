@@ -1335,10 +1335,11 @@ are, an embedded record is revalidated under its own published schema, the raw
 text fields carry no nominal guard, and each record round-trips through JSON
 while refusing its own `model_dump` as Python input. Neither model consults a
 registry: two records carrying one scenario or occurrence identity with
-differing contents are not reconciled here, and no source relationship,
-evidence link, root cause, repair, confidence, review, reusable pattern or
-invariant, or complete `FaultInstance` is published. Those remain owned by
-`S1.P06.S04` through `S1.P06.S09`, `S1.P07`, `S1.P08`, `S1.P09`, and
+differing contents are not reconciled here, and `S1.P06.S03` published no
+source relationship, evidence link, root cause, repair, confidence, review,
+reusable pattern or invariant, and no complete `FaultInstance`. The bounded
+source and history relationships came next, in `S1.P06.S04`; the rest remain
+owned by `S1.P06.S05` through `S1.P06.S09`, `S1.P07`, `S1.P08`, `S1.P09`, and
 `S1.P10`. The module still performs no I/O.
 
 `S1.P06.S04` adds one new production module,
@@ -1405,8 +1406,12 @@ exactly its own published semantics.
 No relationship vocabulary is created. There is no relationship kind or type,
 no subject-predicate-object triple, no graph node or edge, no inverse,
 transitive, or completeness semantics, no relationship identifier or registry,
-and no source-object-to-source-object relation. Two independent associations
-from one report to Issue #4412 and to pull request #4414 therefore construct no
+and no source-object-to-source-object relation is created. The published
+`S1.P01` `ProviderScopedSourceObjectIdentity` already carries its own `parent`
+numbered object, so a review admitted at `source_object` reaches the pull
+request containing it; that containment is predecessor semantics `S1.P06.S04`
+neither creates, extends, nor reads. Two independent associations from one
+report to Issue #4412 and to pull request #4414 therefore construct no
 Issue-to-pull-request pairing and imply none: the retained pairing stays a
 reviewed derived interpretation, and sharing one report is not a transitivity
 rule. No ancestry or reachability graph and no complete development history is

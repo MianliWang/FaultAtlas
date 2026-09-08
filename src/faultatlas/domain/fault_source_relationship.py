@@ -81,14 +81,18 @@ means.
 No relationship vocabulary is published. There is no relationship kind, type,
 subject-predicate-object triple, graph node or edge, inverse, transitive
 closure, relationship identifier, relation registry, or completeness claim, and
-no source-object-to-source-object relation of any shape. In particular, a
-caller that supplies one association from a report to an Issue and a second
-from the same report to a pull request has supplied exactly two independent
-associations. That constructs no Issue-to-pull-request pairing and implies
-none; the retained pytest #4412 and #4414 pairing stays a reviewed derived
-interpretation rather than a provider fact, and sharing one report is not a
-transitivity rule. Ancestry, reachability, repository evolution, and any
-generic development-history graph remain outside this module entirely.
+no source-object-to-source-object relation of any shape is created here. The
+published `S1.P01` `ProviderScopedSourceObjectIdentity` already carries its own
+`parent` numbered object, so a review admitted at `source_object` reaches the
+pull request containing it; that containment is predecessor semantics this
+module neither creates, extends, nor reads. In particular, a caller that
+supplies one association from a report to an Issue and a second from the same
+report to a pull request has supplied exactly two independent associations.
+That constructs no Issue-to-pull-request pairing and implies none; the retained
+pytest #4412 and #4414 pairing stays a reviewed derived interpretation rather
+than a provider fact, and sharing one report is not a transitivity rule.
+Ancestry, reachability, repository evolution, and any generic
+development-history graph remain outside this module entirely.
 
 Each association is one value, so multiplicity is expressed by holding several
 of them. One report may be associated with an Issue, a pull request, and a

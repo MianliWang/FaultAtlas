@@ -180,6 +180,46 @@ DECLARED_FUNCTIONS = (
     "_require_typed_python_report",
     "_require_typed_python_source_object",
 )
+# Names the module imports. Together with the bindings above these are the
+# module's whole runtime namespace, which is asserted directly: an AST scan can
+# be dodged by a binding shape it does not model -- a tuple target, a starred
+# target, a PEP 695 `type` statement -- while `vars()` sees every one.
+DECLARED_MODULE_IMPORTS = (
+    "Annotated",
+    "Any",
+    "AwareDatetime",
+    "BaseModel",
+    "BeforeValidator",
+    "Callable",
+    "ConfigDict",
+    "Mapping",
+    "NumberedSourceObjectIdentity",
+    "ProviderScopedSourceObjectIdentity",
+    "PullRequestChangedPath",
+    "PullRequestHeadRefDeletion",
+    "PullRequestHistoricalOccurrenceTime",
+    "PullRequestMergeRevisionOutcome",
+    "PullRequestReviewRevisionApproval",
+    "PullRequestRevisionRoleBinding",
+    "SuppliedFaultReport",
+    "TypeAdapter",
+    "ValidationInfo",
+    "cast",
+    "datetime",
+    "field_validator",
+)
+# Only the statement forms the module actually uses. A `type` statement, a
+# loop, a conditional or a context manager at module level is a shape this
+# contract does not have and would carry behaviour no scan below models.
+ADMITTED_TOP_LEVEL_STATEMENTS = (
+    ast.AnnAssign,
+    ast.Assign,
+    ast.ClassDef,
+    ast.Expr,
+    ast.FunctionDef,
+    ast.ImportFrom,
+)
+
 DECLARED_CLASS_MEMBERS: dict[str, tuple[str, ...]] = {
     "FaultReportSourceObjectAssociation": (
         "model_config",
@@ -523,16 +563,32 @@ def _failures(error: ValidationError) -> tuple[tuple[tuple[str | int, ...], str]
     )
 
 
+def _target_names(target: ast.expr) -> list[str]:
+    """Every name one assignment target binds, tuple and starred forms included."""
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value)
+    if isinstance(target, ast.Tuple | ast.List):
+        return [name for item in target.elts for name in _target_names(item)]
+    return []
+
+
 def _bound_names(body: list[ast.stmt]) -> list[str]:
-    """Every name one block binds: assignments, annotated targets, defs, classes."""
+    """Every name one block binds, through every shape the grammar allows.
+
+    Handling only simple `Name` targets would miss a tuple assignment, which is
+    how a module-level container can be introduced without adding a visible
+    name to any list this file pins.
+    """
     names: list[str] = []
     for node in body:
         if isinstance(node, ast.Assign):
-            names += [
-                target.id for target in node.targets if isinstance(target, ast.Name)
-            ]
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            names.append(node.target.id)
+            names += [name for target in node.targets for name in _target_names(target)]
+        elif isinstance(node, ast.AnnAssign):
+            names += _target_names(node.target)
+        elif isinstance(node, ast.TypeAlias):
+            names += _target_names(node.name)
         elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
             names.append(node.name)
     return names
@@ -729,16 +785,44 @@ def test_the_module_declares_exactly_its_documented_top_level_surface() -> None:
 
     assert tuple(_bound_names(tree.body)) == DECLARED_MODULE_BINDINGS
 
-    # `__all__` is a list by repository convention; nothing else may be a
-    # mutable container, because a module-level container is the shape a
-    # relation registry takes.
+    for node in tree.body:
+        assert isinstance(node, ADMITTED_TOP_LEVEL_STATEMENTS), type(node).__name__
+
+    # `__all__` is a list by repository convention; nothing else may build a
+    # mutable container anywhere in its value, because a module-level container
+    # is the shape a relation registry takes.
     mutable = (ast.Dict, ast.List, ast.Set, ast.DictComp, ast.ListComp, ast.SetComp)
     for node in tree.body:
         if not isinstance(node, ast.Assign | ast.AnnAssign):
             continue
         if _bound_names([node]) == ["__all__"]:
             continue
-        assert not isinstance(node.value, mutable), ast.dump(node.value)[:120]
+        assert node.value is not None
+        for inner in ast.walk(node.value):
+            assert not isinstance(inner, mutable), ast.dump(inner)[:120]
+
+
+def test_the_module_binds_exactly_its_documented_names_at_runtime() -> None:
+    """The namespace itself is pinned, not one reading of the syntax tree.
+
+    Every source scan in this file models some set of binding shapes, and a
+    shape it does not model is a way to introduce a relation registry that no
+    scan reports. `vars()` sees the result of every shape, so a hidden binding
+    fails here whatever syntax produced it.
+    """
+    bound = {name for name in vars(relationship_module) if not name.startswith("__")}
+    declared = {name for name in DECLARED_MODULE_BINDINGS if not name.startswith("__")}
+
+    assert bound == declared | set(DECLARED_MODULE_IMPORTS)
+    assert relationship_module.__all__ == EXPECTED_EXPORTS
+    for name, value in vars(relationship_module).items():
+        if name.startswith("__"):
+            continue
+        assert not isinstance(value, dict | list | set), name
+        # A function attribute is another place a container can live, and it
+        # is bound at import time without adding a module-level name.
+        if isinstance(value, types.FunctionType):
+            assert vars(value) == {}, name
 
 
 def test_each_association_declares_exactly_its_documented_members() -> None:
@@ -752,8 +836,8 @@ def test_each_association_declares_exactly_its_documented_members() -> None:
     assert set(classes) == set(DECLARED_CLASS_MEMBERS)
     for name, declared in DECLARED_CLASS_MEMBERS.items():
         assert tuple(_bound_names(classes[name].body)) == declared, name
-        assert "model_post_init" not in declared
-        for member in declared:
+        assert "model_post_init" not in _bound_names(classes[name].body), name
+        for member in _bound_names(classes[name].body):
             assert not member.startswith("__"), (name, member)
 
 
@@ -2163,6 +2247,26 @@ def test_a_history_association_creates_no_p05_evidence_link() -> None:
     assert "evidence_record" in _payload(link)
 
 
+def _walk_annotation(annotation: object) -> tuple[object, ...]:
+    """Every leaf of an annotation, descending generic arguments as well.
+
+    `_annotation_members` deliberately stops at a container so that an
+    unresolved member fails an exactness witness. Reachability is the opposite
+    question, so a `tuple[Model, ...]` position must be entered rather than
+    dropped, or a whole branch of the graph would go unwalked.
+    """
+    members = _annotation_members(annotation)
+    leaves: list[object] = []
+    for member in members:
+        arguments = typing.get_args(member)
+        if arguments and not isinstance(member, type):
+            for argument in arguments:
+                leaves.extend(_walk_annotation(argument))
+        else:
+            leaves.append(member)
+    return tuple(leaves)
+
+
 def _reachable_models(root: type[BaseModel]) -> set[type[BaseModel]]:
     """Every published model reachable from one root through declared fields."""
     seen: set[type[BaseModel]] = set()
@@ -2173,7 +2277,7 @@ def _reachable_models(root: type[BaseModel]) -> set[type[BaseModel]]:
             continue
         seen.add(model)
         for name in model.model_fields:
-            for member in _annotation_members(model.model_fields[name].annotation):
+            for member in _walk_annotation(model.model_fields[name].annotation):
                 if isinstance(member, type) and issubclass(member, BaseModel):
                     pending.append(member)
     return seen
@@ -2249,9 +2353,21 @@ def test_the_module_docstring_states_its_load_bearing_non_claims() -> None:
     for claim in (
         "one deliberately weak, uniform meaning",
         "A source-object association does not say why the source object is related",
+        # The two sentences that carry the non-claims are pinned whole: a
+        # negation removed from either inverts the published meaning while
+        # every shorter phrase around it still matches.
+        "and in particular it does not establish that the object originated the "
+        "report, proves it, supports it, verifies it, independently observed the "
+        "fault, reproduces it, caused it, contains a repair, is the primary "
+        "source, or is authoritative",
+        "A history-fact association is equally weak. It does not mean that the "
+        "fact proves the fault, is causally responsible for it, is a repair for "
+        "it, or that a merge fixed it",
         "No `role` field is published",
         "association is not evidence support",
         "Repository coherence is deliberately not inferred.",
+        "The source object's repository is not required to equal "
+        "`report.context.repository`",
         "No relationship vocabulary is published.",
         "Absence asserts nothing.",
         "Equality is ordinary Pydantic model equality",
@@ -2277,23 +2393,57 @@ def test_the_module_docstring_keeps_the_three_exclusion_reasons_distinct() -> No
 # can produce: each would have to be written as a claim.
 FORBIDDEN_DOCSTRING_CLAIMS = (
     "is the affected repository",
-    "is the LEVEL-1 evidence",
-    "LEVEL-1 evidence support for",
-    "verified relation",
-    "Verified relation",
+    "is a verified relation",
     "This association proves",
     "constructs the Issue",
-    "association establishes",
-    "and is the primary",
-    "and proves the",
+    "association is the LEVEL-1",
+    "does establish that",
+    "It means that the fact proves",
 )
 
 
+def _s04_roadmap_section() -> str:
+    """The roadmap's `S1.P06.S04` narrative, from its paragraph to the route."""
+    roadmap = _roadmap()
+    start = roadmap.index("`S1.P06.S04` adds one new production module")
+    end = roadmap.index("The `S1.P06` route is provisional beyond `S1.P06.S04`.")
+    assert start < end
+    return roadmap[start:end]
+
+
 @pytest.mark.parametrize("claim", FORBIDDEN_DOCSTRING_CLAIMS)
-def test_no_docstring_in_this_module_makes_a_stronger_claim(claim: str) -> None:
-    """No prose here may state as a claim what the contract refuses."""
+def test_no_prose_in_this_slice_makes_a_stronger_claim(claim: str) -> None:
+    """No published prose may state as a claim what the contract refuses.
+
+    The roadmap is scanned beside the docstrings because it is the other place
+    this Slice states its meaning, and a claim inserted there would otherwise
+    stand unopposed beside the paragraph that denies it.
+    """
     for doc in _docstrings():
         assert claim not in doc, claim
+    assert claim not in _s04_roadmap_section(), claim
+
+
+def test_the_roadmap_section_states_the_same_non_claims_as_the_module() -> None:
+    """The two published statements of the meaning must not drift apart."""
+    section = _s04_roadmap_section()
+
+    for claim in (
+        "Association is not proof, support, causation, or repair correctness.",
+        "no `role` field guesses among them",
+        "approval is not FaultAtlas confidence",
+        "a changed path is not an affected path",
+        "is not a fault-occurrence instant",
+        "No relationship vocabulary is created.",
+        "no source-object-to-source-object relation is created",
+        "neither creates, extends, nor reads",
+        "deliberately not required to equal `report.context.repository`",
+        "a cross-repository association is accepted",
+        "construct no Issue-to-pull-request pairing and imply none",
+        "sharing one report is not a transitivity rule",
+        "absence of an association asserts only that none is supplied here",
+    ):
+        assert claim in section, claim
 
 
 def test_each_association_docstring_states_a_supplied_association() -> None:
