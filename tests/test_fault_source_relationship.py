@@ -2510,6 +2510,50 @@ def _docstrings() -> tuple[str, str, str]:
     )
 
 
+# The module's executable code, with every docstring removed so that prose is
+# governed by the digests below and behaviour by this one. Liveness proves that
+# nothing is retained, but a registry that keeps only scalars -- a kind and a
+# number are enough to reconstruct an Issue-to-pull-request edge -- retains no
+# object to weakly reference, and no scan of module bindings, class members or
+# top-level statements reads a validator body. This lock does: any code added
+# anywhere in the module, at any nesting depth, changes it.
+RELATIONSHIP_CODE_SHA256 = (
+    "0ce2be814d2e54c35473edc18d9514575319d3b9922d1fb89b0020717ad7cc0a"
+)
+
+
+def _executable_code() -> str:
+    """The module's code with all docstrings stripped, normalized by unparsing."""
+    tree = _relationship_tree()
+    for node in ast.walk(tree):
+        if not isinstance(
+            node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+        ):
+            continue
+        first = node.body[0] if node.body else None
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            node.body.pop(0)
+    return ast.unparse(tree)
+
+
+def test_the_executable_code_of_this_module_is_locked() -> None:
+    """No behaviour may be added anywhere, including inside a validator body.
+
+    Every structural check in this file reads module bindings, class members or
+    top-level statements, and none of them reads the inside of a function. A
+    relation registry written into one of the guards is therefore invisible to
+    all of them, and invisible to the liveness witness too when it stores
+    scalars or copies rather than the supplied values. This digest is not a
+    list of places: it covers the whole module, so an intended behaviour change
+    updates it deliberately and an unintended one fails here.
+    """
+    assert _sha256(_executable_code().encode("utf-8")) == RELATIONSHIP_CODE_SHA256
+
+
 # The published meaning of this Slice is its prose, and five rounds of review
 # showed that pinning selected phrases leaves every unpinned sentence free to
 # be inverted. These digests lock the three statements whole: any edit fails,
@@ -2517,11 +2561,15 @@ def _docstrings() -> tuple[str, str, str]:
 RELATIONSHIP_DOCSTRING_SHA256 = (
     "d7aa8ab472c516795788507720d060ed3217ddc6fa6f68d74d11906d95548469"
 )
-ROADMAP_S04_PHASE_SHA256 = (
-    "5d2c248284b0f3552fddc88c2d7e274fe99792c9ab9c009147f33b9163e10920"
+# The two sections are locked whole rather than only their `S1.P06.S04`
+# paragraphs: the forbidden-claim scan reads the whole section, so locking less
+# than it reads leaves the difference defended by a phrase list, and a full
+# inversion of the published meaning fits in that gap.
+ROADMAP_P06_SECTION_SHA256 = (
+    "1f935b0fcdf557cd998b33a733d13b0ed56e56e66f5f66a3c9e8e9ef8efcba3b"
 )
-ROADMAP_S04_MAPPING_SHA256 = (
-    "7fd9d0d9984269b6e46adb0a88e2ebf5a9a87a5ccfc23ce16e7b23d847ad8576"
+ROADMAP_MAPPING_SECTION_SHA256 = (
+    "f73b4c76dd2903248ac2955ec55ab8308a0b8495eb5cb54ebf8e1e9b008e864d"
 )
 
 
@@ -2543,13 +2591,17 @@ def _narrow_s04_roadmap_spans() -> tuple[str, str]:
 
 
 def test_the_published_prose_of_this_slice_is_locked() -> None:
-    """Whole-text locks, because a phrase list cannot cover every sentence."""
+    """Whole-text locks, because a phrase list cannot cover every sentence.
+
+    The spans locked here are exactly the spans the forbidden-claim scan reads,
+    so no text is scanned by an enumeration alone.
+    """
     module, *_ = _docstrings()
-    phase, mapping = _narrow_s04_roadmap_spans()
+    phase, mapping = _s04_roadmap_sections()
 
     assert _sha256(module.encode("utf-8")) == RELATIONSHIP_DOCSTRING_SHA256
-    assert _sha256(phase.encode("utf-8")) == ROADMAP_S04_PHASE_SHA256
-    assert _sha256(mapping.encode("utf-8")) == ROADMAP_S04_MAPPING_SHA256
+    assert _sha256(phase.encode("utf-8")) == ROADMAP_P06_SECTION_SHA256
+    assert _sha256(mapping.encode("utf-8")) == ROADMAP_MAPPING_SECTION_SHA256
 
 
 def test_the_module_docstring_states_its_load_bearing_non_claims() -> None:
@@ -2612,6 +2664,7 @@ FORBIDDEN_DOCSTRING_CLAIMS = (
     "level-1 evidence support for",
     "association establishes",
     "and proves the",
+    "and is the primary",
     "does establish that",
     "it means that the fact proves",
 )
