@@ -43,8 +43,9 @@ aspirational Slice as scheduled work.
   correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
   `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
   `S1.P06.S02` is complete, `S1.P06.S03` is complete,
-  `S1.P06.S04` is complete, `S1.P06.S05` is complete, and
-  `S1.P06.S06` is next and not started.
+  `S1.P06.S04` is complete, `S1.P06.S05` is complete,
+  `S1.P06.S06` is complete, and
+  `S1.P06.S07` is next and not started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -94,8 +95,9 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
-`S1.P06.S04` is complete, `S1.P06.S05` is complete, and
-`S1.P06.S06` is next and not started.
+`S1.P06.S04` is complete, `S1.P06.S05` is complete,
+`S1.P06.S06` is complete, and
+`S1.P06.S07` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -696,8 +698,9 @@ otherwise.
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
-`S1.P06.S04` is complete, `S1.P06.S05` is complete, and
-`S1.P06.S06` is next and not started.
+`S1.P06.S04` is complete, `S1.P06.S05` is complete,
+`S1.P06.S06` is complete, and
+`S1.P06.S07` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1143,8 +1146,9 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 
 `S1.P06` is active and incomplete. `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
-`S1.P06.S04` is complete, `S1.P06.S05` is complete, and
-`S1.P06.S06` is next and not started.
+`S1.P06.S04` is complete, `S1.P06.S05` is complete,
+`S1.P06.S06` is complete, and
+`S1.P06.S07` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1303,7 +1307,7 @@ the report was proven, that the scenario was exhaustively specified, that a
 cause is known, that a repair works, or that evidence supports the claim. Test
 material, run identity, reported execution outcome, before-and-after
 comparison, timeout, environment-start, flakiness, run independence, and
-fail-to-pass or regression-safety semantics remain `S1.P06.S06` work, and two
+fail-to-pass or regression-safety semantics became `S1.P06.S06` work, and two
 differing occurrence identities are not evidence that two independent runs
 happened.
 
@@ -1343,7 +1347,7 @@ differing contents are not reconciled here, and `S1.P06.S03` published no
 source relationship, evidence link, root cause, repair, confidence, review,
 reusable pattern or invariant, and no complete `FaultInstance`. The bounded
 source and history relationships came next, in `S1.P06.S04`, and the repair
-candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S06` through
+candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S07` through
 `S1.P06.S09`, `S1.P07`, `S1.P08`, `S1.P09`, and `S1.P10`. The module still
 performs no I/O.
 
@@ -1486,10 +1490,10 @@ exists. It requires no scenario and no occurrence, so a proposal may be made
 about a suspected, latent, unreproduced, or cause-unknown report, and it requires
 no root cause either: a repair may target an observed behavioral deviation while
 the cause is still unknown, which is why no cause, explanation, or hypothesis
-field exists. Test material, reported outcomes and comparability remain
-`S1.P06.S06` work, case-local explanation and hypothesis `S1.P06.S07` work, the
-fault-evidence bridge `S1.P06.S09` work, and generic review, support and
-confidence calculus `S1.P09` work.
+field exists. Test material, reported outcomes and comparability became
+`S1.P06.S06` work, case-local explanation and hypothesis remain `S1.P06.S07`
+work, the fault-evidence bridge `S1.P06.S09` work, and generic review, support
+and confidence calculus `S1.P09` work.
 
 A candidate is complete without any implementation. `S1.P06.S05` separates the
 proposal from the concrete material deliberately, so a purely conceptual
@@ -1565,7 +1569,136 @@ position is closed to untyped Python input and is not bypassed by
 record round-trips through JSON while refusing its own `model_dump` as Python
 input, and the module performs no I/O.
 
-The `S1.P06` route is provisional beyond `S1.P06.S05`. Later exact schemas are
+`S1.P06.S06` adds one new production module, `faultatlas.domain.fault_test`,
+whose `__all__` is exactly `FaultTestMaterialIdentity`,
+`SuppliedFaultTestMaterial`, `FaultTestRunIdentity`, `ReportedFaultTestRun`,
+`ReportedFaultTestOutcomeKind`, `ReportedFaultTestOutcome`,
+`FaultTestRunRevisionAssociation`, and `ReportedFaultTestComparison`, in that
+order, so production Python sources move from 16 to 17.
+`faultatlas.domain.fault`, `faultatlas.domain.fault_repair`,
+`faultatlas.domain.fault_source_relationship`, `faultatlas.domain.revision`,
+`faultatlas.domain.history`, and `faultatlas.domain.evidence` are unchanged by it
+and none of them imports it.
+
+`S1.P06.S06` keeps four things apart that are easy to collapse: what test
+material a caller has in mind, that a caller reports having attempted a run of
+it, what disposition that attempt reportedly reached, and how one reported
+outcome compares with another. Test material is not a run, so a regression test,
+a reduced reproduction, a manual procedure, a test command concept, or a
+property-oriented check can be described with no run and no outcome anywhere. A
+run is not its outcome, so a caller may report an attempt while supplying no
+outcome record at all.
+
+Everything the Slice publishes is caller-reported knowledge. FaultAtlas executes
+no analyzed repository here: it starts no process, runs no command, and observes
+no verdict, so a reported run is a claim that someone says they attempted
+something and a reported outcome is a claim about how that attempt reportedly
+ended. Neither is a FaultAtlas observation and neither may later be read as one;
+any separately authorized execution must publish a distinct value rather than
+silently reuse these.
+
+`FaultTestMaterialIdentity` and `FaultTestRunIdentity` are two further
+independent named `RootModel[uuid.UUID]` values, so all seven `S1.P06`
+UUID-rooted identities stay nominally distinct even when one scalar is assigned
+to all seven. The caller assigns each UUID; nothing generates, derives, reserves,
+looks up, deduplicates, merges, or registers one, Nil and Max are ordinary
+values, and each serializes as the bare UUID string. A run identity is not an
+acquisition run: the published `S1.P03` `AcquisitionRunId` describes evidence
+retrieval, and `S1.P06.S06` neither imports, reuses, aliases, nor reinterprets
+it. Nor is a run identity a CI workflow run, a provider-side run, or an
+execution performed here, and the word "run" does not even guarantee that the
+test body started.
+
+`SuppliedFaultTestMaterial` carries exactly `material`, `report`, and
+`test_statement`, consuming the published `SuppliedFaultReport` whole so the
+fault subject stays reachable at `test_material.report.context.fault`. It
+requires no scenario, occurrence, repair candidate, or run, and it establishes no
+repository presence, no retained test bytes, no inspected locator, no execution,
+no sufficiency, no reproduction, no evidence, and no regression completeness. It
+is a knowledge object about a procedure rather than captured code, so no source
+or evidence field exists; the fault-evidence bridge remains `S1.P06.S09` work and
+durable byte contracts remain `S1.P10` work.
+
+`ReportedFaultTestRun` carries exactly `run`, `test_material`, and
+`run_statement`, consuming the material whole. The statement is opaque prose
+about the attempted execution context and is deliberately not parsed into
+operating system, platform, architecture, environment, command, dependency
+version, or runtime version fields. No outcome is attached to the run record and
+no time is recorded.
+
+`ReportedFaultTestOutcomeKind` is a bounded seven-member vocabulary for a
+caller-reported execution disposition, not a claim that every testing framework
+uses these states: `passed` and `failed` are the two terminal verdicts, `errored`
+reports that execution began or progressed but ended in an error rather than a
+verdict, `timed_out` that the attempt exceeded its time bound without one,
+`skipped` that the test system's own disposition did not execute it,
+`did_not_start` that environment, setup, or launch conditions prevented execution
+from starting, and `cancelled` that the attempt was cancelled without reaching
+`passed` or `failed`. No `unknown`, `flaky`, `regression_safe`, `fixed`, or
+`verified` member exists. An unsupplied outcome is the absence of an outcome
+record rather than a member of the enum, flakiness is an interpretation over
+several reported runs rather than one run's terminal disposition, and regression
+safety and repair correctness are not outcome kinds.
+
+Absence is not a disposition. That no outcome record is supplied for a run means
+only that none is supplied here: it reports neither failure, pass, timeout, skip,
+nor a never-started run, and not that the result is unknown as a positive claim.
+
+`ReportedFaultTestOutcome` carries exactly `run`, `outcome`, and
+`outcome_statement`. It does not mean FaultAtlas witnessed the run, that the
+report or the repair candidate is correct, or that evidence supports it, and it
+carries no evidence, confidence, review, or correctness field. Two outcome
+records may name one run and disagree; this layer neither resolves nor flags
+that, since composing or reviewing conflicting reported knowledge is
+`S1.P06.S08` and `S1.P09` work.
+
+`FaultTestRunRevisionAssociation` carries exactly `run` and `revision`, reusing
+`GitCommitIdentity` whole and intrinsically, and claims no repository membership,
+reachability, base, head, or merge role, repair candidate, before or after role,
+application, deployment, or test correctness. A run may carry no revision
+association at all, which is what an unavailable or simply unsupplied revision
+looks like, so no `None` and no fabricated revision is required; a run may
+equally carry several, and this layer has no authority to reconcile them.
+
+`ReportedFaultTestComparison` carries exactly `before`, `after`, and
+`comparison_statement`, under exactly two rules: the two outcomes must name
+distinct run subjects, since one run cannot occupy both roles, and their runs
+must carry the same full supplied test material value, compared as whole records
+rather than identity scalars, so two runs whose material identities agree while
+their content disagrees are not silently accepted. Nothing else is inferred: no
+timestamp is required or read, the roles are supplied rather than derived from
+chronology, and no repair candidate, run-revision association, environment
+equality, independent execution, shared machine or process, causation, or
+regression safety is required or implied.
+
+Fail-to-pass is not regression safety. A comparison whose outcomes happen to be
+`failed` then `passed` contains a reported fail-to-pass pattern for one test
+material and nothing more, which is why no `fail_to_pass`, `repair_success`, or
+`regression_safe` field is published: one failing test becoming passing
+establishes neither that unrelated tests still pass, nor that no new regression
+exists, nor that the repair candidate or the root cause is correct. A wider
+regression claim would need its own independently reported material and outcomes.
+
+A missing before run is not a before failure. Without a before outcome record no
+comparison can be constructed, and none is synthesised, so a later passing run
+never manufactures an earlier `failed`. A missing before run, a missing before
+outcome, and before outcomes of `did_not_start`, `failed`, `errored`, or
+`timed_out` are six distinct situations and are never flattened. For the same
+reason a `did_not_start` to `passed` comparison is not a `failed` to `passed`
+transition, and neither `timed_out` to `passed` nor `errored` to `passed` is that
+transition either.
+
+Distinct run identities are not an independence guarantee. The comparison
+requires them because one run cannot fill both roles, not because two identities
+prove independent processes, environments, evidence sources, or statistically
+independent trials, and identical outcome or run prose may appear across distinct
+runs without merging them. Every model-valued position, the outcome position
+included, is closed to untyped Python input and is not bypassed by
+`from_attributes=True`; JSON reconstructs the declared children and the enum
+lexeme normally so each record round-trips through JSON while refusing its own
+`model_dump` as Python input; and the module performs no I/O.
+
+The `S1.P06` route is provisional beyond `S1.P06.S06`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -1575,10 +1708,10 @@ tests before the corpus Slice:
 4. `S1.P06.S04` — Bounded Source and History Relationships (complete)
 5. `S1.P06.S05` — Repair Candidates and Concrete Repair Associations
    (complete)
-6. `S1.P06.S06` — Test material, reported outcomes, and comparability
-   (next, not started)
+6. `S1.P06.S06` — Test Material, Reported Runs, Outcomes, and Comparability
+   (complete)
 7. `S1.P06.S07` — Case-local explanation, hypothesis, and expected property
-   (not started)
+   (next, not started)
 8. `S1.P06.S08` — Bounded `FaultInstance` composition and reference integrity
    (not started)
 9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical (not started)
@@ -1801,15 +1934,54 @@ set's head revision, and no status, confidence, review, evidence, or source
 field exists. Both associations are frozen, strict, extra-forbidding and
 always-revalidating, close every model-valued position to untyped Python input,
 round-trip through JSON while refusing their own `model_dump` as Python input,
-and perform no I/O. Production Python sources are 16.
+and perform no I/O.
+`S1.P06.S06` adds the module `faultatlas.domain.fault_test`, whose `__all__` is
+exactly `FaultTestMaterialIdentity`, `SuppliedFaultTestMaterial`,
+`FaultTestRunIdentity`, `ReportedFaultTestRun`, `ReportedFaultTestOutcomeKind`,
+`ReportedFaultTestOutcome`, `FaultTestRunRevisionAssociation`, and
+`ReportedFaultTestComparison`. It keeps test material, a reported run, a
+reported outcome, and a before-and-after comparison as four separate things:
+material may exist with no run, and a run with no outcome. Everything it
+publishes is caller-reported knowledge, since FaultAtlas executes no analyzed
+repository here and observes no verdict, so none of these values may later be
+read as a FaultAtlas-executed result. The two new `RootModel[uuid.UUID]`
+identities bring the `S1.P06` UUID-rooted identities to seven, all nominally
+distinct on one shared scalar, and a run identity is not the `S1.P03`
+`AcquisitionRunId`, which is neither imported nor reinterpreted.
+`SuppliedFaultTestMaterial` ties one material identity to one published
+`SuppliedFaultReport` consumed whole and to a `test_statement`, claiming no
+repository presence, retained bytes, execution, sufficiency, reproduction,
+evidence, or regression completeness. `ReportedFaultTestRun` adds a
+`run_statement` of opaque prose that is not parsed into environment or command
+fields and carries no outcome and no time. `ReportedFaultTestOutcomeKind` is the
+bounded vocabulary `passed`, `failed`, `errored`, `timed_out`, `skipped`,
+`did_not_start`, and `cancelled`, with no `unknown`, `flaky`, `regression_safe`,
+`fixed`, or `verified` member; an unsupplied outcome is the absence of a record
+rather than any positive state, and flakiness is an interpretation over several
+runs rather than one run's disposition. `ReportedFaultTestOutcome` reports one
+disposition for one run and carries no evidence, confidence, review, or
+correctness field, and two records may name one run and disagree without this
+layer resolving them. `FaultTestRunRevisionAssociation` is optional and reuses
+`GitCommitIdentity` intrinsically, inferring no repository membership, role,
+candidate, or correctness. `ReportedFaultTestComparison` requires distinct run
+subjects and the same full supplied test material, and infers no timestamp,
+chronology, candidate, environment equality, independence, causation, or
+regression safety: a `failed` to `passed` pair is a reported fail-to-pass
+pattern and not a verified fix, a missing before outcome is not a before failure,
+and `did_not_start`, `errored`, and `timed_out` remain distinct from `failed`.
+All five records are frozen, strict, extra-forbidding and always-revalidating,
+close every model-valued position and the outcome position to untyped Python
+input, round-trip through JSON while refusing their own `model_dump` as Python
+input, and perform no I/O. Production Python sources are 17.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
-`S1.P06.S04` is complete, `S1.P06.S05` is complete, and
-`S1.P06.S06` is next and not started.
+`S1.P06.S04` is complete, `S1.P06.S05` is complete,
+`S1.P06.S06` is complete, and
+`S1.P06.S07` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
