@@ -1062,9 +1062,8 @@ def test_the_module_binds_no_other_name_at_module_level() -> None:
 
     The authorized surface is eight models. An alias, a lambda factory, a
     generic type alias, or a module-level collection would each add a ninth
-    public thing
-    while leaving `__all__` and the class list untouched, so the binding sites
-    themselves are enumerated here.
+    public thing while leaving `__all__` and the class list untouched, so the
+    binding sites themselves are enumerated here.
     """
     tree = _fault_source_tree()
     bound: list[str] = []

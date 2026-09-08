@@ -179,6 +179,8 @@ LATER_OWNED_FIELD_NAMES = (
     "started_at",
     "ended_at",
     "run",
+    "outcome",
+    "test",
     "attempt",
     "execution_id",
     "exit_code",
@@ -211,13 +213,14 @@ LATER_OWNED_FIELD_NAMES = (
 
 # Names that would betray a run, outcome, timestamp, taxonomy, or verification
 # concept if they appeared anywhere in the new production surface.
+# Only the names that are restatements of an embedded predecessor field are
+# excluded; every later-owned concept, `source` included, must stay absent.
 FORBIDDEN_FIELD_NAMES = frozenset(LATER_OWNED_FIELD_NAMES) - {
     "fault",
     "repository",
     "problem_statement",
     "behavioral_deviation",
     "schema_version",
-    "source",
 }
 
 FORBIDDEN_IMPORTS = frozenset(
@@ -2731,6 +2734,23 @@ def test_the_roadmap_states_the_s03_decisions_and_non_claims() -> None:
     assert "is not a generic fault-occurrence time" in roadmap
     assert "refused rather than trimmed" in roadmap
     assert "no complete `FaultInstance`" in roadmap
+
+
+def test_the_roadmap_claims_the_live_surface_exactly_once() -> None:
+    """Two present-tense surface claims would let a reader take the wrong one.
+
+    Each Slice paragraph states the surface as it stood when that Slice
+    published, so a superseded claim has to move into the past tense rather
+    than stand beside the live one.
+    """
+    roadmap = _roadmap()
+
+    live = re.findall(r"module's current `__all__` is exactly ([^.]*)\.", roadmap)
+    assert len(live) == 1, live
+    for symbol in EXPECTED_EXPORTS:
+        assert f"`{symbol}`" in live[0], symbol
+    assert "eight exports" in live[0]
+    assert "module's then-current `__all__` became exactly" in roadmap
 
 
 def test_the_roadmap_preserves_the_earlier_slice_history_as_written() -> None:

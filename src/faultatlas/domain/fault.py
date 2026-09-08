@@ -86,14 +86,14 @@ property has been reviewed, or that the report is evidence-backed.
 Every supplied text in this module is a claim and is handled as opaque prose,
 under one shared rule stated separately on each field rather than through a
 shared alias or base. Each must be present, non-blank, and at most 4096
-characters; leading or trailing whitespace
-is refused rather than trimmed, so whitespace-only text fails, and a value that
-cannot encode as UTF-8 is refused. Admitted Unicode and interior whitespace,
-including newlines, are preserved exactly: nothing here lowercases, normalizes,
-parses, tokenizes, classifies, or rewrites the text, and nothing decides
-whether it is true, substantive, causal, or technically correct. No two of
-these texts are required to differ, and none of them is compared with another,
-so a caller may legitimately repeat one statement across fields. The deviation text may describe differences in returned
+characters; leading or trailing whitespace is refused rather than trimmed, so
+whitespace-only text fails, and a value that cannot encode as UTF-8 is refused.
+Admitted Unicode and interior whitespace, including newlines, are preserved
+exactly: nothing here lowercases, normalizes, parses, tokenizes, classifies, or
+rewrites the text, and nothing decides whether it is true, substantive, causal,
+or technically correct. No two of these texts are required to differ, and none
+of them is compared with another, so a caller may legitimately repeat one
+statement across fields. The deviation text may describe differences in returned
 values, exceptions, side-effect count or ordering, callback or event ordering,
 resource or timing behavior, or any combination, and no closed deviation-kind
 vocabulary is published to classify it. The 4096 limit is a character bound of
@@ -209,8 +209,9 @@ property of this module, and it is deliberately not decided by one module
 diverging from the published surface.
 
 Raw identity JSON, for the fault, report, scenario, and occurrence identities
-alike, is a bare UUID string and is not self-describing. Interchange that must distinguish
-one UUID-rooted identity from another needs an explicit owning field or a
+alike, is a bare UUID string and is not self-describing. Interchange that must
+distinguish one UUID-rooted identity from another needs an explicit owning
+field or a
 discriminator supplied by the carrier; no tagged envelope, wrapper object, or
 union is published here. There is likewise no `{"root": ...}`,
 `{"fault_id": ...}`, `{"report_id": ...}`, `{"scenario_id": ...}`, or

@@ -1823,7 +1823,7 @@ def test_the_context_inside_a_report_behaves_exactly_as_a_bare_context() -> None
 # --- the module's own declared surface ---------------------------------------
 
 
-def test_the_module_publishes_exactly_four_symbols_in_order() -> None:
+def test_the_module_publishes_exactly_eight_symbols_in_order() -> None:
     assert fault_module.__all__ == EXPECTED_EXPORTS
     assert fault_module.__all__[:2] == S01_EXPORTS
     assert fault_module.__all__[2:4] == S02_EXPORTS
@@ -2254,7 +2254,7 @@ def test_the_sdist_ships_fourteen_modules_and_no_corpus_or_test_material(
         assert "docs" not in parts
 
 
-def test_the_installed_wheel_exercises_all_four_current_symbols(
+def test_the_installed_wheel_exercises_every_current_symbol(
     offline_distributions: tuple[Path, Path],
     tmp_path: Path,
 ) -> None:

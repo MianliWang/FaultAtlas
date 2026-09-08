@@ -1195,10 +1195,11 @@ languages. The module performs no I/O, reads no clock, and consults no registry
 or environment.
 
 `S1.P06.S02` extends `faultatlas.domain.fault` in place rather than adding a
-module, so production Python sources remain 14 and the module's current
-`__all__` is exactly `FaultInstanceIdentity`, `FaultRepositoryContext`,
-`FaultReportIdentity`, and `SuppliedFaultReport`, in that order. The two
-`S1.P06.S01` models are unchanged.
+module, so production Python sources remain 14 and the module's then-current
+`__all__` became exactly `FaultInstanceIdentity`, `FaultRepositoryContext`,
+`FaultReportIdentity`, and `SuppliedFaultReport`, in that order: four exports,
+which `S1.P06.S03` later extended again. The two `S1.P06.S01` models are
+unchanged.
 
 `FaultReportIdentity` is a second, independent named `RootModel[uuid.UUID]`
 under the same value-model configuration as `FaultInstanceIdentity`. It names
