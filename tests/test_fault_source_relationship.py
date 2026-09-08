@@ -148,6 +148,54 @@ SYNTHETIC_PULL_REQUEST_COMMENT_GLOBAL_ID = "900000002"
 SYNTHETIC_REVIEW_COMMENT_GLOBAL_ID = "900000003"
 SYNTHETIC_TIMELINE_EVENT_GLOBAL_ID = "900000004"
 
+# The module's whole declared surface. Pinning only `__all__`, only class names
+# or only module-level functions leaves room for a registry, an adjacency
+# accessor or a pairing method to be added without a single test failing, so
+# every top-level binding and every class member is named here.
+DECLARED_MODULE_BINDINGS = (
+    "__all__",
+    "_UNTYPED_REPORT_MESSAGE",
+    "_UNTYPED_SOURCE_OBJECT_MESSAGE",
+    "_UNTYPED_FACT_MESSAGE",
+    "_ADMITTED_SOURCE_OBJECTS",
+    "_OCCURRED_AT",
+    "_require_published_fact",
+    "_require_published_occurrence_time",
+    "_PublishedRevisionRoleBinding",
+    "_PublishedChangedPath",
+    "_PublishedReviewRevisionApproval",
+    "_PublishedMergeRevisionOutcome",
+    "_PublishedHeadRefDeletion",
+    "_PublishedHistoricalOccurrenceTime",
+    "FaultReportSourceObjectAssociation",
+    "FaultReportHistoryFactAssociation",
+)
+# Two guards share one name across the two classes, and `_require` is the
+# closure `_require_published_fact` returns.
+DECLARED_FUNCTIONS = (
+    "_require",
+    "_require_published_fact",
+    "_require_published_occurrence_time",
+    "_require_typed_python_report",
+    "_require_typed_python_report",
+    "_require_typed_python_source_object",
+)
+DECLARED_CLASS_MEMBERS: dict[str, tuple[str, ...]] = {
+    "FaultReportSourceObjectAssociation": (
+        "model_config",
+        "report",
+        "source_object",
+        "_require_typed_python_report",
+        "_require_typed_python_source_object",
+    ),
+    "FaultReportHistoryFactAssociation": (
+        "model_config",
+        "report",
+        "history_fact",
+        "_require_typed_python_report",
+    ),
+}
+
 SOURCE_FIELDS = ("report", "source_object")
 HISTORY_FIELDS = ("report", "history_fact")
 EXPECTED_EXPORTS = [
@@ -475,6 +523,43 @@ def _failures(error: ValidationError) -> tuple[tuple[tuple[str | int, ...], str]
     )
 
 
+def _bound_names(body: list[ast.stmt]) -> list[str]:
+    """Every name one block binds: assignments, annotated targets, defs, classes."""
+    names: list[str] = []
+    for node in body:
+        if isinstance(node, ast.Assign):
+            names += [
+                target.id for target in node.targets if isinstance(target, ast.Name)
+            ]
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.append(node.target.id)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.append(node.name)
+    return names
+
+
+def _public_surface(model: type[BaseModel]) -> set[str]:
+    """Public names the model adds beyond plain `BaseModel`.
+
+    Pydantic fields are not class attributes, so a clean value model adds none.
+    A property, method or classmethod added to either association appears here
+    even though `model_fields` and the JSON payload stay unchanged.
+    """
+    return {name for name in dir(model) if not name.startswith("_")} - set(
+        dir(BaseModel)
+    )
+
+
+def _module_body() -> str:
+    """The module source below its docstring.
+
+    Splitting on a bare delimiter stops at the LAST triple quote in the file,
+    which is the end of the second class docstring, so it would scan only the
+    final class body. The maxsplit keeps the whole body in view.
+    """
+    return RELATIONSHIP_SOURCE.read_text(encoding="utf-8").split('"""', 2)[-1]
+
+
 def _relationship_tree() -> ast.Module:
     return ast.parse(
         RELATIONSHIP_SOURCE.read_bytes(), filename=RELATIONSHIP_SOURCE.name
@@ -495,8 +580,13 @@ def _annotation_members(annotation: object) -> tuple[object, ...]:
     The history-fact position declares its members through `Annotated` aliases
     carrying each member's own guard, so a reader that only looked at
     `typing.get_args` of the union would see the aliases rather than the
-    published types this relation admits.
+    published types this relation admits. A PEP 695 `type` alias is resolved
+    for the same reason: it is neither a class nor a union at runtime, so an
+    unresolved one would be dropped by any caller filtering for classes, and a
+    union widened through an alias would pass an exactness witness unnoticed.
     """
+    if isinstance(annotation, typing.TypeAliasType):
+        return _annotation_members(annotation.__value__)
     origin = typing.get_origin(annotation)
     if origin is typing.Annotated:
         return _annotation_members(typing.get_args(annotation)[0])
@@ -506,6 +596,19 @@ def _annotation_members(annotation: object) -> tuple[object, ...]:
             members.extend(_annotation_members(argument))
         return tuple(members)
     return (annotation,)
+
+
+def _declared_member_names(model: type[BaseModel], field_name: str) -> tuple[str, ...]:
+    """Every declared member of one field position, as published class names.
+
+    Members are asserted to be classes rather than filtered for classes: a
+    member this walker cannot resolve is a hole in the exactness witness, not a
+    member to skip.
+    """
+    members = _annotation_members(model.model_fields[field_name].annotation)
+    for member in members:
+        assert isinstance(member, type), (model.__name__, field_name, member)
+    return tuple(cast(type, member).__name__ for member in members)
 
 
 def _distinct_value_count(*values: object) -> int:
@@ -612,6 +715,65 @@ def test_the_module_publishes_exactly_two_symbols_in_order() -> None:
         for node in ast.walk(_relationship_tree())
         if isinstance(node, ast.ClassDef)
     ] == EXPECTED_EXPORTS
+
+
+def test_the_module_declares_exactly_its_documented_top_level_surface() -> None:
+    """A registry or adjacency table added beside the models must fail here.
+
+    `__all__` and the class names alone do not pin the module: a module-level
+    mutable container plus a `model_post_init` that fills it would publish the
+    Issue-to-pull-request edge this contract says is never constructed, while
+    leaving every field, payload and export untouched.
+    """
+    tree = _relationship_tree()
+
+    assert tuple(_bound_names(tree.body)) == DECLARED_MODULE_BINDINGS
+
+    # `__all__` is a list by repository convention; nothing else may be a
+    # mutable container, because a module-level container is the shape a
+    # relation registry takes.
+    mutable = (ast.Dict, ast.List, ast.Set, ast.DictComp, ast.ListComp, ast.SetComp)
+    for node in tree.body:
+        if not isinstance(node, ast.Assign | ast.AnnAssign):
+            continue
+        if _bound_names([node]) == ["__all__"]:
+            continue
+        assert not isinstance(node.value, mutable), ast.dump(node.value)[:120]
+
+
+def test_each_association_declares_exactly_its_documented_members() -> None:
+    """A pairing method, a role property or a hash override must fail here."""
+    classes = {
+        node.name: node
+        for node in _relationship_tree().body
+        if isinstance(node, ast.ClassDef)
+    }
+
+    assert set(classes) == set(DECLARED_CLASS_MEMBERS)
+    for name, declared in DECLARED_CLASS_MEMBERS.items():
+        assert tuple(_bound_names(classes[name].body)) == declared, name
+        assert "model_post_init" not in declared
+        for member in declared:
+            assert not member.startswith("__"), (name, member)
+
+
+def test_neither_association_publishes_an_attribute_beyond_its_fields() -> None:
+    """A forbidden meaning may not arrive as a property or method either.
+
+    `model_fields` and the JSON payload are both blind to a reachable
+    attribute, so the same forbidden names are checked against the class and an
+    instance as well.
+    """
+    for model in _published_models():
+        assert _public_surface(model) == set(), model.__name__
+        assert model.model_computed_fields == {}
+
+    for value in (_source_association(), _history_association()):
+        for name in FORBIDDEN_ASSOCIATION_IDENTIFIERS:
+            assert not hasattr(value, name), (type(value).__name__, name)
+            assert not hasattr(type(value), name), (type(value).__name__, name)
+        for name in ("pair", "pairs_with", "siblings", "supports", "originated_here"):
+            assert not hasattr(value, name), (type(value).__name__, name)
 
 
 def test_each_association_declares_exactly_two_fields_in_order() -> None:
@@ -774,11 +936,8 @@ def test_every_published_source_object_kind_is_admitted(
 
 def test_the_source_object_union_declares_exactly_the_two_admitted_types() -> None:
     """A third admitted identity would widen the relation without a decision."""
-    field = FaultReportSourceObjectAssociation.model_fields["source_object"]
-    members = tuple(
-        member.__name__
-        for member in _annotation_members(field.annotation)
-        if isinstance(member, type)
+    members = _declared_member_names(
+        FaultReportSourceObjectAssociation, "source_object"
     )
 
     assert members == (
@@ -917,6 +1076,77 @@ def test_the_report_position_is_closed_to_untyped_python_input(
 
     assert _failures(failure.value) == ((("report",), "value_error"),), label
     assert "report must be a SuppliedFaultReport in Python input" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    ("label", "supplied"),
+    (
+        pytest.param(
+            "repository identity",
+            _repository().model_dump(mode="json"),
+            id="repository-identity",
+        ),
+        pytest.param(
+            "commit identity",
+            _commit().model_dump(mode="json"),
+            id="commit-identity",
+        ),
+        pytest.param("report", _report().model_dump(mode="json"), id="report"),
+        pytest.param("bare string", RETAINED_ISSUE_NUMBER, id="bare-string"),
+    ),
+)
+def test_the_source_object_position_refuses_an_unadmitted_json_payload(
+    label: str,
+    supplied: object,
+) -> None:
+    """The Python guards do not run in JSON mode, so the union itself must hold.
+
+    A member added to the declared union would be admitted here even while the
+    Python-mode guard still refused it, which is exactly how a widened boundary
+    would escape a Python-only refusal test.
+    """
+    payload = _payload(_source_association())
+    payload["source_object"] = supplied
+
+    with pytest.raises(ValidationError) as failure:
+        FaultReportSourceObjectAssociation.model_validate_json(json.dumps(payload))
+
+    assert {path[0] for path, _ in _failures(failure.value)} == {"source_object"}, label
+
+
+@pytest.mark.parametrize(
+    ("label", "supplied"),
+    (
+        pytest.param(
+            "change set", _change_set().model_dump(mode="json"), id="change-set"
+        ),
+        pytest.param(
+            "evidence link",
+            _evidence_link().model_dump(mode="json"),
+            id="evidence-link",
+        ),
+        pytest.param(
+            "changed path status",
+            ChangedPathStatus.ADDED.value,
+            id="changed-path-status",
+        ),
+        pytest.param(
+            "source object", _pull_request().model_dump(mode="json"), id="source-object"
+        ),
+    ),
+)
+def test_the_history_fact_position_refuses_an_unadmitted_json_payload(
+    label: str,
+    supplied: object,
+) -> None:
+    """The three exclusions must hold in JSON, not only in Python input."""
+    payload = _payload(_history_association())
+    payload["history_fact"] = supplied
+
+    with pytest.raises(ValidationError) as failure:
+        FaultReportHistoryFactAssociation.model_validate_json(json.dumps(payload))
+
+    assert {path[0] for path, _ in _failures(failure.value)} == {"history_fact"}, label
 
 
 @pytest.mark.parametrize("from_attributes", (True, False), ids=("attrs", "no-attrs"))
@@ -1284,6 +1514,10 @@ def test_neither_association_overrides_equality_hashing_or_ordering() -> None:
     }
     for model in _published_models():
         assert model.__eq__ is BaseModel.__eq__
+        # A class-body assignment is not a `def`, so the runtime hash is
+        # checked as well as the source: it must still be Pydantic's own.
+        assert model.__hash__ is not None
+        assert model.__hash__.__qualname__ == "make_hash_func.<locals>.hash_func"
 
     # No ordering exists to be relied on, so comparison stays a type error.
     first = cast(Any, _source_association())
@@ -1325,7 +1559,16 @@ def test_no_absence_sentinel_state_or_optional_position_is_published() -> None:
         for name, field in model.model_fields.items():
             assert field.is_required(), (model.__name__, name)
 
-    source = RELATIONSHIP_SOURCE.read_text(encoding="utf-8")
+    # No position may admit `None`, which a nullable annotation would allow
+    # through JSON while `is_required()` still reported True.
+    for model in _published_models():
+        for name in model.model_fields:
+            assert "NoneType" not in _declared_member_names(model, name), (
+                model.__name__,
+                name,
+            )
+
+    body = _module_body()
     for absent in (
         "unknown",
         "unavailable",
@@ -1333,8 +1576,9 @@ def test_no_absence_sentinel_state_or_optional_position_is_published() -> None:
         "absent",
         "None = ",
         "| None",
+        "Optional",
     ):
-        assert absent not in source.split('"""')[-1], absent
+        assert absent not in body, absent
 
 
 # --- history-fact association: every admitted member --------------------------
@@ -1382,21 +1626,14 @@ def test_the_admitted_fact_set_is_exactly_the_published_evidence_link_set() -> N
     assert admitted == set(ADMITTED_FACT_TYPES)
     assert len(admitted) == 6
 
-    link_field = PullRequestHistoryFactEvidenceLink.model_fields["fact"]
-    link_members = {
-        member.__name__
-        for member in _annotation_members(link_field.annotation)
-        if isinstance(member, type)
-    }
-    association_field = FaultReportHistoryFactAssociation.model_fields["history_fact"]
-    association_members = {
-        member.__name__
-        for member in _annotation_members(association_field.annotation)
-        if isinstance(member, type)
-    }
+    link_members = _declared_member_names(PullRequestHistoryFactEvidenceLink, "fact")
+    association_members = _declared_member_names(
+        FaultReportHistoryFactAssociation, "history_fact"
+    )
 
     assert association_members == link_members
-    assert association_members == {model.__name__ for model in ADMITTED_FACT_TYPES}
+    assert association_members == tuple(model.__name__ for model in ADMITTED_FACT_TYPES)
+    assert len(association_members) == 6
 
 
 def test_the_occurrence_time_member_keeps_the_published_instant_grammar() -> None:
@@ -1437,25 +1674,179 @@ def test_a_refused_instant_lexeme_stays_refused_through_the_association(
         FaultReportHistoryFactAssociation.model_validate_json(json.dumps(payload))
 
 
-def test_a_lowercase_zone_designator_is_admitted_exactly_as_the_fact_admits_it() -> (
-    None
-):
-    lexeme = RETAINED_MERGE_INSTANT.replace("Z", "z")
-    payload = _payload(_history_association(history_fact=_occurrence_time()))
-    payload["history_fact"]["occurred_at"] = lexeme
+# Lexical forms spanning the published aware-instant grammar, the forms a
+# stdlib ISO parser would decide differently, and plain malformations. Three
+# hardcoded verdicts cannot show that the transport decode neither widens nor
+# narrows the embedded fact, so the corpus is decided differentially instead.
+INSTANT_GRAMMAR_CASES = (
+    "2018-11-18T00:17:25Z",
+    "2018-11-18T00:17:25+00:00",
+    "2018-11-18T00:17:25-00:00",
+    "2018-11-18T00:17:25.5Z",
+    "2018-11-18T00:17:25.123456Z",
+    "2018-11-18T00:17:25.123456789Z",
+    "2018-11-18 00:17:25Z",
+    "2018-11-18t00:17:25Z",
+    "2018-11-18T00:17:25z",
+    "2018-W46-7T00:17:25Z",
+    "20181118T001725Z",
+    "20181118",
+    "2018-11-18T00:17:25",
+    "2018-11-18T00:17:25+01:00",
+    "2018-11-17T23:17:25-01:00",
+    "2018-11-18",
+    "00:17:25Z",
+    "",
+    "not-an-instant",
+    "2018-13-01T00:00:00Z",
+    "2018-11-18T25:17:25Z",
+    "2018-11-18T24:00:00Z",
+    "  2018-11-18T00:17:25Z  ",
+    "2018-11-18T00:17:25Z ",
+    " 2018-11-18T00:17:25Z",
+    "+2018-11-18T00:17:25Z",
+    "1542500245",
+    "1542500245.0",
+    "2018-11-18T00:17:25,5Z",
+    "2018-11-18T00:17:25 GMT",
+)
 
-    accepted_by_fact = _accepts(
-        lambda: PullRequestHistoricalOccurrenceTime.model_validate_json(
-            json.dumps({**payload["history_fact"]})
-        )
+
+def _occurrence_payloads(lexeme: str) -> tuple[str, str, str]:
+    """The same supplied fact, as the fact, the S04 relation, and the P05 link."""
+    association = _payload(_history_association(history_fact=_occurrence_time()))
+    association["history_fact"]["occurred_at"] = lexeme
+    link = _payload(_evidence_link())
+    link["fact"] = association["history_fact"]
+    return (
+        json.dumps(association["history_fact"]),
+        json.dumps(association),
+        json.dumps(link),
     )
-    accepted_by_association = _accepts(
+
+
+@pytest.mark.parametrize("lexeme", INSTANT_GRAMMAR_CASES)
+def test_the_association_and_the_fact_decide_the_same_instant_grammar(
+    lexeme: str,
+) -> None:
+    """The transport decode may neither widen nor narrow the embedded grammar.
+
+    A stdlib ISO parser diverges in both directions here, and so would trimming
+    whitespace, rejecting digit strings, or refusing a space separator before
+    decoding, so the verdicts are compared rather than hardcoded. The published
+    `S1.P05.S07` link is compared too: it restates the same grammar, and a
+    silent drift in either direction would show as a three-way disagreement.
+    """
+    fact_json, association_json, link_json = _occurrence_payloads(lexeme)
+
+    by_fact = _accepts(
+        lambda: PullRequestHistoricalOccurrenceTime.model_validate_json(fact_json)
+    )
+    by_association = _accepts(
+        lambda: FaultReportHistoryFactAssociation.model_validate_json(association_json)
+    )
+    by_link = _accepts(
+        lambda: PullRequestHistoryFactEvidenceLink.model_validate_json(link_json)
+    )
+
+    assert by_association == by_fact, lexeme
+    assert by_association == by_link, lexeme
+    if by_fact:
+        fact = PullRequestHistoricalOccurrenceTime.model_validate_json(fact_json)
+        through = FaultReportHistoryFactAssociation.model_validate_json(
+            association_json
+        )
+        assert through.history_fact == fact
+        assert (
+            cast(PullRequestHistoricalOccurrenceTime, through.history_fact).occurred_at
+            == fact.occurred_at
+        )
+
+
+def test_the_lowercase_zone_designator_is_actually_admitted() -> None:
+    """The differential above passes if both sides refuse; this pins the verdict."""
+    fact_json, association_json, _ = _occurrence_payloads(
+        RETAINED_MERGE_INSTANT.replace("Z", "z")
+    )
+
+    assert _accepts(
+        lambda: PullRequestHistoricalOccurrenceTime.model_validate_json(fact_json)
+    )
+    assert _accepts(
+        lambda: FaultReportHistoryFactAssociation.model_validate_json(association_json)
+    )
+
+
+def _add_fact_level_key(fact: dict[str, Any]) -> None:
+    fact["confidence"] = "high"
+
+
+def _add_occurrence_key(fact: dict[str, Any]) -> None:
+    fact["occurrence"]["repair"] = True
+
+
+def _uppercase_merge_digest(fact: dict[str, Any]) -> None:
+    fact["occurrence"]["merge_revision"]["full_digest"] = (
+        RETAINED_MERGE_REVISION.upper()
+    )
+
+
+def _drop_instant(fact: dict[str, Any]) -> None:
+    del fact["occurred_at"]
+
+
+def _numeric_instant(fact: dict[str, Any]) -> None:
+    fact["occurred_at"] = 1542500245
+
+
+def _wrong_nested_kind(fact: dict[str, Any]) -> None:
+    fact["occurrence"]["pull_request"]["kind"] = "issue"
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"),
+    (
+        pytest.param(
+            "extra key at fact level", _add_fact_level_key, id="extra-fact-key"
+        ),
+        pytest.param(
+            "extra key inside the occurrence",
+            _add_occurrence_key,
+            id="extra-occurrence-key",
+        ),
+        pytest.param(
+            "uppercase merge digest", _uppercase_merge_digest, id="uppercase-digest"
+        ),
+        pytest.param("missing instant", _drop_instant, id="missing-instant"),
+        pytest.param("numeric instant", _numeric_instant, id="numeric-instant"),
+        pytest.param("wrong nested kind", _wrong_nested_kind, id="wrong-nested-kind"),
+    ),
+)
+def test_the_transport_decode_reads_no_field_but_the_instant(
+    label: str,
+    mutate: Callable[[dict[str, Any]], None],
+) -> None:
+    """Every other field must be decided exactly as the published fact decides it.
+
+    The decode touches one leaf. A helper that whitelisted keys, rewrote a
+    digest, or dropped a child would make the association accept a fact the
+    published model refuses while every instant lexeme still agreed.
+    """
+    association = _payload(_history_association(history_fact=_occurrence_time()))
+    mutate(association["history_fact"])
+    fact_json = json.dumps(association["history_fact"])
+
+    by_fact = _accepts(
+        lambda: PullRequestHistoricalOccurrenceTime.model_validate_json(fact_json)
+    )
+    by_association = _accepts(
         lambda: FaultReportHistoryFactAssociation.model_validate_json(
-            json.dumps(payload)
+            json.dumps(association)
         )
     )
 
-    assert accepted_by_association == accepted_by_fact
+    assert by_fact is False, label
+    assert by_association == by_fact, label
 
 
 def _corrupt_merge_revision(payload: dict[str, Any]) -> None:
@@ -1692,16 +2083,21 @@ def test_two_source_associations_do_not_create_an_issue_to_pull_request_pair() -
     assert RETAINED_ISSUE_NUMBER not in json.dumps(_payload(to_pull_request))
 
 
-def test_no_published_model_relates_two_source_objects() -> None:
+def test_neither_association_declares_a_second_source_object_position() -> None:
+    """Neither S04 model declares two source-object positions.
+
+    This is a claim about what this Slice declares, not a global one: the
+    published `S1.P01` `ProviderScopedSourceObjectIdentity` already carries its
+    own `parent` numbered object, so a review admitted at `source_object`
+    reaches the pull request containing it. That containment is predecessor
+    semantics this module neither creates nor extends.
+    """
     for model in _published_models():
         admitted = {declared.__name__ for declared in ADMITTED_SOURCE_TYPES}
         source_positions = [
             name
-            for name, field in model.model_fields.items()
-            if any(
-                getattr(member, "__name__", None) in admitted
-                for member in _annotation_members(field.annotation)
-            )
+            for name in model.model_fields
+            if set(_declared_member_names(model, name)) & admitted
         ]
         assert len(source_positions) <= 1, (model.__name__, source_positions)
 
@@ -1767,7 +2163,48 @@ def test_a_history_association_creates_no_p05_evidence_link() -> None:
     assert "evidence_record" in _payload(link)
 
 
-def test_neither_association_imports_or_reaches_the_evidence_layer() -> None:
+def _reachable_models(root: type[BaseModel]) -> set[type[BaseModel]]:
+    """Every published model reachable from one root through declared fields."""
+    seen: set[type[BaseModel]] = set()
+    pending = [root]
+    while pending:
+        model = pending.pop()
+        if model in seen:
+            continue
+        seen.add(model)
+        for name in model.model_fields:
+            for member in _annotation_members(model.model_fields[name].annotation):
+                if isinstance(member, type) and issubclass(member, BaseModel):
+                    pending.append(member)
+    return seen
+
+
+def test_neither_association_reaches_the_evidence_layer_through_any_field() -> None:
+    """The import scan alone would not establish reach, so the graph is walked."""
+    reachable: set[type[BaseModel]] = set()
+    for model in _published_models():
+        reachable |= _reachable_models(model)
+
+    modules = {model.__module__ for model in reachable}
+
+    assert "faultatlas.domain.evidence" not in modules
+    assert "faultatlas.domain.history_evidence_link" not in modules
+    assert modules == {
+        "faultatlas.domain.fault",
+        "faultatlas.domain.fault_source_relationship",
+        "faultatlas.domain.history",
+        "faultatlas.domain.identity",
+        "faultatlas.domain.revision",
+    }
+    assert DurableEvidenceRecordReference not in reachable
+    assert PullRequestHistoryFactEvidenceLink not in reachable
+    for model in reachable:
+        for name in model.model_fields:
+            assert "evidence" not in name, (model.__name__, name)
+            assert "support" not in name, (model.__name__, name)
+
+
+def test_neither_association_imports_the_evidence_layer() -> None:
     imported = {
         alias.name if isinstance(node, ast.Import) else cast(str, node.module)
         for node in ast.walk(_relationship_tree())
@@ -1789,6 +2226,85 @@ def test_neither_association_imports_or_reaches_the_evidence_layer() -> None:
 
 
 # --- the module's own surface and boundaries ----------------------------------
+
+
+def _docstrings() -> tuple[str, str, str]:
+    module = relationship_module.__doc__ or ""
+    return (
+        " ".join(module.split()),
+        " ".join((FaultReportSourceObjectAssociation.__doc__ or "").split()),
+        " ".join((FaultReportHistoryFactAssociation.__doc__ or "").split()),
+    )
+
+
+def test_the_module_docstring_states_its_load_bearing_non_claims() -> None:
+    """In this repository the published meaning is the prose, so it is pinned.
+
+    The roadmap's parallel claims are asserted in detail; leaving the module's
+    own statement unpinned would let a later Slice upgrade what these two
+    models mean without a single test failing.
+    """
+    module, *_ = _docstrings()
+
+    for claim in (
+        "one deliberately weak, uniform meaning",
+        "A source-object association does not say why the source object is related",
+        "No `role` field is published",
+        "association is not evidence support",
+        "Repository coherence is deliberately not inferred.",
+        "No relationship vocabulary is published.",
+        "Absence asserts nothing.",
+        "Equality is ordinary Pydantic model equality",
+        "The module performs no I/O.",
+    ):
+        assert claim in module, claim
+
+
+def test_the_module_docstring_keeps_the_three_exclusion_reasons_distinct() -> None:
+    """Collapsing them into one would lose why each symbol is excluded."""
+    module, *_ = _docstrings()
+
+    assert "`ChangedPathStatus` is a closed vocabulary rather than a fact" in module
+    assert "outside the `S1.P05.S07` fact boundary" in module
+    assert "no retained record establishes their completeness" in module
+    assert "itself the `S1.P05` evidence association" in module
+    assert "blur source association with evidence association" in module
+
+
+# Affirmative forms of the meanings this module exists to refuse. The
+# disclaimers legitimately contain "originated", "is the primary source" and
+# "causally responsible for", so the phrases pinned here are ones no disclaimer
+# can produce: each would have to be written as a claim.
+FORBIDDEN_DOCSTRING_CLAIMS = (
+    "is the affected repository",
+    "is the LEVEL-1 evidence",
+    "LEVEL-1 evidence support for",
+    "verified relation",
+    "Verified relation",
+    "This association proves",
+    "constructs the Issue",
+    "association establishes",
+    "and is the primary",
+    "and proves the",
+)
+
+
+@pytest.mark.parametrize("claim", FORBIDDEN_DOCSTRING_CLAIMS)
+def test_no_docstring_in_this_module_makes_a_stronger_claim(claim: str) -> None:
+    """No prose here may state as a claim what the contract refuses."""
+    for doc in _docstrings():
+        assert claim not in doc, claim
+
+
+def test_each_association_docstring_states_a_supplied_association() -> None:
+    _, source_doc, history_doc = _docstrings()
+
+    assert source_doc == (
+        "Supplied association from one fault report to one source object."
+    )
+    assert history_doc == (
+        "Supplied association from one fault report to one history fact."
+    )
 
 
 def test_the_predecessor_fault_module_is_byte_identical_to_its_publication() -> None:
@@ -1832,23 +2348,20 @@ def test_the_module_performs_no_io() -> None:
     }
 
     assert not called & {"open", "eval", "exec", "compile", "__import__", "print"}
-    source = RELATIONSHIP_SOURCE.read_text(encoding="utf-8")
-    body = source.split('"""', 2)[-1]
+    body = _module_body()
     for forbidden in ("import os", "import io", "Path(", "requests", "urllib", "now("):
         assert forbidden not in body, forbidden
 
 
 def test_only_the_declared_private_helpers_exist() -> None:
+    """Nested definitions count: a helper hidden in a closure is still a helper."""
     functions = [
         node.name
-        for node in _relationship_tree().body
-        if isinstance(node, ast.FunctionDef)
+        for node in ast.walk(_relationship_tree())
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
     ]
 
-    assert functions == [
-        "_require_published_fact",
-        "_require_published_occurrence_time",
-    ]
+    assert sorted(functions) == sorted(DECLARED_FUNCTIONS)
     for name in functions:
         assert name.startswith("_")
         assert name not in relationship_module.__all__

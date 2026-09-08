@@ -1430,9 +1430,10 @@ guard decodes the occurrence-time member's instant leaf through the same
 aware-datetime grammar the published model applies to JSON. The module performs
 no I/O.
 
-`S1.P06.S04` implements the bounded relationship vocabulary the effective
-`S1.P05.S08` and `S1.P05.S08.C01` handoff assigns to `S1.P06`: it owns the
-bounded domain relationships `FaultInstance` needs and consumes the bounded
+`S1.P06.S04` implements the bounded relationship responsibility the effective
+`S1.P05.S08` and `S1.P05.S08.C01` handoff assigns to `S1.P06`, publishing two
+named associations and no relationship vocabulary: it owns the bounded
+domain relationships `FaultInstance` needs and consumes the bounded
 `S1.P05` history facts without redefining them, while owning no generic Git
 ancestry or reachability graph, reading `S1.P05` as no complete development
 history, and implicitly upgrading no LEVEL-1 evidence association. Formal
@@ -1466,9 +1467,11 @@ association. The historical default branch remains unknown and owned by `S2`.
 The published `S1.P05` contracts and the development-history v1 corpus stay
 frozen. `S1.P06` receives exactly one immediate deferred subject, the universal
 relationship vocabulary, and absorbs no subject owned by `S2` or `S5`. That
-subject is not resolved by `S1.P06.S01`, `S1.P06.S02`, or `S1.P06.S03`. `S1.P06.S04` implements the bounded relationship
-vocabulary that handoff assigns to `S1.P06` without resolving the inherited
-subject formally, which remains `S1.P06.S10` work.
+subject is not resolved by `S1.P06.S01`, `S1.P06.S02`, or `S1.P06.S03`.
+`S1.P06.S04` implements the bounded relationship responsibility that handoff
+assigns to `S1.P06`, publishing two named associations and no relationship
+vocabulary, and without resolving the inherited subject formally, which
+remains `S1.P06.S10` work.
 
 ## Preserved later Stage 1 phases
 
@@ -1585,8 +1588,8 @@ that is neither trimmed nor normalized. The fault subject of a report is
 verification: they establish no affected repository, existing fault, executed
 or observed deviation, originating Issue or pull request, known cause, repair,
 run outcome, expected property, confidence, source relationship, or evidence
-support, and no such model is published. That took the module's `__all__` from
-two symbols to four.
+support, and `S1.P06.S02` published no such model. That took the module's
+`__all__` from two symbols to four.
 `S1.P06.S03` extends the same module again with `FaultScenarioIdentity` and
 `FaultOccurrenceIdentity`, two further independent `RootModel[uuid.UUID]`
 values nominally distinct from each other and from the fault and report
@@ -1603,11 +1606,13 @@ reproduction. A report may stand alone, one report may carry several
 scenarios, and a scenario may carry no occurrence or several, so no boolean
 records whether the fault occurred and a missing occurrence record asserts
 nothing. No occurrence time is recorded and the `S1.P05`
-`PullRequestHistoricalOccurrenceTime` is not reused as one. No structured
-applicability taxonomy, run, outcome, source relationship, evidence link,
-cause, repair, confidence, review, reusable pattern, or complete
-`FaultInstance` is published. The `faultatlas.domain.fault` module's current
-`__all__` is eight symbols and that module still performs no I/O.
+`PullRequestHistoricalOccurrenceTime` is not reused as one. `S1.P06.S03`
+published no structured applicability taxonomy, run, outcome, source
+relationship, evidence link, cause, repair, confidence, review, reusable
+pattern, or complete `FaultInstance`; the bounded source and history
+relationships came next, in `S1.P06.S04`. The `faultatlas.domain.fault`
+module's current `__all__` is eight symbols and that module still performs no
+I/O.
 `S1.P06.S04` adds the module `faultatlas.domain.fault_source_relationship`,
 whose `__all__` is exactly `FaultReportSourceObjectAssociation` and
 `FaultReportHistoryFactAssociation`. Each carries exactly two fields, anchors on
