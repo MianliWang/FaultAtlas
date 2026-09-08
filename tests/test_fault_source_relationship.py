@@ -16,10 +16,17 @@ import zipfile
 from collections.abc import Callable, Hashable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 import pytest
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    TypeAdapter,
+    ValidationError,
+)
 
 import faultatlas
 import faultatlas.domain
@@ -574,6 +581,47 @@ def _target_names(target: ast.expr) -> list[str]:
     return []
 
 
+def _own_attribute_names(value: object) -> frozenset[str]:
+    """The names in one object's own `__dict__`, or none when it has none."""
+    carried = cast("dict[str, object] | None", getattr(value, "__dict__", None))
+    return frozenset(carried) if carried is not None else frozenset()
+
+
+def _identity(value: object) -> object:
+    """A do-nothing validator, used only to build a reference `Annotated`."""
+    return value
+
+
+def _reference_adapter() -> TypeAdapter[datetime]:
+    """A freshly built adapter of the shape the module declares."""
+    return TypeAdapter(AwareDatetime)
+
+
+class _ReferenceValueModel(BaseModel):
+    """A model under the published profile, carrying no validator of its own.
+
+    Its class attributes are whatever Pydantic and `abc` install, so comparing
+    against it keeps the surface check from hand-listing an internal.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        validate_default=True,
+    )
+
+    supplied: int
+
+
+PYDANTIC_CLASS_ATTRIBUTES = frozenset(
+    name
+    for name in _own_attribute_names(_ReferenceValueModel)
+    if not name.startswith("__")
+)
+
+
 def _bound_names(body: list[ast.stmt]) -> list[str]:
     """Every name one block binds, through every shape the grammar allows.
 
@@ -785,8 +833,12 @@ def test_the_module_declares_exactly_its_documented_top_level_surface() -> None:
 
     assert tuple(_bound_names(tree.body)) == DECLARED_MODULE_BINDINGS
 
-    for node in tree.body:
+    for index, node in enumerate(tree.body):
         assert isinstance(node, ADMITTED_TOP_LEVEL_STATEMENTS), type(node).__name__
+        # A bare expression binds no name and is not scanned for containers, so
+        # it is admitted only as the docstring. `setattr(value, ..., {})` is
+        # otherwise a module-level statement that no other check would see.
+        assert not isinstance(node, ast.Expr) or index == 0, ast.dump(node)[:120]
 
     # `__all__` is a list by repository convention; nothing else may build a
     # mutable container anywhere in its value, because a module-level container
@@ -839,6 +891,54 @@ def test_each_association_declares_exactly_its_documented_members() -> None:
         assert "model_post_init" not in _bound_names(classes[name].body), name
         for member in _bound_names(classes[name].body):
             assert not member.startswith("__"), (name, member)
+
+
+def test_no_module_level_value_carries_an_unexpected_attribute() -> None:
+    """A container may live on a value's `__dict__` without binding a name.
+
+    The runtime namespace check sees module-level names and the AST checks see
+    module-level statements; neither sees an attribute set on an already
+    declared value, which is one more place the prohibited relation registry
+    fits. Each value the module creates is therefore compared with a freshly
+    built equivalent, so a Pydantic or typing internal is not hand-listed here
+    while an added attribute still fails.
+    """
+    reference_alias = Annotated[int, BeforeValidator(_identity)]
+    expected: dict[str, frozenset[str]] = {
+        "_OCCURRED_AT": _own_attribute_names(_reference_adapter()),
+        "_require_published_fact": frozenset(),
+        "_require_published_occurrence_time": frozenset(),
+    }
+    for alias in (
+        "_PublishedRevisionRoleBinding",
+        "_PublishedChangedPath",
+        "_PublishedReviewRevisionApproval",
+        "_PublishedMergeRevisionOutcome",
+        "_PublishedHeadRefDeletion",
+        "_PublishedHistoricalOccurrenceTime",
+    ):
+        expected[alias] = _own_attribute_names(reference_alias)
+
+    for name in DECLARED_MODULE_BINDINGS:
+        if name == "__all__" or name in DECLARED_CLASS_MEMBERS:
+            continue
+        value = cast(object, getattr(relationship_module, name))
+        carried = _own_attribute_names(value)
+        assert carried == expected.get(name, frozenset()), (name, sorted(carried))
+
+    for name in DECLARED_CLASS_MEMBERS:
+        model = cast(type[BaseModel], getattr(relationship_module, name))
+        own = {
+            member
+            for member in _own_attribute_names(model)
+            if not member.startswith("__")
+        }
+        declared = {
+            member
+            for member in DECLARED_CLASS_MEMBERS[name]
+            if member.startswith("_require")
+        }
+        assert own == declared | PYDANTIC_CLASS_ATTRIBUTES, (name, sorted(own))
 
 
 def test_neither_association_publishes_an_attribute_beyond_its_fields() -> None:
@@ -2393,35 +2493,69 @@ def test_the_module_docstring_keeps_the_three_exclusion_reasons_distinct() -> No
 # can produce: each would have to be written as a claim.
 FORBIDDEN_DOCSTRING_CLAIMS = (
     "is the affected repository",
-    "is a verified relation",
-    "This association proves",
-    "constructs the Issue",
-    "association is the LEVEL-1",
+    "verified relation",
+    "this association proves",
+    "constructs the issue",
+    "association is the level-1",
+    "is the level-1 evidence",
+    "level-1 evidence support for",
+    "association establishes",
+    "and proves the",
     "does establish that",
-    "It means that the fact proves",
+    "it means that the fact proves",
 )
 
 
-def _s04_roadmap_section() -> str:
-    """The roadmap's `S1.P06.S04` narrative, from its paragraph to the route."""
-    roadmap = _roadmap()
-    start = roadmap.index("`S1.P06.S04` adds one new production module")
-    end = roadmap.index("The `S1.P06` route is provisional beyond `S1.P06.S04`.")
-    assert start < end
+def _span(roadmap: str, start_anchor: str, end_anchor: str) -> str:
+    start = roadmap.index(start_anchor)
+    end = roadmap.index(end_anchor)
+    assert start < end, (start_anchor, end_anchor)
     return roadmap[start:end]
+
+
+def _s04_roadmap_sections() -> tuple[str, str]:
+    """Both places the roadmap states this Slice's meaning, in full.
+
+    The phase section carries the narrative and the current-code mapping
+    carries a second, independent statement of the same surface. Scanning only
+    one leaves the other free to contradict it, which is how two of the
+    contradictions this Slice has already repaired arrived. Each span is taken
+    whole rather than from the `S1.P06.S04` paragraph onward, because a claim
+    inserted immediately above that paragraph reads as though it governed it
+    while sitting outside a narrower span.
+    """
+    roadmap = _roadmap()
+    return (
+        _span(
+            roadmap,
+            "## S1.P06 — Fault Instance Model",
+            "## Preserved later Stage 1 phases",
+        ),
+        _span(
+            roadmap,
+            "## Current-code mapping",
+            "The minimal CLI and governed Python foundation",
+        ),
+    )
+
+
+def _s04_roadmap_section() -> str:
+    """The roadmap's `S1.P06` phase section, which carries the S04 narrative."""
+    return _s04_roadmap_sections()[0]
 
 
 @pytest.mark.parametrize("claim", FORBIDDEN_DOCSTRING_CLAIMS)
 def test_no_prose_in_this_slice_makes_a_stronger_claim(claim: str) -> None:
     """No published prose may state as a claim what the contract refuses.
 
-    The roadmap is scanned beside the docstrings because it is the other place
-    this Slice states its meaning, and a claim inserted there would otherwise
-    stand unopposed beside the paragraph that denies it.
+    Both roadmap narratives are scanned beside the docstrings: the Slice states
+    its meaning in the phase section and again in the current-code mapping, and
+    a claim inserted in either would otherwise stand unopposed beside the
+    paragraph that denies it. Matching is case-insensitive so that capitalising
+    a sentence is not a way past the list.
     """
-    for doc in _docstrings():
-        assert claim not in doc, claim
-    assert claim not in _s04_roadmap_section(), claim
+    for prose in (*_docstrings(), *_s04_roadmap_sections()):
+        assert claim not in prose.lower(), claim
 
 
 def test_the_roadmap_section_states_the_same_non_claims_as_the_module() -> None:
