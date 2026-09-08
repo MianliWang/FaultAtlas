@@ -2296,19 +2296,53 @@ def test_no_occurrence_timestamp_is_introduced_or_borrowed_from_p05() -> None:
         for name in time_names:
             assert name not in model.model_fields, (model, name)
 
-    source = FAULT_SOURCE.read_text(encoding="utf-8")
     tree = _fault_source_tree()
-    imported: set[str] = set()
+    # Every imported module by its FULL dotted path, and every name an import
+    # binds. A shortened path or an `as` alias must not be able to slip the P05
+    # module past this check.
+    imported_modules: set[str] = set()
+    bound_by_import: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            imported.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module is not None:
-            imported.add(node.module)
-    # No datetime type, no history module, and no import of the P05 relation.
-    assert "datetime" not in imported
-    assert "faultatlas.domain.history" not in imported
-    assert "PullRequestHistoricalOccurrenceTime" not in source.split('"""')[2]
-    assert "AwareDatetime" not in source
+            for alias in node.names:
+                imported_modules.add(alias.name)
+                bound_by_import.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is not None:
+                imported_modules.add(node.module)
+            for alias in node.names:
+                bound_by_import.add(alias.asname or alias.name)
+
+    assert imported_modules == {
+        "uuid",
+        "typing",
+        "pydantic",
+        "faultatlas.domain.identity",
+    }
+    for module in imported_modules:
+        assert not module.startswith("datetime"), module
+        assert "history" not in module, module
+    assert "history" not in bound_by_import
+    assert "datetime" not in bound_by_import
+
+    # Identifiers the CODE uses, which is not the same question as whether a
+    # word appears in the file: the module docstring names the P05 relation in
+    # order to say it is not reused, so a raw text scan would be satisfied by
+    # the disclaimer itself while an alias in a class body slipped through.
+    used: set[str] = set(bound_by_import)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            used.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            used.add(node.attr)
+    for forbidden in (
+        "PullRequestHistoricalOccurrenceTime",
+        "AwareDatetime",
+        "datetime",
+        "history",
+        *time_names,
+    ):
+        assert forbidden not in used, forbidden
     # The P05 relation itself still exists and still carries its own instant,
     # unchanged and unshared.
     history = HISTORY_SOURCE.read_text(encoding="utf-8")
