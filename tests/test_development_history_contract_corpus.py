@@ -60,10 +60,11 @@ SUPPORTING_AUTHORITIES = (
 # faultatlas.domain.fault_source_relationship, and S1.P06.S05 a sixteenth,
 # faultatlas.domain.fault_repair. The corpus deliberately covers none of them.
 PRODUCTION_SOURCE_COUNT_AT_PUBLICATION = 13
-CURRENT_PRODUCTION_SOURCE_COUNT = 16
+CURRENT_PRODUCTION_SOURCE_COUNT = 17
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
 FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 FAULT_REPAIR_MODULE = "src/faultatlas/domain/fault_repair.py"
+FAULT_TEST_MODULE = "src/faultatlas/domain/fault_test.py"
 # The production surface present when this corpus was published. It is a
 # historical fact about the corpus and stays at 13.
 COVERED_PRODUCTION_FILES = frozenset(
@@ -1510,6 +1511,7 @@ def test_the_corpus_changed_no_production_source_and_names_what_followed() -> No
         FAULT_MODULE,
         FAULT_SOURCE_RELATIONSHIP_MODULE,
         FAULT_REPAIR_MODULE,
+        FAULT_TEST_MODULE,
     }
     assert len(COVERED_PRODUCTION_FILES) == PRODUCTION_SOURCE_COUNT_AT_PUBLICATION
 
@@ -1673,7 +1675,7 @@ def test_the_roadmap_names_exactly_one_next_gate() -> None:
 
     assert claims
     for claim in claims:
-        assert "`S1.P06.S06`" in claim, claim
+        assert "`S1.P06.S07`" in claim, claim
         assert "`S1.P05.S10`" not in claim, claim
         assert "`S1.P06` is next and not started" not in claim, claim
         assert "`S1.P06.S02` is next and not started" not in claim, claim
@@ -1690,7 +1692,8 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     assert "`S1.P06.S03` is complete" in text
     assert "`S1.P06.S04` is complete" in text
     assert "`S1.P06.S05` is complete" in text
-    assert "`S1.P06.S06` is next and not started" in text
+    assert "`S1.P06.S06` is complete" in text
+    assert "`S1.P06.S07` is next and not started" in text
     assert "`S1.P06` was `eligible_to_begin`" in text
     assert "`S1.P06` is `eligible_to_begin`" not in text
     assert "reference_corpus/contracts/development-history/v1" in text

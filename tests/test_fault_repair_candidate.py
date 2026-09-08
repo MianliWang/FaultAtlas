@@ -1916,6 +1916,7 @@ def test_the_module_performs_no_io() -> None:
     (
         "src/faultatlas/domain/fault.py",
         "src/faultatlas/domain/fault_source_relationship.py",
+        "src/faultatlas/domain/fault_test.py",
         "src/faultatlas/domain/history.py",
         "src/faultatlas/domain/revision.py",
     ),
@@ -1928,7 +1929,7 @@ def test_no_predecessor_production_module_imports_this_one(relative: str) -> Non
         assert symbol not in source
 
 
-def test_the_tracked_production_inventory_is_sixteen_modules() -> None:
+def test_the_tracked_production_inventory_is_seventeen_modules() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -1939,7 +1940,7 @@ def test_the_tracked_production_inventory_is_sixteen_modules() -> None:
     observed = sorted(tracked.stdout.decode("utf-8").split())
 
     assert observed == [f"src/{name}" for name in EXPECTED_PRODUCTION_MODULES]
-    assert len(observed) == 16
+    assert len(observed) == 17
     assert "src/faultatlas/domain/fault_repair.py" in observed
 
 
@@ -1964,15 +1965,15 @@ def test_the_current_status_section_states_exactly_the_live_lifecycle() -> None:
     section = _current_status_section()
 
     assert "`S1.P06` is active and incomplete" in section
-    for index in range(1, 6):
+    for index in range(1, 7):
         assert f"`S1.P06.S{index:02d}` is complete" in section, index
-    assert "`S1.P06.S06` is next and not started" in section
+    assert "`S1.P06.S07` is next and not started" in section
     assert "`S1.P07` through `S1.P10` remain not started" in section
 
-    # Nothing beyond S05 may be claimed complete, and no superseded gate stands.
-    for index in range(6, 13):
+    # Nothing beyond S06 may be claimed complete, and no superseded gate stands.
+    for index in range(7, 13):
         assert f"`S1.P06.S{index:02d}` is complete" not in section, index
-    for index in range(1, 6):
+    for index in range(1, 7):
         assert f"`S1.P06.S{index:02d}` is next and not started" not in section, index
     assert "`S1.P06` is complete" not in section
     assert "`S1.P06` is `eligible_to_begin`" not in section
@@ -1985,12 +1986,12 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S06"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P06.S07"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P06.S06`" in line, line
+            assert "`S1.P06.S07`" in line, line
 
 
 def test_the_roadmap_records_the_p06_s05_transition() -> None:
@@ -2001,24 +2002,29 @@ def test_the_roadmap_records_the_p06_s05_transition() -> None:
     current = mapping[1]
 
     assert "`S1.P06.S05` is complete" in roadmap
-    assert "`S1.P06.S06` is next and not started" in roadmap
+    assert "`S1.P06.S06` is complete" in roadmap
+    assert "`S1.P06.S07` is next and not started" in roadmap
     assert (
         "`S1.P06.S05` — Repair Candidates and Concrete Repair Associations "
         "(complete)" in roadmap
     )
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S05`." in roadmap
+    assert (
+        "`S1.P06.S06` — Test Material, Reported Runs, Outcomes, and "
+        "Comparability (complete)" in roadmap
+    )
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S06`." in roadmap
 
     assert "faultatlas.domain.fault_repair" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    assert "Production Python sources are 16." in current
+    assert "Production Python sources are 17." in current
     assert "`candidate.report.context.fault`" in roadmap
 
     # The superseded live gate and provisional S05 title must be retired.
     assert "`S1.P06.S05` is next and not started" not in roadmap
     assert "`S1.P06.S05` — Repair candidates (next, not started)" not in roadmap
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S04`." not in roadmap
-    assert "Production Python sources are 15." not in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S05`." not in roadmap
+    assert "Production Python sources are 16." not in current
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
 
@@ -2249,6 +2255,7 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/fault.py",
     "faultatlas/domain/fault_repair.py",
     "faultatlas/domain/fault_source_relationship.py",
+    "faultatlas/domain/fault_test.py",
     "faultatlas/domain/history.py",
     "faultatlas/domain/history_evidence_link.py",
     "faultatlas/domain/identity.py",
@@ -2268,11 +2275,12 @@ def test_the_wheel_ships_the_repair_module_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 16
+    assert len(modules) == 17
     for required in (
+        "faultatlas/domain/fault.py",
         "faultatlas/domain/fault_repair.py",
         "faultatlas/domain/fault_source_relationship.py",
-        "faultatlas/domain/fault.py",
+        "faultatlas/domain/fault_test.py",
     ):
         assert required in modules
     for name in names:
@@ -2292,7 +2300,7 @@ def test_the_sdist_ships_the_repair_module_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 16
+    assert len(modules) == 17
     assert "faultatlas/domain/fault_repair.py" in modules
     for name in names:
         parts = Path(name).parts
