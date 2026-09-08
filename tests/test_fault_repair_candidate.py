@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import typing
 import uuid
 import zipfile
 from pathlib import Path
@@ -19,6 +20,14 @@ from pydantic import BaseModel, ConfigDict, RootModel, ValidationError
 import faultatlas
 import faultatlas.domain
 import faultatlas.domain.fault_repair as repair_module
+from faultatlas.domain.evidence import (
+    ArtifactByteLength,
+    ArtifactSha256Digest,
+    DurableEvidenceRecordReference,
+    EvidenceCanonicalization,
+    EvidenceRecordFormat,
+    EvidenceVersion,
+)
 from faultatlas.domain.fault import (
     FaultInstanceIdentity,
     FaultOccurrenceIdentity,
@@ -320,6 +329,19 @@ def _change_set(
         base=_binding(RevisionRole.BASE, RETAINED_BASE_REVISION, repository),
         head=_binding(RevisionRole.HEAD, head, repository),
         changed_paths=tuple(_changed_path(index) for index in range(paths)),
+    )
+
+
+def _evidence_record() -> DurableEvidenceRecordReference:
+    """The retained acquisition record, supplied only so a link is buildable."""
+    return DurableEvidenceRecordReference(
+        format_name=EvidenceRecordFormat("faultatlas-acquisition"),
+        format_version=EvidenceVersion("1"),
+        canonicalization=EvidenceCanonicalization("json-sort-keys-compact-utf8-lf-v1"),
+        sha256=ArtifactSha256Digest(
+            "1c29093bf1537e9b824a18df1848b71a8da014f544bc9f385707eb0e000a1318"
+        ),
+        byte_length=ArtifactByteLength(61_283),
     )
 
 
@@ -1150,18 +1172,30 @@ def test_one_change_set_may_serve_candidates_of_two_different_fault_reports() ->
     assert first.candidate.report.context.fault != second.candidate.report.context.fault
 
 
-def test_no_collection_or_registry_is_published() -> None:
+def test_no_collection_field_and_no_module_registry_is_published() -> None:
+    """Multiplicity is held by the caller, not by any container published here."""
     published = {
         node.name for node in ast.walk(_repair_tree()) if isinstance(node, ast.ClassDef)
     }
 
-    assert published == set(EXPECTED_EXPORTS[1:]) | {EXPECTED_EXPORTS[0]}
+    assert published == set(EXPECTED_EXPORTS)
     for model in _published_models():
         for name, field in model.model_fields.items():
             assert field.is_required(), (model.__name__, name)
-            annotation = str(field.annotation)
-            assert "list" not in annotation.lower(), (model.__name__, name)
-            assert "tuple" not in annotation.lower(), (model.__name__, name)
+            annotation = field.annotation
+            # The declared type itself, not its spelling: `set` is a substring
+            # of `PullRequestChangeSet`, so a name scan would be nonsense here.
+            # A container field would be a parametrized generic -- `tuple[...]`,
+            # `list[...]`, `set[...]`, `dict[...]` -- and every field here is a
+            # plain class instead.
+            assert typing.get_origin(annotation) is None, (model.__name__, name)
+            assert isinstance(annotation, type), (model.__name__, name)
+
+    # A module-level container is the shape a candidate registry would take.
+    for name, value in vars(repair_module).items():
+        if name.startswith("__"):
+            continue
+        assert not isinstance(value, dict | list | set), name
 
 
 # --- the revision association --------------------------------------------------
@@ -1571,11 +1605,16 @@ def test_the_change_set_stays_excluded_from_the_s04_and_p05_relations() -> None:
         FaultReportHistoryFactAssociation(
             report=_report(), history_fact=cast(Any, change_set)
         )
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as failure:
         PullRequestHistoryFactEvidenceLink(
             fact=cast(Any, change_set),
-            evidence_record=cast(Any, None),
+            evidence_record=_evidence_record(),
         )
+
+    # A valid record is supplied so that `fact` is the only ground on which
+    # this can fail; `evidence_record=None` would raise whatever the union
+    # admitted, and would pass even if the change set were admissible.
+    assert {path[0] for path, _ in _failures(failure.value)} == {"fact"}
     assert _change_set_association(change_set=change_set).change_set == change_set
 
 
@@ -1733,6 +1772,64 @@ def test_the_module_publishes_exactly_four_symbols_in_order() -> None:
     assert [
         node.name for node in ast.walk(_repair_tree()) if isinstance(node, ast.ClassDef)
     ] == EXPECTED_EXPORTS
+
+
+DECLARED_VALIDATORS = (
+    "_require_typed_python_candidate",
+    "_require_typed_python_report",
+    "_require_unpadded_text",
+    "_require_typed_python_candidate",
+    "_require_typed_python_revision",
+    "_require_typed_python_candidate",
+    "_require_typed_python_change_set",
+)
+
+
+def test_the_module_defines_only_the_declared_validators() -> None:
+    """A derivation or a helper added anywhere in the module must fail here.
+
+    `__all__` and the class-name list pin what is exported, not what exists: a
+    classmethod deriving a candidate identity from a report, or any other
+    function, changes neither and would otherwise be invisible.
+    """
+    functions = [
+        node.name
+        for node in ast.walk(_repair_tree())
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    ]
+
+    assert tuple(functions) == DECLARED_VALIDATORS
+    for name in functions:
+        assert name.startswith("_")
+        assert name not in repair_module.__all__
+
+
+@pytest.mark.parametrize("model", _published_models(), ids=lambda m: m.__name__)
+def test_no_record_publishes_an_attribute_beyond_its_fields(
+    model: type[BaseModel],
+) -> None:
+    """An outcome claim may not arrive as a property or method either.
+
+    Pydantic fields are not class attributes, so a clean value model adds no
+    public name of its own. A `merged` or `regression_free` property would
+    leave `model_fields` and the JSON payload untouched while still being
+    reachable on the record.
+    """
+    beyond = {name for name in dir(model) if not name.startswith("_")} - set(
+        dir(BaseModel)
+    )
+
+    assert beyond == set(), model.__name__
+    assert model.model_computed_fields == {}
+
+
+def test_the_candidate_identity_publishes_no_attribute_beyond_its_root() -> None:
+    beyond = {
+        name for name in dir(FaultRepairCandidateIdentity) if not name.startswith("_")
+    } - set(dir(RootModel))
+
+    assert beyond == set()
+    assert FaultRepairCandidateIdentity.model_computed_fields == {}
 
 
 def test_the_module_is_not_re_exported_from_the_package_or_domain_root() -> None:
