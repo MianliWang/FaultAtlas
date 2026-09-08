@@ -56,10 +56,13 @@ SUPPORTING_AUTHORITIES = (
     "faultatlas.domain.revision",
 )
 # The corpus froze 13 production sources. S1.P06.S01 added a fourteenth,
-# faultatlas.domain.fault, which the corpus deliberately does not cover.
+# faultatlas.domain.fault, and S1.P06.S04 a fifteenth,
+# faultatlas.domain.fault_source_relationship. The corpus deliberately covers
+# neither.
 PRODUCTION_SOURCE_COUNT_AT_PUBLICATION = 13
-CURRENT_PRODUCTION_SOURCE_COUNT = 14
+CURRENT_PRODUCTION_SOURCE_COUNT = 15
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
+FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 # The production surface present when this corpus was published. It is a
 # historical fact about the corpus and stays at 13.
 COVERED_PRODUCTION_FILES = frozenset(
@@ -1489,8 +1492,8 @@ def test_the_corpus_changed_no_production_source_and_names_what_followed() -> No
     """The corpus added nothing; a later Slice did, and it is named here.
 
     Publishing this corpus changed no production source, and the surface it
-    froze is still present. The live tree has since gained exactly one module,
-    which is named rather than absorbed into a count, so a second unexplained
+    froze is still present. The live tree has since gained exactly two modules,
+    which are named rather than absorbed into a count, so a third unexplained
     module would fail here.
     """
     observed = {
@@ -1502,7 +1505,10 @@ def test_the_corpus_changed_no_production_source_and_names_what_followed() -> No
     assert len(observed) == CURRENT_PRODUCTION_SOURCE_COUNT
     assert "src/faultatlas/domain/history.py" in observed
     assert "src/faultatlas/domain/history_evidence_link.py" in observed
-    assert observed - COVERED_PRODUCTION_FILES == {FAULT_MODULE}
+    assert observed - COVERED_PRODUCTION_FILES == {
+        FAULT_MODULE,
+        FAULT_SOURCE_RELATIONSHIP_MODULE,
+    }
     assert len(COVERED_PRODUCTION_FILES) == PRODUCTION_SOURCE_COUNT_AT_PUBLICATION
 
 
@@ -1665,11 +1671,12 @@ def test_the_roadmap_names_exactly_one_next_gate() -> None:
 
     assert claims
     for claim in claims:
-        assert "`S1.P06.S04`" in claim, claim
+        assert "`S1.P06.S05`" in claim, claim
         assert "`S1.P05.S10`" not in claim, claim
         assert "`S1.P06` is next and not started" not in claim, claim
         assert "`S1.P06.S02` is next and not started" not in claim, claim
         assert "`S1.P06.S03` is next and not started" not in claim, claim
+        assert "`S1.P06.S04` is next and not started" not in claim, claim
 
 
 def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
@@ -1678,7 +1685,8 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     assert "`S1.P05.S09` — Development History Contract Corpus (complete)" in text
     assert "`S1.P06.S02` is complete" in text
     assert "`S1.P06.S03` is complete" in text
-    assert "`S1.P06.S04` is next and not started" in text
+    assert "`S1.P06.S04` is complete" in text
+    assert "`S1.P06.S05` is next and not started" in text
     assert "`S1.P06` was `eligible_to_begin`" in text
     assert "`S1.P06` is `eligible_to_begin`" not in text
     assert "reference_corpus/contracts/development-history/v1" in text

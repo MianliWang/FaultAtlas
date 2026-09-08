@@ -35,10 +35,12 @@ PRECEDENT_STATES = (
 )
 VALID_OWNERS = ("S1.P06", "S2", "S5")
 # The sealed governance count is a historical fact about this artifact.
-# The live inventory moved on: S1.P06.S01 published faultatlas.domain.fault.
+# The live inventory moved on: S1.P06.S01 published faultatlas.domain.fault and
+# S1.P06.S04 published faultatlas.domain.fault_source_relationship.
 PRODUCTION_SOURCE_COUNT_AT_CORRECTION = 13
-CURRENT_PRODUCTION_SOURCE_COUNT = 14
+CURRENT_PRODUCTION_SOURCE_COUNT = 15
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
+FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 
 
 def _correction() -> dict[str, Any]:
@@ -675,6 +677,7 @@ def test_the_correction_introduces_no_product_semantics() -> None:
 
     assert len(observed) == CURRENT_PRODUCTION_SOURCE_COUNT
     assert FAULT_MODULE in observed
+    assert FAULT_SOURCE_RELATIONSHIP_MODULE in observed
     assert (
         governance["production_python_source_count"]
         == PRODUCTION_SOURCE_COUNT_AT_CORRECTION
@@ -753,7 +756,8 @@ def test_every_phase_status_summary_records_the_correction() -> None:
         assert "`S1.P06` is active and incomplete" in head, head
         assert "`S1.P06.S02` is complete" in head, head
         assert "`S1.P06.S03` is complete" in head, head
-        assert "`S1.P06.S04` is next and not started" in head, head
+        assert "`S1.P06.S04` is complete" in head, head
+        assert "`S1.P06.S05` is next and not started" in head, head
 
 
 def test_the_derived_summary_preserves_whole_rationale_sentences() -> None:
@@ -785,7 +789,8 @@ def test_the_roadmap_records_the_correction_and_holds_the_phase_state() -> None:
     assert "`S1.P05.S08.C01`" in text
     assert "`S1.P06.S02` is complete" in text
     assert "`S1.P06.S03` is complete" in text
-    assert "`S1.P06.S04` is next and not started" in text
+    assert "`S1.P06.S04` is complete" in text
+    assert "`S1.P06.S05` is next and not started" in text
     assert "`S1.P05.S09` — Development History Contract Corpus (complete)" in text
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in text
     assert "`S1.P05` is complete" in text

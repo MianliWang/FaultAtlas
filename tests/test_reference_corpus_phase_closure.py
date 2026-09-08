@@ -416,6 +416,7 @@ SNAPSHOT_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/snapshot_evidence_link.py
 HISTORY_MODULE = "src/faultatlas/domain/history.py"
 HISTORY_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/history_evidence_link.py"
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
+FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 P03_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, EVIDENCE_MODULE}
 CURRENT_PRODUCTION_FILES = {
     *P03_PRODUCTION_FILES,
@@ -424,6 +425,7 @@ CURRENT_PRODUCTION_FILES = {
     HISTORY_MODULE,
     HISTORY_EVIDENCE_LINK_MODULE,
     FAULT_MODULE,
+    FAULT_SOURCE_RELATIONSHIP_MODULE,
 }
 EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunId",
@@ -2086,7 +2088,8 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P06.S01` is complete" in normalized_roadmap
     assert "`S1.P06.S02` is complete" in normalized_roadmap
     assert "`S1.P06.S03` is complete" in normalized_roadmap
-    assert "`S1.P06.S04` is next and not started" in normalized_roadmap
+    assert "`S1.P06.S04` is complete" in normalized_roadmap
+    assert "`S1.P06.S05` is next and not started" in normalized_roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:
