@@ -3762,7 +3762,8 @@ def test_roadmap_records_p03_complete_and_p04_s02_complete() -> None:
     assert "`S1.P06` is active and incomplete" in roadmap
     assert "`S1.P06.S01` is complete" in roadmap
     assert "`S1.P06.S02` is complete" in roadmap
-    assert "`S1.P06.S03` is next and not started" in roadmap
+    assert "`S1.P06.S03` is complete" in roadmap
+    assert "`S1.P06.S04` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap
     reference_case = (

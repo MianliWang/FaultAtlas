@@ -61,12 +61,17 @@ ADMITTED_UUID_TEXT: tuple[tuple[str, int | None], ...] = (
 )
 
 # The module's CURRENT surface. S01 published the first two; S02 extended the
-# same module in place with the last two. Per-model S01 tests are unchanged.
+# same module in place with the next two, and S03 with the last four. Per-model
+# S01 tests are unchanged.
 EXPECTED_EXPORTS = [
     "FaultInstanceIdentity",
     "FaultRepositoryContext",
     "FaultReportIdentity",
     "SuppliedFaultReport",
+    "FaultScenarioIdentity",
+    "FaultOccurrenceIdentity",
+    "SuppliedFaultScenario",
+    "SuppliedFaultOccurrenceContext",
 ]
 
 FORBIDDEN_IMPORTS = frozenset(
@@ -1043,7 +1048,7 @@ def test_a_nested_predecessor_extra_field_is_refused_in_json() -> None:
 # --- the module's own declared surface ---------------------------------------
 
 
-def test_the_module_publishes_exactly_four_symbols() -> None:
+def test_the_module_publishes_exactly_eight_symbols() -> None:
     assert fault_module.__all__ == EXPECTED_EXPORTS
     assert [
         node.name
@@ -1055,8 +1060,9 @@ def test_the_module_publishes_exactly_four_symbols() -> None:
 def test_the_module_binds_no_other_name_at_module_level() -> None:
     """`__all__` and a class scan do not see an alias, a factory or a registry.
 
-    The authorized surface is four models. An alias, a lambda factory, a generic
-    type alias, or a module-level collection would each add a fifth public thing
+    The authorized surface is eight models. An alias, a lambda factory, a
+    generic type alias, or a module-level collection would each add a ninth
+    public thing
     while leaving `__all__` and the class list untouched, so the binding sites
     themselves are enumerated here.
     """
@@ -1162,6 +1168,12 @@ def test_the_module_defines_only_the_declared_validators() -> None:
         "_require_typed_python_report",
         "_require_typed_python_context",
         "_require_unpadded_text",
+        "_require_typed_python_scenario",
+        "_require_typed_python_report",
+        "_require_unpadded_text",
+        "_require_typed_python_occurrence",
+        "_require_typed_python_scenario",
+        "_require_unpadded_text",
     ]
 
 
@@ -1214,7 +1226,8 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
         in roadmap
     )
     assert "`S1.P06.S02` is complete" in roadmap
-    assert "`S1.P06.S03` is next and not started" in roadmap
+    assert "`S1.P06.S03` is complete" in roadmap
+    assert "`S1.P06.S04` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
 
     assert "faultatlas.domain.fault" in current
@@ -1234,12 +1247,12 @@ def test_the_roadmap_route_is_provisional_beyond_this_slice() -> None:
         (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
     )
 
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S02`." in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S03`." in roadmap
     for index in range(2, 13):
         assert f"`S1.P06.S{index:02d}`" in roadmap
     assert "`S1.P06.S13`" not in roadmap
-    # Only S01 and S02 are claimed complete in the route.
-    for index in range(3, 13):
+    # Only S01, S02 and S03 are claimed complete in the route.
+    for index in range(4, 13):
         assert f"`S1.P06.S{index:02d}` is complete" not in roadmap
 
 
@@ -1274,6 +1287,10 @@ assert fault_module.__all__ == [
     "FaultRepositoryContext",
     "FaultReportIdentity",
     "SuppliedFaultReport",
+    "FaultScenarioIdentity",
+    "FaultOccurrenceIdentity",
+    "SuppliedFaultScenario",
+    "SuppliedFaultOccurrenceContext",
 ]
 
 supplied = uuid.UUID("12345678-1234-4234-8234-123456789abc")

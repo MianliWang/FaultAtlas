@@ -91,9 +91,14 @@ EXPECTED_EXPORTS = [
     "FaultRepositoryContext",
     "FaultReportIdentity",
     "SuppliedFaultReport",
+    "FaultScenarioIdentity",
+    "FaultOccurrenceIdentity",
+    "SuppliedFaultScenario",
+    "SuppliedFaultOccurrenceContext",
 ]
 S01_EXPORTS = EXPECTED_EXPORTS[:2]
-S02_EXPORTS = EXPECTED_EXPORTS[2:]
+S02_EXPORTS = EXPECTED_EXPORTS[2:4]
+S03_EXPORTS = EXPECTED_EXPORTS[4:]
 
 # Supplied deviation prose spanning the kinds of difference the contract names.
 # Each is representable as plain text; no closed deviation-kind vocabulary
@@ -1790,6 +1795,14 @@ def test_no_lookalike_s01_type_is_defined_in_production() -> None:
         "FaultRepositoryContext": ["fault", "repository"],
         "FaultReportIdentity": ["root"],
         "SuppliedFaultReport": list(REPORT_FIELDS),
+        "FaultScenarioIdentity": ["root"],
+        "FaultOccurrenceIdentity": ["root"],
+        "SuppliedFaultScenario": ["scenario", "report", "scenario_statement"],
+        "SuppliedFaultOccurrenceContext": [
+            "occurrence",
+            "scenario",
+            "occurrence_context",
+        ],
     }
 
 
@@ -1813,7 +1826,8 @@ def test_the_context_inside_a_report_behaves_exactly_as_a_bare_context() -> None
 def test_the_module_publishes_exactly_four_symbols_in_order() -> None:
     assert fault_module.__all__ == EXPECTED_EXPORTS
     assert fault_module.__all__[:2] == S01_EXPORTS
-    assert fault_module.__all__[2:] == S02_EXPORTS
+    assert fault_module.__all__[2:4] == S02_EXPORTS
+    assert fault_module.__all__[4:] == S03_EXPORTS
     assert [
         node.name
         for node in ast.walk(_fault_source_tree())
@@ -1850,7 +1864,7 @@ def test_the_text_bound_is_declared_inline_on_each_field() -> None:
     """No shared module-level text alias, base class, or factory is published.
 
     Each text field states its own `Annotated[str, StringConstraints(...)]`
-    with the literal bounds, so the surface stays four classes and `__all__`.
+    with the literal bounds, so the surface stays eight classes and `__all__`.
     """
     (report_class,) = [
         node
@@ -1929,6 +1943,12 @@ def test_the_module_defines_only_the_declared_validators() -> None:
         "_require_typed_python_report",
         "_require_typed_python_context",
         "_require_unpadded_text",
+        "_require_typed_python_scenario",
+        "_require_typed_python_report",
+        "_require_unpadded_text",
+        "_require_typed_python_occurrence",
+        "_require_typed_python_scenario",
+        "_require_unpadded_text",
     ]
 
 
@@ -1970,7 +1990,8 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     assert "`S1.P06` is active and incomplete" in roadmap
     assert "`S1.P06.S01` is complete" in roadmap
     assert "`S1.P06.S02` is complete" in roadmap
-    assert "`S1.P06.S03` is next and not started" in roadmap
+    assert "`S1.P06.S03` is complete" in roadmap
+    assert "`S1.P06.S04` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P06.S01` — Fault Instance Identity and Repository Context (complete)"
@@ -1980,9 +2001,7 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
         "`S1.P06.S02` — Supplied Fault Report and Behavioral Deviation (complete)"
         in roadmap
     )
-    assert "`S1.P06.S03` — Scenario and occurrence context (next, not started)" in (
-        roadmap
-    )
+    assert "`S1.P06.S03` — Scenario and Occurrence Context (complete)" in roadmap
 
     assert "faultatlas.domain.fault" in current
     for symbol in EXPECTED_EXPORTS:
@@ -1994,7 +2013,7 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     assert "`S1.P06.S02` is next and not started" not in roadmap
     assert "Minimal supplied fault report" not in roadmap
     assert "`S1.P06` is complete" not in roadmap
-    assert "`S1.P06.S03` is complete" not in roadmap
+    assert "`S1.P06.S04` is complete" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
 
@@ -2030,16 +2049,19 @@ def test_the_roadmap_preserves_the_s01_history_as_written() -> None:
 def test_the_roadmap_route_is_provisional_beyond_this_slice() -> None:
     roadmap = _roadmap()
 
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S02`." in roadmap
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S01`." not in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S03`." in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S02`." not in roadmap
     for index in range(1, 13):
         assert f"`S1.P06.S{index:02d}`" in roadmap
     assert "`S1.P06.S13`" not in roadmap
-    # Only S01 and S02 are claimed complete in the route.
-    for index in range(3, 13):
+    # Only S01, S02 and S03 are claimed complete in the route.
+    for index in range(4, 13):
         assert f"`S1.P06.S{index:02d}` is complete" not in roadmap
         assert f"`S1.P06.S{index:02d}` — " in roadmap
-    assert "subject is not resolved by `S1.P06.S01` or `S1.P06.S02`" in roadmap
+    assert (
+        "subject is not resolved by `S1.P06.S01`, `S1.P06.S02`, or `S1.P06.S03`"
+        in roadmap
+    )
 
 
 def test_the_roadmap_carries_exactly_one_live_gate() -> None:
@@ -2049,13 +2071,13 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S03"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P06.S04"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
     # Line-based readers pair the Slice with the phrase on one raw line.
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P06.S03`" in line, line
+            assert "`S1.P06.S04`" in line, line
 
 
 # --- packaging and an isolated installed-wheel smoke -------------------------
@@ -2096,6 +2118,10 @@ assert fault_module.__all__ == [
     "FaultRepositoryContext",
     "FaultReportIdentity",
     "SuppliedFaultReport",
+    "FaultScenarioIdentity",
+    "FaultOccurrenceIdentity",
+    "SuppliedFaultScenario",
+    "SuppliedFaultOccurrenceContext",
 ]
 
 fault = FaultInstanceIdentity(uuid.UUID("12345678-1234-4234-8234-123456789abc"))
