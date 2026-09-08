@@ -43,7 +43,8 @@ aspirational Slice as scheduled work.
   correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
   `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
   `S1.P06.S02` is complete, `S1.P06.S03` is complete,
-  `S1.P06.S04` is complete, and `S1.P06.S05` is next and not started.
+  `S1.P06.S04` is complete, `S1.P06.S05` is complete, and
+  `S1.P06.S06` is next and not started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -93,7 +94,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
-`S1.P06.S04` is complete, and `S1.P06.S05` is next and not started.
+`S1.P06.S04` is complete, `S1.P06.S05` is complete, and
+`S1.P06.S06` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -694,7 +696,8 @@ otherwise.
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
-`S1.P06.S04` is complete, and `S1.P06.S05` is next and not started.
+`S1.P06.S04` is complete, `S1.P06.S05` is complete, and
+`S1.P06.S06` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1140,7 +1143,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 
 `S1.P06` is active and incomplete. `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
-`S1.P06.S04` is complete, and `S1.P06.S05` is next and not started.
+`S1.P06.S04` is complete, `S1.P06.S05` is complete, and
+`S1.P06.S06` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1338,9 +1342,10 @@ registry: two records carrying one scenario or occurrence identity with
 differing contents are not reconciled here, and `S1.P06.S03` published no
 source relationship, evidence link, root cause, repair, confidence, review,
 reusable pattern or invariant, and no complete `FaultInstance`. The bounded
-source and history relationships came next, in `S1.P06.S04`; the rest remain
-owned by `S1.P06.S05` through `S1.P06.S09`, `S1.P07`, `S1.P08`, `S1.P09`, and
-`S1.P10`. The module still performs no I/O.
+source and history relationships came next, in `S1.P06.S04`, and the repair
+candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S06` through
+`S1.P06.S09`, `S1.P07`, `S1.P08`, `S1.P09`, and `S1.P10`. The module still
+performs no I/O.
 
 `S1.P06.S04` adds one new production module,
 `faultatlas.domain.fault_source_relationship`, whose `__all__` is exactly
@@ -1444,7 +1449,123 @@ ancestry or reachability graph, reading `S1.P05` as no complete development
 history, and implicitly upgrading no LEVEL-1 evidence association. Formal
 disposition and readiness for the inherited subject remain `S1.P06.S10` work.
 
-The `S1.P06` route is provisional beyond `S1.P06.S04`. Later exact schemas are
+`S1.P06.S05` adds one new production module, `faultatlas.domain.fault_repair`,
+whose `__all__` is exactly `FaultRepairCandidateIdentity`,
+`SuppliedFaultRepairCandidate`, `FaultRepairCandidateRevisionAssociation`, and
+`FaultRepairCandidateChangeSetAssociation`, in that order, so production Python
+sources move from 15 to 16. `faultatlas.domain.fault`,
+`faultatlas.domain.fault_source_relationship`, `faultatlas.domain.history`, and
+`faultatlas.domain.revision` are unchanged by it and none of them imports it.
+
+`FaultRepairCandidateIdentity` is a fifth independent named
+`RootModel[uuid.UUID]`, neither a subclass nor an alias of the fault, report,
+scenario, or occurrence identities, and all five stay nominally distinct even
+when one scalar is assigned to all five. The caller assigns the UUID; nothing
+generates, derives, reserves, looks up, deduplicates, merges, or registers one,
+and no identifier is derived from a pull-request number, a commit digest,
+change-set content, a report identity, or a fault identity. Nil and Max are
+ordinary values, no generation version is required or inferred, the JSON form is
+the ordinary bare UUID string with no wrapper or adapter, and equality, hashing
+and ordering are left as Pydantic defines them.
+
+`SuppliedFaultRepairCandidate` carries exactly `candidate`, `report`, and
+`repair_statement`, consuming the published `SuppliedFaultReport` whole, so the
+fault subject stays reachable at `candidate.report.context.fault` and no fault,
+repository, report identity, problem statement, or behavioral deviation is
+restated at candidate level. The statement is supplied prose of one to 4096
+characters under the `S1.P06.S02` rule: leading or trailing whitespace is
+refused rather than trimmed, whitespace-only text fails, and admitted Unicode
+and interior whitespace including newlines are preserved exactly with no
+normalization, parsing, or classification.
+
+A repair candidate is a proposal, not an outcome. Designating one establishes no
+known root cause, no implementation, no application, no merge, no deployment, no
+passing test, no avoided regression, no fixed fault, and no evidence support, and
+no status, confidence, correctness, verification, review, or outcome field
+exists. It requires no scenario and no occurrence, so a proposal may be made
+about a suspected, latent, unreproduced, or cause-unknown report, and it requires
+no root cause either: a repair may target an observed behavioral deviation while
+the cause is still unknown, which is why no cause, explanation, or hypothesis
+field exists. Test material, reported outcomes and comparability remain
+`S1.P06.S06` work, case-local explanation and hypothesis `S1.P06.S07` work, the
+fault-evidence bridge `S1.P06.S09` work, and generic review, support and
+confidence calculus `S1.P09` work.
+
+A candidate is complete without any implementation. `S1.P06.S05` separates the
+proposal from the concrete material deliberately, so a purely conceptual
+candidate carrying no revision and no change set is a valid value, which is what
+a not-yet-implemented repair looks like. Absence of an implementation
+association means only that none is supplied here: not that the repair is
+impossible, rejected, abandoned, known to be unimplemented, or incorrect, and no
+boolean, status, or sentinel stands for any of those.
+
+`FaultRepairCandidateRevisionAssociation` carries exactly `candidate` and
+`revision`, reusing the published `S1.P02` `GitCommitIdentity` whole and
+intrinsically. It records only that the caller associated that commit with that
+candidate, and asserts no repository membership, no reachability, no
+pull-request head, no merge revision, no application, no deployment, no fixed
+fault, no passing test, no completeness, and no exclusivity, so no
+repository-membership, role, head, merge, applied, or fixed field exists.
+
+`FaultRepairCandidateChangeSetAssociation` carries exactly `candidate` and
+`change_set`, and this is the Slice that deliberately consumes the published
+`S1.P05` `PullRequestChangeSet`. Consuming it changes nothing about it: the
+embedded value keeps its published base and head bindings, its one to 4096
+supplied changed paths in the caller's supplied order, its distinct base and head
+revisions, its single hash algorithm, and its unique paths. It does not become a
+complete diff or a verified repair by being associated, and the association
+asserts neither that every path relevant to the repair is present, nor that every
+path in the set is affected by the fault, nor that the head revision fixes
+anything, nor that the pull request merged, nor that a merge was correct, nor
+that the changed paths are evidence, nor that base-side blobs are known, nor that
+the set is provider-complete.
+
+The `S1.P05.S07` evidence boundary is untouched. `PullRequestChangeSet` remains
+excluded from `PullRequestHistoryFactEvidenceLink` and from the `S1.P06.S04`
+`FaultReportHistoryFactAssociation`, because no retained record establishes its
+completeness; `S1.P06.S05` admits it under a different relation whose meaning is
+a repair proposal's supplied material rather than a history fact or an evidence
+association. Nothing in the module reaches the evidence layer, and no evidence
+record, support, source, origin, rationale source, confidence, or review field
+exists on any of the three records.
+
+A candidate, a revision, a change set, and a pull request are four different
+things and none is an identity of another. A pull request may contain one
+candidate, several, unrelated changes, or no valid repair at all; a commit may
+implement all, part, or none of a candidate; and a change set describes supplied
+changes between one pull request's base and head rather than being the candidate
+itself.
+
+No coherence calculus over several associations exists. If a caller supplies both
+a revision association and a change-set association for one candidate,
+`S1.P06.S05` does not require the associated revision to equal the change set's
+head revision: it may be an intermediate revision, the head, a later one, or any
+other commit the caller chose. A candidate change set's pull-request repository is
+likewise not required to equal the report's repository context. No value here has
+the aggregate authority to say which associations form one complete candidate
+record, which is `S1.P06.S08` work on bounded `FaultInstance` composition and
+reference integrity.
+
+`S1.P06.S05` adds no candidate-to-source-object relation, since `S1.P06.S04`
+already publishes the weak report-to-source and report-to-history associations
+and candidate provenance belongs to later evidence and composition work. A report
+associated with a pull request and a candidate associated with a change set drawn
+from that same pull request compose into no third claim: there is no transitivity
+rule and neither association supports the other.
+
+Multiplicity is expressed by holding several values rather than by any published
+collection. One report may carry several candidates whose identities differ, and
+identical repair prose does not merge them; one candidate may carry several
+revision and several change-set associations; and one revision or change set may
+be associated with candidates belonging to different fault reports without
+merging those candidates or fault subjects. No collection, ordering, uniqueness
+rule, registry, precedence, or completeness claim exists. Every model-valued
+position is closed to untyped Python input and is not bypassed by
+`from_attributes=True`, JSON reconstructs the declared children normally so each
+record round-trips through JSON while refusing its own `model_dump` as Python
+input, and the module performs no I/O.
+
+The `S1.P06` route is provisional beyond `S1.P06.S05`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -1452,9 +1573,10 @@ tests before the corpus Slice:
 2. `S1.P06.S02` — Supplied Fault Report and Behavioral Deviation (complete)
 3. `S1.P06.S03` — Scenario and Occurrence Context (complete)
 4. `S1.P06.S04` — Bounded Source and History Relationships (complete)
-5. `S1.P06.S05` — Repair candidates (next, not started)
+5. `S1.P06.S05` — Repair Candidates and Concrete Repair Associations
+   (complete)
 6. `S1.P06.S06` — Test material, reported outcomes, and comparability
-   (not started)
+   (next, not started)
 7. `S1.P06.S07` — Case-local explanation, hypothesis, and expected property
    (not started)
 8. `S1.P06.S08` — Bounded `FaultInstance` composition and reference integrity
@@ -1646,14 +1768,48 @@ every model-valued position including both unions to untyped Python input,
 round-trip through JSON while refusing their own `model_dump` as Python input,
 and perform no I/O. `faultatlas.domain.fault`, `faultatlas.domain.identity`,
 `faultatlas.domain.history`, and `faultatlas.domain.history_evidence_link` are
-unchanged and none imports the new module. Production Python sources are 15.
+unchanged and none imports the new module.
+`S1.P06.S05` adds the module `faultatlas.domain.fault_repair`, whose `__all__`
+is exactly `FaultRepairCandidateIdentity`, `SuppliedFaultRepairCandidate`,
+`FaultRepairCandidateRevisionAssociation`, and
+`FaultRepairCandidateChangeSetAssociation`. The candidate identity is a fifth
+independent `RootModel[uuid.UUID]`, nominally distinct from the fault, report,
+scenario, and occurrence identities even on one shared scalar, and derived from
+no pull-request number, commit digest, change-set content, report identity, or
+fault identity. `SuppliedFaultRepairCandidate` ties one candidate identity to
+one published `SuppliedFaultReport` consumed whole and to a supplied
+`repair_statement` of one to 4096 characters under the `S1.P06.S02` text rule,
+so the fault subject stays reachable at `candidate.report.context.fault`. A
+candidate is a proposal, not an outcome: it establishes no known root cause, no
+implementation, no merge, no passing test, no fixed fault, and no evidence
+support, it requires neither a scenario nor an occurrence nor a cause, and it is
+complete with no revision and no change set at all, because a not-yet-implemented
+repair is exactly the case the layer must express. The revision association
+reuses `GitCommitIdentity` whole and claims no repository membership,
+reachability, head or merge role, application, or fix. The change-set
+association deliberately consumes the `S1.P05` `PullRequestChangeSet` while
+leaving its published meaning and the `S1.P05.S07` evidence boundary untouched,
+so it is still excluded from `PullRequestHistoryFactEvidenceLink` and from
+`FaultReportHistoryFactAssociation`, and the association asserts no complete
+diff, affected path, merge, evidence, or provider completeness. Candidate,
+revision, change set and pull request are four different things and none is an
+identity of another; several candidates may share a report, several revisions
+and change sets may share a candidate, and one revision or change set may serve
+candidates of different reports without merging them. No coherence calculus
+relates the associations, so an associated revision need not equal a change
+set's head revision, and no status, confidence, review, evidence, or source
+field exists. Both associations are frozen, strict, extra-forbidding and
+always-revalidating, close every model-valued position to untyped Python input,
+round-trip through JSON while refusing their own `model_dump` as Python input,
+and perform no I/O. Production Python sources are 16.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
-`S1.P06.S04` is complete, and `S1.P06.S05` is next and not started.
+`S1.P06.S04` is complete, `S1.P06.S05` is complete, and
+`S1.P06.S06` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,

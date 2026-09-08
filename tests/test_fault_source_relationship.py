@@ -2569,31 +2569,47 @@ def test_the_executable_code_of_this_module_is_locked() -> None:
 RELATIONSHIP_DOCSTRING_SHA256 = (
     "d7aa8ab472c516795788507720d060ed3217ddc6fa6f68d74d11906d95548469"
 )
-# The two sections are locked whole rather than only their `S1.P06.S04`
-# paragraphs: the forbidden-claim scan reads the whole section, so locking less
-# than it reads leaves the difference defended by a phrase list, and a full
-# inversion of the published meaning fits in that gap.
-ROADMAP_P06_SECTION_SHA256 = (
-    "1f935b0fcdf557cd998b33a733d13b0ed56e56e66f5f66a3c9e8e9ef8efcba3b"
+# These lock the two paragraphs `S1.P06.S04` itself wrote, from its own first
+# sentence to its own last one. They deliberately do NOT lock the enclosing
+# `## S1.P06` and `## Current-code mapping` sections: those grow with every
+# later Slice, so a whole-section digest would make each successor rewrite an
+# `S1.P06.S04` "historical" digest over text this Slice does not own. What this
+# Slice owns is immutable and is locked; what follows it is free to appear.
+ROADMAP_S04_PHASE_SHA256 = (
+    "4c6b6d069295892e3431ea335d5e595122c1c92c4f23acc46068dfda31fb8391"
 )
-ROADMAP_MAPPING_SECTION_SHA256 = (
-    "f73b4c76dd2903248ac2955ec55ab8308a0b8495eb5cb54ebf8e1e9b008e864d"
+ROADMAP_S04_MAPPING_SHA256 = (
+    "6521aaccec0b2d5d44b174d809a65c853473d34199a0bbff55dc9259dbb184a4"
 )
 
 
-def _narrow_s04_roadmap_spans() -> tuple[str, str]:
-    """The two `S1.P06.S04` narratives themselves, without their surroundings."""
+def _span_inclusive(roadmap: str, start_anchor: str, end_anchor: str) -> str:
+    """One span bounded by its own first and last sentence, both included.
+
+    Bounding the end on the text that happens to follow would tie this Slice's
+    lock to whatever a later Slice writes next. Bounding it on this Slice's own
+    closing sentence does not.
+    """
+    start = roadmap.index(start_anchor)
+    end = roadmap.index(end_anchor)
+    assert start < end, (start_anchor, end_anchor)
+    return roadmap[start : end + len(end_anchor)]
+
+
+def _s04_own_roadmap_spans() -> tuple[str, str]:
+    """The two paragraphs `S1.P06.S04` wrote, and nothing around them."""
     roadmap = _roadmap()
     return (
-        _span(
+        _span_inclusive(
             roadmap,
             "`S1.P06.S04` adds one new production module",
-            "The `S1.P06` route is provisional beyond `S1.P06.S04`.",
+            "disposition and readiness for the inherited subject remain "
+            "`S1.P06.S10` work.",
         ),
-        _span(
+        _span_inclusive(
             roadmap,
             "`S1.P06.S04` adds the module `faultatlas.domain.fault_source_relationship`",
-            "`S1.P05` is complete:",
+            "unchanged and none imports the new module.",
         ),
     )
 
@@ -2601,15 +2617,17 @@ def _narrow_s04_roadmap_spans() -> tuple[str, str]:
 def test_the_published_prose_of_this_slice_is_locked() -> None:
     """Whole-text locks, because a phrase list cannot cover every sentence.
 
-    The spans locked here are exactly the spans the forbidden-claim scan reads,
-    so no text is scanned by an enumeration alone.
+    Each lock covers exactly what `S1.P06.S04` published and no more: its module
+    docstring and its two roadmap paragraphs. The prose a later Slice adds
+    around them is guarded by that Slice's own oracle and by the forbidden-claim
+    scan below, which reads the whole roadmap.
     """
     module, *_ = _docstrings()
-    phase, mapping = _s04_roadmap_sections()
+    phase, mapping = _s04_own_roadmap_spans()
 
     assert _sha256(module.encode("utf-8")) == RELATIONSHIP_DOCSTRING_SHA256
-    assert _sha256(phase.encode("utf-8")) == ROADMAP_P06_SECTION_SHA256
-    assert _sha256(mapping.encode("utf-8")) == ROADMAP_MAPPING_SECTION_SHA256
+    assert _sha256(phase.encode("utf-8")) == ROADMAP_S04_PHASE_SHA256
+    assert _sha256(mapping.encode("utf-8")) == ROADMAP_S04_MAPPING_SHA256
 
 
 def test_the_module_docstring_states_its_load_bearing_non_claims() -> None:
@@ -2678,39 +2696,6 @@ FORBIDDEN_DOCSTRING_CLAIMS = (
 )
 
 
-def _span(roadmap: str, start_anchor: str, end_anchor: str) -> str:
-    start = roadmap.index(start_anchor)
-    end = roadmap.index(end_anchor)
-    assert start < end, (start_anchor, end_anchor)
-    return roadmap[start:end]
-
-
-def _s04_roadmap_sections() -> tuple[str, str]:
-    """Both places the roadmap states this Slice's meaning, in full.
-
-    The phase section carries the narrative and the current-code mapping
-    carries a second, independent statement of the same surface. Scanning only
-    one leaves the other free to contradict it, which is how two of the
-    contradictions this Slice has already repaired arrived. Each span is taken
-    whole rather than from the `S1.P06.S04` paragraph onward, because a claim
-    inserted immediately above that paragraph reads as though it governed it
-    while sitting outside a narrower span.
-    """
-    roadmap = _roadmap()
-    return (
-        _span(
-            roadmap,
-            "## S1.P06 — Fault Instance Model",
-            "## Preserved later Stage 1 phases",
-        ),
-        _span(
-            roadmap,
-            "## Current-code mapping",
-            "The minimal CLI and governed Python foundation",
-        ),
-    )
-
-
 @pytest.mark.parametrize("claim", FORBIDDEN_DOCSTRING_CLAIMS)
 def test_no_prose_in_this_slice_states_a_listed_stronger_claim(claim: str) -> None:
     """No published prose may carry one of these phrases as a claim.
@@ -2735,11 +2720,12 @@ def test_no_prose_in_this_slice_states_a_listed_stronger_claim(claim: str) -> No
 def test_the_roadmap_section_states_the_same_non_claims_as_the_module() -> None:
     """The two published statements of the meaning must not drift apart.
 
-    The narrow span is used here so a claim cannot be satisfied by text in the
-    `S1.P06.S01` to `S1.P06.S03` narratives; the wide spans are for the
-    forbidden scan, which must also see text placed just outside this one.
+    This Slice's own paragraph is used so a claim cannot be satisfied by text
+    belonging to another Slice's narrative; the forbidden-claim scan below
+    reads the whole roadmap, so text placed just outside this span is covered
+    there rather than here.
     """
-    section = _narrow_s04_roadmap_spans()[0]
+    section = _s04_own_roadmap_spans()[0]
 
     for claim in (
         "Association is not proof, support, causation, or repair correctness.",
@@ -2830,7 +2816,7 @@ def test_only_the_declared_private_helpers_exist() -> None:
         assert name not in relationship_module.__all__
 
 
-def test_the_tracked_production_inventory_is_fifteen_modules() -> None:
+def test_the_tracked_production_inventory_is_sixteen_modules() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -2841,7 +2827,7 @@ def test_the_tracked_production_inventory_is_fifteen_modules() -> None:
     observed = sorted(tracked.stdout.decode("utf-8").split())
 
     assert observed == [f"src/{name}" for name in EXPECTED_PRODUCTION_MODULES]
-    assert len(observed) == 15
+    assert len(observed) == 16
     assert "src/faultatlas/domain/fault_source_relationship.py" in observed
 
 
@@ -2860,17 +2846,25 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
     assert "`S1.P06.S02` is complete" in roadmap
     assert "`S1.P06.S03` is complete" in roadmap
     assert "`S1.P06.S04` is complete" in roadmap
-    assert "`S1.P06.S05` is next and not started" in roadmap
+    assert "`S1.P06.S05` is complete" in roadmap
+    assert "`S1.P06.S06` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P06.S04` — Bounded Source and History Relationships (complete)" in roadmap
     )
-    assert "`S1.P06.S05` — Repair candidates (next, not started)" in roadmap
+    assert (
+        "`S1.P06.S05` — Repair Candidates and Concrete Repair Associations "
+        "(complete)" in roadmap
+    )
+    assert (
+        "`S1.P06.S06` — Test material, reported outcomes, and comparability "
+        "(next, not started)" in roadmap
+    )
 
     assert "faultatlas.domain.fault_source_relationship" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    assert "Production Python sources are 15." in current
+    assert "Production Python sources are 16." in current
     assert "`association.report.context.fault`" in roadmap
 
     # The superseded live gate and the provisional S04 title must be retired.
@@ -2879,7 +2873,7 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
         roadmap
     )
     assert "`S1.P06` is complete" not in roadmap
-    assert "`S1.P06.S05` is complete" not in roadmap
+    assert "`S1.P06.S06` is complete" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
 
@@ -2927,12 +2921,12 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S05"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P06.S06"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P06.S05`" in line, line
+            assert "`S1.P06.S06`" in line, line
 
 
 # --- packaging and an isolated installed-wheel smoke --------------------------
@@ -3094,6 +3088,7 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/compatibility.py",
     "faultatlas/domain/evidence.py",
     "faultatlas/domain/fault.py",
+    "faultatlas/domain/fault_repair.py",
     "faultatlas/domain/fault_source_relationship.py",
     "faultatlas/domain/history.py",
     "faultatlas/domain/history_evidence_link.py",
@@ -3114,7 +3109,7 @@ def test_the_wheel_ships_the_bridge_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 15
+    assert len(modules) == 16
     assert "faultatlas/domain/fault_source_relationship.py" in modules
     assert "faultatlas/domain/fault.py" in modules
     for name in names:
@@ -3134,7 +3129,7 @@ def test_the_sdist_ships_the_bridge_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 15
+    assert len(modules) == 16
     assert "faultatlas/domain/fault_source_relationship.py" in modules
     for name in names:
         parts = Path(name).parts

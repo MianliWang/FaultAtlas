@@ -73,12 +73,14 @@ EXPECTED_SUBJECT_IDS = (
 FORBIDDEN_OWNERS = ("S1.P05",)
 
 # The sealed governance count is a historical fact about this artifact.
-# The live inventory moved on: S1.P06.S01 published faultatlas.domain.fault and
-# S1.P06.S04 published faultatlas.domain.fault_source_relationship.
+# The live inventory moved on: S1.P06.S01 published faultatlas.domain.fault,
+# S1.P06.S04 published faultatlas.domain.fault_source_relationship, and
+# S1.P06.S05 published faultatlas.domain.fault_repair.
 PRODUCTION_SOURCE_COUNT_AT_DECISION = 13
-CURRENT_PRODUCTION_SOURCE_COUNT = 15
+CURRENT_PRODUCTION_SOURCE_COUNT = 16
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
 FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
+FAULT_REPAIR_MODULE = "src/faultatlas/domain/fault_repair.py"
 
 
 def _decision() -> dict[str, Any]:
@@ -544,6 +546,7 @@ def test_the_slice_changed_no_production_source_and_the_tree_moved_on() -> None:
     assert len(observed) == CURRENT_PRODUCTION_SOURCE_COUNT
     assert FAULT_MODULE in observed
     assert FAULT_SOURCE_RELATIONSHIP_MODULE in observed
+    assert FAULT_REPAIR_MODULE in observed
     assert (
         governance["production_python_source_count"]
         == PRODUCTION_SOURCE_COUNT_AT_DECISION
@@ -609,7 +612,8 @@ def test_the_roadmap_records_the_s08_disposition_and_transition() -> None:
     assert "`S1.P06.S02` is complete" in text
     assert "`S1.P06.S03` is complete" in text
     assert "`S1.P06.S04` is complete" in text
-    assert "`S1.P06.S05` is next and not started" in text
+    assert "`S1.P06.S05` is complete" in text
+    assert "`S1.P06.S06` is next and not started" in text
     assert "`self_owned_open == 0`" in text
     assert "reference_corpus/contracts/development-history/decisions" in text
 
