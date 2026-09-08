@@ -1266,7 +1266,8 @@ def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     assert "`S1.P06` is active and incomplete" in roadmap
     assert "`S1.P06.S01` is complete" in roadmap
     assert "`S1.P06.S02` is complete" in roadmap
-    assert "`S1.P06.S03` is next and not started" in roadmap
+    assert "`S1.P06.S03` is complete" in roadmap
+    assert "`S1.P06.S04` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert CORPUS_RELATIVE in roadmap
     assert "`S1.P04` is complete" in roadmap
@@ -1274,7 +1275,8 @@ def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     assert "`S1.P05` is complete" in roadmap
     assert "`S1.P05.S10` are complete" in roadmap
     assert "`S1.P06.S02` is complete" in roadmap
-    assert "`S1.P06.S03` is next and not started" in roadmap
+    assert "`S1.P06.S03` is complete" in roadmap
+    assert "`S1.P06.S04` is next and not started" in roadmap
     # P06 has since commenced, so the prohibition this closure recorded is
     # retired: what must not stand is a claim that P06 is COMPLETE.
     assert "`S1.P06` implementation has begun with `S1.P06.S01`" in roadmap

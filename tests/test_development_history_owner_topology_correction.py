@@ -752,7 +752,8 @@ def test_every_phase_status_summary_records_the_correction() -> None:
         head = summary[:240]
         assert "`S1.P06` is active and incomplete" in head, head
         assert "`S1.P06.S02` is complete" in head, head
-        assert "`S1.P06.S03` is next and not started" in head, head
+        assert "`S1.P06.S03` is complete" in head, head
+        assert "`S1.P06.S04` is next and not started" in head, head
 
 
 def test_the_derived_summary_preserves_whole_rationale_sentences() -> None:
@@ -783,7 +784,8 @@ def test_the_roadmap_records_the_correction_and_holds_the_phase_state() -> None:
 
     assert "`S1.P05.S08.C01`" in text
     assert "`S1.P06.S02` is complete" in text
-    assert "`S1.P06.S03` is next and not started" in text
+    assert "`S1.P06.S03` is complete" in text
+    assert "`S1.P06.S04` is next and not started" in text
     assert "`S1.P05.S09` — Development History Contract Corpus (complete)" in text
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in text
     assert "`S1.P05` is complete" in text

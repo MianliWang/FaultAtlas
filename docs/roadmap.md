@@ -42,7 +42,8 @@ aspirational Slice as scheduled work.
   `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
   correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
   `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
-  `S1.P06.S02` is complete, and `S1.P06.S03` is next and not started.
+  `S1.P06.S02` is complete, `S1.P06.S03` is complete, and
+  `S1.P06.S04` is next and not started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -91,7 +92,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
-`S1.P06.S02` is complete, and `S1.P06.S03` is next and not started.
+`S1.P06.S02` is complete, `S1.P06.S03` is complete, and
+`S1.P06.S04` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -691,7 +693,8 @@ otherwise.
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
-`S1.P06.S02` is complete, and `S1.P06.S03` is next and not started.
+`S1.P06.S02` is complete, `S1.P06.S03` is complete, and
+`S1.P06.S04` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1136,7 +1139,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 ## S1.P06 — Fault Instance Model
 
 `S1.P06` is active and incomplete. `S1.P06.S01` is complete,
-`S1.P06.S02` is complete, and `S1.P06.S03` is next and not started.
+`S1.P06.S02` is complete, `S1.P06.S03` is complete, and
+`S1.P06.S04` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1191,10 +1195,11 @@ languages. The module performs no I/O, reads no clock, and consults no registry
 or environment.
 
 `S1.P06.S02` extends `faultatlas.domain.fault` in place rather than adding a
-module, so production Python sources remain 14 and the module's current
-`__all__` is exactly `FaultInstanceIdentity`, `FaultRepositoryContext`,
-`FaultReportIdentity`, and `SuppliedFaultReport`, in that order. The two
-`S1.P06.S01` models are unchanged.
+module, so production Python sources remain 14 and the module's then-current
+`__all__` became exactly `FaultInstanceIdentity`, `FaultRepositoryContext`,
+`FaultReportIdentity`, and `SuppliedFaultReport`, in that order: four exports,
+which `S1.P06.S03` later extended again. The two `S1.P06.S01` models are
+unchanged.
 
 `FaultReportIdentity` is a second, independent named `RootModel[uuid.UUID]`
 under the same value-model configuration as `FaultInstanceIdentity`. It names
@@ -1245,14 +1250,105 @@ context's are, the raw text fields carry no nominal guard, and a report
 round-trips through JSON while refusing its own `model_dump` as Python input.
 The module still performs no I/O.
 
-The `S1.P06` route is provisional beyond `S1.P06.S02`. Later exact schemas are
+`S1.P06.S03` extends `faultatlas.domain.fault` in place as well, so production
+Python sources remain 14 and the module's current `__all__` is exactly
+`FaultInstanceIdentity`, `FaultRepositoryContext`, `FaultReportIdentity`,
+`SuppliedFaultReport`, `FaultScenarioIdentity`, `FaultOccurrenceIdentity`,
+`SuppliedFaultScenario`, and `SuppliedFaultOccurrenceContext`, in that order:
+eight exports. The `S1.P06.S01` and `S1.P06.S02` models are unchanged.
+
+`FaultScenarioIdentity` and `FaultOccurrenceIdentity` are two further
+independent named `RootModel[uuid.UUID]` values under the same value-model
+configuration, neither a subclass nor an alias of each other or of the fault
+and report identities. All four stay nominally distinct even when their
+scalars coincide, and no cross-type scalar uniqueness is required. The caller
+assigns each UUID; nothing generates, derives, reserves, looks up,
+deduplicates, merges, or registers one, Nil and Max are ordinary values, no
+generation version is required or inferred, and each serializes as the same
+bare scalar string with no wrapper. An occurrence identity is not a test-run
+identity, a CI run, a provider event, an evidence record, a timestamp, or a
+digest, and an explicit occurrence identity exists precisely so that two
+claimed occurrences carrying identical text remain two occurrences.
+
+`SuppliedFaultScenario` carries exactly `scenario`, `report`, and
+`scenario_statement`, consuming the published `SuppliedFaultReport` whole, so
+the fault subject stays reachable at `scenario.report.context.fault` and no
+fault, repository, report identity, problem statement, or behavioral deviation
+is restated at scenario level. The statement is case-local supplied prose
+about triggering conditions, inputs, operation, runtime setting,
+repository-local conditions, environment, configuration, or preconditions. It
+is not parsed into platform, language, operating-system, version,
+architecture, trigger, input, or environment fields: structured reusable
+applicability is `S1.P08` work, and a scenario here is case-local context, not
+a cross-instance applicability rule.
+
+`SuppliedFaultOccurrenceContext` carries exactly `occurrence`, `scenario`, and
+`occurrence_context`, consuming the scenario whole. It is a caller-supplied
+positive claim that one particular manifestation was encountered under that
+scenario. A scenario answers under what supplied conditions a report is
+relevant; an occurrence context answers what distinct supplied occurrence is
+claimed under them; the `S1.P06.S02` behavioral deviation answers what
+behavior is claimed to differ. None of those texts is required to differ from
+another and none is compared with another.
+
+Both are supplied claims, not verification. An occurrence context is not an
+execution run and does not establish that FaultAtlas observed or reproduced
+anything, that a test was run, that code was executed, that an output was
+collected, that an exception happened in a FaultAtlas-controlled process, that
+the report was proven, that the scenario was exhaustively specified, that a
+cause is known, that a repair works, or that evidence supports the claim. Test
+material, run identity, reported execution outcome, before-and-after
+comparison, timeout, environment-start, flakiness, run independence, and
+fail-to-pass or regression-safety semantics remain `S1.P06.S06` work, and two
+differing occurrence identities are not evidence that two independent runs
+happened.
+
+Occurrence is an optional separate record rather than a flag, so a report may
+stand alone, may carry one scenario or several, and a scenario may carry no
+occurrence, one, or several. A suspected, latent, or unreproduced fault
+therefore never has to invent an occurrence, and no boolean says whether the
+fault occurred. The absence of an occurrence record means only that none is
+present in this composition: not that the fault is known not to have occurred,
+nor that occurrence is impossible, inapplicable, unavailable, or disproved,
+and no sentinel, status, or `None` stands for any of those.
+
+`S1.P06.S03` records no time for a claimed occurrence. A fault occurrence may
+have no known precise instant, and no occurred-at, observed-at, reported-at,
+reproduced-at, started-at, or ended-at field exists. The published `S1.P05`
+`PullRequestHistoricalOccurrenceTime` is a source instant for an already
+published pull-request history fact; it is neither reused, imported, aliased,
+nor reinterpreted here and is not a generic fault-occurrence time. A positive
+chronology relation is later work needing a concrete consumer and explicit
+missing-state semantics first.
+
+Both new texts are required supplied prose of one to 4096 characters under the
+same rule as the `S1.P06.S02` texts: leading or trailing whitespace is refused
+rather than trimmed, whitespace-only text fails, text that cannot encode as
+UTF-8 is refused, and admitted Unicode and interior whitespace including
+newlines are preserved exactly with no lowercasing, normalization, parsing,
+tokenizing, or classification. The rule is stated separately on each field
+rather than through a shared public alias or generic prose framework, and the
+4096 limit is a character bound of this internal contract, not a durable
+`S1.P10` byte-format promise. The two model-valued child positions of each new
+record are guarded against untyped Python input exactly as their predecessors
+are, an embedded record is revalidated under its own published schema, the raw
+text fields carry no nominal guard, and each record round-trips through JSON
+while refusing its own `model_dump` as Python input. Neither model consults a
+registry: two records carrying one scenario or occurrence identity with
+differing contents are not reconciled here, and no source relationship,
+evidence link, root cause, repair, confidence, review, reusable pattern or
+invariant, or complete `FaultInstance` is published. Those remain owned by
+`S1.P06.S04` through `S1.P06.S09`, `S1.P07`, `S1.P08`, `S1.P09`, and
+`S1.P10`. The module still performs no I/O.
+
+The `S1.P06` route is provisional beyond `S1.P06.S03`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
 1. `S1.P06.S01` — Fault Instance Identity and Repository Context (complete)
 2. `S1.P06.S02` — Supplied Fault Report and Behavioral Deviation (complete)
-3. `S1.P06.S03` — Scenario and occurrence context (next, not started)
-4. `S1.P06.S04` — Bounded source relationships (not started)
+3. `S1.P06.S03` — Scenario and Occurrence Context (complete)
+4. `S1.P06.S04` — Bounded source relationships (next, not started)
 5. `S1.P06.S05` — Repair candidates (not started)
 6. `S1.P06.S06` — Test material, reported outcomes, and comparability
    (not started)
@@ -1273,7 +1369,7 @@ association. The historical default branch remains unknown and owned by `S2`.
 The published `S1.P05` contracts and the development-history v1 corpus stay
 frozen. `S1.P06` receives exactly one immediate deferred subject, the universal
 relationship vocabulary, and absorbs no subject owned by `S2` or `S5`. That
-subject is not resolved by `S1.P06.S01` or `S1.P06.S02`.
+subject is not resolved by `S1.P06.S01`, `S1.P06.S02`, or `S1.P06.S03`.
 
 ## Preserved later Stage 1 phases
 
@@ -1390,14 +1486,36 @@ that is neither trimmed nor normalized. The fault subject of a report is
 verification: they establish no affected repository, existing fault, executed
 or observed deviation, originating Issue or pull request, known cause, repair,
 run outcome, expected property, confidence, source relationship, or evidence
-support, and no such model is published. The module's current `__all__` is
-four symbols and it still performs no I/O. Production Python sources are 14.
+support, and no such model is published. That took the module's `__all__` from
+two symbols to four.
+`S1.P06.S03` extends the same module again with `FaultScenarioIdentity` and
+`FaultOccurrenceIdentity`, two further independent `RootModel[uuid.UUID]`
+values nominally distinct from each other and from the fault and report
+identities, and with `SuppliedFaultScenario`, which ties one scenario identity
+to one published `SuppliedFaultReport` consumed whole and to a required
+case-local `scenario_statement`, and `SuppliedFaultOccurrenceContext`, which
+ties one occurrence identity to one published `SuppliedFaultScenario` consumed
+whole and to a required `occurrence_context`. The fault subject of a scenario
+is `scenario.report.context.fault`. A scenario states the supplied conditions
+under which a report is relevant and never that the fault occurred; an
+occurrence context is a supplied claim of one particular manifestation under
+that scenario and is not an execution run, an independent observation, or a
+reproduction. A report may stand alone, one report may carry several
+scenarios, and a scenario may carry no occurrence or several, so no boolean
+records whether the fault occurred and a missing occurrence record asserts
+nothing. No occurrence time is recorded and the `S1.P05`
+`PullRequestHistoricalOccurrenceTime` is not reused as one. No structured
+applicability taxonomy, run, outcome, source relationship, evidence link,
+cause, repair, confidence, review, reusable pattern, or complete
+`FaultInstance` is published. The module's current `__all__` is eight symbols
+and it still performs no I/O. Production Python sources are 14.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
-`S1.P06.S02` is complete, and `S1.P06.S03` is next and not started.
+`S1.P06.S02` is complete, `S1.P06.S03` is complete, and
+`S1.P06.S04` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
