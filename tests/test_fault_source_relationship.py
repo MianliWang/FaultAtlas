@@ -2717,10 +2717,12 @@ def test_no_prose_in_this_slice_states_a_listed_stronger_claim(claim: str) -> No
 
     This is a backstop, not the lock. A fixed list of phrases cannot decide
     whether an English sentence asserts a forbidden meaning, and a reworded
-    inversion will pass it; the digests above are what actually hold the prose
-    this Slice owns, unconditionally and whatever the wording. What the list
-    adds is reach beyond those digests -- the rest of the roadmap and the
-    module body, which no digest covers -- so it is read over the whole roadmap
+    inversion will pass it. The whole-text locks are what actually hold the
+    prose this Slice owns, unconditionally and whatever the wording: the
+    digests above for the module docstring and the two roadmap sections, and
+    exact equality below for the two class docstrings. What the list adds is
+    reach beyond those locks -- the rest of the roadmap and the module body,
+    which no lock covers -- so it is read over the whole roadmap
     rather than over named sections, because a claim placed one line above a
     section start or in a status bullet reads as though it governed the
     contract while sitting outside every named span. Matching is
