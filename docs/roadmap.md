@@ -1307,7 +1307,7 @@ the report was proven, that the scenario was exhaustively specified, that a
 cause is known, that a repair works, or that evidence supports the claim. Test
 material, run identity, reported execution outcome, before-and-after
 comparison, timeout, environment-start, flakiness, run independence, and
-fail-to-pass or regression-safety semantics remain `S1.P06.S06` work, and two
+fail-to-pass or regression-safety semantics became `S1.P06.S06` work, and two
 differing occurrence identities are not evidence that two independent runs
 happened.
 
@@ -1347,7 +1347,7 @@ differing contents are not reconciled here, and `S1.P06.S03` published no
 source relationship, evidence link, root cause, repair, confidence, review,
 reusable pattern or invariant, and no complete `FaultInstance`. The bounded
 source and history relationships came next, in `S1.P06.S04`, and the repair
-candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S06` through
+candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S07` through
 `S1.P06.S09`, `S1.P07`, `S1.P08`, `S1.P09`, and `S1.P10`. The module still
 performs no I/O.
 
@@ -1490,10 +1490,10 @@ exists. It requires no scenario and no occurrence, so a proposal may be made
 about a suspected, latent, unreproduced, or cause-unknown report, and it requires
 no root cause either: a repair may target an observed behavioral deviation while
 the cause is still unknown, which is why no cause, explanation, or hypothesis
-field exists. Test material, reported outcomes and comparability remain
-`S1.P06.S06` work, case-local explanation and hypothesis `S1.P06.S07` work, the
-fault-evidence bridge `S1.P06.S09` work, and generic review, support and
-confidence calculus `S1.P09` work.
+field exists. Test material, reported outcomes and comparability became
+`S1.P06.S06` work, case-local explanation and hypothesis remain `S1.P06.S07`
+work, the fault-evidence bridge `S1.P06.S09` work, and generic review, support
+and confidence calculus `S1.P09` work.
 
 A candidate is complete without any implementation. `S1.P06.S05` separates the
 proposal from the concrete material deliberately, so a purely conceptual

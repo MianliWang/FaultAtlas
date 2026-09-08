@@ -2024,7 +2024,7 @@ def test_the_roadmap_records_the_p06_s05_transition() -> None:
     assert "`S1.P06.S05` is next and not started" not in roadmap
     assert "`S1.P06.S05` — Repair candidates (next, not started)" not in roadmap
     assert "The `S1.P06` route is provisional beyond `S1.P06.S05`." not in roadmap
-    assert "Production Python sources are 16." not in current
+    assert "Production Python sources are 16." not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
 

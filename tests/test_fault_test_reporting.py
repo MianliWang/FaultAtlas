@@ -775,6 +775,47 @@ def test_each_record_declares_exactly_its_fields_in_order(
 
 
 @pytest.mark.parametrize("model", _published_models(), ids=lambda m: m.__name__)
+def test_no_field_declares_an_input_or_output_alias(
+    model: type[BaseModel],
+) -> None:
+    """An alias would publish a key the declared field name does not name.
+
+    `serialization_alias="observed_verdict"` leaves the default dump untouched
+    while the serialization schema advertises that key, and a `validation_alias`
+    admits an alternate input key straight past `extra="forbid"`. Both are
+    declared on the field, so that is where they are refused.
+    """
+    for name, field in model.model_fields.items():
+        assert field.alias is None, (model.__name__, name)
+        assert field.validation_alias is None, (model.__name__, name)
+        assert field.serialization_alias is None, (model.__name__, name)
+
+
+@pytest.mark.parametrize(
+    ("value", "keys"),
+    (
+        pytest.param(_material(), MATERIAL_FIELDS, id="material"),
+        pytest.param(_run(), RUN_FIELDS, id="run"),
+        pytest.param(_outcome(), OUTCOME_FIELDS, id="outcome"),
+        pytest.param(_run_revision(), RUN_REVISION_FIELDS, id="run-revision"),
+        pytest.param(_comparison(), COMPARISON_FIELDS, id="comparison"),
+    ),
+)
+def test_the_aliased_dump_and_both_schemas_carry_the_declared_keys(
+    value: BaseModel,
+    keys: tuple[str, ...],
+) -> None:
+    """The default dump is not the whole published surface."""
+    model = type(value)
+
+    assert tuple(json.loads(value.model_dump_json(by_alias=True))) == keys
+    for mode in ("validation", "serialization"):
+        schema = model.model_json_schema(mode=mode)  # pyright: ignore[reportArgumentType]
+        assert tuple(schema["properties"]) == keys, mode
+        assert set(schema["required"]) == set(keys), mode
+
+
+@pytest.mark.parametrize("model", _published_models(), ids=lambda m: m.__name__)
 def test_each_record_declares_the_published_value_profile(
     model: type[BaseModel],
 ) -> None:
@@ -1043,8 +1084,10 @@ def test_identical_run_prose_does_not_merge_two_reported_runs() -> None:
     assert first != second
 
 
-def test_a_reported_run_is_not_a_faultatlas_execution() -> None:
-    """The module starts no process and describes the claim as reported."""
+def test_the_module_states_the_reported_not_executed_boundary_for_a_run() -> None:
+    """The stated boundary. `test_the_module_starts_no_process_and_touches_no_file`
+    carries the behavioral half.
+    """  # noqa: E501
     prose = " ".join(TEST_SOURCE.read_text(encoding="utf-8").split())
 
     assert "Everything here is caller-reported." in prose
@@ -1058,10 +1101,19 @@ def test_a_reported_run_is_not_a_faultatlas_execution() -> None:
 
 
 def test_the_outcome_vocabulary_publishes_exactly_seven_members_in_order() -> None:
+    """Read through `__members__`, which is the only view that sees an alias.
+
+    Iteration and `len()` skip alias members, so `FLAKY = "failed"` would add a
+    reachable `ReportedFaultTestOutcomeKind.FLAKY` while leaving both unchanged.
+    """
     assert (
-        tuple((member.name, member.value) for member in ReportedFaultTestOutcomeKind)
+        tuple(
+            (name, member.value)
+            for name, member in ReportedFaultTestOutcomeKind.__members__.items()
+        )
         == EXPECTED_OUTCOME_MEMBERS
     )
+    assert len(ReportedFaultTestOutcomeKind.__members__) == 7
     assert len(ReportedFaultTestOutcomeKind) == 7
 
 
@@ -1079,11 +1131,12 @@ def test_the_outcome_vocabulary_publishes_exactly_seven_members_in_order() -> No
     ),
 )
 def test_the_outcome_vocabulary_publishes_no_interpretive_member(absent: str) -> None:
-    values = {member.value for member in ReportedFaultTestOutcomeKind}
-    names = {member.name for member in ReportedFaultTestOutcomeKind}
+    members = ReportedFaultTestOutcomeKind.__members__
+    values = {member.value for member in members.values()}
 
     assert absent not in values
-    assert absent.upper() not in names
+    assert absent.upper() not in set(members)
+    assert not hasattr(ReportedFaultTestOutcomeKind, absent.upper())
 
 
 def test_the_outcome_vocabulary_is_a_str_enum_with_stable_lexemes() -> None:
@@ -1093,10 +1146,40 @@ def test_the_outcome_vocabulary_is_a_str_enum_with_stable_lexemes() -> None:
         assert ReportedFaultTestOutcomeKind(member.value) is member
 
 
-@pytest.mark.parametrize("supplied", ("Passed", "PASSED", "pass", "fail", "", " "))
-def test_an_unlisted_outcome_lexeme_is_refused(supplied: str) -> None:
+@pytest.mark.parametrize(
+    "supplied",
+    (
+        "unknown",
+        "flaky",
+        "regression_safe",
+        "fixed",
+        "verified",
+        "Passed",
+        "PASSED",
+        "pass",
+        "fail",
+        "",
+        " ",
+    ),
+)
+def test_an_unlisted_outcome_lexeme_is_refused_through_every_entry_path(
+    supplied: str,
+) -> None:
+    """A `_missing_` hook would silently map an unlisted lexeme to a member.
+
+    Nothing about the declared member list changes when it does, so the refusal
+    is asserted where it would be observed: the vocabulary call and the JSON
+    input language the outcome record actually reads.
+    """
     with pytest.raises(ValueError, match="is not a valid"):
         ReportedFaultTestOutcomeKind(supplied)
+
+    payload = _payload(_outcome())
+    payload["outcome"] = supplied
+    with pytest.raises(ValidationError) as failure:
+        ReportedFaultTestOutcome.model_validate_json(json.dumps(payload))
+
+    assert _paths(failure.value) == (("outcome",),)
 
 
 def test_did_not_start_is_not_failed_and_neither_is_errored_or_timed_out() -> None:
@@ -1167,7 +1250,7 @@ def test_an_absent_outcome_record_is_not_a_disposition() -> None:
     assert None not in run.model_dump().values()
 
 
-def test_an_outcome_is_not_a_faultatlas_observation() -> None:
+def test_the_module_states_the_reported_not_observed_boundary_for_an_outcome() -> None:
     prose = " ".join(TEST_SOURCE.read_text(encoding="utf-8").split())
 
     assert "It does not mean that FaultAtlas witnessed the run" in prose
@@ -1264,7 +1347,36 @@ def test_a_comparison_relates_two_reported_outcomes_in_supplied_roles() -> None:
     assert comparison.comparison_statement == COMPARISON_STATEMENT
 
 
-def test_a_comparison_refuses_one_run_in_both_roles() -> None:
+def test_a_comparison_refuses_one_run_subject_in_both_roles() -> None:
+    """The rule is over the run subject, not over the whole run record.
+
+    Two runs may differ in their prose while naming one `FaultTestRunIdentity`.
+    A rule comparing whole records would admit that pair, so the counterexample
+    supplies two distinct records that share one subject.
+    """
+    shared = _material()
+    before = _outcome(run=_run(SUPPLIED_RUN, shared, RUN_STATEMENT))
+    after = _outcome(
+        run=_run(SUPPLIED_RUN, shared, SECOND_RUN_STATEMENT),
+        outcome=ReportedFaultTestOutcomeKind.PASSED,
+        outcome_statement=SECOND_OUTCOME_STATEMENT,
+    )
+
+    assert before.run != after.run
+    assert before.run.run == after.run.run
+
+    with pytest.raises(ValidationError) as failure:
+        ReportedFaultTestComparison(
+            before=before,
+            after=after,
+            comparison_statement=COMPARISON_STATEMENT,
+        )
+
+    assert _failures(failure.value) == (((), "value_error"),)
+    assert "distinct run subjects" in str(failure.value)
+
+
+def test_a_comparison_refuses_one_run_record_in_both_roles() -> None:
     outcome = _outcome()
 
     with pytest.raises(ValidationError) as failure:
@@ -1687,6 +1799,59 @@ def test_a_top_level_mapping_still_guards_each_child(
     assert _paths(failure.value)[0] == (first,)
 
 
+@pytest.mark.parametrize(
+    ("model", "builder", "fields"),
+    (
+        pytest.param(
+            SuppliedFaultTestMaterial,
+            _typed_material_mapping,
+            MATERIAL_FIELDS,
+            id="material",
+        ),
+        pytest.param(ReportedFaultTestRun, _typed_run_mapping, RUN_FIELDS, id="run"),
+        pytest.param(
+            ReportedFaultTestOutcome,
+            _typed_outcome_mapping,
+            OUTCOME_FIELDS,
+            id="outcome",
+        ),
+        pytest.param(
+            FaultTestRunRevisionAssociation,
+            _typed_run_revision_mapping,
+            RUN_REVISION_FIELDS,
+            id="run-revision",
+        ),
+        pytest.param(
+            ReportedFaultTestComparison,
+            _typed_comparison_mapping,
+            COMPARISON_FIELDS,
+            id="comparison",
+        ),
+    ),
+)
+def test_no_position_admits_null_in_either_input_language(
+    model: type[BaseModel],
+    builder: Callable[..., dict[str, Any]],
+    fields: tuple[str, ...],
+) -> None:
+    """Absence is an absent record, never a null field.
+
+    Widening a declared annotation to `X | None` leaves every Python-mode guard
+    satisfied -- `None` is not the expected type either way -- while JSON input
+    accepts a null and serializes one back out. Both languages are asserted.
+    """
+    for field in fields:
+        with pytest.raises(ValidationError) as python_failure:
+            model(**builder(**{field: None}))
+        assert _paths(python_failure.value)[0] == (field,), field
+
+        payload = _payload(model(**builder()))
+        payload[field] = None
+        with pytest.raises(ValidationError) as json_failure:
+            model.model_validate_json(json.dumps(payload))
+        assert _paths(json_failure.value)[0] == (field,), field
+
+
 def test_from_attributes_reads_a_top_level_object_but_still_guards_its_children() -> (
     None
 ):
@@ -1725,6 +1890,12 @@ def test_from_attributes_reads_a_top_level_object_but_still_guards_its_children(
             _typed_run_revision_mapping,
             RUN_REVISION_FIELDS,
             id="run-revision",
+        ),
+        pytest.param(
+            ReportedFaultTestComparison,
+            _typed_comparison_mapping,
+            COMPARISON_FIELDS,
+            id="comparison",
         ),
     ),
 )
@@ -2038,9 +2209,10 @@ def test_the_module_defines_only_the_declared_validators() -> None:
     classmethod deriving an outcome from a comparison, or any other function,
     changes neither and would otherwise be invisible.
     """
+    tree = _test_tree()
     functions = [
         node.name
-        for node in ast.walk(_test_tree())
+        for node in ast.walk(tree)
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
     ]
 
@@ -2048,6 +2220,9 @@ def test_the_module_defines_only_the_declared_validators() -> None:
     for name in functions:
         assert name.startswith("_")
         assert name not in test_module.__all__
+    # A lambda carries no name, so the inventory above cannot see one. The
+    # module declares none, which is what makes that inventory exhaustive.
+    assert [node for node in ast.walk(tree) if isinstance(node, ast.Lambda)] == []
 
 
 @pytest.mark.parametrize("model", _published_models(), ids=lambda m: m.__name__)
@@ -2085,16 +2260,120 @@ def test_neither_identity_publishes_an_attribute_beyond_its_root(
     assert identity.model_computed_fields == {}
 
 
-def test_the_outcome_vocabulary_publishes_no_helper_beyond_its_members() -> None:
-    beyond = {
-        name for name in dir(ReportedFaultTestOutcomeKind) if not name.startswith("_")
-    } - {name for name, _ in EXPECTED_OUTCOME_MEMBERS}
+@pytest.mark.parametrize("member", tuple(ReportedFaultTestOutcomeKind))
+def test_no_vocabulary_member_publishes_an_attribute_beyond_name_and_value(
+    member: ReportedFaultTestOutcomeKind,
+) -> None:
+    """An interpretive helper may not arrive as a property on the vocabulary.
 
-    assert beyond <= set(dir(str)) | {"name", "value"}
-    for name in beyond:
-        assert not callable(getattr(ReportedFaultTestOutcomeKind, name, None)) or (
-            name in dir(str)
+    `dir()` on the enum class does not report a descriptor declared in the enum
+    body, so an `is_flaky` property would be invisible there while staying
+    reachable on every member. The member surface is where it shows up.
+    """
+    beyond = (
+        {name for name in dir(member) if not name.startswith("_")}
+        - set(dir(""))
+        - {"name", "value"}
+        - {name for name, _ in EXPECTED_OUTCOME_MEMBERS}
+    )
+
+    assert beyond == set(), member.name
+
+
+EXPECTED_DESCRIPTIONS = {
+    "FaultTestMaterialIdentity": (
+        "Caller-assigned name for one supplied test-material subject."
+    ),
+    "SuppliedFaultTestMaterial": (
+        "Supplied test material or procedure for one published fault report."
+    ),
+    "FaultTestRunIdentity": "Caller-assigned name for one reported test-run subject.",
+    "ReportedFaultTestRun": (
+        "Caller-reported attempt to run one supplied test material."
+    ),
+    "ReportedFaultTestOutcomeKind": (
+        "Bounded vocabulary of caller-reported execution dispositions."
+    ),
+    "ReportedFaultTestOutcome": (
+        "Caller-reported disposition of one reported test run."
+    ),
+    "FaultTestRunRevisionAssociation": (
+        "Supplied association from one reported run to one commit revision."
+    ),
+    "ReportedFaultTestComparison": (
+        "Supplied before-and-after relation over two reported outcomes."
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "name", tuple(EXPECTED_DESCRIPTIONS), ids=tuple(EXPECTED_DESCRIPTIONS)
+)
+def test_each_published_description_is_stated_as_reported_not_executed(
+    name: str,
+) -> None:
+    """A class docstring is the `description` a consumer reads in the schema.
+
+    Rewriting one to "verdict FaultAtlas observed by executing one test run
+    itself" changes no field, no key and no validator, so nothing else here
+    would see it. Each is pinned exactly, and no published description may
+    frame this layer as having executed anything.
+    """
+    published = getattr(test_module, name)
+
+    assert published.__doc__ is not None
+    assert published.__doc__.strip() == EXPECTED_DESCRIPTIONS[name]
+    if issubclass(published, BaseModel):
+        assert (
+            published.model_json_schema()["description"]
+            == (EXPECTED_DESCRIPTIONS[name])
         )
+    # Every description attributes what it describes to the caller. A
+    # description framing this layer as the actor carries no such qualifier.
+    lowered = EXPECTED_DESCRIPTIONS[name].lower()
+    assert any(
+        qualifier in lowered
+        for qualifier in ("caller-assigned", "caller-reported", "supplied", "reported")
+    ), name
+    assert "faultatlas" not in lowered, name
+
+
+EXPECTED_MODULE_BINDINGS = frozenset(
+    {
+        *EXPECTED_EXPORTS,
+        "uuid",
+        "StrEnum",
+        "Annotated",
+        "Self",
+        "BaseModel",
+        "ConfigDict",
+        "RootModel",
+        "StringConstraints",
+        "ValidationInfo",
+        "field_validator",
+        "model_validator",
+        "SuppliedFaultReport",
+        "GitCommitIdentity",
+    }
+)
+
+
+def test_the_module_binds_no_name_beyond_its_exports_and_its_imports() -> None:
+    """A derivation may also arrive as a plain module-level constant.
+
+    `__all__` pins what is exported, the class and function inventories pin what
+    is defined, and neither sees a `REGRESSION_SAFE_TRANSITION = ("failed",
+    "passed")` bound at module scope. This pins the whole namespace instead.
+    """
+    # pytest's assertion rewriter injects `@`-prefixed names, which are not
+    # identifiers and are not part of the module's own namespace.
+    bound = {
+        name
+        for name in vars(test_module)
+        if not name.startswith("__") and name.isidentifier()
+    }
+
+    assert bound == set(EXPECTED_MODULE_BINDINGS)
 
 
 def test_the_module_is_not_re_exported_from_the_package_or_domain_root() -> None:
@@ -2126,7 +2405,10 @@ def test_the_module_imports_only_its_declared_predecessors() -> None:
     }
 
 
-def test_the_module_performs_no_io() -> None:
+def test_the_module_names_no_io_entry_point_in_its_executable_body() -> None:
+    """A first, weak, textual screen. `test_the_module_starts_no_process_and_touches_no_file`
+    carries the real closure: this one only fails fast on the obvious form.
+    """  # noqa: E501
     called = {
         node.func.id
         for node in ast.walk(_test_tree())
@@ -2143,27 +2425,215 @@ def test_the_module_performs_no_io() -> None:
         "urllib",
         "now(",
         "subprocess",
+        "getattr(",
     ):
         assert forbidden not in body, forbidden
 
 
-@pytest.mark.parametrize(
-    "relative",
-    (
-        "src/faultatlas/domain/fault.py",
-        "src/faultatlas/domain/fault_repair.py",
-        "src/faultatlas/domain/fault_source_relationship.py",
-        "src/faultatlas/domain/history.py",
-        "src/faultatlas/domain/revision.py",
-        "src/faultatlas/domain/evidence.py",
+NO_IO_PROBE = """
+import json
+import sys
+import uuid
+
+PROCESS_OR_NETWORK = (
+    "subprocess.", "os.system", "os.exec", "os.fork", "os.posix_spawn",
+    "os.spawn", "os.startfile", "os.popen", "socket.", "urllib.",
+    "ftplib.", "smtplib.", "http.client.", "webbrowser.",
+)
+MUTATION = (
+    "os.remove", "os.rename", "os.mkdir", "os.rmdir", "os.chdir", "os.chmod",
+    "os.link", "os.symlink", "os.truncate", "shutil.",
+)
+WRITE_MODES = frozenset("wax+")
+ENTROPY = ("/dev/urandom", "/dev/random")
+INTERPRETER_ROOTS = tuple(
+    sorted({sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix})
+)
+# The package under test is imported from the checkout, so the importer's own
+# read-only module loads from there are ordinary. Any other read under it --
+# a fixture, a corpus file, a marker -- is not, and is reported.
+CHECKOUT_SOURCE_ROOT = sys.argv[8]
+MODULE_SUFFIXES = (".py", ".pyc", ".pth", ".so")
+
+violations = []
+opened = []
+recording = False
+
+
+def hook(event, args):
+    if not recording:
+        return
+    if event.startswith(PROCESS_OR_NETWORK) or event.startswith(MUTATION):
+        violations.append(f"{event} {args!r}")
+    elif event == "open":
+        path = str(args[0])
+        mode = str(args[1] or "")
+        if set(mode) & WRITE_MODES:
+            opened.append((path, mode))
+        elif path in ENTROPY or path.startswith(INTERPRETER_ROOTS):
+            pass
+        elif not (
+            path.startswith(CHECKOUT_SOURCE_ROOT) and path.endswith(MODULE_SUFFIXES)
+        ):
+            opened.append((path, mode))
+
+
+sys.addaudithook(hook)
+recording = True
+
+import faultatlas.domain.fault_test as module
+from faultatlas.domain.fault import (
+    FaultInstanceIdentity,
+    FaultReportIdentity,
+    FaultRepositoryContext,
+    SuppliedFaultReport,
+)
+from faultatlas.domain.identity import (
+    ProviderKey,
+    ProviderRepositoryId,
+    RepositoryIdentity,
+)
+from faultatlas.domain.revision import (
+    GitCommitIdentity,
+    GitHashAlgorithm,
+    GitObjectKind,
+)
+
+report = SuppliedFaultReport(
+    report=FaultReportIdentity(uuid.UUID(sys.argv[1])),
+    context=FaultRepositoryContext(
+        fault=FaultInstanceIdentity(uuid.UUID(sys.argv[2])),
+        repository=RepositoryIdentity(
+            provider=ProviderKey("github"),
+            provider_repository_id=ProviderRepositoryId(sys.argv[3]),
+        ),
+    ),
+    problem_statement="probe problem",
+    behavioral_deviation="probe deviation",
+)
+material = module.SuppliedFaultTestMaterial(
+    material=module.FaultTestMaterialIdentity(uuid.UUID(sys.argv[4])),
+    report=report,
+    test_statement="probe material",
+)
+
+
+def reported(run_text, statement):
+    return module.ReportedFaultTestRun(
+        run=module.FaultTestRunIdentity(uuid.UUID(run_text)),
+        test_material=material,
+        run_statement=statement,
+    )
+
+
+before_run = reported(sys.argv[5], "probe run one")
+after_run = reported(sys.argv[6], "probe run two")
+before = module.ReportedFaultTestOutcome(
+    run=before_run,
+    outcome=module.ReportedFaultTestOutcomeKind.FAILED,
+    outcome_statement="probe outcome one",
+)
+after = module.ReportedFaultTestOutcome(
+    run=after_run,
+    outcome=module.ReportedFaultTestOutcomeKind.PASSED,
+    outcome_statement="probe outcome two",
+)
+association = module.FaultTestRunRevisionAssociation(
+    run=before_run,
+    revision=GitCommitIdentity(
+        kind=GitObjectKind.COMMIT,
+        algorithm=GitHashAlgorithm.SHA1,
+        full_digest=sys.argv[7],
     ),
 )
-def test_no_predecessor_production_module_imports_this_one(relative: str) -> None:
-    source = (REPOSITORY_ROOT / relative).read_text(encoding="utf-8")
+comparison = module.ReportedFaultTestComparison(
+    before=before, after=after, comparison_statement="probe comparison"
+)
 
-    assert "fault_test" not in source
-    for symbol in EXPECTED_EXPORTS:
-        assert symbol not in source
+for value, model in (
+    (material, module.SuppliedFaultTestMaterial),
+    (before_run, module.ReportedFaultTestRun),
+    (before, module.ReportedFaultTestOutcome),
+    (association, module.FaultTestRunRevisionAssociation),
+    (comparison, module.ReportedFaultTestComparison),
+):
+    assert model.model_validate_json(value.model_dump_json()) == value
+    model.model_json_schema()
+    model.model_validate(value)
+
+recording = False
+print(json.dumps({"violations": violations, "opened": opened}))
+"""
+
+
+def test_the_module_starts_no_process_and_touches_no_file() -> None:
+    """The closure is asserted as a property, not as a list of spellings.
+
+    A textual screen enumerates where I/O could be written; an already-imported
+    module reached by attribute access walks straight through one. This installs
+    an audit hook before the module is imported and requires that importing it,
+    constructing every published value, revalidating, serializing and building
+    every JSON schema raises no process, network or filesystem-mutation event at
+    all -- whatever it is spelled. The only opens permitted are the interpreter's
+    own read-only imports of `.py`/`.pyc`, which is how pydantic loads lazily.
+    """
+    environment = os.environ.copy()
+    environment.update({"PYTHONDONTWRITEBYTECODE": "1"})
+    environment.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            "-c",
+            NO_IO_PROBE,
+            SUPPLIED_REPORT_TEXT,
+            SUPPLIED_FAULT_TEXT,
+            RETAINED_REPOSITORY_ID,
+            SUPPLIED_MATERIAL_TEXT,
+            SUPPLIED_RUN_TEXT,
+            SECOND_RUN_TEXT,
+            RETAINED_HEAD_REVISION,
+            str(CHECKOUT_SOURCE_ROOT),
+        ],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, (
+        f"audit probe failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    reported: dict[str, Any] = json.loads(result.stdout.strip().splitlines()[-1])
+
+    # The probe already discards read-only opens under the interpreter's own
+    # roots, which is how pydantic loads lazily. Anything else -- any write at
+    # all, and any read outside those roots, the working tree included -- is
+    # reported here and fails.
+    assert reported["violations"] == []
+    assert reported["opened"] == []
+
+
+def test_no_predecessor_production_module_imports_this_one() -> None:
+    """Every tracked predecessor, not a chosen few.
+
+    A hand-written list of six covered six of the sixteen predecessors; the
+    inventory is read from the tree so a module added later is swept too.
+    """
+    predecessors = [
+        name
+        for name in EXPECTED_PRODUCTION_MODULES
+        if name != "faultatlas/domain/fault_test.py"
+    ]
+
+    assert len(predecessors) == 16
+    for name in predecessors:
+        source = (CHECKOUT_SOURCE_ROOT / name).read_text(encoding="utf-8")
+        assert "fault_test" not in source, name
+        for symbol in EXPECTED_EXPORTS:
+            assert symbol not in source, (name, symbol)
 
 
 def test_the_tracked_production_inventory_is_seventeen_modules() -> None:
@@ -2274,6 +2744,30 @@ def test_the_roadmap_states_the_s06_decisions_and_non_claims() -> None:
     assert "all seven `S1.P06` UUID-rooted identities stay nominally distinct" in (
         roadmap
     )
+
+
+def test_the_roadmap_names_no_completed_slice_as_remaining_work() -> None:
+    """A completed Slice may not still be described as future work.
+
+    Both sentences below named `S1.P06.S06` in the present tense from within
+    predecessor narratives, and the `S1.P06.S05` publication advanced the first
+    of them for exactly this reason.
+    """
+    roadmap = _roadmap()
+
+    assert "the rest remain owned by `S1.P06.S07` through `S1.P06.S09`" in roadmap
+    assert "the rest remain owned by `S1.P06.S06` through" not in roadmap
+    assert (
+        "Test material, reported outcomes and comparability became `S1.P06.S06` work"
+        in roadmap
+    )
+    assert (
+        "Test material, reported outcomes and comparability remain `S1.P06.S06` work"
+        not in roadmap
+    )
+    for index in range(1, 7):
+        assert f"remain `S1.P06.S{index:02d}` work" not in roadmap, index
+        assert f"remains `S1.P06.S{index:02d}` work" not in roadmap, index
 
 
 def test_the_roadmap_preserves_the_predecessor_history_as_written() -> None:
