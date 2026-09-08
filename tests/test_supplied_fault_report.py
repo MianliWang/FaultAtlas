@@ -2254,10 +2254,18 @@ def test_the_sdist_ships_fourteen_modules_and_no_corpus_or_test_material(
         assert "docs" not in parts
 
 
-def test_the_installed_wheel_exercises_every_current_symbol(
+def test_the_installed_wheel_publishes_the_current_all_and_exercises_the_report(
     offline_distributions: tuple[Path, Path],
     tmp_path: Path,
 ) -> None:
+    """The wheel must declare the current surface and run this Slice's models.
+
+    The declared `__all__` is asserted in full, so a wheel built from a stale
+    source is caught here, but the values exercised are this file's own: the
+    fault identity, its context, the report identity and the report. Exercising
+    all eight current symbols from the wheel belongs to the Slice that
+    published the other four, in `tests/test_fault_scenario_occurrence.py`.
+    """
     wheel, _ = offline_distributions
     installed = tmp_path / "installed"
     installed.mkdir()

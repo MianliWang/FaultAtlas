@@ -211,9 +211,8 @@ diverging from the published surface.
 Raw identity JSON, for the fault, report, scenario, and occurrence identities
 alike, is a bare UUID string and is not self-describing. Interchange that must
 distinguish one UUID-rooted identity from another needs an explicit owning
-field or a
-discriminator supplied by the carrier; no tagged envelope, wrapper object, or
-union is published here. There is likewise no `{"root": ...}`,
+field or a discriminator supplied by the carrier; no tagged envelope, wrapper
+object, or union is published here. There is likewise no `{"root": ...}`,
 `{"fault_id": ...}`, `{"report_id": ...}`, `{"scenario_id": ...}`, or
 `{"occurrence_id": ...}` JSON form and no adapter for one.
 

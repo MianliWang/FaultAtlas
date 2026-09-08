@@ -2779,11 +2779,22 @@ def test_the_roadmap_claims_the_live_surface_exactly_once() -> None:
     """
     roadmap = _roadmap()
 
-    live = re.findall(r"module's current `__all__` is exactly ([^.]*)\.", roadmap)
-    assert len(live) == 1, live
+    # Every phrasing counts, not just the enumerating one: the phase section
+    # lists the symbols while the current-code mapping states the size, and a
+    # Slice that updated one and left the other stale is exactly the drift this
+    # guards against.
+    live = re.findall(r"module's current `__all__` is ([^.]*)\.", roadmap)
+    assert live, "the roadmap states no current surface"
+    for claim in live:
+        assert "eight" in claim, claim
+        for stale in ("two symbols", "four symbols", "two exports", "four exports"):
+            assert stale not in claim, claim
+
+    enumerated = [claim for claim in live if claim.startswith("exactly")]
+    assert len(enumerated) == 1, enumerated
     for symbol in EXPECTED_EXPORTS:
-        assert f"`{symbol}`" in live[0], symbol
-    assert "eight exports" in live[0]
+        assert f"`{symbol}`" in enumerated[0], symbol
+    assert "eight exports" in enumerated[0]
     assert "module's then-current `__all__` became exactly" in roadmap
 
 
