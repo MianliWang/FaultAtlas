@@ -189,6 +189,7 @@ SNAPSHOT_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/snapshot_evidence_link.py
 HISTORY_MODULE = "src/faultatlas/domain/history.py"
 HISTORY_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/history_evidence_link.py"
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
+FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION,
     EVIDENCE_MODULE,
@@ -197,6 +198,7 @@ CURRENT_PRODUCTION_FILES = {
     HISTORY_MODULE,
     HISTORY_EVIDENCE_LINK_MODULE,
     FAULT_MODULE,
+    FAULT_SOURCE_RELATIONSHIP_MODULE,
 }
 EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunId",
@@ -1897,7 +1899,8 @@ def test_group_m_historical_p03_readiness_and_current_s05_are_scope_guarded() ->
     assert "`S1.P06.S01` is complete" in roadmap
     assert "`S1.P06.S02` is complete" in roadmap
     assert "`S1.P06.S03` is complete" in roadmap
-    assert "`S1.P06.S04` is next and not started" in roadmap
+    assert "`S1.P06.S04` is complete" in roadmap
+    assert "`S1.P06.S05` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
 
 

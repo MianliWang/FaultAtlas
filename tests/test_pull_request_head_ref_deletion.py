@@ -910,7 +910,8 @@ def test_the_roadmap_records_the_s05_transition() -> None:
     assert "`S1.P05.S05` — Pull Request Head-Ref Deletion (complete)" in roadmap
     assert "`S1.P06.S02` is complete" in roadmap
     assert "`S1.P06.S03` is complete" in roadmap
-    assert "`S1.P06.S04` is next and not started" in roadmap
+    assert "`S1.P06.S04` is complete" in roadmap
+    assert "`S1.P06.S05` is next and not started" in roadmap
     # The superseded provisional title and status must not survive.
     assert "Mutable Head-Ref Observation and Deletion" not in roadmap
     assert "`S1.P05.S05` is next and not started" not in roadmap

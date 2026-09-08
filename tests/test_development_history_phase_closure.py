@@ -78,8 +78,10 @@ CURRENT_PRODUCTION_FILES = frozenset(
     }
 )
 
-# Published after this closure was sealed, by S1.P06.S01.
+# Published after this closure was sealed: S1.P06.S01 added the fault module
+# and S1.P06.S04 the source-relationship bridge.
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
+FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 
 EXPECTED_OWNED_SYMBOLS = (
     ("S1.P05.S01", "faultatlas.domain.history", "PullRequestRevisionRoleBinding"),
@@ -1827,12 +1829,15 @@ def test_this_closure_adds_no_production_source_and_names_what_followed() -> Non
     assert tracked.returncode == 0, tracked.stderr
     observed = set(tracked.stdout.decode("utf-8").split())
     # This closure added no production source, and the set it sealed is intact.
-    # What the live tree gained since is named rather than absorbed, so a second
+    # What the live tree gained since is named rather than absorbed, so a third
     # unexplained module would fail here instead of inflating a count.
     assert CURRENT_PRODUCTION_FILES - observed == set()
-    assert observed - CURRENT_PRODUCTION_FILES == {FAULT_MODULE}
+    assert observed - CURRENT_PRODUCTION_FILES == {
+        FAULT_MODULE,
+        FAULT_SOURCE_RELATIONSHIP_MODULE,
+    }
     assert len(CURRENT_PRODUCTION_FILES) == 13
-    assert len(observed) == 14
+    assert len(observed) == 15
 
 
 def test_owned_symbols_match_the_live_published_modules() -> None:
@@ -1894,7 +1899,8 @@ def test_roadmap_records_phase_completion_and_p06_readiness() -> None:
     assert "`S1.P05.S10` are complete" in roadmap
     assert "`S1.P06.S02` is complete" in roadmap
     assert "`S1.P06.S03` is complete" in roadmap
-    assert "`S1.P06.S04` is next and not started" in roadmap
+    assert "`S1.P06.S04` is complete" in roadmap
+    assert "`S1.P06.S05` is next and not started" in roadmap
     assert "`S1.P04` is complete" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in roadmap
@@ -1958,7 +1964,7 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S04"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P06.S05"}, sorted(set(live_next))
 
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))

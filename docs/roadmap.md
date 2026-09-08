@@ -42,8 +42,8 @@ aspirational Slice as scheduled work.
   `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
   correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
   `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
-  `S1.P06.S02` is complete, `S1.P06.S03` is complete, and
-  `S1.P06.S04` is next and not started.
+  `S1.P06.S02` is complete, `S1.P06.S03` is complete,
+  `S1.P06.S04` is complete, and `S1.P06.S05` is next and not started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -92,8 +92,8 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
-`S1.P06.S02` is complete, `S1.P06.S03` is complete, and
-`S1.P06.S04` is next and not started.
+`S1.P06.S02` is complete, `S1.P06.S03` is complete,
+`S1.P06.S04` is complete, and `S1.P06.S05` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -693,8 +693,8 @@ otherwise.
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
-`S1.P06.S02` is complete, `S1.P06.S03` is complete, and
-`S1.P06.S04` is next and not started.
+`S1.P06.S02` is complete, `S1.P06.S03` is complete,
+`S1.P06.S04` is complete, and `S1.P06.S05` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1139,8 +1139,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 ## S1.P06 — Fault Instance Model
 
 `S1.P06` is active and incomplete. `S1.P06.S01` is complete,
-`S1.P06.S02` is complete, `S1.P06.S03` is complete, and
-`S1.P06.S04` is next and not started.
+`S1.P06.S02` is complete, `S1.P06.S03` is complete,
+`S1.P06.S04` is complete, and `S1.P06.S05` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1341,15 +1341,112 @@ invariant, or complete `FaultInstance` is published. Those remain owned by
 `S1.P06.S04` through `S1.P06.S09`, `S1.P07`, `S1.P08`, `S1.P09`, and
 `S1.P10`. The module still performs no I/O.
 
-The `S1.P06` route is provisional beyond `S1.P06.S03`. Later exact schemas are
+`S1.P06.S04` adds one new production module,
+`faultatlas.domain.fault_source_relationship`, whose `__all__` is exactly
+`FaultReportSourceObjectAssociation` and `FaultReportHistoryFactAssociation`,
+so production Python sources move from 14 to 15. It is a cross-domain bridge
+from the fault domain to the published `S1.P01` source-object identities and to
+the bounded `S1.P05` history facts. `faultatlas.domain.fault`,
+`faultatlas.domain.identity`, `faultatlas.domain.history`, and
+`faultatlas.domain.history_evidence_link` are unchanged by it and none of them
+imports it.
+
+Both models carry exactly two fields and one deliberately weak, uniform
+meaning: the caller associates these two supplied values. Each anchors on the
+published `SuppliedFaultReport` rather than on a bare `FaultInstanceIdentity`,
+because an identity alone is only a caller-designated subject while the report
+is the smallest published value carrying the caller's problem statement and
+behavioral deviation. The fault subject stays reachable at
+`association.report.context.fault`, nothing is restated at association level,
+and a suspected or unreproduced report needs no scenario and no occurrence
+record before it can carry either association.
+
+`FaultReportSourceObjectAssociation` carries `report` and `source_object`,
+admitting exactly `NumberedSourceObjectIdentity` and
+`ProviderScopedSourceObjectIdentity`, which are reused whole and together cover
+every published `S1.P01` object kind: issue, pull request, issue comment, pull
+request comment, pull request review, pull request review comment, and timeline
+event. A bare `RepositoryIdentity` is not admitted, because repository
+placement is already carried by the report's own `FaultRepositoryContext`, and
+no commit, tree, blob, ref, or path identity is admitted. The source object's
+repository is deliberately not required to equal `report.context.repository`: a
+cross-repository association is accepted and infers no affected repository, no
+origin repository, no ownership, no causation, and no applicability.
+
+`FaultReportHistoryFactAssociation` carries `report` and `history_fact`,
+admitting exactly the same six published facts the `S1.P05.S07` evidence link
+admits — `PullRequestRevisionRoleBinding`, `PullRequestChangedPath`,
+`PullRequestReviewRevisionApproval`, `PullRequestMergeRevisionOutcome`,
+`PullRequestHeadRefDeletion`, and `PullRequestHistoricalOccurrenceTime` —
+reused whole with no `S1.P05` field, enum, role, revision, timestamp, path, or
+source identity redefined. Three published symbols are excluded for three
+distinct reasons that are not collapsed into one: `ChangedPathStatus` is a
+closed vocabulary rather than a fact; `PullRequestChangeSet` is outside the
+`S1.P05.S07` fact boundary because its base and head composition, path tuple,
+and supplied order are caller-composed with no retained record establishing
+completeness, and `S1.P06.S05` may consume it explicitly later rather than have
+this Slice move that boundary silently; and
+`PullRequestHistoryFactEvidenceLink` is itself the `S1.P05` evidence
+association, which nesting here would blur with source association and risk
+implicitly upgrading.
+
+Association is not proof, support, causation, or repair correctness. A source
+association does not say why the object is related and establishes no
+origination, evidence support, verification, independent observation,
+reproduction, cause, contained repair, primacy, or authority, so no `role`
+field guesses among them. A history association does not mean the fact proves
+the fault, is causally responsible, is a repair, or that a merge fixed
+anything; approval is not FaultAtlas confidence, a changed path is not an
+affected path, a deleted head ref caused nothing, and a source occurrence
+instant is not a fault-occurrence instant. The `S1.P05.S07` LEVEL-1 evidence
+association is neither reached nor upgraded, and the embedded fact keeps
+exactly its own published semantics.
+
+No relationship vocabulary is created. There is no relationship kind or type,
+no subject-predicate-object triple, no graph node or edge, no inverse,
+transitive, or completeness semantics, no relationship identifier or registry,
+and no source-object-to-source-object relation. Two independent associations
+from one report to Issue #4412 and to pull request #4414 therefore construct no
+Issue-to-pull-request pairing and imply none: the retained pairing stays a
+reviewed derived interpretation, and sharing one report is not a transitivity
+rule. No ancestry or reachability graph and no complete development history is
+owned here, and the `S1.P05` contracts and the development-history v1 corpus
+stay frozen.
+
+Each association is one value, so one report may hold associations to several
+sources and independently to several history facts, and one source object may
+be associated with two reports whose embedded fault identities differ without
+merging those two fault subjects. No collection, ordering, uniqueness rule, or
+precedence exists, absence of an association asserts only that none is supplied
+here rather than that a relation is absent, unknown, unavailable, or disproved,
+and equality is ordinary Pydantic model equality with no override. Both models
+declare `frozen=True`, `extra="forbid"`, `strict=True`,
+`revalidate_instances="always"`, and `validate_default=True`; every
+model-valued position is closed to untyped Python input, including both union
+positions, where strictness alone cannot express the closure; JSON reconstructs
+the published children normally so each value round-trips through JSON while
+refusing its own `model_dump` as Python input; and one narrow private transport
+guard decodes the occurrence-time member's instant leaf through the same
+aware-datetime grammar the published model applies to JSON. The module performs
+no I/O.
+
+`S1.P06.S04` implements the bounded relationship vocabulary the effective
+`S1.P05.S08` and `S1.P05.S08.C01` handoff assigns to `S1.P06`: it owns the
+bounded domain relationships `FaultInstance` needs and consumes the bounded
+`S1.P05` history facts without redefining them, while owning no generic Git
+ancestry or reachability graph, reading `S1.P05` as no complete development
+history, and implicitly upgrading no LEVEL-1 evidence association. Formal
+disposition and readiness for the inherited subject remain `S1.P06.S10` work.
+
+The `S1.P06` route is provisional beyond `S1.P06.S04`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
 1. `S1.P06.S01` — Fault Instance Identity and Repository Context (complete)
 2. `S1.P06.S02` — Supplied Fault Report and Behavioral Deviation (complete)
 3. `S1.P06.S03` — Scenario and Occurrence Context (complete)
-4. `S1.P06.S04` — Bounded source relationships (next, not started)
-5. `S1.P06.S05` — Repair candidates (not started)
+4. `S1.P06.S04` — Bounded Source and History Relationships (complete)
+5. `S1.P06.S05` — Repair candidates (next, not started)
 6. `S1.P06.S06` — Test material, reported outcomes, and comparability
    (not started)
 7. `S1.P06.S07` — Case-local explanation, hypothesis, and expected property
@@ -1369,7 +1466,9 @@ association. The historical default branch remains unknown and owned by `S2`.
 The published `S1.P05` contracts and the development-history v1 corpus stay
 frozen. `S1.P06` receives exactly one immediate deferred subject, the universal
 relationship vocabulary, and absorbs no subject owned by `S2` or `S5`. That
-subject is not resolved by `S1.P06.S01`, `S1.P06.S02`, or `S1.P06.S03`.
+subject is not resolved by `S1.P06.S01`, `S1.P06.S02`, or `S1.P06.S03`. `S1.P06.S04` implements the bounded relationship
+vocabulary that handoff assigns to `S1.P06` without resolving the inherited
+subject formally, which remains `S1.P06.S10` work.
 
 ## Preserved later Stage 1 phases
 
@@ -1507,15 +1606,44 @@ nothing. No occurrence time is recorded and the `S1.P05`
 `PullRequestHistoricalOccurrenceTime` is not reused as one. No structured
 applicability taxonomy, run, outcome, source relationship, evidence link,
 cause, repair, confidence, review, reusable pattern, or complete
-`FaultInstance` is published. The module's current `__all__` is eight symbols
-and it still performs no I/O. Production Python sources are 14.
+`FaultInstance` is published. The `faultatlas.domain.fault` module's current
+`__all__` is eight symbols and that module still performs no I/O.
+`S1.P06.S04` adds the module `faultatlas.domain.fault_source_relationship`,
+whose `__all__` is exactly `FaultReportSourceObjectAssociation` and
+`FaultReportHistoryFactAssociation`. Each carries exactly two fields, anchors on
+a published `SuppliedFaultReport` consumed whole, and records one deliberately
+weak caller-supplied association. The source-object association admits exactly
+`NumberedSourceObjectIdentity` and `ProviderScopedSourceObjectIdentity`, reused
+whole across all seven published object kinds, and admits no bare
+`RepositoryIdentity` because repository placement already lives in
+`report.context.repository`, which the associated object's repository need not
+equal. The history-fact association admits exactly the six published facts the
+`S1.P05.S07` evidence link admits, reused whole, and excludes
+`ChangedPathStatus` as vocabulary rather than fact, `PullRequestChangeSet` as
+outside that fact boundary, and `PullRequestHistoryFactEvidenceLink` as the
+`S1.P05` evidence association itself. Association is not evidence support,
+proof, causation, or repair correctness: approval is not confidence, a merge is
+not a verified fix, a changed path is not an affected path, and a source
+occurrence instant is not a fault-occurrence instant. Associating one report
+with an Issue and with a pull request creates no Issue-to-pull-request
+relation, and no relationship enum, triple, graph, inverse, transitive,
+identifier, registry, ancestry, or completeness semantics is published. One
+report may hold several associations and one source object may be associated
+with reports naming different fault subjects without merging them, a missing
+association encodes no known absence, and equality is ordinary model equality.
+Both models are frozen, strict, extra-forbidding, always-revalidating, close
+every model-valued position including both unions to untyped Python input,
+round-trip through JSON while refusing their own `model_dump` as Python input,
+and perform no I/O. `faultatlas.domain.fault`, `faultatlas.domain.identity`,
+`faultatlas.domain.history`, and `faultatlas.domain.history_evidence_link` are
+unchanged and none imports the new module. Production Python sources are 15.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
-`S1.P06.S02` is complete, `S1.P06.S03` is complete, and
-`S1.P06.S04` is next and not started.
+`S1.P06.S02` is complete, `S1.P06.S03` is complete,
+`S1.P06.S04` is complete, and `S1.P06.S05` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
