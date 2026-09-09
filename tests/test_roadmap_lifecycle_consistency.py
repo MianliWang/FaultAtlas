@@ -205,13 +205,13 @@ def _is_known_unit(unit: str) -> bool:
 # and a grammar reading only the unit adjacent to the verb would validate the
 # last endpoint alone.
 RANGE_CLAIM = re.compile(
-    r"`(S1\.P\d\d(?:\.S\d\d)?)`\s+through\s+`(S1\.P\d\d(?:\.S\d\d)?)`\s+"
-    r"(is|are|remains|remain|will|has|have)\b([^,;:.]{0,60})"
+    r"`(S1\.P\d\d(?:\.S\d\d)?)`\s+through\s+`(S1\.P\d\d(?:\.S\d\d)?)`"
+    r"(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b([^,;:.]{0,60})"
 )
 # Coordination is the same shape as a range: several subjects, one predicate.
 COORDINATED_CLAIM = re.compile(
     rf"((?:`{UNIT}`(?:,\s+and\s+|,\s*|\s+and\s+))+`{UNIT}`)"
-    rf"\s+(is|are|remains|remain|will|has|have)\b([^;:.]{{0,60}})"
+    rf"(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b([^;:.]{{0,60}})"
 )
 COORDINATED_UNIT = re.compile(rf"`({UNIT})`")
 
@@ -288,10 +288,11 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     """
     states: set[str] = set()
     text = tail.lower()
-    # "will not be reopened" denies future work rather than claiming it.
-    if verb == "will" and not re.match(r"\s*not\b", text):
+    # "will not be reopened" and "will never be reopened" deny future work
+    # rather than claiming it.
+    if verb == "will" and not re.match(rf"\s*{NEGATOR}\b", text):
         states.add("future")
-    if re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
+    if re.search(rf"\b{NEGATOR}\s+(?:yet\s+)?started\b", text):
         states.add("not_started")
     # Unfinished-work terms. No unit is legitimately described this way here,
     # but a sentence may deny them -- "is complete with no open subjects".
@@ -314,7 +315,7 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     # Negation is bound to the term it modifies. "is complete but not a public
     # contract" negates "contract", not "complete", and stays a completion
     # claim; "is not complete" does not.
-    if not re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
+    if not re.search(rf"\b{NEGATOR}\s+(?:yet\s+)?started\b", text):
         for group, label in (
             (COMPLETE_TERMS, "complete"),
             (ACTIVE_TERMS, "active"),
@@ -431,7 +432,7 @@ def _is_negated(clause: str) -> bool:
     tail = _tail_clause(clause)
     return bool(
         re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", tail, re.I)
-        or re.search(r"\bnot(?!\s+only\b)\s+(?:\w+\s+){0,2}$", tail, re.I)
+        or re.search(rf"\b{NEGATOR}\s+(?:\w+\s+){{0,2}}$", tail, re.I)
     )
 
 
@@ -863,6 +864,8 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     # "active" only, and "incomplete" is asserted.
     ("is", " not active but incomplete", {"active", "negated:active"}),
     ("has", " never been completed", {"negated:complete"}),
+    ("has", " never started", {"not_started"}),
+    ("will", " never be reopened", set()),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
@@ -918,6 +921,7 @@ NEGATED_CLAUSES: tuple[tuple[str, bool], ...] = (
     ("The subject is ", False),
     # "not only X but also Y" is a correlative, not a denial of X.
     ("The subject is not only ", False),
+    ("The subject is never ", True),
     ("No evidence is available and the subject remains ", False),
 )
 
