@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import ast
-import io
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tarfile
-import tokenize
 import uuid
 import zipfile
 from pathlib import Path
@@ -834,6 +832,62 @@ def test_a_comparison_needs_both_outcomes_in_the_composition() -> None:
         assert "test_comparisons." in _messages(failure.value)
 
 
+def test_a_comparison_end_that_diverges_from_the_composed_outcome_is_refused() -> None:
+    """Naming the same run is not being the same published outcome.
+
+    This is the comparison edge's share of the whole-record rule the other
+    fourteen edges get from `REFERENCE_EDGES`. Without it a composition
+    carrying a `failed` outcome would accept a comparison whose `before` is a
+    `passed` copy of that outcome, which is exactly the substitution the rule
+    exists to refuse.
+    """
+    material = _material()
+    before_run = _run(RUN, material)
+    after_run = _run(SECOND_RUN, material, statement="Reported as run again.")
+    before = _outcome(before_run, ReportedFaultTestOutcomeKind.FAILED)
+    after = _outcome(
+        after_run,
+        ReportedFaultTestOutcomeKind.PASSED,
+        statement="Reported as ending without the described assertion.",
+    )
+    support: dict[str, Any] = {
+        "test_materials": (material,),
+        "test_runs": (before_run, after_run),
+        "test_outcomes": (before, after),
+    }
+    statement = "The caller reports the two attempts for comparison."
+
+    # A copy diverging in the reported kind, and one diverging only in its
+    # prose. Either is a different published record.
+    divergent = {
+        "before": _outcome(before_run, ReportedFaultTestOutcomeKind.PASSED),
+        "after": _outcome(
+            after_run,
+            ReportedFaultTestOutcomeKind.PASSED,
+            statement="Reported as ending with a differently worded account.",
+        ),
+    }
+    for end, substitute in divergent.items():
+        ends = {"before": before, "after": after} | {end: substitute}
+        assert substitute not in (before, after)
+        with pytest.raises(ValidationError) as failure:
+            _instance(
+                **support,
+                test_comparisons=(
+                    ReportedFaultTestComparison(**ends, comparison_statement=statement),
+                ),
+            )
+        assert f"test_comparisons.{end}[0]" in _messages(failure.value)
+
+    # The same shape with both ends as published is accepted, so the refusals
+    # above are about divergence rather than about the case being built wrong.
+    published = ReportedFaultTestComparison(
+        before=before, after=after, comparison_statement=statement
+    )
+    composed = _instance(**support, test_comparisons=(published,))
+    assert composed.test_comparisons == (published,)
+
+
 def test_an_occurrence_does_not_insert_its_embedded_scenario() -> None:
     """The scenario must already be composed; the occurrence cannot add it."""
     with pytest.raises(ValidationError) as failure:
@@ -1317,17 +1371,208 @@ def test_the_tracked_production_inventory_is_nineteen_modules() -> None:
     assert "src/faultatlas/domain/fault_instance.py" in observed
 
 
+# --- the same four rules through the JSON input language ----------------------
+
+
+# Each entry is a payload violating exactly one composition rule, the substitute
+# that repairs it, and the message the rule raises. Building them from dumped
+# records rather than from an invalid Python instance is the point: a payload
+# this shape can arrive from a file or a request without ever having been a
+# Python object, so the rule has to hold on the JSON path in its own right.
+JSON_RULE_VIOLATIONS: tuple[tuple[str, dict[str, Any], dict[str, Any], str], ...] = (
+    (
+        "every report names the composed fault",
+        {"reports": [_payload(_report(fault=OTHER_FAULT))]},
+        {"reports": [_payload(_report())]},
+        "reports[0] describes a different fault subject",
+    ),
+    (
+        "a report identity appears once",
+        {
+            "reports": [
+                _payload(_report()),
+                _payload(_report(problem=OTHER_PROBLEM, deviation=OTHER_DEVIATION)),
+            ]
+        },
+        {
+            "reports": [
+                _payload(_report()),
+                _payload(
+                    _report(
+                        SECOND_REPORT, problem=OTHER_PROBLEM, deviation=OTHER_DEVIATION
+                    )
+                ),
+            ]
+        },
+        "reports names one subject identity more than once",
+    ),
+    (
+        "a referenced report is a member by whole record",
+        {
+            "reports": [_payload(_report())],
+            "scenarios": [_payload(_scenario(report=DIVERGENT_REPORT))],
+        },
+        {
+            "reports": [_payload(_report())],
+            "scenarios": [_payload(_scenario())],
+        },
+        "scenarios[0] references a report this composition does not carry",
+    ),
+    (
+        "a referenced layer value is a member",
+        {
+            "reports": [_payload(_report())],
+            "occurrences": [_payload(_occurrence())],
+        },
+        {
+            "reports": [_payload(_report())],
+            "scenarios": [_payload(_scenario())],
+            "occurrences": [_payload(_occurrence())],
+        },
+        "occurrences[0] references a value this composition does not carry",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("violation", "repair", "message"),
+    [(v, r, m) for _, v, r, m in JSON_RULE_VIOLATIONS],
+    ids=[name for name, _, _, _ in JSON_RULE_VIOLATIONS],
+)
+def test_each_composition_rule_holds_on_the_json_path(
+    violation: dict[str, Any],
+    repair: dict[str, Any],
+    message: str,
+) -> None:
+    """A rule-violating payload is refused, and its repaired twin is accepted.
+
+    The accepted half matters as much as the refused one: without it the test
+    would still pass if JSON input were refused for some unrelated reason.
+    """
+    with pytest.raises(ValidationError) as failure:
+        FaultInstance.model_validate_json(
+            json.dumps({"fault": FAULT_TEXT, **violation})
+        )
+
+    assert message in _messages(failure.value)
+
+    composed = FaultInstance.model_validate_json(
+        json.dumps({"fault": FAULT_TEXT, **repair})
+    )
+    assert composed.fault == FaultInstanceIdentity(FAULT)
+
+
 # --- the no-I/O behavioral witness ---------------------------------------------
 
 
-def test_the_module_reaches_no_eventless_clock_or_environment_call() -> None:
-    """The half an audit hook structurally cannot witness.
+# The whole attribute vocabulary the module's contract needs: the seventeen
+# field names, the child fields it reads to check a reference, and `uuid.UUID`.
+EXPECTED_ATTRIBUTE_VOCABULARY = {
+    "UUID",
+    "after",
+    "before",
+    "candidate",
+    "context",
+    "expected_properties",
+    "expected_property",
+    "explanation",
+    "explanations",
+    "fault",
+    "history_fact_associations",
+    "hypotheses",
+    "hypothesis",
+    "material",
+    "occurrence",
+    "occurrences",
+    "repair_candidates",
+    "repair_change_set_associations",
+    "repair_revision_associations",
+    "report",
+    "reports",
+    "root",
+    "run",
+    "scenario",
+    "scenarios",
+    "source_object_associations",
+    "test_comparisons",
+    "test_material",
+    "test_materials",
+    "test_outcomes",
+    "test_run_revision_associations",
+    "test_runs",
+}
 
-    CPython raises no audit event for `os.times`, `os.stat`, `os.environ` or
-    anything in `time`, so the witness below cannot see a clock or environment
-    read. Every such call has to reach `os` somehow, and this module imports it
-    nowhere, so the remaining route is an attribute on a module it does import.
-    """
+
+# The whole name vocabulary: the declared imports, the field and local names,
+# and the six builtins the validators use.
+EXPECTED_NAME_VOCABULARY = {
+    "Annotated",
+    "BaseModel",
+    "ConfigDict",
+    "FaultInstanceIdentity",
+    "FaultRepairCandidateChangeSetAssociation",
+    "FaultRepairCandidateRevisionAssociation",
+    "FaultReportHistoryFactAssociation",
+    "FaultReportSourceObjectAssociation",
+    "FaultTestRunRevisionAssociation",
+    "Field",
+    "ReportedFaultTestComparison",
+    "ReportedFaultTestOutcome",
+    "ReportedFaultTestRun",
+    "Self",
+    "SuppliedFaultExpectedProperty",
+    "SuppliedFaultExplanation",
+    "SuppliedFaultHypothesis",
+    "SuppliedFaultOccurrenceContext",
+    "SuppliedFaultRepairCandidate",
+    "SuppliedFaultReport",
+    "SuppliedFaultScenario",
+    "SuppliedFaultTestMaterial",
+    "ValueError",
+    "_MAX_MEMBERS",
+    "__all__",
+    "anchored",
+    "edges",
+    "enumerate",
+    "expected_properties",
+    "explanations",
+    "fault",
+    "history_fact_associations",
+    "hypotheses",
+    "identifiers",
+    "index",
+    "len",
+    "members",
+    "model_config",
+    "model_validator",
+    "name",
+    "object",
+    "occurrences",
+    "record",
+    "referenced",
+    "repair_candidates",
+    "repair_change_set_associations",
+    "repair_revision_associations",
+    "report",
+    "reports",
+    "scenarios",
+    "self",
+    "set",
+    "source_object_associations",
+    "str",
+    "subjects",
+    "test_comparisons",
+    "test_materials",
+    "test_outcomes",
+    "test_run_revision_associations",
+    "test_runs",
+    "tuple",
+    "uuid",
+    "value",
+}
+
+
+def test_the_module_calls_no_builtin_that_opens_reads_or_executes() -> None:
     called = {
         node.func.id
         for node in ast.walk(_instance_tree())
@@ -1335,34 +1580,39 @@ def test_the_module_reaches_no_eventless_clock_or_environment_call() -> None:
     }
 
     assert not called & {"open", "eval", "exec", "compile", "__import__", "print"}
-    # Executable tokens only. Prose is not code: the module's own docstrings
-    # legitimately contain phrases such as "at the same time", and screening
-    # them would be screening the wrong thing.
-    body = " ".join(
-        token.string
-        for token in tokenize.generate_tokens(
-            io.StringIO(INSTANCE_SOURCE.read_text(encoding="utf-8")).readline
-        )
-        if token.type not in {tokenize.STRING, tokenize.COMMENT}
-    )
-    for forbidden in (
-        "import os",
-        "import io",
-        "import time",
-        "Path(",
-        "requests",
-        "urllib",
-        "now(",
-        "subprocess",
-        "getattr(",
-        ".os.",
-        "os.",
-        "time.",
-        "datetime",
-        "environ",
-        "getenv",
-    ):
-        assert forbidden not in body, forbidden
+
+
+def test_the_module_names_no_identifier_beyond_its_published_vocabulary() -> None:
+    """This closes the half an audit hook structurally cannot witness.
+
+    CPython raises no audit event for `os.times`, `os.stat`, `os.environ` or
+    anything in `time`, so the witness below cannot see a clock or environment
+    read. Every such call has to reach `os` somehow, and the exact import set
+    this module declares excludes importing it, so the remaining route is an
+    attribute reached through a module it does import, or a name that fetches
+    one.
+
+    Screening for known-bad spellings is the wrong shape for that: whichever
+    spelling is left off the list is the one that gets through. These two
+    assertions pin the module's whole attribute and name vocabulary to what its
+    published contract needs instead, so any identifier not in the contract --
+    `uuid.os.times`, `getattr(uuid, "os")`, `__import__`, a `Path`, a
+    `datetime` -- fails for being absent from it rather than for having been
+    predicted.
+
+    The cost of an exact pin is that an ordinary local-variable rename in the
+    module fails here too. That is the intended trade: this file is a published
+    contract, so its vocabulary changing at all is something a reader should be
+    told about.
+    """
+    tree = _instance_tree()
+
+    assert {
+        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+    } == EXPECTED_ATTRIBUTE_VOCABULARY
+    assert {
+        node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+    } == EXPECTED_NAME_VOCABULARY
 
 
 NO_IO_PROBE = """
