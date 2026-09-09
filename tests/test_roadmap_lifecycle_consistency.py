@@ -209,11 +209,10 @@ RANGE_CLAIM = re.compile(
 )
 # Coordination is the same shape as a range: several subjects, one predicate.
 COORDINATED_CLAIM = re.compile(
-    r"((?:`S1\.P\d\d(?:\.S\d\d)?`(?:,\s+and\s+|,\s*|\s+and\s+))+"
-    r"`S1\.P\d\d(?:\.S\d\d)?`)"
-    r"\s+(is|are|remains|remain|will|has|have)\b([^;:.]{0,60})"
+    rf"((?:`{UNIT}`(?:,\s+and\s+|,\s*|\s+and\s+))+`{UNIT}`)"
+    rf"\s+(is|are|remains|remain|will|has|have)\b([^;:.]{{0,60}})"
 )
-COORDINATED_UNIT = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)`")
+COORDINATED_UNIT = re.compile(rf"`({UNIT})`")
 
 
 def _expand_range(first: str, last: str) -> list[str]:
@@ -230,6 +229,18 @@ def _expand_range(first: str, last: str) -> list[str]:
     return []
 
 
+def _asserts(text: str, terms: str) -> bool:
+    """Whether a term group is asserted here rather than denied.
+
+    Every keyword group goes through this, so a group cannot be added without
+    its negation handling -- which is how three separate false positives
+    against ordinary prose were introduced.
+    """
+    if not re.search(rf"\b(?:{terms})\b", text):
+        return False
+    return not re.search(rf"\b(?:no|not)\s+(?:\w+\s+){{0,2}}?(?:{terms})\b", text)
+
+
 def _claimed_states(verb: str, tail: str) -> set[str]:
     """Every lifecycle state a predicate asserts, not the first one recognised.
 
@@ -243,28 +254,22 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     if re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
         states.add("not_started")
     # Unfinished-work terms. No unit is legitimately described this way here,
-    # but a sentence may deny them -- "is complete with no open subjects" --
-    # and a denial is not a claim.
-    if re.search(
-        r"(?<!no )(?<!not )\b(?:open|pending|outstanding|unresolved)\b", text
-    ) and not re.search(
-        r"\b(?:no|not)\s+(?:\w+\s+){0,2}?(?:open|pending|outstanding|unresolved)\b",
-        text,
-    ):
+    # but a sentence may deny them -- "is complete with no open subjects".
+    if _asserts(text, "open|pending|outstanding|unresolved"):
         states.add("not_started")
     # A planned or proposed unit is being placed in the future.
-    if re.search(r"\b(?:planned|scheduled|proposed|forthcoming|upcoming)\b", text):
+    if _asserts(text, "planned|scheduled|proposed|forthcoming|upcoming"):
         states.add("future")
-    if re.search(r"\bnext\b", text):
+    if _asserts(text, "next"):
         states.add("next")
     # Word boundaries matter: "inactive" is not "active", and asserts the
     # opposite of the state the active phase is allowed to be in.
-    if re.search(r"\b(?:active|incomplete)\b", text):
+    if _asserts(text, "active|incomplete"):
         states.add("active")
-    if re.search(r"\binactive\b", text):
+    if _asserts(text, "inactive"):
         states.add("inactive")
     # `\b` already excludes "incomplete", which is not a completion claim.
-    if re.search(r"\bcomplete\b", text):
+    if _asserts(text, "complete"):
         states.add("complete")
     # Negation is bound to the term it modifies. "is complete but not a public
     # contract" negates "contract", not "complete", and stays a completion
@@ -404,13 +409,22 @@ def test_no_open_work_is_presently_attributed_to_a_completed_unit() -> None:
     for start, sentence in _sentences():
         for pattern in (ATTRIBUTED_TO, WORK_ATTRIBUTION):
             for match in pattern.finditer(sentence):
-                unit = match.group(1)
                 before = sentence[: match.start()]
                 if _is_negated(before) or _is_past_tense(before):
                     continue
-                assert unit not in COMPLETE_SLICES, (start, unit, sentence[:200])
-                assert unit not in COMPLETE_PHASES, (start, unit, sentence[:200])
-                assert ".C" not in unit, (start, unit, sentence[:200])
+                # One predicate may name several objects: "belongs to `A` and
+                # `B`". Every object it governs is checked, not just the first.
+                trailing = sentence[match.end() :]
+                coordinated = re.match(
+                    rf"(?:(?:,\s+and\s+|,\s*|\s+and\s+)`{UNIT}`)+", trailing
+                )
+                units = [match.group(1)]
+                if coordinated:
+                    units += COORDINATED_UNIT.findall(coordinated.group(0))
+                for unit in units:
+                    assert unit not in COMPLETE_SLICES, (start, unit, sentence[:200])
+                    assert unit not in COMPLETE_PHASES, (start, unit, sentence[:200])
+                    assert ".C" not in unit, (start, unit, sentence[:200])
 
 
 COMPLETION_CLAIM = re.compile(r"`(S1\.P06\.S\d\d)` is complete")
