@@ -1091,6 +1091,37 @@ def test_an_untyped_member_is_refused(name: str, member: Any) -> None:
     assert _failures(failure.value)[0][0][:2] == (name, 0)
 
 
+def test_the_composed_subject_must_already_be_a_published_identity() -> None:
+    """The one position `strict=True` alone does not close.
+
+    A `RootModel` field reconstructs from its own root type even under strict
+    validation, so a bare `uuid.UUID` reaches `fault` unchallenged unless the
+    module says otherwise. Composing means gathering values a caller already
+    published; accepting the scalar inside an identity would let the aggregate
+    mint one instead. Every predecessor closes its identity positions this way.
+    """
+    report = _report()
+
+    for untyped in (FAULT, FAULT_TEXT):
+        with pytest.raises(ValidationError) as failure:
+            FaultInstance(fault=untyped, reports=(report,))
+        assert "fault must be a FaultInstanceIdentity in Python input" in _messages(
+            failure.value
+        )
+
+    composed = FaultInstance(fault=FaultInstanceIdentity(FAULT), reports=(report,))
+    assert composed.fault == FaultInstanceIdentity(FAULT)
+
+
+def test_the_composed_subject_still_reconstructs_from_json() -> None:
+    """The Python guard must not close the JSON input language with it."""
+    composed = _instance()
+    payload = _payload(composed)
+
+    assert payload["fault"] == FAULT_TEXT
+    assert FaultInstance.model_validate_json(json.dumps(payload)) == composed
+
+
 def test_a_semantic_json_round_trip_succeeds() -> None:
     instance = _instance(
         scenarios=(_scenario(),),
@@ -1243,6 +1274,7 @@ def test_no_automatic_operation_is_published(prefix: str) -> None:
 
 
 DECLARED_VALIDATORS = (
+    "_require_typed_python_fault",
     "_require_reports_name_the_composed_fault",
     "_require_unique_primary_subjects",
     "_require_report_references_are_members",
@@ -1278,6 +1310,8 @@ EXPECTED_MODULE_BINDINGS = frozenset(
         "BaseModel",
         "ConfigDict",
         "Field",
+        "ValidationInfo",
+        "field_validator",
         "model_validator",
         "FaultInstanceIdentity",
         "SuppliedFaultOccurrenceContext",
@@ -1469,6 +1503,7 @@ def test_each_composition_rule_holds_on_the_json_path(
 # field names, the child fields it reads to check a reference, and `uuid.UUID`.
 EXPECTED_ATTRIBUTE_VOCABULARY = {
     "UUID",
+    "mode",
     "after",
     "before",
     "candidate",
@@ -1507,6 +1542,11 @@ EXPECTED_ATTRIBUTE_VOCABULARY = {
 # and the six builtins the validators use.
 EXPECTED_NAME_VOCABULARY = {
     "Annotated",
+    "ValidationInfo",
+    "classmethod",
+    "field_validator",
+    "info",
+    "isinstance",
     "BaseModel",
     "ConfigDict",
     "FaultInstanceIdentity",

@@ -103,10 +103,12 @@ in-memory composition and nothing else: it is not a claim that more records
 cannot exist, and it is not a durable-format limit, which remains `S1.P10`
 work. The bound is module-private and is not published.
 
-The composition is closed to untyped Python input. Every collection must be a
-tuple when it is supplied, and every member must already be the published type
-it declares, so a list, a mapping, an attribute-backed lookalike, or a foreign
-model is refused even when its content matches. JSON is a different input
+The composition is closed to untyped Python input. The composed subject must
+already be a published `FaultInstanceIdentity` rather than the scalar inside
+one, every collection must be a tuple when it is supplied, and every member
+must already be the published type it declares, so a bare UUID, a list, a
+mapping, an attribute-backed lookalike, or a foreign model is refused even when
+its content matches. JSON is a different input
 language: there the declared members reconstruct normally and a semantic round
 trip succeeds, while a Python round trip through `model_dump` deliberately does
 not, because that projection has already turned typed children into mappings.
@@ -124,7 +126,14 @@ repository.
 import uuid
 from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from faultatlas.domain.fault import (
     FaultInstanceIdentity,
@@ -239,6 +248,22 @@ class FaultInstance(BaseModel):
         tuple[SuppliedFaultExpectedProperty, ...],
         Field(max_length=_MAX_MEMBERS),
     ] = ()
+
+    @field_validator("fault", mode="before")
+    @classmethod
+    def _require_typed_python_fault(cls, value: object, info: ValidationInfo) -> object:
+        """The composed subject is a published identity, not a scalar.
+
+        A `RootModel` field reconstructs from its own root type even under
+        `strict=True`, so without this a bare `uuid.UUID` would be accepted
+        here and the aggregate would be minting the identity rather than
+        composing one a caller already published. Every predecessor closes its
+        identity positions the same way. JSON stays a different input language:
+        there the declared schema reconstructs normally.
+        """
+        if info.mode == "python" and not isinstance(value, FaultInstanceIdentity):
+            raise ValueError("fault must be a FaultInstanceIdentity in Python input")
+        return value
 
     @model_validator(mode="after")
     def _require_reports_name_the_composed_fault(self) -> Self:

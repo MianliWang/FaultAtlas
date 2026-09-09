@@ -1856,8 +1856,11 @@ associations stay weak associations rather than becoming support. Each
 collection is bounded to a fixed private maximum that limits one in-memory
 composition and is neither a claim about how many records may exist nor a
 durable-format limit. The aggregate is frozen, strict, extra-forbidding and
-always-revalidating, closes every collection to untyped Python input, and
-performs no I/O.
+always-revalidating, closes the composed subject and every collection to
+untyped Python input, and performs no I/O. The subject needs its own guard:
+a `RootModel` field reconstructs from its own root type even under strict
+validation, so a bare UUID would otherwise be accepted where a published
+identity is meant.
 
 The `S1.P06` route is provisional beyond `S1.P06.S08`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
@@ -2178,7 +2181,8 @@ refused rather than auto-inserted, and each primary subject identity occurs at
 most once inside one composition, per nominal identity type. Conflicting
 outcomes for one run and conflicting explanations or hypotheses for one report
 coexist without resolution, no semantic edge is inferred across layers, order is
-preserved without meaning, no evidence, support or confidence is carried, and
+preserved without meaning, no evidence, support or confidence is carried, the
+composed subject and every collection are closed to untyped Python input, and
 the module performs no I/O. Production Python sources are 19.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
