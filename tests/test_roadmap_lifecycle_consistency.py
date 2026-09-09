@@ -169,6 +169,37 @@ PRESENT_CLAIM = re.compile(
     rf"`({UNIT})`\s+(is|are|remains|remain|will|has|have)\b([^,;:.]{{0,60}})"
 )
 ACTIVE_PHASE_ID = "S1.P06"
+# How many Slices each Phase contains. A child that does not exist may not
+# inherit its Phase's completed state.
+PHASE_SLICE_COUNT = {
+    "S1.P00": 10,
+    "S1.P01": 6,
+    "S1.P02": 7,
+    "S1.P03": 9,
+    "S1.P04": 10,
+    "S1.P05": 10,
+    "S1.P06": 12,
+}
+KNOWN_CORRECTIONS = frozenset(
+    {
+        "S1.P00.S04.C01",
+        "S1.P01.S05.C01",
+        "S1.P05.S02.C01",
+        "S1.P05.S08.C01",
+        CORRECTION,
+    }
+)
+
+
+def _is_known_unit(unit: str) -> bool:
+    if ".C" in unit:
+        return unit in KNOWN_CORRECTIONS
+    phase, _, suffix = unit.partition(".S")
+    if not suffix:
+        return phase in PHASE_SLICE_COUNT or phase in NOT_STARTED_PHASES
+    return 1 <= int(suffix) <= PHASE_SLICE_COUNT.get(phase, 0)
+
+
 # The roadmap states ranges -- "`S1.P07` through `S1.P10` remain not started" --
 # and a grammar reading only the unit adjacent to the verb would validate the
 # last endpoint alone.
@@ -206,6 +237,10 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     """
     states: set[str] = set()
     text = tail.lower()
+    # "is not complete" asserts the opposite of "is complete"; classifying on
+    # the bare word would read a contradiction as agreement.
+    if re.search(r"\bnot\b(?!\s+(?:started|yet started))", text):
+        states.add("negated")
     if verb == "will":
         states.add("future")
     if "not started" in text or "not yet started" in text:
@@ -231,7 +266,9 @@ def _allowed_states(unit: str) -> set[str] | None:  # noqa: PLR0911
     programme does not contain -- "`S1.P06.S13` is next" -- must be refused,
     not silently skipped.
     """
-    if unit == CORRECTION:
+    if not _is_known_unit(unit):
+        return None
+    if ".C" in unit:
         # A published correction is complete, and never a gate.
         return {"complete"}
     phase = unit.partition(".S")[0]
@@ -293,12 +330,11 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
 # Attribution reads the other way round: the unit is the object, not the
 # subject. One vocabulary covers Slices and Phases alike.
 ATTRIBUTED_TO = re.compile(
-    r"\b(?:belongs to|owned by|is deferred to|is scheduled for|awaits|"
-    r"is assigned to|will be (?:added|published|implemented) by)\s+"
-    r"`(S1\.P\d\d(?:\.S\d\d)?)`"
+    rf"\b(?:belongs to|owned by|is deferred to|is scheduled for|awaits|"
+    rf"is assigned to|will be (?:added|published|implemented) by)\s+`({UNIT})`"
 )
 # "the unresolved subject remains `S1.P05` work" puts the unit in the middle.
-WORK_ATTRIBUTION = re.compile(r"\bremains?\s+`(S1\.P\d\d(?:\.S\d\d)?)`\s+work")
+WORK_ATTRIBUTION = re.compile(rf"\bremains?\s+`({UNIT})`\s+work")
 
 
 def _tail_clause(clause: str) -> str:
@@ -319,7 +355,7 @@ def _is_past_tense(clause: str) -> bool:
     # A contrastive or present-time marker ends the auxiliary's reach: in "was
     # deferred but now belongs to", the auxiliary does not govern "belongs".
     governed = re.split(
-        r"\b(?:but|however|yet|although|though|now|currently|today|since then)\b",
+        r"\b(?:but|however|yet|although|though|now|currently|today|since then|and|or)\b",
         _tail_clause(clause),
         flags=re.I,
     )[-1]
@@ -349,6 +385,7 @@ def test_no_open_work_is_presently_attributed_to_a_completed_unit() -> None:
                     continue
                 assert unit not in COMPLETE_SLICES, (start, unit, sentence[:200])
                 assert unit not in COMPLETE_PHASES, (start, unit, sentence[:200])
+                assert ".C" not in unit, (start, unit, sentence[:200])
 
 
 COMPLETION_CLAIM = re.compile(r"`(S1\.P06\.S\d\d)` is complete")
@@ -420,12 +457,21 @@ def _route_entries() -> list[tuple[str, str, str, str]]:
     start = text.index("The `S1.P06` route is provisional")
     end = text.index("`S1.P06` consumes the bounded", start)
     block = text[start:end]
+    # Every numbered row is parsed, then validated. Matching only rows whose
+    # state is already one of the allowed words would make a row carrying any
+    # other state invisible, and the counts would still look right.
     rows: list[tuple[str, str, str, str]] = re.findall(
-        r"^(\d+)\.\s+`(S1\.P06\.S(\d\d))`[^\n]*(?:\n\s+)?[^\n]*?\((complete|next, not "
-        r"started|not started)\)",
+        r"^(\d+)\.\s+`(S1\.P06\.S(\d\d))`[^\n]*(?:\n\s+)?[^\n]*?\(([^)]*)\)",
         block,
         re.M,
     )
+    numbered = re.findall(r"^(\d+)\.\s", block, re.M)
+    assert len(rows) == len(numbered), (len(rows), len(numbered))
+    for _, slice_id, _, state in rows:
+        assert state in {"complete", "next, not started", "not started"}, (
+            slice_id,
+            state,
+        )
     return rows
 
 
