@@ -279,7 +279,7 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     # contract" negates "contract", not "complete", and stays a completion
     # claim; "is not complete" does not.
     if re.search(
-        r"\bnot\s+(?:\w+\s+){0,2}?(?:complete|active|next)\b", text
+        r"\b(?:not|no longer)\s+(?:\w+\s+){0,2}?(?:complete|active|next)\b", text
     ) and not re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
         states.add("negated")
     return states
@@ -380,19 +380,29 @@ def _is_negated(clause: str) -> bool:
     )
 
 
-def _is_past_tense(clause: str) -> bool:
+# A predicate that is a bare passive participle can share an auxiliary across
+# coordination; a finite present verb cannot.
+PARTICIPIAL_PREDICATE = re.compile(r"^\s*owned by\b", re.I)
+
+
+def _is_past_tense(clause: str, *, shares_auxiliary: bool = False) -> bool:
     """Whether a past auxiliary governs the predicate that follows.
 
     Detected rather than matched adjacently, so legitimate history keeps its
     modifiers: "was previously owned by" and "had been owned by" are past.
+
+    Coordination is where this gets delicate. "was reviewed and owned by `X`"
+    shares one auxiliary across two passive participles and is history; "was
+    reviewed and belongs to `X`" does not, because "belongs" is finite and
+    present. So a coordinator ends the auxiliary's reach only for a predicate
+    that cannot share it.
     """
+    markers = r"but|however|yet|although|though|now|currently|today|since then"
+    if not shares_auxiliary:
+        markers += r"|and|or"
     # A contrastive or present-time marker ends the auxiliary's reach: in "was
     # deferred but now belongs to", the auxiliary does not govern "belongs".
-    governed = re.split(
-        r"\b(?:but|however|yet|although|though|now|currently|today|since then|and|or)\b",
-        _tail_clause(clause),
-        flags=re.I,
-    )[-1]
+    governed = re.split(rf"\b(?:{markers})\b", _tail_clause(clause), flags=re.I)[-1]
     return bool(
         re.search(
             r"\b(?:was|were|had|has been|have been)\b\s*(?:\w+\s+){0,2}$",
@@ -414,7 +424,10 @@ def test_no_open_work_is_presently_attributed_to_a_completed_unit() -> None:
         for pattern in (ATTRIBUTED_TO, WORK_ATTRIBUTION):
             for match in pattern.finditer(sentence):
                 before = sentence[: match.start()]
-                if _is_negated(before) or _is_past_tense(before):
+                shares = bool(PARTICIPIAL_PREDICATE.match(match.group(0)))
+                if _is_negated(before) or _is_past_tense(
+                    before, shares_auxiliary=shares
+                ):
                     continue
                 # One predicate may name several objects: "belongs to `A` and
                 # `B`". Every object it governs is checked, not just the first.
@@ -776,6 +789,8 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("remains", " open", {"not_started"}),
     # The denial suppresses the completion term and asserts the contradiction.
     ("is", " not complete", {"negated"}),
+    ("is", " no longer complete", {"negated"}),
+    ("is", " completed", {"complete"}),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
@@ -803,3 +818,26 @@ def test_a_denied_term_contributes_no_state(
 ) -> None:
     """A denial is not a claim, and denying one term does not deny its siblings."""
     assert _claimed_states(verb, tail) == expected
+
+
+TENSE_CASES: tuple[tuple[str, bool, bool], ...] = (
+    ("The subject was previously ", True, True),
+    ("The subject had been ", True, True),
+    ("The subject is ", True, False),
+    # One auxiliary shared across two passive participles is history.
+    ("The subject was reviewed and ", True, True),
+    # A finite present verb after the coordinator is not: the auxiliary that
+    # governs "reviewed" does not govern "belongs".
+    ("The subject was reviewed and ", False, False),
+    ("The subject was deferred but now ", False, False),
+)
+
+
+@pytest.mark.parametrize(("clause", "shares", "expected"), TENSE_CASES)
+def test_past_tense_detection_follows_the_predicate_it_governs(
+    clause: str,
+    shares: bool,
+    expected: bool,
+) -> None:
+    """Coordination is where tense detection is delicate, so it is pinned here."""
+    assert _is_past_tense(clause, shares_auxiliary=shares) is expected
