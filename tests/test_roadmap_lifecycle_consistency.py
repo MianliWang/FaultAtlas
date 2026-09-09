@@ -316,9 +316,7 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     if _asserts(text, COMPLETE_TERMS):
         states.add("complete")
 
-    if verb == "will" and not states:
-        # "will remain complete" claims a state that persists, not future work,
-        # so a predicate that already asserts a state is not a future claim.
+    if verb == "will":
         segments = [
             s for s in re.split(rf"\b(?:{CONTRASTIVE}|and|or)\b", text) if s.strip()
         ]
@@ -327,9 +325,19 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
             # claim only if it carries its own "will".
             if index and not re.match(r"\s*will\b", segment):
                 continue
-            if not re.match(rf"\s*(?:will\s+)?{NEGATOR}\b", segment):
-                states.add("future")
-                break
+            if re.match(rf"\s*(?:will\s+)?{NEGATOR}\b", segment):
+                continue
+            # "will remain complete" claims a state that persists, not future
+            # work. A coordinate asserting no state is future work, so the gate
+            # is per segment: "will remain complete and will implement more
+            # work" carries both.
+            if any(
+                _asserts(segment, group)
+                for group in (COMPLETE_TERMS, ACTIVE_TERMS, NEXT_TERMS, "started")
+            ):
+                continue
+            states.add("future")
+            break
     # Negation is bound to the term it modifies. "is complete but not a public
     # contract" negates "contract", not "complete", and stays a completion
     # claim; "is not complete" does not.
@@ -698,7 +706,6 @@ def test_no_sentence_calls_a_completed_slice_future_work(slice_id: str) -> None:
             f"`{slice_id}` remains open",
             f"`{slice_id}` is planned",
             f"`{slice_id}` is not yet",
-            f"`{slice_id}` will",
             f"remain `{slice_id}` work",
             f"remains `{slice_id}` work",
             f"remain owned by `{slice_id}`",
@@ -891,6 +898,8 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("will", " not be reopened and will implement more work", {"future"}),
     # "will remain complete" persists a state; it is not a claim of future work.
     ("will", " remain complete", {"complete"}),
+    # A persistent state and a future coordinate can stand side by side.
+    ("will", " remain complete and will implement more work", {"complete", "future"}),
     ("is", " unfinished", {"not_started"}),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
