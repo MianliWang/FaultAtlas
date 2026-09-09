@@ -164,9 +164,9 @@ def test_the_document_names_exactly_one_live_p06_product_gate() -> None:
 # every present-tense state claim is extracted by one grammar and checked
 # against the state its unit actually has. A new spelling is caught because it
 # is a claim, not because it was predicted.
+UNIT = r"S1\.P\d\d(?:\.S\d\d)?(?:\.C\d\d)?"
 PRESENT_CLAIM = re.compile(
-    r"`(S1\.P\d\d(?:\.S\d\d)?)`\s+(is|are|remains|remain|will|has|have)\b"
-    r"([^,;:.]{0,60})"
+    rf"`({UNIT})`\s+(is|are|remains|remain|will|has|have)\b([^,;:.]{{0,60}})"
 )
 ACTIVE_PHASE_ID = "S1.P06"
 # The roadmap states ranges -- "`S1.P07` through `S1.P10` remain not started" --
@@ -176,6 +176,12 @@ RANGE_CLAIM = re.compile(
     r"`(S1\.P\d\d(?:\.S\d\d)?)`\s+through\s+`(S1\.P\d\d(?:\.S\d\d)?)`\s+"
     r"(is|are|remains|remain|will|has|have)\b([^,;:.]{0,60})"
 )
+# Coordination is the same shape as a range: several subjects, one predicate.
+COORDINATED_CLAIM = re.compile(
+    r"((?:`S1\.P\d\d(?:\.S\d\d)?`(?:,\s*|\s+and\s+))+`S1\.P\d\d(?:\.S\d\d)?`)"
+    r"\s+(is|are|remains|remain|will|has|have)\b([^;:.]{0,60})"
+)
+COORDINATED_UNIT = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)`")
 
 
 def _expand_range(first: str, last: str) -> list[str]:
@@ -204,6 +210,10 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
         states.add("future")
     if "not started" in text or "not yet started" in text:
         states.add("not_started")
+    # "open", "pending", "outstanding", "unresolved" all assert unfinished
+    # work. No unit is legitimately described that way in this document.
+    if any(word in text for word in ("open", "pending", "outstanding", "unresolved")):
+        states.add("not_started")
     if "next" in text:
         states.add("next")
     if "active" in text or "incomplete" in text:
@@ -214,13 +224,16 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     return states
 
 
-def _allowed_states(unit: str) -> set[str] | None:
+def _allowed_states(unit: str) -> set[str] | None:  # noqa: PLR0911
     """The states one unit may be claimed to be in, or None if it is unknown.
 
     Returning None rather than an empty set matters: a claim about a unit this
     programme does not contain -- "`S1.P06.S13` is next" -- must be refused,
     not silently skipped.
     """
+    if unit == CORRECTION:
+        # A published correction is complete, and never a gate.
+        return {"complete"}
     phase = unit.partition(".S")[0]
     if phase in COMPLETE_PHASES:
         return {"complete"}
@@ -252,6 +265,11 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
             (unit, verb, tail)
             for first, last, verb, tail in RANGE_CLAIM.findall(sentence)
             for unit in _expand_range(first, last)
+        ]
+        ranged += [
+            (unit, verb, tail)
+            for subjects, verb, tail in COORDINATED_CLAIM.findall(sentence)
+            for unit in COORDINATED_UNIT.findall(subjects)
         ]
         for unit, verb, tail in [*PRESENT_CLAIM.findall(sentence), *ranged]:
             states = _claimed_states(verb, tail)
@@ -298,10 +316,17 @@ def _is_past_tense(clause: str) -> bool:
     Detected rather than matched adjacently, so legitimate history keeps its
     modifiers: "was previously owned by" and "had been owned by" are past.
     """
+    # A contrastive or present-time marker ends the auxiliary's reach: in "was
+    # deferred but now belongs to", the auxiliary does not govern "belongs".
+    governed = re.split(
+        r"\b(?:but|however|yet|although|though|now|currently|today|since then)\b",
+        _tail_clause(clause),
+        flags=re.I,
+    )[-1]
     return bool(
         re.search(
-            r"\b(?:was|were|had|has been|have been)\b\s*(?:\w+\s+){0,3}$",
-            _tail_clause(clause),
+            r"\b(?:was|were|had|has been|have been)\b\s*(?:\w+\s+){0,2}$",
+            governed,
             re.I,
         )
     )
