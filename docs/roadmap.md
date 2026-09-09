@@ -1258,10 +1258,10 @@ root-cause, confidence, review, repair-candidate, source-relationship,
 evidence-link, scenario, or environment model, no reusable pattern or
 invariant, and no complete `FaultInstance`; those were taken up by
 `S1.P06.S03` through `S1.P06.S08` and the rest remain owned by `S1.P06.S09`,
-`S1.P07`, `S1.P09`, and `S1.P10`. The two model-valued
-child positions are guarded against untyped Python input exactly as the
-context's are, the raw text fields carry no nominal guard, and a report
-round-trips through JSON while refusing its own `model_dump` as Python input.
+`S1.P07`, `S1.P09`, and `S1.P10`. The two model-valued child positions are
+guarded against untyped Python input exactly as the context's are, the raw
+text fields carry no nominal guard, and a report round-trips through JSON
+while refusing its own `model_dump` as Python input.
 The module still performs no I/O.
 
 `S1.P06.S03` extends `faultatlas.domain.fault` in place as well, so production
@@ -1354,8 +1354,7 @@ source relationship, evidence link, root cause, repair, confidence, review,
 reusable pattern or invariant, and no complete `FaultInstance`. The bounded
 source and history relationships came next, in `S1.P06.S04`, and the repair
 candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S09`, `S1.P07`,
-`S1.P08`, `S1.P09`, and `S1.P10`. The module still
-performs no I/O.
+`S1.P08`, `S1.P09`, and `S1.P10`. The module still performs no I/O.
 
 `S1.P06.S04` adds one new production module,
 `faultatlas.domain.fault_source_relationship`, whose `__all__` is exactly
@@ -1813,9 +1812,9 @@ more than one supplied report, so the aggregate carries a
 `report.context.fault` equals it, keeping logical fault identity, report
 identity and repository context three separate things. Reports for one fault
 may carry different repository contexts, and composing them claims no
-cross-repository applicability. A minimal instance is
-one identity and one substantive report; an identity alone is not a fault
-instance, and every later component is optional.
+cross-repository applicability. A minimal instance is one identity and one
+substantive report; an identity alone is not a fault instance, and every
+later component is optional.
 
 An absent collection means only that this composition carries no values of that
 category. It does not mean that none exists, that a search was performed, or
