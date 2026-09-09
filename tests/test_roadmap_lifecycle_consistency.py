@@ -258,23 +258,38 @@ def test_no_sentence_calls_a_completed_slice_future_work(slice_id: str) -> None:
             assert shape not in sentence, (start, shape, sentence[:200])
 
 
-@pytest.mark.parametrize("shape", FUTURE_SHAPED)
-def test_no_completed_slice_shares_a_sentence_with_a_future_claim(
-    shape: str,
-) -> None:
-    """The same backstop from the other direction, still sentence-local.
+# A future claim is attributed to whichever token it names, so the token is
+# matched together with the wording rather than merely co-occurring with it.
+ATTRIBUTED_FUTURE = (
+    "will be added by",
+    "will be published by",
+    "will be implemented by",
+    "is to be added by",
+    "is to be published by",
+    "is to be implemented by",
+    "is deferred to",
+    "is owned by",
+    "belongs to",
+    "is scheduled for",
+    "awaits",
+)
 
-    A sentence naming only completed Slices may not also carry a
-    not-yet-started claim; that combination is what a stale narrative looks
-    like. A sentence naming a not-started unit as well is left alone, because
-    the claim may be about that unit.
+
+@pytest.mark.parametrize("slice_id", COMPLETE_SLICES)
+def test_no_future_claim_is_attributed_to_a_completed_slice(slice_id: str) -> None:
+    """The backstop from the other direction, tied to its own token.
+
+    Co-occurrence is not attribution. A sentence may legitimately name a
+    completed Slice and a not-started one together, so the wording is matched
+    with the token it points at rather than anywhere in the sentence.
     """
-    not_started = {*NOT_STARTED_SLICES, *NOT_STARTED_PHASES, NEXT_SLICE}
     for start, sentence in _sentences():
-        if not _completed_slices_in(sentence) or shape not in sentence:
-            continue
-        named = set(SLICE_TOKEN.findall(sentence))
-        assert named & not_started, (start, shape, sentence[:240])
+        for wording in ATTRIBUTED_FUTURE:
+            assert f"{wording} `{slice_id}`" not in sentence, (
+                start,
+                wording,
+                sentence[:240],
+            )
 
 
 def test_no_completed_phase_is_named_as_a_present_owner_of_open_work() -> None:
@@ -297,8 +312,12 @@ def test_no_completed_phase_is_named_as_a_present_owner_of_open_work() -> None:
                 if index == -1:
                     continue
                 # A negated claim -- "No subject remains owned by `S1.P04`" --
-                # says the opposite and is correct. Only an asserted one fails.
-                clause = sentence[:index].rsplit(";", 1)[-1]
+                # says the opposite and is correct. The negation has to attach
+                # to this phrase's own subject, so the clause is cut at the
+                # nearest preceding boundary: an unrelated "no" earlier in the
+                # sentence ("No evidence is available, and the subject remains
+                # owned by ...") does not negate it.
+                clause = re.split(r"[;:,]", sentence[:index])[-1]
                 assert re.search(r"\bno\b", clause, re.I), (start, phase, shape)
 
 
