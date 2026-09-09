@@ -230,15 +230,18 @@ def _expand_range(first: str, last: str) -> list[str]:
 
 
 def _asserts(text: str, terms: str) -> bool:
-    """Whether a term group is asserted here rather than denied.
+    """Whether any term in a group is asserted here rather than denied.
 
     Every keyword group goes through this, so a group cannot be added without
-    its negation handling -- which is how three separate false positives
-    against ordinary prose were introduced.
+    its negation handling -- which is how several false positives against
+    ordinary prose were introduced. Each term is judged on its own: in
+    "scheduled but not planned" the denial of one does not deny the other.
     """
-    if not re.search(rf"\b(?:{terms})\b", text):
-        return False
-    return not re.search(rf"\b(?:no|not)\s+(?:\w+\s+){{0,2}}?(?:{terms})\b", text)
+    return any(
+        re.search(rf"\b{term}\b", text)
+        and not re.search(rf"\b(?:no|not)\s+(?:\w+\s+){{0,2}}?{term}\b", text)
+        for term in terms.split("|")
+    )
 
 
 def _claimed_states(verb: str, tail: str) -> set[str]:
@@ -249,7 +252,8 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     """
     states: set[str] = set()
     text = tail.lower()
-    if verb == "will":
+    # "will not be reopened" denies future work rather than claiming it.
+    if verb == "will" and not re.match(r"\s*not\b", text):
         states.add("future")
     if re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
         states.add("not_started")
@@ -746,3 +750,51 @@ def test_the_correction_narrative_records_what_it_changed() -> None:
     )
     assert "It adds no production module" in flat
     assert "does not move the live gate, which stays `S1.P06.S08`" in flat
+
+
+# --- the classifier itself, in both directions --------------------------------
+
+# Four consecutive review rounds found a false positive introduced by the
+# previous round's tightening: each narrowing of what counts as a lifecycle
+# claim moved the boundary onto ordinary prose. These pin the boundary from
+# both sides, on the classifier directly, so the next narrowing has to keep
+# them.
+
+ASSERTED_PREDICATES = (
+    ("is", " complete", {"complete"}),
+    ("is", " active and incomplete", {"active"}),
+    ("is", " next and not started", {"next", "not_started"}),
+    ("is", " inactive", {"inactive"}),
+    ("is", " planned", {"future"}),
+    ("is", " scheduled but not planned", {"future"}),
+    ("will", " implement bounded composition", {"future"}),
+    ("remains", " open", {"not_started"}),
+    # The denial suppresses the completion term and asserts the contradiction.
+    ("is", " not complete", {"negated"}),
+)
+DENIED_PREDICATES = (
+    ("is", " complete with no open subjects", {"complete"}),
+    ("is", " complete but not a public contract", {"complete"}),
+    ("is", " not scheduled for more work", set()),
+    ("will", " not be reopened", set()),
+    ("is", " complete with no pending items", {"complete"}),
+)
+
+
+@pytest.mark.parametrize(("verb", "tail", "expected"), ASSERTED_PREDICATES)
+def test_an_asserted_predicate_classifies_as_its_states(
+    verb: str,
+    tail: str,
+    expected: set[str],
+) -> None:
+    assert _claimed_states(verb, tail) == expected
+
+
+@pytest.mark.parametrize(("verb", "tail", "expected"), DENIED_PREDICATES)
+def test_a_denied_term_contributes_no_state(
+    verb: str,
+    tail: str,
+    expected: set[str],
+) -> None:
+    """A denial is not a claim, and denying one term does not deny its siblings."""
+    assert _claimed_states(verb, tail) == expected
