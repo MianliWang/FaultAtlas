@@ -14,6 +14,16 @@ no production module, and pins no digest of a region the roadmap is designed to
 evolve -- not the whole document, not the `S1.P06` section, not
 `## Current status`, and not `## Current-code mapping`.
 
+What this module is not: it does not reason about language. It reads a closed
+set of lifecycle predicates over a closed set of unit tokens, and one aspect
+distinction is deliberately left outside it -- a present-perfect predicate is
+read as historical, so "the subject has been owned by `S1.P05` historically" is
+admitted, and a contrived "has been owned by `S1.P05` to the present day" would
+be admitted with it. Separating ongoing from completed present perfect is
+tense-aspect semantics, and the alternative -- treating every present perfect
+as a current claim -- would fail ordinary history. That cost is real, so the
+bound is stated here rather than papered over.
+
 Locality is the design constraint. A guard that searches forward from one
 lifecycle sentence until some later terminator can leave its own paragraph and
 borrow a valid sentence from another section, which is how an earlier version
@@ -159,6 +169,27 @@ PRESENT_CLAIM = re.compile(
     r"([^,;:.]{0,60})"
 )
 ACTIVE_PHASE_ID = "S1.P06"
+# The roadmap states ranges -- "`S1.P07` through `S1.P10` remain not started" --
+# and a grammar reading only the unit adjacent to the verb would validate the
+# last endpoint alone.
+RANGE_CLAIM = re.compile(
+    r"`(S1\.P\d\d(?:\.S\d\d)?)`\s+through\s+`(S1\.P\d\d(?:\.S\d\d)?)`\s+"
+    r"(is|are|remains|remain|will|has|have)\b([^,;:.]{0,60})"
+)
+
+
+def _expand_range(first: str, last: str) -> list[str]:
+    """Every unit a `X` through `Y` range names, or nothing if it is not one."""
+    if ".S" in first and ".S" in last:
+        head, _, low = first.partition(".S")
+        other, _, high = last.partition(".S")
+        if head != other:
+            return []
+        return [f"{head}.S{index:02d}" for index in range(int(low), int(high) + 1)]
+    if ".S" not in first and ".S" not in last:
+        low, high = int(first.rpartition(".P")[2]), int(last.rpartition(".P")[2])
+        return [f"S1.P{index:02d}" for index in range(low, high + 1)]
+    return []
 
 
 def _claimed_states(verb: str, tail: str) -> set[str]:
@@ -217,7 +248,12 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
     """
     seen = 0
     for start, sentence in _sentences():
-        for unit, verb, tail in PRESENT_CLAIM.findall(sentence):
+        ranged: list[tuple[str, str, str]] = [
+            (unit, verb, tail)
+            for first, last, verb, tail in RANGE_CLAIM.findall(sentence)
+            for unit in _expand_range(first, last)
+        ]
+        for unit, verb, tail in [*PRESENT_CLAIM.findall(sentence), *ranged]:
             states = _claimed_states(verb, tail)
             if not states:
                 continue
