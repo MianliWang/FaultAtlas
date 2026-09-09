@@ -242,10 +242,14 @@ NEGATABLE_TERMS = f"{COMPLETE_TERMS}|{ACTIVE_TERMS}|{NEXT_TERMS}"
 
 # "not only X but also Y" is a correlative, not a denial of X.
 NEGATOR = r"(?:no longer|not(?!\s+only\b)|no)"
+CONTRASTIVE = r"but|however|yet|although|though|whereas|while"
+# Words a negator may reach across: anything that is not a contrastive
+# conjunction, which ends its scope.
+UNCONTRASTED = rf"(?:(?!\b(?:{CONTRASTIVE})\b)\w+\s+)"
 
 
 def _denials(text: str, term: str) -> int:
-    return len(re.findall(rf"\b{NEGATOR}\s+(?:\w+\s+){{0,2}}?{term}\b", text))
+    return len(re.findall(rf"\b{NEGATOR}\s+{UNCONTRASTED}{{0,2}}?{term}\b", text))
 
 
 def _asserts(text: str, terms: str) -> bool:
@@ -398,7 +402,8 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
 ATTRIBUTED_TO = re.compile(
     rf"\b(?:belongs to|owned by|awaits|"
     rf"(?:is|are|remains?)\s+(?:deferred to|scheduled for|assigned to)|"
-    rf"will be (?:added|published|implemented) by)\s+`({UNIT})`"
+    rf"(?:will|(?:is|are) to) be (?:added|published|implemented|delivered) by)"
+    rf"\s+`({UNIT})`"
 )
 # "the unresolved subject remains `S1.P05` work" puts the unit in the middle.
 WORK_ATTRIBUTION = re.compile(rf"\b(?:is|are|remains?)\s+`({UNIT})`\s+work")
@@ -841,6 +846,9 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     # A term denied once and asserted again is asserted; counting occurrences
     # settles that without clause analysis.
     ("is", " not initially scheduled but is now scheduled", {"future"}),
+    # A negator does not reach across a contrastive: the denial governs
+    # "active" only, and "incomplete" is asserted.
+    ("is", " not active but incomplete", {"active", "negated:active"}),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
