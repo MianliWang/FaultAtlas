@@ -299,7 +299,13 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
         states.add("not_started")
     # Unfinished-work terms. No unit is legitimately described this way here,
     # but a sentence may deny them -- "is complete with no open subjects".
-    if _asserts(text, UNFINISHED_TERMS):
+    # An unfinished term belongs to the unit only while the predicate is still
+    # about the unit. "`S1.P05` is complete with an unresolved subject
+    # transferred to `S5`" describes a different subject after "with".
+    subject_predicate = re.split(
+        r"\b(?:with|including|apart from|except|besides|alongside)\b", text
+    )[0]
+    if _asserts(subject_predicate, UNFINISHED_TERMS):
         states.add("not_started")
     # A planned or proposed unit is being placed in the future.
     if _asserts(text, FUTURE_TERMS):
@@ -904,6 +910,7 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
+    ("is", " complete with an unresolved subject transferred to `S5`", {"complete"}),
     ("is", " complete but not a public contract", {"complete"}),
     ("is", " not scheduled for more work", set()),
     ("will", " not be reopened", set()),
