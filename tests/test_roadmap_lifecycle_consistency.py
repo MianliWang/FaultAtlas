@@ -227,10 +227,14 @@ def _expand_range(first: str, last: str) -> list[str]:
         other, _, high = last.partition(".S")
         if head != other:
             return [first, last]
-        return [f"{head}.S{index:02d}" for index in range(int(low), int(high) + 1)]
+        # Written in either order: a reversed range still names its units.
+        start, stop = sorted((int(low), int(high)))
+        return [f"{head}.S{index:02d}" for index in range(start, stop + 1)]
     if ".S" not in first and ".S" not in last:
-        low, high = int(first.rpartition(".P")[2]), int(last.rpartition(".P")[2])
-        return [f"S1.P{index:02d}" for index in range(low, high + 1)]
+        start, stop = sorted(
+            (int(first.rpartition(".P")[2]), int(last.rpartition(".P")[2]))
+        )
+        return [f"S1.P{index:02d}" for index in range(start, stop + 1)]
     return [first, last]
 
 
@@ -246,7 +250,7 @@ NEGATABLE_TERMS = f"{COMPLETE_TERMS}|{ACTIVE_TERMS}|{NEXT_TERMS}"
 
 
 # "not only X but also Y" is a correlative, not a denial of X.
-NEGATOR = r"(?:no longer|not(?!\s+only\b)|no)"
+NEGATOR = r"(?:no longer|never|not(?!\s+only\b)|no)"
 CONTRASTIVE = r"but|however|yet|although|though|whereas|while"
 # Words a negator may reach across: anything that is not a contrastive
 # conjunction, which ends its scope.
@@ -496,12 +500,12 @@ def test_no_open_work_is_presently_attributed_to_a_completed_unit() -> None:
                 for unit in units:
                     # A unit whose only allowed state is complete has finished,
                     # whatever kind it is: a Phase, a Slice of a completed
-                    # Phase, a completed `S1.P06` Slice, or a correction.
-                    assert _allowed_states(unit) != {"complete"}, (
-                        start,
-                        unit,
-                        sentence[:200],
-                    )
+                    # Phase, a completed `S1.P06` Slice, or a correction. A
+                    # unit the programme does not contain is refused outright,
+                    # rather than passing because it has no allowed states.
+                    allowed = _allowed_states(unit)
+                    assert allowed is not None, (start, unit, sentence[:200])
+                    assert allowed != {"complete"}, (start, unit, sentence[:200])
 
 
 COMPLETION_CLAIM = re.compile(r"`(S1\.P06\.S\d\d)` is complete")
@@ -858,6 +862,7 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     # A negator does not reach across a contrastive: the denial governs
     # "active" only, and "incomplete" is asserted.
     ("is", " not active but incomplete", {"active", "negated:active"}),
+    ("has", " never been completed", {"negated:complete"}),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
