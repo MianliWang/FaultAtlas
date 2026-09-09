@@ -160,34 +160,51 @@ PRESENT_CLAIM = re.compile(
 ACTIVE_PHASE_ID = "S1.P06"
 
 
-def _claimed_state(verb: str, tail: str) -> str | None:
-    """Classify one present-tense predicate into a lifecycle state, or None."""
+def _claimed_states(verb: str, tail: str) -> set[str]:
+    """Every lifecycle state a predicate asserts, not the first one recognised.
+
+    "is next but complete" asserts two states and is self-contradictory; a
+    classifier that returned on the first match would read it as one.
+    """
+    states: set[str] = set()
     text = tail.lower()
     if verb == "will":
-        return "future"
+        states.add("future")
     if "not started" in text or "not yet started" in text:
-        return "not_started"
+        states.add("not_started")
     if "next" in text:
-        return "next"
-    if "active" in text:
-        return "active"
-    if "incomplete" in text:
-        return "active"
-    if "complete" in text:
-        return "complete"
-    return None
+        states.add("next")
+    if "active" in text or "incomplete" in text:
+        states.add("active")
+    # "incomplete" is not a completion claim.
+    if re.search(r"(?<!in)complete", text):
+        states.add("complete")
+    return states
 
 
-def _allowed_states(unit: str) -> set[str]:
-    if unit in COMPLETE_SLICES or unit in COMPLETE_PHASES:
+def _allowed_states(unit: str) -> set[str] | None:
+    """The states one unit may be claimed to be in, or None if it is unknown.
+
+    Returning None rather than an empty set matters: a claim about a unit this
+    programme does not contain -- "`S1.P06.S13` is next" -- must be refused,
+    not silently skipped.
+    """
+    phase = unit.partition(".S")[0]
+    if phase in COMPLETE_PHASES:
         return {"complete"}
-    if unit == NEXT_SLICE:
-        return {"next", "not_started"}
     if unit == ACTIVE_PHASE_ID:
         return {"active"}
-    if unit in NOT_STARTED_SLICES or unit in NOT_STARTED_PHASES:
+    if phase == ACTIVE_PHASE_ID:
+        if unit in COMPLETE_SLICES:
+            return {"complete"}
+        if unit == NEXT_SLICE:
+            return {"next", "not_started"}
+        if unit in NOT_STARTED_SLICES:
+            return {"not_started"}
+        return None
+    if unit in NOT_STARTED_PHASES or phase in NOT_STARTED_PHASES:
         return {"not_started"}
-    return set()
+    return None
 
 
 def test_every_present_tense_state_claim_matches_the_authoritative_state() -> None:
@@ -200,14 +217,19 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
     seen = 0
     for start, sentence in _sentences():
         for unit, verb, tail in PRESENT_CLAIM.findall(sentence):
-            state = _claimed_state(verb, tail)
-            if state is None:
+            states = _claimed_states(verb, tail)
+            if not states:
                 continue
             allowed = _allowed_states(unit)
-            if not allowed:
-                continue
+            assert allowed is not None, (start, unit, sorted(states))
             seen += 1
-            assert state in allowed, (start, unit, state, sorted(allowed), tail[:60])
+            assert states <= allowed, (
+                start,
+                unit,
+                sorted(states),
+                sorted(allowed),
+                tail[:60],
+            )
     # A floor, so a grammar that silently stopped matching would fail here
     # rather than pass vacuously. The document currently carries 68 such claims.
     assert seen >= 60, seen
@@ -216,16 +238,33 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
 # Attribution reads the other way round: the unit is the object, not the
 # subject. One vocabulary covers Slices and Phases alike.
 ATTRIBUTED_TO = re.compile(
-    r"\b(?:belongs to|is owned by|is deferred to|is scheduled for|awaits|"
-    r"is assigned to|will be (?:added|published|implemented) by)\s+"
+    r"(?<!was )(?<!were )\b(?:belongs to|owned by|is deferred to|"
+    r"is scheduled for|awaits|is assigned to|"
+    r"will be (?:added|published|implemented) by)\s+"
     r"`(S1\.P\d\d(?:\.S\d\d)?)`"
 )
 
 
+def _is_negated(clause: str) -> bool:
+    """Whether a negation heads the noun phrase this predicate belongs to."""
+    return bool(
+        re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", re.split(r"[;:,]", clause)[-1], re.I)
+    )
+
+
 def test_no_open_work_is_presently_attributed_to_a_completed_unit() -> None:
-    """A completed Slice or Phase may be a past owner, never the present one."""
+    """A completed Slice or Phase may be a past owner, never the present one.
+
+    The reduced passive counts: "provenance owned by `S1.P09`" attributes just
+    as directly as "is owned by". Past tense is excluded by the lookbehinds, and
+    a negated claim -- "No subject remains owned by `S1.P04`" -- says the
+    opposite and is admitted.
+    """
     for start, sentence in _sentences():
-        for unit in ATTRIBUTED_TO.findall(sentence):
+        for match in ATTRIBUTED_TO.finditer(sentence):
+            unit = match.group(1)
+            if _is_negated(sentence[: match.start()]):
+                continue
             assert unit not in COMPLETE_SLICES, (start, unit, sentence[:200])
             assert unit not in COMPLETE_PHASES, (start, unit, sentence[:200])
 
@@ -288,26 +327,45 @@ def test_no_sentence_anywhere_calls_a_not_started_unit_complete() -> None:
 # --- 6.2 route witness ------------------------------------------------------
 
 
-def _route_entries() -> list[tuple[str, str]]:
-    """The numbered `S1.P06` route, as (slice id, parenthesised state)."""
+def _route_entries() -> list[tuple[str, str, str, str]]:
+    """The numbered `S1.P06` route.
+
+    Each row is (list ordinal, slice id, the slice's numeric suffix,
+    parenthesised state). The ordinal is carried because a Slice sitting at the
+    wrong marker leaves the set of (slice, state) pairs unchanged.
+    """
     text = _text()
     start = text.index("The `S1.P06` route is provisional")
     end = text.index("`S1.P06` consumes the bounded", start)
     block = text[start:end]
-    return re.findall(
-        r"^\d+\.\s+`(S1\.P06\.S\d\d)`[^\n]*(?:\n\s+)?[^\n]*?\((complete|next, not "
+    rows: list[tuple[str, str, str, str]] = re.findall(
+        r"^(\d+)\.\s+`(S1\.P06\.S(\d\d))`[^\n]*(?:\n\s+)?[^\n]*?\((complete|next, not "
         r"started|not started)\)",
         block,
         re.M,
     )
+    return rows
+
+
+def test_the_route_numbers_every_position_in_order() -> None:
+    """The list marker is part of the route, not decoration.
+
+    Swapping two markers leaves the same set of (Slice, state) pairs, so the
+    ordinal is captured and required to match the Slice it labels.
+    """
+    rows = _route_entries()
+
+    assert [ordinal for ordinal, _, _, _ in rows] == [str(n) for n in range(1, 13)]
+    for ordinal, slice_id, suffix, _ in rows:
+        assert int(ordinal) == int(suffix), (ordinal, slice_id)
 
 
 def test_the_route_states_the_authoritative_state_for_every_position() -> None:
     rows = _route_entries()
     # Building the lookup first would let a duplicated row collapse silently.
     assert len(rows) == 12, rows
-    assert len({slice_id for slice_id, _ in rows}) == 12, rows
-    entries = dict(rows)
+    assert len({slice_id for _, slice_id, _, _ in rows}) == 12, rows
+    entries = {slice_id: state for _, slice_id, _, state in rows}
 
     assert len(entries) == 12, sorted(entries)
     for slice_id in COMPLETE_SLICES:
@@ -318,7 +376,7 @@ def test_the_route_states_the_authoritative_state_for_every_position() -> None:
 
 
 def test_the_route_carries_exactly_one_next_position() -> None:
-    states = [state for _, state in _route_entries()]
+    states = [state for _, _, _, state in _route_entries()]
 
     assert states.count("next, not started") == 1
     assert states.count("complete") == len(COMPLETE_SLICES)
@@ -334,7 +392,7 @@ def test_the_correction_is_not_a_numbered_route_position() -> None:
     assert f"`{CORRECTION}`" in block
     assert not re.search(rf"^\d+\.\s+`{re.escape(CORRECTION)}`", block, re.M)
     assert re.search(rf"^- `{re.escape(CORRECTION)}` — ", block, re.M)
-    assert f"`{CORRECTION}`" not in dict(_route_entries())
+    assert CORRECTION not in {slice_id for _, slice_id, _, _ in _route_entries()}
 
 
 # --- 6.3 sentence-local completed-Slice guard -------------------------------
