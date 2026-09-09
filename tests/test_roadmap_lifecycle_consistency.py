@@ -240,17 +240,29 @@ UNFINISHED_TERMS = "open|pending|outstanding|unresolved"
 NEGATABLE_TERMS = f"{COMPLETE_TERMS}|{ACTIVE_TERMS}|{NEXT_TERMS}"
 
 
+# "not only X but also Y" is a correlative, not a denial of X.
+NEGATOR = r"(?:no longer|not(?!\s+only\b)|no)"
+
+
+def _denials(text: str, term: str) -> int:
+    return len(re.findall(rf"\b{NEGATOR}\s+(?:\w+\s+){{0,2}}?{term}\b", text))
+
+
 def _asserts(text: str, terms: str) -> bool:
     """Whether any term in a group is asserted here rather than denied.
 
     Every keyword group goes through this, so a group cannot be added without
     its negation handling -- which is how several false positives against
-    ordinary prose were introduced. Each term is judged on its own: in
-    "scheduled but not planned" the denial of one does not deny the other.
+    ordinary prose were introduced.
+
+    Each term is judged on its own, so in "scheduled but not planned" the
+    denial of one does not deny the other. Occurrences of one term are counted
+    rather than searched, so in "not initially scheduled but is now scheduled"
+    the second occurrence still asserts: a term denied fewer times than it
+    appears is asserted somewhere. Neither needs clause analysis.
     """
     return any(
-        re.search(rf"\b{term}\b", text)
-        and not re.search(rf"\b(?:no|not)\s+(?:\w+\s+){{0,2}}?{term}\b", text)
+        len(re.findall(rf"\b{term}\b", text)) > _denials(text, term)
         for term in terms.split("|")
     )
 
@@ -295,9 +307,7 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
             (ACTIVE_TERMS, "active"),
             (NEXT_TERMS, "next"),
         ):
-            if re.search(
-                rf"\b(?:not|no longer)\s+(?:\w+\s+){{0,2}}?(?:{group})\b", text
-            ):
+            if any(_denials(text, term) for term in group.split("|")):
                 states.add(f"negated:{label}")
     return states
 
@@ -386,8 +396,9 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
 # Attribution reads the other way round: the unit is the object, not the
 # subject. One vocabulary covers Slices and Phases alike.
 ATTRIBUTED_TO = re.compile(
-    rf"\b(?:belongs to|owned by|is deferred to|is scheduled for|awaits|"
-    rf"is assigned to|will be (?:added|published|implemented) by)\s+`({UNIT})`"
+    rf"\b(?:belongs to|owned by|awaits|"
+    rf"(?:is|are|remains?)\s+(?:deferred to|scheduled for|assigned to)|"
+    rf"will be (?:added|published|implemented) by)\s+`({UNIT})`"
 )
 # "the unresolved subject remains `S1.P05` work" puts the unit in the middle.
 WORK_ATTRIBUTION = re.compile(rf"\b(?:is|are|remains?)\s+`({UNIT})`\s+work")
@@ -406,7 +417,7 @@ def _is_negated(clause: str) -> bool:
     tail = _tail_clause(clause)
     return bool(
         re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", tail, re.I)
-        or re.search(r"\bnot\s+(?:\w+\s+){0,2}$", tail, re.I)
+        or re.search(r"\bnot(?!\s+only\b)\s+(?:\w+\s+){0,2}$", tail, re.I)
     )
 
 
@@ -827,6 +838,9 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     # denial ("`S1.P05` is not active") from a contradiction.
     ("is", " not active", {"negated:active"}),
     ("is", " not next", {"negated:next"}),
+    # A term denied once and asserted again is asserted; counting occurrences
+    # settles that without clause analysis.
+    ("is", " not initially scheduled but is now scheduled", {"future"}),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
@@ -875,6 +889,8 @@ NEGATED_CLAUSES: tuple[tuple[str, bool], ...] = (
     ("No subject remains ", True),
     ("The result is `self_owned_open == 0`: no unresolved subject remains ", True),
     ("The subject is ", False),
+    # "not only X but also Y" is a correlative, not a denial of X.
+    ("The subject is not only ", False),
     ("No evidence is available and the subject remains ", False),
 )
 
