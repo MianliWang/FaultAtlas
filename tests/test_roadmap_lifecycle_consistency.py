@@ -106,6 +106,10 @@ def test_the_current_status_section_states_the_authoritative_lifecycle() -> None
         assert f"`{slice_id}` is complete" in section, slice_id
     assert f"`{NEXT_SLICE}` is next and not started" in section
     assert "`S1.P07` through `S1.P10` remain not started" in section
+    for slice_id in (NEXT_SLICE, *NOT_STARTED_SLICES):
+        assert f"`{slice_id}` is complete" not in section, slice_id
+    for phase in NOT_STARTED_PHASES:
+        assert f"`{phase}` is complete" not in section, phase
 
 
 def test_the_current_status_section_records_the_correction_as_complete() -> None:
@@ -155,7 +159,9 @@ def test_every_lifecycle_paragraph_carries_its_own_live_gate() -> None:
         for slice_id in COMPLETE_SLICES:
             assert f"`{slice_id}` is complete" in paragraph, (start, slice_id)
         assert f"`{NEXT_SLICE}` is next and not started" in paragraph, start
-        for slice_id in NOT_STARTED_SLICES:
+        # The live gate is neither complete nor absent from this check: a
+        # paragraph asserting both states at once is self-contradictory.
+        for slice_id in (NEXT_SLICE, *NOT_STARTED_SLICES):
             assert f"`{slice_id}` is complete" not in paragraph, (start, slice_id)
 
 
@@ -312,13 +318,19 @@ def test_no_completed_phase_is_named_as_a_present_owner_of_open_work() -> None:
                 if index == -1:
                     continue
                 # A negated claim -- "No subject remains owned by `S1.P04`" --
-                # says the opposite and is correct. The negation has to attach
-                # to this phrase's own subject, so the clause is cut at the
-                # nearest preceding boundary: an unrelated "no" earlier in the
-                # sentence ("No evidence is available, and the subject remains
-                # owned by ...") does not negate it.
+                # says the opposite and is correct. The negation has to modify
+                # this predicate's own subject, so it must head the noun phrase
+                # immediately before it. An unrelated negation earlier in the
+                # sentence does not negate the claim, whether or not
+                # punctuation separates the two: "No evidence is available and
+                # the subject remains owned by `S1.P05`" still asserts it.
                 clause = re.split(r"[;:,]", sentence[:index])[-1]
-                assert re.search(r"\bno\b", clause, re.I), (start, phase, shape)
+                assert re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", clause, re.I), (
+                    start,
+                    phase,
+                    shape,
+                    clause[-80:],
+                )
 
 
 # --- 6.4 positive assertions for the corrected sentences --------------------
