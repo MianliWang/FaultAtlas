@@ -45,7 +45,8 @@ aspirational Slice as scheduled work.
   `S1.P06.S02` is complete, `S1.P06.S03` is complete,
   `S1.P06.S04` is complete, `S1.P06.S05` is complete,
   `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
-  `S1.P06.S07.C01` correction, and `S1.P06.S08` is next and not started.
+  `S1.P06.S07.C01` correction, `S1.P06.S08` is complete, and
+  `S1.P06.S09` is next and not started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -97,7 +98,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
-`S1.P06.S07.C01` correction, and `S1.P06.S08` is next and not started.
+`S1.P06.S07.C01` correction, `S1.P06.S08` is complete, and
+`S1.P06.S09` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -700,7 +702,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
-`S1.P06.S07.C01` correction, and `S1.P06.S08` is next and not started.
+`S1.P06.S07.C01` correction, `S1.P06.S08` is complete, and
+`S1.P06.S09` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1149,7 +1152,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
-`S1.P06.S07.C01` correction, and `S1.P06.S08` is next and not started.
+`S1.P06.S07.C01` correction, `S1.P06.S08` is complete, and
+`S1.P06.S09` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1253,11 +1257,11 @@ evidence support. `S1.P06.S02` publishes no run, outcome, expected-property,
 root-cause, confidence, review, repair-candidate, source-relationship,
 evidence-link, scenario, or environment model, no reusable pattern or
 invariant, and no complete `FaultInstance`; those were taken up by
-`S1.P06.S03` through `S1.P06.S07` and the rest remain owned by `S1.P06.S08`
-through `S1.P06.S09`, `S1.P07`, `S1.P09`, and `S1.P10`. The two model-valued
-child positions are guarded against untyped Python input exactly as the
-context's are, the raw text fields carry no nominal guard, and a report
-round-trips through JSON while refusing its own `model_dump` as Python input.
+`S1.P06.S03` through `S1.P06.S08` and the rest remain owned by `S1.P06.S09`,
+`S1.P07`, `S1.P09`, and `S1.P10`. The two model-valued child positions are
+guarded against untyped Python input exactly as the context's are, the raw
+text fields carry no nominal guard, and a report round-trips through JSON
+while refusing its own `model_dump` as Python input.
 The module still performs no I/O.
 
 `S1.P06.S03` extends `faultatlas.domain.fault` in place as well, so production
@@ -1349,9 +1353,8 @@ differing contents are not reconciled here, and `S1.P06.S03` published no
 source relationship, evidence link, root cause, repair, confidence, review,
 reusable pattern or invariant, and no complete `FaultInstance`. The bounded
 source and history relationships came next, in `S1.P06.S04`, and the repair
-candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S08` through
-`S1.P06.S09`, `S1.P07`, `S1.P08`, `S1.P09`, and `S1.P10`. The module still
-performs no I/O.
+candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S09`, `S1.P07`,
+`S1.P08`, `S1.P09`, and `S1.P10`. The module still performs no I/O.
 
 `S1.P06.S04` adds one new production module,
 `faultatlas.domain.fault_source_relationship`, whose `__all__` is exactly
@@ -1549,8 +1552,8 @@ head revision: it may be an intermediate revision, the head, a later one, or any
 other commit the caller chose. A candidate change set's pull-request repository is
 likewise not required to equal the report's repository context. No value here has
 the aggregate authority to say which associations form one complete candidate
-record, which is `S1.P06.S08` work on bounded `FaultInstance` composition and
-reference integrity.
+record, which became `S1.P06.S08` work on bounded `FaultInstance` composition
+and reference integrity.
 
 `S1.P06.S05` adds no candidate-to-source-object relation, since `S1.P06.S04`
 already publishes the weak report-to-source and report-to-history associations
@@ -1651,8 +1654,8 @@ nor a never-started run, and not that the result is unknown as a positive claim.
 report or the repair candidate is correct, or that evidence supports it, and it
 carries no evidence, confidence, review, or correctness field. Two outcome
 records may name one run and disagree; this layer neither resolves nor flags
-that, since composing or reviewing conflicting reported knowledge is
-`S1.P06.S08` and `S1.P09` work.
+that: composing conflicting reported knowledge became `S1.P06.S08` work, and
+reviewing it remains `S1.P09` work.
 
 `FaultTestRunRevisionAssociation` carries exactly `run` and `revision`, reusing
 `GitCommitIdentity` whole and intrinsically, and claims no repository membership,
@@ -1767,7 +1770,7 @@ expected property universally, a later reported success does not disprove an
 earlier hypothesis, and a merge accepts nothing. The module publishes no
 relation to repair candidates, test material, runs, outcomes, comparisons,
 source objects, history facts, or evidence records, and co-presence manufactures
-none. Bounded composition and reference integrity remain `S1.P06.S08` work.
+none. Bounded composition and reference integrity became `S1.P06.S08` work.
 
 All three records are frozen, strict, extra-forbidding and always-revalidating,
 close both model-valued positions to untyped Python input without being
@@ -1796,7 +1799,70 @@ narrative rule sentence-locally. Two diverged copies of that rule are removed
 from the product Slice oracles, which keep their own product-specific roadmap
 facts.
 
-The `S1.P06` route is provisional beyond `S1.P06.S07`. Later exact schemas are
+`S1.P06.S08` adds one new production module,
+`faultatlas.domain.fault_instance`, whose `__all__` is exactly `FaultInstance`,
+so production Python sources move from 18 to 19. It is the first aggregate in
+the Phase, and it composes the values `S1.P06.S01` through `S1.P06.S07`
+published without redefining any of them; those modules are unchanged by it and
+none of them imports it.
+
+The logical subject is the fault, not a report. One fault may be described by
+more than one supplied report, so the aggregate carries a
+`FaultInstanceIdentity` and one or more reports whose own
+`report.context.fault` equals it, keeping logical fault identity, report
+identity and repository context three separate things. Reports for one fault
+may carry different repository contexts, and composing them claims no
+cross-repository applicability. A minimal instance is one identity and one
+substantive report; an identity alone is not a fault instance, and every
+later component is optional.
+
+An absent collection means only that this composition carries no values of that
+category. It does not mean that none exists, that a search was performed, or
+that anything is unavailable, unsupported, impossible or disproved, so an
+omitted collection and an explicitly empty one are the same value, `None` is
+refused, and no completeness, exhaustiveness or resolution field exists.
+
+Reference integrity is by whole published record rather than by matching an
+embedded identifier, because two records may carry one subject identity while
+disagreeing in their supplied content and a scalar match would silently choose
+one of them. A dangling reference is refused rather than repaired: nothing is
+auto-inserted from the value that referenced it. Within one composition each
+primary subject identity occurs at most once in its own collection, whether the
+two records are identical or contradictory; that is local composition integrity
+and not a global registry, it is per nominal identity type so one scalar may
+still name a fault and a run at once, and collections without a subject
+identity of their own carry no uniqueness rule.
+
+Conflicts survive composition. Two outcome records may name one run and
+disagree, several explanations or hypotheses may contradict each other about
+one report, and several repair candidates may address one report; this layer
+neither rejects the conflict, chooses a winner, marks a run flaky, nor derives
+a confidence, since reviewing conflicting reported knowledge is `S1.P09` work.
+
+Reference closure creates no semantic edge a predecessor did not publish. A
+pull request associated with a report does not support a candidate carrying a
+change set from it, a candidate revision equal to a run revision does not make
+the run a test of the candidate, a `failed` to `passed` comparison does not
+make a repair correct, and a passing outcome does not verify an expected
+property. Nothing requires a candidate revision to equal a change set's head, a
+run revision to equal a repair revision, or a source object's repository to
+equal its report's.
+
+Order is preserved exactly as supplied and carries no priority, confidence,
+causality, chronology or ownership; nothing is sorted or canonicalised, and
+canonical durable ordering remains `S1.P10` work. No evidence is consumed: the
+fault-evidence bridge remains `S1.P06.S09` work, and the `S1.P06.S04`
+associations stay weak associations rather than becoming support. Each
+collection is bounded to a fixed private maximum that limits one in-memory
+composition and is neither a claim about how many records may exist nor a
+durable-format limit. The aggregate is frozen, strict, extra-forbidding and
+always-revalidating, closes the composed subject and every collection to
+untyped Python input, and performs no I/O. The subject needs its own guard:
+a `RootModel` field reconstructs from its own root type even under strict
+validation, so a bare UUID would otherwise be accepted where a published
+identity is meant.
+
+The `S1.P06` route is provisional beyond `S1.P06.S08`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -1812,9 +1878,10 @@ tests before the corpus Slice:
    (complete)
 - `S1.P06.S07.C01` — Roadmap Lifecycle Narrative Consistency Correction
   (complete)
-8. `S1.P06.S08` — Bounded `FaultInstance` composition and reference integrity
+8. `S1.P06.S08` — Bounded `FaultInstance` Composition and Reference Integrity
+   (complete)
+9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical
    (next, not started)
-9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical (not started)
 10. `S1.P06.S10` — Deferred disposition and readiness (not started)
 11. `S1.P06.S11` — Accumulated contract corpus (not started)
 12. `S1.P06.S12` — Integration and Phase closure (not started)
@@ -2096,8 +2163,27 @@ material, runs, outcomes, or comparisons, to which the module publishes no
 relation at all. All three records are frozen, strict, extra-forbidding and
 always-revalidating, close both model-valued positions to untyped Python input,
 declare no alias and no nullable field, round-trip through JSON while refusing
-their own `model_dump` as Python input, and perform no I/O. Production Python
-sources are 18.
+their own `model_dump` as Python input, and perform no I/O.
+`S1.P06.S08` adds the module `faultatlas.domain.fault_instance`, whose `__all__`
+is exactly `FaultInstance`: one frozen strict aggregate of seventeen fields
+composing the records `S1.P06.S01` through `S1.P06.S07` publish. It carries one
+`FaultInstanceIdentity` and one or more `SuppliedFaultReport` values whose
+`report.context.fault` equals it, so one logical fault may be described by
+several reports in several repository contexts, and fifteen further collections
+default to empty tuples. An absent collection means absent from this
+composition, never known nonexistence, and `None` is refused. Reference
+integrity is by whole record: a scenario's report, an association's report, a
+candidate's report, a material's report and an interpretation's report must be
+exact members of `reports`; an occurrence's scenario, a repair association's
+candidate, a run's material, an outcome's run and a comparison's before and
+after must be exact members of their own collections. Dangling references are
+refused rather than auto-inserted, and each primary subject identity occurs at
+most once inside one composition, per nominal identity type. Conflicting
+outcomes for one run and conflicting explanations or hypotheses for one report
+coexist without resolution, no semantic edge is inferred across layers, order is
+preserved without meaning, no evidence, support or confidence is carried, the
+composed subject and every collection are closed to untyped Python input, and
+the module performs no I/O. Production Python sources are 19.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
@@ -2106,7 +2192,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
-`S1.P06.S07.C01` correction, and `S1.P06.S08` is next and not started.
+`S1.P06.S07.C01` correction, `S1.P06.S08` is complete, and
+`S1.P06.S09` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,

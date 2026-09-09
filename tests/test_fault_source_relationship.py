@@ -2818,7 +2818,7 @@ def test_only_the_declared_private_helpers_exist() -> None:
         assert name not in relationship_module.__all__
 
 
-def test_the_tracked_production_inventory_is_eighteen_modules() -> None:
+def test_the_tracked_production_inventory_is_nineteen_modules() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -2829,7 +2829,7 @@ def test_the_tracked_production_inventory_is_eighteen_modules() -> None:
     observed = sorted(tracked.stdout.decode("utf-8").split())
 
     assert observed == [f"src/{name}" for name in EXPECTED_PRODUCTION_MODULES]
-    assert len(observed) == 18
+    assert len(observed) == 19
     assert "src/faultatlas/domain/fault_source_relationship.py" in observed
 
 
@@ -2851,7 +2851,8 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
     assert "`S1.P06.S05` is complete" in roadmap
     assert "`S1.P06.S06` is complete" in roadmap
     assert "`S1.P06.S07` is complete" in roadmap
-    assert "`S1.P06.S08` is next and not started" in roadmap
+    assert "`S1.P06.S08` is complete" in roadmap
+    assert "`S1.P06.S09` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P06.S04` — Bounded Source and History Relationships (complete)" in roadmap
@@ -2872,7 +2873,7 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
     assert "faultatlas.domain.fault_source_relationship" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    assert "Production Python sources are 18." in current
+    assert "Production Python sources are 19." in current
     assert "`association.report.context.fault`" in roadmap
 
     # The superseded live gate and the provisional S04 title must be retired.
@@ -2881,7 +2882,7 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
         roadmap
     )
     assert "`S1.P06` is complete" not in roadmap
-    assert "`S1.P06.S08` is complete" not in roadmap
+    assert "`S1.P06.S09` is complete" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
 
@@ -2929,12 +2930,12 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S08"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P06.S09"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P06.S08`" in line, line
+            assert "`S1.P06.S09`" in line, line
 
 
 # --- packaging and an isolated installed-wheel smoke --------------------------
@@ -3096,6 +3097,7 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/compatibility.py",
     "faultatlas/domain/evidence.py",
     "faultatlas/domain/fault.py",
+    "faultatlas/domain/fault_instance.py",
     "faultatlas/domain/fault_interpretation.py",
     "faultatlas/domain/fault_repair.py",
     "faultatlas/domain/fault_source_relationship.py",
@@ -3119,7 +3121,7 @@ def test_the_wheel_ships_the_bridge_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 18
+    assert len(modules) == 19
     assert "faultatlas/domain/fault_source_relationship.py" in modules
     assert "faultatlas/domain/fault.py" in modules
     for name in names:
@@ -3139,7 +3141,7 @@ def test_the_sdist_ships_the_bridge_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 18
+    assert len(modules) == 19
     assert "faultatlas/domain/fault_source_relationship.py" in modules
     for name in names:
         parts = Path(name).parts
