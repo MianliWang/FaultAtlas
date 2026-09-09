@@ -211,13 +211,13 @@ def _is_known_unit(unit: str) -> bool:
 # and a grammar reading only the unit adjacent to the verb would validate the
 # last endpoint alone.
 RANGE_CLAIM = re.compile(
-    r"`(S1\.P\d\d(?:\.S\d\d)?)`\s+through\s+`(S1\.P\d\d(?:\.S\d\d)?)`"
-    r"(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b([^,;:.]{0,60})"
+    rf"`(S1\.P\d\d(?:\.S\d\d)?)`\s+through\s+`(S1\.P\d\d(?:\.S\d\d)?)`"
+    rf"(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b({TAIL})"
 )
 # Coordination is the same shape as a range: several subjects, one predicate.
 COORDINATED_CLAIM = re.compile(
     rf"((?:`{UNIT}`(?:,\s+and\s+|,\s*|\s+and\s+))+`{UNIT}`)"
-    rf"(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b([^;:.]{{0,60}})"
+    rf"(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b({TAIL})"
 )
 COORDINATED_UNIT = re.compile(rf"`({UNIT})`")
 
@@ -296,12 +296,17 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     # "will not be reopened" and "will never be reopened" deny future work
     # rather than claiming it. Each coordinate is judged on its own, so "will
     # not be reopened but will implement more work" still claims the future.
-    if verb == "will" and any(
-        segment.strip() and not re.match(rf"\s*(?:will\s+)?{NEGATOR}\b", segment)
-        for segment in re.split(rf"\b(?:{CONTRASTIVE})\b", text)
-    ):
-        states.add("future")
-    if re.search(rf"\b{NEGATOR}\s+(?:yet\s+)?started\b", text):
+    if verb == "will":
+        segments = [s for s in re.split(rf"\b(?:{CONTRASTIVE})\b", text) if s.strip()]
+        for index, segment in enumerate(segments):
+            # The leading coordinate inherits the verb; a later one is a future
+            # claim only if it carries its own "will".
+            if index and not re.match(r"\s*will\b", segment):
+                continue
+            if not re.match(rf"\s*(?:will\s+)?{NEGATOR}\b", segment):
+                states.add("future")
+                break
+    if re.search(rf"\b{NEGATOR}\s+(?:yet\s+|been\s+|yet been\s+)?started\b", text):
         states.add("not_started")
     # Unfinished-work terms. No unit is legitimately described this way here,
     # but a sentence may deny them -- "is complete with no open subjects".
@@ -324,7 +329,7 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     # Negation is bound to the term it modifies. "is complete but not a public
     # contract" negates "contract", not "complete", and stays a completion
     # claim; "is not complete" does not.
-    if not re.search(rf"\b{NEGATOR}\s+(?:yet\s+)?started\b", text):
+    if not re.search(rf"\b{NEGATOR}\s+(?:yet\s+|been\s+|yet been\s+)?started\b", text):
         for group, label in (
             (COMPLETE_TERMS, "complete"),
             (ACTIVE_TERMS, "active"),
@@ -474,7 +479,7 @@ def _is_past_tense(clause: str, *, shares_auxiliary: bool = False) -> bool:
     governed = re.split(rf"\b(?:{markers})\b", _tail_clause(clause), flags=re.I)[-1]
     return bool(
         re.search(
-            r"\b(?:was|were|had|(?:has|have)(?:\s+\w+)?\s+been)\b"
+            r"\b(?:was|were|had|(?:has|have)(?:\s+\w+){0,2}\s+been)\b"
             r"\s*(?:\w+\s+){0,2}$",
             governed,
             re.I,
@@ -879,6 +884,9 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     # Each coordinate of a future claim is judged on its own.
     ("will", " not be reopened but will implement more work", {"future"}),
     ("is", " complete, but remains open", {"complete", "not_started"}),
+    ("has", " not been started", {"not_started"}),
+    # A later coordinate is a future claim only if it carries its own "will".
+    ("will", " not be reopened but `S1.P09` owns the remainder", set()),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
@@ -912,6 +920,7 @@ TENSE_CASES: tuple[tuple[str, bool, bool], ...] = (
     ("The subject was previously ", True, True),
     ("The subject had been ", True, True),
     ("The subject has previously been ", True, True),
+    ("The subject has only recently been ", True, True),
     ("The subject is ", True, False),
     # One auxiliary shared across two passive participles is history.
     ("The subject was reviewed and ", True, True),
