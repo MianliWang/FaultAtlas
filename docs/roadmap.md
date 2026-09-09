@@ -1778,21 +1778,23 @@ optional or nullable field, round-trip through JSON while refusing their own
 `S1.P06.S07.C01` corrects roadmap lifecycle narrative without changing any
 published contract. It adds no production module, revises no `S1.P06.S01`
 through `S1.P06.S07` semantics, and does not move the live gate, which stays
-`S1.P06.S08`. A whole-roadmap sentence-local audit reconciled every present
-tense lifecycle and ownership statement against the current state and found one
-stale claim: the `S1.P05.S01` narrative still named `S1.P05` as the present
-owner of the `S1.P02` `deferred:19` default-branch observation, although
-`S1.P05` is complete and `S1.P05.S08` had carried that subject forward to `S5`.
-The clause is now past tense and names the current owner. Correct later
-ownership was left exactly as it stood, including confidence, review and
-interpretation provenance owned by
+`S1.P06.S08`. A whole-roadmap sentence-local audit reconciled every
+present-tense lifecycle and ownership statement against the current state and
+found one stale claim: the `S1.P05.S01` narrative still named `S1.P05` as the
+present owner of the `S1.P02` `deferred:19` default-branch observation,
+although `S1.P05` is complete and `S1.P05.S08` had carried that subject forward
+to `S5`. The claim had stood since `S1.P05.S08` itself, which introduced the
+carry-forward statement beside it. The clause is now past tense and names the
+current owner. Correct later ownership was left exactly as it stood, including
+confidence, review and interpretation provenance owned by
 `S1.P09`, the fault-evidence bridge owned by `S1.P06.S09`, durable byte
 contracts owned by `S1.P10`, pattern and invariant generalization owned by
 `S1.P07`, and the repository-graph and ingestion subjects owned by `S5` and
 `S2`. The correction also publishes
 `tests/test_roadmap_lifecycle_consistency.py`, which owns this cross-Slice
-narrative rule sentence-locally so it is no longer spread across product Slice
-oracles.
+narrative rule sentence-locally. Two diverged copies of that rule are removed
+from the product Slice oracles, which keep their own product-specific roadmap
+facts.
 
 The `S1.P06` route is provisional beyond `S1.P06.S07`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused

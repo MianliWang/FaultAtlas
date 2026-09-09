@@ -2,9 +2,12 @@
 
 This module owns one rule, published by `S1.P06.S07.C01`: the roadmap must not
 describe already-published work as current or future work, anywhere in the
-document. Before this Slice the rule was spread across product Slice oracles,
-where two same-named copies had diverged and neither was sentence-local, and a
-sentence stale since `S1.P06.S03` survived both.
+document. Before this Slice that rule lived in product Slice oracles, where two
+same-named copies had diverged and neither was sentence-local, and a sentence
+that had been stale since `S1.P05.S08` survived both. Those two copies are
+gone. The document-wide gate and status checks here deliberately overlap with
+the product oracles rather than replacing them: those assert product-specific
+roadmap facts, and this asserts the narrative rule.
 
 Everything here reads prose. It asserts nothing about product semantics, owns
 no production module, and pins no digest of a region the roadmap is designed to
@@ -18,9 +21,12 @@ of a predecessor guard was weakened: a summary that had lost its own live-gate
 claim silently satisfied itself from a claim tens of thousands of characters
 away. Every check below is bounded to one paragraph or one sentence.
 
-Sentence segmentation splits on ". ", which is exact for this document: the
+Sentence segmentation splits on ". ". In prose that boundary is exact: the
 periods inside a Slice token such as `S1.P06.S01` are never followed by a
-space, so no boundary is invented and none is missed.
+space, so no prose sentence is split in the middle and none is run together.
+In an ordered list it splits at the list markers too, which is harmless here
+because route state is parsed structurally by `_route_entries` rather than by
+sentence, and every route item is self-contained.
 """
 
 from __future__ import annotations
@@ -127,10 +133,10 @@ def test_the_correction_is_not_a_gate_and_not_a_phase(  # noqa: D401
     """A correction may never appear as a gate or an active phase anywhere."""
     flat = _flat(_text())
 
-    assert f"`{CORRECTION}` is next and not started" not in flat
     assert f"`{CORRECTION}` is active and incomplete" not in flat
+    # Subsumes the "is next and not started" form.
     assert f"`{CORRECTION}` is next" not in flat
-    assert CORRECTION not in {gate for gate in GATE_CLAIM.findall(flat)}
+    assert f"`{CORRECTION}` is not started" not in flat
 
 
 def test_the_document_names_exactly_one_live_p06_product_gate() -> None:
@@ -141,28 +147,59 @@ def test_the_document_names_exactly_one_live_p06_product_gate() -> None:
     assert set(ACTIVE_PHASE.findall(flat)) == {"S1.P06"}
 
 
-def test_every_lifecycle_paragraph_carries_its_own_live_gate() -> None:
-    """Locality: each paragraph claiming the P06 lifecycle states its own gate.
+COMPLETION_CLAIM = re.compile(r"`(S1\.P06\.S\d\d)` is complete")
+# A sentence enumerating this many completed Slices is a lifecycle summary,
+# whatever phrase introduces it.
+LIFECYCLE_ENUMERATION = 3
+LIFECYCLE_SENTENCES = 5
 
-    A paragraph that enumerates the completed Slices and omits the live gate
-    would be satisfied by a document-wide search, which is exactly the failure
-    this module exists to prevent. Each such paragraph is checked alone.
+
+def _lifecycle_sentences() -> list[tuple[int, str]]:
+    """Sentences that enumerate the P06 lifecycle, selected by what they say.
+
+    Keying on an introductory phrase such as "`S1.P06` is active and
+    incomplete" would let a summary escape by omitting it, so the enumeration
+    itself is the key.
     """
-    lifecycle: list[tuple[int, str]] = [
-        (start, paragraph)
-        for start, paragraph in _paragraphs()
-        if "`S1.P06` is active and incomplete" in paragraph
+    return [
+        (start, sentence)
+        for start, sentence in _sentences()
+        if len(COMPLETION_CLAIM.findall(sentence)) >= LIFECYCLE_ENUMERATION
     ]
 
-    assert len(lifecycle) >= 4, len(lifecycle)
-    for start, paragraph in lifecycle:
+
+def test_every_lifecycle_sentence_carries_its_own_live_gate() -> None:
+    """Locality, at sentence granularity rather than paragraph granularity.
+
+    A paragraph is the wrong bound: the largest in this document is around
+    21,000 characters, so a paragraph-local check would still let one lifecycle
+    claim borrow a valid gate sentence from far away inside it. The lifecycle
+    claim is one sentence, so that is the unit checked.
+    """
+    lifecycle = _lifecycle_sentences()
+
+    assert len(lifecycle) == LIFECYCLE_SENTENCES, len(lifecycle)
+    for start, sentence in lifecycle:
         for slice_id in COMPLETE_SLICES:
-            assert f"`{slice_id}` is complete" in paragraph, (start, slice_id)
-        assert f"`{NEXT_SLICE}` is next and not started" in paragraph, start
+            assert f"`{slice_id}` is complete" in sentence, (start, slice_id)
+        assert f"`{NEXT_SLICE}` is next and not started" in sentence, start
         # The live gate is neither complete nor absent from this check: a
-        # paragraph asserting both states at once is self-contradictory.
+        # sentence asserting both states at once is self-contradictory.
         for slice_id in (NEXT_SLICE, *NOT_STARTED_SLICES):
-            assert f"`{slice_id}` is complete" not in paragraph, (start, slice_id)
+            assert f"`{slice_id}` is complete" not in sentence, (start, slice_id)
+
+
+def test_no_sentence_anywhere_calls_a_not_started_unit_complete() -> None:
+    """The inverse error, document-wide and sentence-local.
+
+    A completion claim for a unit that has not started contradicts the
+    authoritative state wherever it stands, including outside any lifecycle
+    summary.
+    """
+    for start, sentence in _sentences():
+        for unit in (NEXT_SLICE, *NOT_STARTED_SLICES, *NOT_STARTED_PHASES):
+            assert f"`{unit}` is complete" not in sentence, (start, unit)
+            assert f"`{unit}` was completed" not in sentence, (start, unit)
 
 
 # --- 6.2 route witness ------------------------------------------------------
@@ -215,22 +252,10 @@ def test_the_correction_is_not_a_numbered_route_position() -> None:
 
 # --- 6.3 sentence-local completed-Slice guard -------------------------------
 
+
 # A bounded lexical backstop, not a semantic model. It is applied to one
 # sentence at a time and only where that sentence names a completed Slice; it
 # discovers formulations, and the positive assertions below carry the meaning.
-FUTURE_SHAPED = (
-    "is next and not started",
-    "is next",
-    "is not started",
-    "remains not started",
-    "remain not started",
-    "yet to be",
-    "will be added by",
-    "will be published by",
-    "will be implemented by",
-)
-
-
 def _completed_slices_in(sentence: str) -> list[str]:
     return [
         token for token in SLICE_TOKEN.findall(sentence) if token in COMPLETE_SLICES
@@ -253,7 +278,14 @@ def test_no_sentence_calls_a_completed_slice_future_work(slice_id: str) -> None:
         for shape in (
             f"`{slice_id}` is next",
             f"`{slice_id}` is not started",
+            f"`{slice_id}` has not started",
+            f"`{slice_id}` has not begun",
             f"`{slice_id}` remains not started",
+            f"`{slice_id}` remains future",
+            f"`{slice_id}` remains open",
+            f"`{slice_id}` is planned",
+            f"`{slice_id}` is not yet",
+            f"`{slice_id}` will",
             f"remain `{slice_id}` work",
             f"remains `{slice_id}` work",
             f"remain owned by `{slice_id}`",
