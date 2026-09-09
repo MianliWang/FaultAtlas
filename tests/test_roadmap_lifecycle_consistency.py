@@ -1,0 +1,989 @@
+"""Cross-Slice lifecycle-narrative consistency for `docs/roadmap.md`.
+
+This module owns one rule, published by `S1.P06.S07.C01`: the roadmap must not
+describe already-published work as current or future work, anywhere in the
+document. Before this Slice that rule lived in product Slice oracles, where two
+same-named copies had diverged and neither was sentence-local, and a sentence
+that had been stale since `S1.P05.S08` survived both. Those two copies are
+gone. The document-wide gate and status checks here deliberately overlap with
+the product oracles rather than replacing them: those assert product-specific
+roadmap facts, and this asserts the narrative rule.
+
+Everything here reads prose. It asserts nothing about product semantics, owns
+no production module, and pins no digest of a region the roadmap is designed to
+evolve -- not the whole document, not the `S1.P06` section, not
+`## Current status`, and not `## Current-code mapping`.
+
+What this module is not: it does not reason about language. It reads a closed
+set of lifecycle predicates over a closed set of unit tokens, and one aspect
+distinction is deliberately left outside it -- a present-perfect predicate is
+read as historical, so "the subject has been owned by `S1.P05` historically" is
+admitted, and a contrived "has been owned by `S1.P05` to the present day" would
+be admitted with it. Separating ongoing from completed present perfect is
+tense-aspect semantics, and the alternative -- treating every present perfect
+as a current claim -- would fail ordinary history. That cost is real, so the
+bound is stated here rather than papered over.
+
+Locality is the design constraint. A guard that searches forward from one
+lifecycle sentence until some later terminator can leave its own paragraph and
+borrow a valid sentence from another section, which is how an earlier version
+of a predecessor guard was weakened: a summary that had lost its own live-gate
+claim silently satisfied itself from a claim tens of thousands of characters
+away. Every check below is bounded to one paragraph or one sentence.
+
+Sentence segmentation splits on ". ". In prose that boundary is exact: the
+periods inside a Slice token such as `S1.P06.S01` are never followed by a
+space, so no prose sentence is split in the middle and none is run together.
+In an ordered list it splits at the list markers too, which is harmless here
+because route state is parsed structurally by `_route_entries` rather than by
+sentence, and every route item is self-contained.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
+
+# The authoritative current state this module reconciles prose against.
+COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 8))
+COMPLETE_PHASES = ("S1.P00", "S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05")
+NEXT_SLICE = "S1.P06.S08"
+NOT_STARTED_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(9, 13))
+NOT_STARTED_PHASES = ("S1.P07", "S1.P08", "S1.P09", "S1.P10")
+CORRECTION = "S1.P06.S07.C01"
+
+# A Slice token, deliberately excluding a `.C01` correction suffix: a
+# correction is a child of its Slice, never a gate of its own.
+SLICE_TOKEN = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)`")
+GATE_CLAIM = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started")
+ACTIVE_PHASE = re.compile(r"`(S1\.P\d\d)` is active and incomplete")
+
+
+def _text() -> str:
+    return ROADMAP.read_text(encoding="utf-8")
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _paragraphs() -> list[tuple[int, str]]:
+    """Blank-line separated paragraphs, each flattened, with its start line."""
+    paragraphs: list[tuple[int, str]] = []
+    current: list[str] = []
+    start = 0
+    for number, line in enumerate(_text().splitlines(), 1):
+        if line.strip():
+            if not current:
+                start = number
+            current.append(line)
+        elif current:
+            paragraphs.append((start, _flat(" ".join(current))))
+            current = []
+    if current:
+        paragraphs.append((start, _flat(" ".join(current))))
+    return paragraphs
+
+
+def _sentences() -> list[tuple[int, str]]:
+    """Every sentence in the document, each with the line its paragraph starts on.
+
+    The span is the paragraph rather than the sentence because a sentence may
+    wrap; it is used only to report where a failure lives.
+    """
+    return [
+        (start, sentence.strip())
+        for start, paragraph in _paragraphs()
+        for sentence in paragraph.split(". ")
+        if sentence.strip()
+    ]
+
+
+def _section(heading: str) -> str:
+    """One `##` section, bounded by the next `##` heading."""
+    text = _text()
+    start = text.index(f"## {heading}")
+    remainder = text.index("\n## ", start + 1)
+    return _flat(text[start:remainder])
+
+
+# --- 6.1 current-state structural witness ---------------------------------
+
+
+def test_the_current_status_section_states_the_authoritative_lifecycle() -> None:
+    section = _section("Current status")
+
+    assert "`S1.P06` is active and incomplete" in section
+    for slice_id in COMPLETE_SLICES:
+        assert f"`{slice_id}` is complete" in section, slice_id
+    assert f"`{NEXT_SLICE}` is next and not started" in section
+    assert "`S1.P07` through `S1.P10` remain not started" in section
+    for slice_id in (NEXT_SLICE, *NOT_STARTED_SLICES):
+        assert f"`{slice_id}` is complete" not in section, slice_id
+    for phase in NOT_STARTED_PHASES:
+        assert f"`{phase}` is complete" not in section, phase
+
+
+def test_the_current_status_section_records_the_correction_as_complete() -> None:
+    """C01 is recorded as a child of `S1.P06.S07`, following `S1.P05.S08.C01`."""
+    section = _section("Current status")
+
+    assert f"`{CORRECTION}` correction" in section
+    assert f"`S1.P06.S07` is complete including the `{CORRECTION}` correction" in (
+        section
+    )
+
+
+def test_the_correction_is_not_a_gate_and_not_a_phase(  # noqa: D401
+) -> None:
+    """A correction may never appear as a gate or an active phase anywhere."""
+    flat = _flat(_text())
+
+    assert f"`{CORRECTION}` is active and incomplete" not in flat
+    # Subsumes the "is next and not started" form.
+    assert f"`{CORRECTION}` is next" not in flat
+    assert f"`{CORRECTION}` is not started" not in flat
+
+
+def test_the_document_names_exactly_one_live_p06_product_gate() -> None:
+    flat = _flat(_text())
+    gates = set(GATE_CLAIM.findall(flat))
+
+    assert gates == {NEXT_SLICE}, sorted(gates)
+    assert set(ACTIVE_PHASE.findall(flat)) == {"S1.P06"}
+
+
+# Enumerating forbidden phrasings does not converge: each round of review
+# supplies a spelling the previous list did not hold. The present-tense state
+# vocabulary of this document is small and closed, so the set is inverted --
+# every present-tense state claim is extracted by one grammar and checked
+# against the state its unit actually has. A new spelling is caught because it
+# is a claim, not because it was predicted.
+UNIT = r"S1\.P\d\d(?:\.S\d\d)?(?:\.C\d\d)?"
+# A contrastive conjunction bounds how far a negation, an auxiliary or a
+# predicate tail may reach; it is used by several of the grammars below.
+CONTRASTIVE = r"but|however|yet|although|though|whereas|while"
+# A tail may cross a comma only when a contrastive follows it: "is complete,
+# but remains open" is one predicate pair, while "is complete, `S1.P06.S02` is
+# complete" is two separate claims and must stop at the comma.
+TAIL = rf"(?:[^,;:.]|,\s+(?:{CONTRASTIVE})\b){{0,80}}"
+PRESENT_CLAIM = re.compile(
+    rf"`({UNIT})`(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b({TAIL})"
+)
+ACTIVE_PHASE_ID = "S1.P06"
+# How many Slices each Phase contains. A child that does not exist may not
+# inherit its Phase's completed state.
+PHASE_SLICE_COUNT = {
+    "S1.P00": 10,
+    "S1.P01": 6,
+    "S1.P02": 7,
+    "S1.P03": 9,
+    "S1.P04": 10,
+    "S1.P05": 10,
+    "S1.P06": 12,
+}
+KNOWN_CORRECTIONS = frozenset(
+    {
+        "S1.P00.S04.C01",
+        "S1.P01.S05.C01",
+        "S1.P05.S02.C01",
+        "S1.P05.S08.C01",
+        CORRECTION,
+    }
+)
+
+
+def _is_known_unit(unit: str) -> bool:
+    if ".C" in unit:
+        return unit in KNOWN_CORRECTIONS
+    phase, _, suffix = unit.partition(".S")
+    if not suffix:
+        return phase in PHASE_SLICE_COUNT or phase in NOT_STARTED_PHASES
+    return 1 <= int(suffix) <= PHASE_SLICE_COUNT.get(phase, 0)
+
+
+# The roadmap states ranges -- "`S1.P07` through `S1.P10` remain not started" --
+# and a grammar reading only the unit adjacent to the verb would validate the
+# last endpoint alone.
+RANGE_CLAIM = re.compile(
+    rf"`(S1\.P\d\d(?:\.S\d\d)?)`\s+through\s+`(S1\.P\d\d(?:\.S\d\d)?)`"
+    rf"(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b({TAIL})"
+)
+# Coordination is the same shape as a range: several subjects, one predicate.
+COORDINATED_CLAIM = re.compile(
+    rf"((?:`{UNIT}`(?:,\s+and\s+|,\s*|\s+and\s+))+`{UNIT}`)"
+    rf"(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b({TAIL})"
+)
+COORDINATED_UNIT = re.compile(rf"`({UNIT})`")
+
+
+def _expand_range(first: str, last: str) -> list[str]:
+    """Every unit a `X` through `Y` range names.
+
+    A range that crosses a Phase boundary has no single traversal to expand,
+    but both endpoints are still claimed by the predicate, so both are checked.
+    """
+    if ".S" in first and ".S" in last:
+        head, _, low = first.partition(".S")
+        other, _, high = last.partition(".S")
+        if head != other:
+            return [first, last]
+        # Written in either order: a reversed range still names its units.
+        start, stop = sorted((int(low), int(high)))
+        return [f"{head}.S{index:02d}" for index in range(start, stop + 1)]
+    if ".S" not in first and ".S" not in last:
+        start, stop = sorted(
+            (int(first.rpartition(".P")[2]), int(last.rpartition(".P")[2]))
+        )
+        return [f"S1.P{index:02d}" for index in range(start, stop + 1)]
+    return [first, last]
+
+
+# One definition per state vocabulary. The negation detector derives its terms
+# from these, so widening a group cannot leave its negation behind -- which is
+# exactly how "is not completed" came to assert nothing at all.
+COMPLETE_TERMS = "complete|completed|finished|closed|published|delivered"
+ACTIVE_TERMS = "active|incomplete"
+NEXT_TERMS = "next"
+FUTURE_TERMS = "planned|scheduled|proposed|forthcoming|upcoming"
+# "incomplete" is deliberately absent: it maps to the active state, because
+# the live Phase is legitimately described as active and incomplete.
+UNFINISHED_TERMS = "open|pending|outstanding|unresolved|unfinished"
+NEGATABLE_TERMS = f"{COMPLETE_TERMS}|{ACTIVE_TERMS}|{NEXT_TERMS}"
+
+
+# "not only X but also Y" is a correlative, not a denial of X.
+NEGATOR = r"(?:no longer|never|not(?!\s+only\b)|no)"
+# Words a negator may reach across: anything that is not a contrastive
+# conjunction, which ends its scope.
+UNCONTRASTED = rf"(?:(?!\b(?:{CONTRASTIVE})\b)\w+\s+)"
+
+
+def _denials(text: str, term: str) -> int:
+    return len(re.findall(rf"\b{NEGATOR}\s+{UNCONTRASTED}{{0,2}}?{term}\b", text))
+
+
+def _asserts(text: str, terms: str) -> bool:
+    """Whether any term in a group is asserted here rather than denied.
+
+    Every keyword group goes through this, so a group cannot be added without
+    its negation handling -- which is how several false positives against
+    ordinary prose were introduced.
+
+    Each term is judged on its own, so in "scheduled but not planned" the
+    denial of one does not deny the other. Occurrences of one term are counted
+    rather than searched, so in "not initially scheduled but is now scheduled"
+    the second occurrence still asserts: a term denied fewer times than it
+    appears is asserted somewhere. Neither needs clause analysis.
+    """
+    return any(
+        len(re.findall(rf"\b{term}\b", text)) > _denials(text, term)
+        for term in terms.split("|")
+    )
+
+
+def _claimed_states(verb: str, tail: str) -> set[str]:
+    """Every lifecycle state a predicate asserts, not the first one recognised.
+
+    "is next but complete" asserts two states and is self-contradictory; a
+    classifier that returned on the first match would read it as one.
+    """
+    states: set[str] = set()
+    text = tail.lower()
+    if re.search(rf"\b{NEGATOR}\s+(?:yet\s+|been\s+|yet been\s+)?started\b", text):
+        states.add("not_started")
+    # Unfinished-work terms. No unit is legitimately described this way here,
+    # but a sentence may deny them -- "is complete with no open subjects".
+    # An unfinished term belongs to the unit only while the predicate is still
+    # about the unit. "`S1.P05` is complete with an unresolved subject
+    # transferred to `S5`" describes a different subject after "with".
+    subject_predicate = re.split(
+        r"\b(?:with|including|apart from|except|besides|alongside)\b", text
+    )[0]
+    if _asserts(subject_predicate, UNFINISHED_TERMS):
+        states.add("not_started")
+    # A planned or proposed unit is being placed in the future.
+    if _asserts(text, FUTURE_TERMS):
+        states.add("future")
+    if _asserts(text, NEXT_TERMS):
+        states.add("next")
+    # Word boundaries matter: "inactive" is not "active", and asserts the
+    # opposite of the state the active phase is allowed to be in.
+    if _asserts(text, ACTIVE_TERMS):
+        states.add("active")
+    if _asserts(text, "inactive"):
+        states.add("inactive")
+    # `\b` already excludes "incomplete", which is not a completion claim.
+    if _asserts(text, COMPLETE_TERMS):
+        states.add("complete")
+
+    if verb == "will":
+        segments = [
+            s for s in re.split(rf"\b(?:{CONTRASTIVE}|and|or)\b", text) if s.strip()
+        ]
+        for index, segment in enumerate(segments):
+            # The leading coordinate inherits the verb; a later one is a future
+            # claim only if it carries its own "will".
+            if index and not re.match(r"\s*will\b", segment):
+                continue
+            if re.match(rf"\s*(?:will\s+)?{NEGATOR}\b", segment):
+                continue
+            # "will remain complete" claims a state that persists, not future
+            # work. A coordinate asserting no state is future work, so the gate
+            # is per segment: "will remain complete and will implement more
+            # work" carries both.
+            if any(
+                _asserts(segment, group)
+                for group in (COMPLETE_TERMS, ACTIVE_TERMS, NEXT_TERMS, "started")
+            ):
+                continue
+            states.add("future")
+            break
+    # Negation is bound to the term it modifies. "is complete but not a public
+    # contract" negates "contract", not "complete", and stays a completion
+    # claim; "is not complete" does not.
+    if not re.search(rf"\b{NEGATOR}\s+(?:yet\s+|been\s+|yet been\s+)?started\b", text):
+        for group, label in (
+            (COMPLETE_TERMS, "complete"),
+            (ACTIVE_TERMS, "active"),
+            (NEXT_TERMS, "next"),
+        ):
+            if any(_denials(text, term) for term in group.split("|")):
+                states.add(f"negated:{label}")
+    return states
+
+
+def _allowed_states(unit: str) -> set[str] | None:  # noqa: PLR0911
+    """The states one unit may be claimed to be in, or None if it is unknown.
+
+    Returning None rather than an empty set matters: a claim about a unit this
+    programme does not contain -- "`S1.P06.S13` is next" -- must be refused,
+    not silently skipped.
+    """
+    if not _is_known_unit(unit):
+        return None
+    if ".C" in unit:
+        # A published correction is complete, and never a gate.
+        return {"complete"}
+    phase = unit.partition(".S")[0]
+    if phase in COMPLETE_PHASES:
+        return {"complete"}
+    if unit == ACTIVE_PHASE_ID:
+        return {"active"}
+    if phase == ACTIVE_PHASE_ID:
+        if unit in COMPLETE_SLICES:
+            return {"complete"}
+        if unit == NEXT_SLICE:
+            return {"next", "not_started"}
+        if unit in NOT_STARTED_SLICES:
+            return {"not_started"}
+        return None
+    if unit in NOT_STARTED_PHASES or phase in NOT_STARTED_PHASES:
+        return {"not_started"}
+    return None
+
+
+def test_every_present_tense_state_claim_matches_the_authoritative_state() -> None:
+    """One grammar over the closed predicate vocabulary, sentence-local.
+
+    Past-tense narrative is untouched: only `is`, `are`, `remain(s)` and `will`
+    are read, so "`S1.P05` was `eligible_to_begin`" and "`S1.P05` through
+    `S1.P10` were not started" stay legitimate history.
+    """
+    seen = 0
+    for start, sentence in _sentences():
+        ranged: list[tuple[str, str, str]] = [
+            (unit, verb, tail)
+            for first, last, verb, tail in RANGE_CLAIM.findall(sentence)
+            for unit in _expand_range(first, last)
+        ]
+        ranged += [
+            (unit, verb, tail)
+            for subjects, verb, tail in COORDINATED_CLAIM.findall(sentence)
+            for unit in COORDINATED_UNIT.findall(subjects)
+        ]
+        for unit, verb, tail in [*PRESENT_CLAIM.findall(sentence), *ranged]:
+            states = _claimed_states(verb, tail)
+            if not states:
+                continue
+            allowed = _allowed_states(unit)
+            assert allowed is not None, (start, unit, sorted(states))
+            seen += 1
+            for state in sorted(states):
+                if state.startswith("negated:"):
+                    # Denying a state the unit does not have is ordinary prose.
+                    # Denying one it does have contradicts the lifecycle.
+                    denied = state.partition(":")[2]
+                    assert denied not in allowed, (
+                        start,
+                        unit,
+                        state,
+                        sorted(allowed),
+                        tail[:60],
+                    )
+                    continue
+                assert state in allowed, (
+                    start,
+                    unit,
+                    state,
+                    sorted(allowed),
+                    tail[:60],
+                )
+    # A floor, so a grammar that silently stopped matching would fail here
+    # rather than pass vacuously. The document currently carries 68 such claims.
+    assert seen >= 60, seen
+
+
+# Attribution reads the other way round: the unit is the object, not the
+# subject. One vocabulary covers Slices and Phases alike.
+ATTRIBUTED_TO = re.compile(
+    rf"\b(?:belongs to|owned by|awaits|"
+    rf"(?:is|are|remains?)\s+(?:deferred to|scheduled for|assigned to)|"
+    rf"(?:will|(?:is|are) to) be (?:added|published|implemented|delivered) by)"
+    rf"\s+`({UNIT})`"
+)
+# "the unresolved subject remains `S1.P05` work" puts the unit in the middle.
+WORK_ATTRIBUTION = re.compile(rf"\b(?:is|are|remains?)\s+`({UNIT})`\s+work")
+
+
+def _tail_clause(clause: str) -> str:
+    return re.split(r"[;:,]", clause)[-1]
+
+
+def _is_negated(clause: str) -> bool:
+    """Whether this predicate is negated.
+
+    Two shapes: a noun phrase headed by "no" ("No subject remains owned by"),
+    and a predicate directly negated ("the subject is not owned by").
+    """
+    tail = _tail_clause(clause)
+    return bool(
+        re.search(r"\b(?:no|neither)\b\s+(?:\w+\s+){0,3}$", tail, re.I)
+        or re.search(rf"\b{NEGATOR}\s+(?:\w+\s+){{0,2}}$", tail, re.I)
+    )
+
+
+# A predicate that is a bare passive participle can share an auxiliary across
+# coordination; a finite present verb cannot.
+PARTICIPIAL_PREDICATE = re.compile(r"^\s*owned by\b", re.I)
+
+
+def _is_past_tense(clause: str, *, shares_auxiliary: bool = False) -> bool:
+    """Whether a past auxiliary governs the predicate that follows.
+
+    Detected rather than matched adjacently, so legitimate history keeps its
+    modifiers: "was previously owned by" and "had been owned by" are past.
+
+    Coordination is where this gets delicate. "was reviewed and owned by `X`"
+    shares one auxiliary across two passive participles and is history; "was
+    reviewed and belongs to `X`" does not, because "belongs" is finite and
+    present. So a coordinator ends the auxiliary's reach only for a predicate
+    that cannot share it.
+    """
+    # A present-time marker always ends the auxiliary's reach: "was deferred
+    # but now owned by" is a present claim whatever the predicate's form.
+    markers = r"now|currently|today|since then|presently"
+    if not shares_auxiliary:
+        # A finite verb cannot share the auxiliary, so any coordinator or
+        # contrastive ends its reach as well.
+        markers += rf"|and|or|{CONTRASTIVE}"
+    # A contrastive or present-time marker ends the auxiliary's reach: in "was
+    # deferred but now belongs to", the auxiliary does not govern "belongs".
+    governed = re.split(rf"\b(?:{markers})\b", _tail_clause(clause), flags=re.I)[-1]
+    return bool(
+        re.search(
+            r"\b(?:was|were|had|(?:has|have)(?:\s+\w+){0,2}\s+been)\b"
+            r"\s*(?:\w+\s+){0,2}$",
+            governed,
+            re.I,
+        )
+    )
+
+
+def test_no_open_work_is_presently_attributed_to_a_completed_unit() -> None:
+    """A completed Slice or Phase may be a past owner, never the present one.
+
+    The reduced passive counts: "provenance owned by `S1.P09`" attributes just
+    as directly as "is owned by". Past tense is excluded by the lookbehinds, and
+    a negated claim -- "No subject remains owned by `S1.P04`" -- says the
+    opposite and is admitted.
+    """
+    for start, sentence in _sentences():
+        for pattern in (ATTRIBUTED_TO, WORK_ATTRIBUTION):
+            for match in pattern.finditer(sentence):
+                before = sentence[: match.start()]
+                shares = bool(PARTICIPIAL_PREDICATE.match(match.group(0)))
+                if _is_negated(before) or _is_past_tense(
+                    before, shares_auxiliary=shares
+                ):
+                    continue
+                # One predicate may name several objects: "belongs to `A` and
+                # `B`". Every object it governs is checked, not just the first.
+                trailing = sentence[match.end() :]
+                coordinated = re.match(
+                    rf"(?:(?:,\s+and\s+|,\s*|\s+and\s+)`{UNIT}`)+", trailing
+                )
+                units = [match.group(1)]
+                if coordinated:
+                    units += COORDINATED_UNIT.findall(coordinated.group(0))
+                for unit in units:
+                    # A unit whose only allowed state is complete has finished,
+                    # whatever kind it is: a Phase, a Slice of a completed
+                    # Phase, a completed `S1.P06` Slice, or a correction. A
+                    # unit the programme does not contain is refused outright,
+                    # rather than passing because it has no allowed states.
+                    allowed = _allowed_states(unit)
+                    assert allowed is not None, (start, unit, sentence[:200])
+                    assert allowed != {"complete"}, (start, unit, sentence[:200])
+
+
+COMPLETION_CLAIM = re.compile(r"`(S1\.P06\.S\d\d)` is complete")
+# A sentence enumerating this many completed Slices is a lifecycle summary,
+# whatever phrase introduces it.
+LIFECYCLE_ENUMERATION = 3
+LIFECYCLE_SENTENCES = 5
+
+
+def _lifecycle_sentences() -> list[tuple[int, str]]:
+    """Sentences that enumerate the P06 lifecycle, selected by what they say.
+
+    Keying on an introductory phrase such as "`S1.P06` is active and
+    incomplete" would let a summary escape by omitting it, so the enumeration
+    itself is the key.
+    """
+    return [
+        (start, sentence)
+        for start, sentence in _sentences()
+        if len(COMPLETION_CLAIM.findall(sentence)) >= LIFECYCLE_ENUMERATION
+    ]
+
+
+def test_every_lifecycle_sentence_carries_its_own_live_gate() -> None:
+    """Locality, at sentence granularity rather than paragraph granularity.
+
+    A paragraph is the wrong bound: the largest in this document is around
+    21,000 characters, so a paragraph-local check would still let one lifecycle
+    claim borrow a valid gate sentence from far away inside it. The lifecycle
+    claim is one sentence, so that is the unit checked.
+    """
+    lifecycle = _lifecycle_sentences()
+
+    assert len(lifecycle) == LIFECYCLE_SENTENCES, len(lifecycle)
+    for start, sentence in lifecycle:
+        for slice_id in COMPLETE_SLICES:
+            assert f"`{slice_id}` is complete" in sentence, (start, slice_id)
+        assert f"`{NEXT_SLICE}` is next and not started" in sentence, start
+        # The live gate is neither complete nor absent from this check: a
+        # sentence asserting both states at once is self-contradictory.
+        for slice_id in (NEXT_SLICE, *NOT_STARTED_SLICES):
+            assert f"`{slice_id}` is complete" not in sentence, (start, slice_id)
+
+
+def test_no_sentence_anywhere_calls_a_not_started_unit_complete() -> None:
+    """The inverse error, document-wide and sentence-local.
+
+    A completion claim for a unit that has not started contradicts the
+    authoritative state wherever it stands, including outside any lifecycle
+    summary.
+    """
+    for start, sentence in _sentences():
+        for unit in (NEXT_SLICE, *NOT_STARTED_SLICES, *NOT_STARTED_PHASES):
+            assert f"`{unit}` is complete" not in sentence, (start, unit)
+            assert f"`{unit}` was completed" not in sentence, (start, unit)
+
+
+# --- 6.2 route witness ------------------------------------------------------
+
+
+def _route_entries() -> list[tuple[str, str, str, str]]:
+    """The numbered `S1.P06` route.
+
+    Each row is (list ordinal, slice id, the slice's numeric suffix,
+    parenthesised state). The ordinal is carried because a Slice sitting at the
+    wrong marker leaves the set of (slice, state) pairs unchanged.
+    """
+    text = _text()
+    start = text.index("The `S1.P06` route is provisional")
+    end = text.index("`S1.P06` consumes the bounded", start)
+    block = text[start:end]
+    # Every numbered row is parsed, then validated. Matching only rows whose
+    # state is already one of the allowed words would make a row carrying any
+    # other state invisible, and the counts would still look right.
+    rows: list[tuple[str, str, str, str]] = re.findall(
+        r"^(\d+)\.\s+`(S1\.P06\.S(\d\d))`[^\n]*(?:\n\s+)?[^\n]*?\(([^)]*)\)",
+        block,
+        re.M,
+    )
+    numbered = re.findall(r"^(\d+)\.\s", block, re.M)
+    assert len(rows) == len(numbered), (len(rows), len(numbered))
+    for _, slice_id, _, state in rows:
+        assert state in {"complete", "next, not started", "not started"}, (
+            slice_id,
+            state,
+        )
+    return rows
+
+
+def test_the_route_numbers_every_position_in_order() -> None:
+    """The list marker is part of the route, not decoration.
+
+    Swapping two markers leaves the same set of (Slice, state) pairs, so the
+    ordinal is captured and required to match the Slice it labels.
+    """
+    rows = _route_entries()
+
+    assert [ordinal for ordinal, _, _, _ in rows] == [str(n) for n in range(1, 13)]
+    for ordinal, slice_id, suffix, _ in rows:
+        assert int(ordinal) == int(suffix), (ordinal, slice_id)
+
+
+def test_the_route_states_the_authoritative_state_for_every_position() -> None:
+    rows = _route_entries()
+    # Building the lookup first would let a duplicated row collapse silently.
+    assert len(rows) == 12, rows
+    assert len({slice_id for _, slice_id, _, _ in rows}) == 12, rows
+    entries = {slice_id: state for _, slice_id, _, state in rows}
+
+    assert len(entries) == 12, sorted(entries)
+    for slice_id in COMPLETE_SLICES:
+        assert entries[slice_id] == "complete", slice_id
+    assert entries[NEXT_SLICE] == "next, not started"
+    for slice_id in NOT_STARTED_SLICES:
+        assert entries[slice_id] == "not started", slice_id
+
+
+def test_the_route_carries_exactly_one_next_position() -> None:
+    states = [state for _, _, _, state in _route_entries()]
+
+    assert states.count("next, not started") == 1
+    assert states.count("complete") == len(COMPLETE_SLICES)
+
+
+def test_the_correction_is_not_a_numbered_route_position() -> None:
+    """C01 is an unnumbered child bullet, as `S1.P05.S08.C01` is."""
+    text = _text()
+    start = text.index("The `S1.P06` route is provisional")
+    end = text.index("`S1.P06` consumes the bounded", start)
+    block = text[start:end]
+
+    assert f"`{CORRECTION}`" in block
+    assert not re.search(rf"^\d+\.\s+`{re.escape(CORRECTION)}`", block, re.M)
+    assert re.search(rf"^- `{re.escape(CORRECTION)}` — ", block, re.M)
+    assert CORRECTION not in {slice_id for _, slice_id, _, _ in _route_entries()}
+
+
+# --- 6.3 sentence-local completed-Slice guard -------------------------------
+
+
+# A bounded lexical backstop, not a semantic model. It is applied to one
+# sentence at a time and only where that sentence names a completed Slice; it
+# discovers formulations, and the positive assertions below carry the meaning.
+def _completed_slices_in(sentence: str) -> list[str]:
+    return [
+        token for token in SLICE_TOKEN.findall(sentence) if token in COMPLETE_SLICES
+    ]
+
+
+@pytest.mark.parametrize("slice_id", COMPLETE_SLICES)
+def test_no_sentence_calls_a_completed_slice_future_work(slice_id: str) -> None:
+    """A lexical backstop applied sentence-locally, not a semantic verifier.
+
+    This cannot decide whether prose is true. It refuses a bounded set of
+    formulations that state a completed Slice is still ahead, in the sentence
+    where they stand, and it is deliberately not the only assurance for this
+    correction: the positive assertions below pin the corrected sentences
+    themselves.
+    """
+    for start, sentence in _sentences():
+        if slice_id not in _completed_slices_in(sentence):
+            continue
+        for shape in (
+            f"`{slice_id}` is next",
+            f"`{slice_id}` is not started",
+            f"`{slice_id}` has not started",
+            f"`{slice_id}` has not begun",
+            f"`{slice_id}` remains not started",
+            f"`{slice_id}` remains future",
+            f"`{slice_id}` remains open",
+            f"`{slice_id}` is planned",
+            f"`{slice_id}` is not yet",
+            f"remain `{slice_id}` work",
+            f"remains `{slice_id}` work",
+            f"remain owned by `{slice_id}`",
+            f"remains owned by `{slice_id}`",
+            f"deferred to `{slice_id}`",
+            f"yet to be published by `{slice_id}`",
+        ):
+            assert shape not in sentence, (start, shape, sentence[:200])
+
+
+# A future claim is attributed to whichever token it names, so the token is
+# matched together with the wording rather than merely co-occurring with it.
+ATTRIBUTED_FUTURE = (
+    "will be added by",
+    "will be published by",
+    "will be implemented by",
+    "is to be added by",
+    "is to be published by",
+    "is to be implemented by",
+    "is deferred to",
+    "is owned by",
+    "belongs to",
+    "is scheduled for",
+    "awaits",
+)
+
+
+@pytest.mark.parametrize("slice_id", COMPLETE_SLICES)
+def test_no_future_claim_is_attributed_to_a_completed_slice(slice_id: str) -> None:
+    """The backstop from the other direction, tied to its own token.
+
+    Co-occurrence is not attribution. A sentence may legitimately name a
+    completed Slice and a not-started one together, so the wording is matched
+    with the token it points at rather than anywhere in the sentence.
+    """
+    for start, sentence in _sentences():
+        for wording in ATTRIBUTED_FUTURE:
+            assert f"{wording} `{slice_id}`" not in sentence, (
+                start,
+                wording,
+                sentence[:240],
+            )
+
+
+def test_no_completed_phase_is_named_as_a_present_owner_of_open_work() -> None:
+    """The class this correction was written for.
+
+    `S1.P05` had already carried the `deferred:19` default-branch subject
+    forward to `S5`, yet the `S1.P05.S01` narrative still named `S1.P05` as its
+    present owner. A completed phase may be named as a past owner, never as the
+    present one.
+
+    Negation and tense are decided by the shared helpers rather than by a
+    second copy of their vocabularies here, because a copy drifts: adding
+    "neither" to one and not the other is what surfaced this.
+    """
+    for start, sentence in _sentences():
+        for phase in COMPLETE_PHASES:
+            for shape in (
+                f"is owned by `{phase}`",
+                f"remains owned by `{phase}`",
+                f"remain owned by `{phase}`",
+            ):
+                index = sentence.find(shape)
+                if index == -1:
+                    continue
+                before = sentence[:index]
+                assert _is_negated(before) or _is_past_tense(before), (
+                    start,
+                    phase,
+                    shape,
+                    before[-80:],
+                )
+
+
+# --- 6.4 positive assertions for the corrected sentences --------------------
+
+
+def test_the_deferred_default_branch_subject_names_its_current_owner() -> None:
+    """The sentence this correction repaired, asserted as intended prose."""
+    flat = _flat(_text())
+
+    assert (
+        "`S1.P02` `deferred:19` default-branch observation was owned by `S1.P05` "
+        "and was not implemented by `S1.P05.S01`; `S1.P05.S08` has since carried "
+        "it forward to `S5`, and the historical default branch remains unknown "
+        "and owned by `S2`." in flat
+    )
+    assert "default-branch observation is owned by `S1.P05`" not in flat
+
+
+def test_the_authoritative_carry_forward_statement_is_unchanged() -> None:
+    """The statement the corrected sentence had contradicted still stands."""
+    flat = _flat(_text())
+
+    assert (
+        "`deferred:19` default-branch observation was assigned to `S1.P05`, which "
+        "`S1.P05.S08` has since carried forward to `S5`" in flat
+    )
+
+
+def test_the_predecessor_corrections_from_s06_and_s07_still_stand() -> None:
+    """The two sentences earlier Slices repaired, now owned here."""
+    flat = _flat(_text())
+
+    assert (
+        "Test material, reported outcomes and comparability became `S1.P06.S06` "
+        "work, case-local explanation and hypothesis became `S1.P06.S07` work" in flat
+    )
+    assert "the rest remain owned by `S1.P06.S08` through `S1.P06.S09`" in flat
+    assert (
+        "those were taken up by `S1.P06.S03` through `S1.P06.S07` and the rest "
+        "remain owned by `S1.P06.S08`" in flat
+    )
+
+
+def test_correct_later_ownership_is_preserved() -> None:
+    """Later owners must survive the audit untouched.
+
+    The audit's failure mode in the other direction is rewriting a legitimate
+    later-ownership sentence because a completed Slice is mentioned nearby.
+    """
+    flat = _flat(_text())
+
+    for statement in (
+        "confidence, review, and interpretation provenance remain owned by `S1.P09`",
+        "the fault-evidence bridge remains `S1.P06.S09` work",
+        "durable byte contracts remain `S1.P10` work",
+        "which remains `S1.P06.S10` work",
+        "the historical default branch remains unknown and owned by `S2`",
+        "which remains `S5` ownership",
+        "`S1.P07` through `S1.P10` remain not started",
+    ):
+        assert statement in flat, statement
+
+
+def test_the_correction_narrative_records_what_it_changed() -> None:
+    flat = _flat(_text())
+
+    assert (
+        "`S1.P06.S07.C01` corrects roadmap lifecycle narrative without changing "
+        "any published contract." in flat
+    )
+    assert "It adds no production module" in flat
+    assert "does not move the live gate, which stays `S1.P06.S08`" in flat
+
+
+# --- the classifier itself, in both directions --------------------------------
+
+# Four consecutive review rounds found a false positive introduced by the
+# previous round's tightening: each narrowing of what counts as a lifecycle
+# claim moved the boundary onto ordinary prose. These pin the boundary from
+# both sides, on the classifier directly, so the next narrowing has to keep
+# them.
+
+ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
+    ("is", " complete", {"complete"}),
+    ("is", " active and incomplete", {"active"}),
+    ("is", " next and not started", {"next", "not_started"}),
+    ("is", " inactive", {"inactive"}),
+    ("is", " planned", {"future"}),
+    ("is", " scheduled but not planned", {"future"}),
+    ("will", " implement bounded composition", {"future"}),
+    ("remains", " open", {"not_started"}),
+    # The denial suppresses the completion term and asserts the contradiction.
+    ("is", " not complete", {"negated:complete"}),
+    ("is", " no longer complete", {"negated:complete"}),
+    ("is", " completed", {"complete"}),
+    ("is", " not completed", {"negated:complete"}),
+    ("is", " not finished", {"negated:complete"}),
+    # A denial names the term it denies, so the caller can tell a legitimate
+    # denial ("`S1.P05` is not active") from a contradiction.
+    ("is", " not active", {"negated:active"}),
+    ("is", " not next", {"negated:next"}),
+    # A term denied once and asserted again is asserted; counting occurrences
+    # settles that without clause analysis.
+    ("is", " not initially scheduled but is now scheduled", {"future"}),
+    # A negator does not reach across a contrastive: the denial governs
+    # "active" only, and "incomplete" is asserted.
+    ("is", " not active but incomplete", {"active", "negated:active"}),
+    ("has", " never been completed", {"negated:complete"}),
+    ("has", " never started", {"not_started"}),
+    ("will", " never be reopened", set()),
+    # Each coordinate of a future claim is judged on its own.
+    ("will", " not be reopened but will implement more work", {"future"}),
+    ("is", " complete, but remains open", {"complete", "not_started"}),
+    ("has", " not been started", {"not_started"}),
+    # A later coordinate is a future claim only if it carries its own "will".
+    ("will", " not be reopened but `S1.P09` owns the remainder", set()),
+    ("will", " not be reopened and will implement more work", {"future"}),
+    # "will remain complete" persists a state; it is not a claim of future work.
+    ("will", " remain complete", {"complete"}),
+    # A persistent state and a future coordinate can stand side by side.
+    ("will", " remain complete and will implement more work", {"complete", "future"}),
+    ("is", " unfinished", {"not_started"}),
+)
+DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
+    ("is", " complete with no open subjects", {"complete"}),
+    ("is", " complete with an unresolved subject transferred to `S5`", {"complete"}),
+    ("is", " complete but not a public contract", {"complete"}),
+    ("is", " not scheduled for more work", set()),
+    ("will", " not be reopened", set()),
+    ("is", " complete with no pending items", {"complete"}),
+)
+
+
+@pytest.mark.parametrize(("verb", "tail", "expected"), ASSERTED_PREDICATES)
+def test_an_asserted_predicate_classifies_as_its_states(
+    verb: str,
+    tail: str,
+    expected: set[str],
+) -> None:
+    assert _claimed_states(verb, tail) == expected
+
+
+@pytest.mark.parametrize(("verb", "tail", "expected"), DENIED_PREDICATES)
+def test_a_denied_term_contributes_no_state(
+    verb: str,
+    tail: str,
+    expected: set[str],
+) -> None:
+    """A denial is not a claim, and denying one term does not deny its siblings."""
+    assert _claimed_states(verb, tail) == expected
+
+
+TENSE_CASES: tuple[tuple[str, bool, bool], ...] = (
+    ("The subject was previously ", True, True),
+    ("The subject had been ", True, True),
+    ("The subject has previously been ", True, True),
+    ("The subject has only recently been ", True, True),
+    ("The subject is ", True, False),
+    # One auxiliary shared across two passive participles is history.
+    ("The subject was reviewed and ", True, True),
+    # A finite present verb after the coordinator is not: the auxiliary that
+    # governs "reviewed" does not govern "belongs".
+    ("The subject was reviewed and ", False, False),
+    # A participle shares its auxiliary across a contrastive too.
+    ("The subject was reviewed but ", True, True),
+    ("The subject was reviewed but ", False, False),
+    # A present-time marker ends the reach for either predicate form.
+    ("The subject was reviewed but now ", True, False),
+    ("The subject was deferred but now ", False, False),
+)
+
+NEGATED_CLAUSES: tuple[tuple[str, bool], ...] = (
+    ("The subject is not ", True),
+    ("The subject is not currently ", True),
+    ("The subject is not presently ", True),
+    ("No subject remains ", True),
+    ("Neither subject is ", True),
+    ("The result is `self_owned_open == 0`: no unresolved subject remains ", True),
+    ("The subject is ", False),
+    # "not only X but also Y" is a correlative, not a denial of X.
+    ("The subject is not only ", False),
+    ("The subject is never ", True),
+    ("No evidence is available and the subject remains ", False),
+)
+
+
+@pytest.mark.parametrize(("clause", "shares", "expected"), TENSE_CASES)
+def test_past_tense_detection_follows_the_predicate_it_governs(
+    clause: str,
+    shares: bool,
+    expected: bool,
+) -> None:
+    """Coordination is where tense detection is delicate, so it is pinned here."""
+    assert _is_past_tense(clause, shares_auxiliary=shares) is expected
+
+
+@pytest.mark.parametrize(("clause", "expected"), NEGATED_CLAUSES)
+def test_negation_detection_reaches_its_own_predicate_and_no_further(
+    clause: str,
+    expected: bool,
+) -> None:
+    assert _is_negated(clause) is expected
