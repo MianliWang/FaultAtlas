@@ -166,7 +166,8 @@ def test_the_document_names_exactly_one_live_p06_product_gate() -> None:
 # is a claim, not because it was predicted.
 UNIT = r"S1\.P\d\d(?:\.S\d\d)?(?:\.C\d\d)?"
 PRESENT_CLAIM = re.compile(
-    rf"`({UNIT})`\s+(is|are|remains|remain|will|has|have)\b([^,;:.]{{0,60}})"
+    rf"`({UNIT})`(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b"
+    rf"([^,;:.]{{0,60}})"
 )
 ACTIVE_PHASE_ID = "S1.P06"
 # How many Slices each Phase contains. A child that does not exist may not
@@ -216,17 +217,21 @@ COORDINATED_UNIT = re.compile(rf"`({UNIT})`")
 
 
 def _expand_range(first: str, last: str) -> list[str]:
-    """Every unit a `X` through `Y` range names, or nothing if it is not one."""
+    """Every unit a `X` through `Y` range names.
+
+    A range that crosses a Phase boundary has no single traversal to expand,
+    but both endpoints are still claimed by the predicate, so both are checked.
+    """
     if ".S" in first and ".S" in last:
         head, _, low = first.partition(".S")
         other, _, high = last.partition(".S")
         if head != other:
-            return []
+            return [first, last]
         return [f"{head}.S{index:02d}" for index in range(int(low), int(high) + 1)]
     if ".S" not in first and ".S" not in last:
         low, high = int(first.rpartition(".P")[2]), int(last.rpartition(".P")[2])
         return [f"S1.P{index:02d}" for index in range(low, high + 1)]
-    return []
+    return [first, last]
 
 
 # One definition per state vocabulary. The negation detector derives its terms
@@ -443,9 +448,13 @@ def _is_past_tense(clause: str, *, shares_auxiliary: bool = False) -> bool:
     present. So a coordinator ends the auxiliary's reach only for a predicate
     that cannot share it.
     """
-    markers = r"but|however|yet|although|though|now|currently|today|since then"
+    # A present-time marker always ends the auxiliary's reach: "was deferred
+    # but now owned by" is a present claim whatever the predicate's form.
+    markers = r"now|currently|today|since then|presently"
     if not shares_auxiliary:
-        markers += r"|and|or"
+        # A finite verb cannot share the auxiliary, so any coordinator or
+        # contrastive ends its reach as well.
+        markers += rf"|and|or|{CONTRASTIVE}"
     # A contrastive or present-time marker ends the auxiliary's reach: in "was
     # deferred but now belongs to", the auxiliary does not govern "belongs".
     governed = re.split(rf"\b(?:{markers})\b", _tail_clause(clause), flags=re.I)[-1]
@@ -887,6 +896,11 @@ TENSE_CASES: tuple[tuple[str, bool, bool], ...] = (
     # A finite present verb after the coordinator is not: the auxiliary that
     # governs "reviewed" does not govern "belongs".
     ("The subject was reviewed and ", False, False),
+    # A participle shares its auxiliary across a contrastive too.
+    ("The subject was reviewed but ", True, True),
+    ("The subject was reviewed but ", False, False),
+    # A present-time marker ends the reach for either predicate form.
+    ("The subject was reviewed but now ", True, False),
     ("The subject was deferred but now ", False, False),
 )
 
