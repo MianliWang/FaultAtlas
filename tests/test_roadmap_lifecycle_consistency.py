@@ -242,9 +242,19 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
         states.add("future")
     if re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
         states.add("not_started")
-    # Unfinished-work terms. No unit is legitimately described this way here.
-    if re.search(r"\b(?:open|pending|outstanding|unresolved)\b", text):
+    # Unfinished-work terms. No unit is legitimately described this way here,
+    # but a sentence may deny them -- "is complete with no open subjects" --
+    # and a denial is not a claim.
+    if re.search(
+        r"(?<!no )(?<!not )\b(?:open|pending|outstanding|unresolved)\b", text
+    ) and not re.search(
+        r"\b(?:no|not)\s+(?:\w+\s+){0,2}?(?:open|pending|outstanding|unresolved)\b",
+        text,
+    ):
         states.add("not_started")
+    # A planned or proposed unit is being placed in the future.
+    if re.search(r"\b(?:planned|scheduled|proposed|forthcoming|upcoming)\b", text):
+        states.add("future")
     if re.search(r"\bnext\b", text):
         states.add("next")
     # Word boundaries matter: "inactive" is not "active", and asserts the
