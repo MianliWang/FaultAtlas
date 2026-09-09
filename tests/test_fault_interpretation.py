@@ -420,12 +420,38 @@ class ExplanationLookalike:
         self.explanation_statement = EXPLANATION_STATEMENT
 
 
+class ReportLookalike:
+    """An attribute-backed object carrying a published report's field names."""
+
+    def __init__(self) -> None:
+        published = _report()
+        self.report = published.report
+        self.context = published.context
+        self.problem_statement = published.problem_statement
+        self.behavioral_deviation = published.behavioral_deviation
+
+
 class UntypedChildExplanationLookalike:
-    """An attribute-backed top-level object whose report child is untyped."""
+    """An attribute-backed top-level object whose report child is a mapping."""
 
     def __init__(self) -> None:
         self.explanation = FaultExplanationIdentity(SUPPLIED_EXPLANATION)
         self.report = _report().model_dump()
+        self.explanation_statement = EXPLANATION_STATEMENT
+
+
+class AttributeChildExplanationLookalike:
+    """An attribute-backed top-level object whose report child is one too.
+
+    This is the case only the before-guard can refuse: under
+    `from_attributes=True` a mapping child is already refused by strict mode,
+    but an attribute-backed child would otherwise be materialised into a
+    published report the caller never constructed.
+    """
+
+    def __init__(self) -> None:
+        self.explanation = FaultExplanationIdentity(SUPPLIED_EXPLANATION)
+        self.report = ReportLookalike()
         self.explanation_statement = EXPLANATION_STATEMENT
 
 
@@ -729,11 +755,20 @@ def test_no_record_json_payload_carries_a_forbidden_key(
         assert f'"{forbidden}":' not in text, forbidden
 
 
-@pytest.mark.parametrize("model", _published_models(), ids=lambda m: m.__name__)
+@pytest.mark.parametrize(
+    "model",
+    (*_published_models(), *S07_UUID_IDENTITIES),
+    ids=lambda m: m.__name__,
+)
 def test_no_field_declares_an_input_or_output_alias(
-    model: type[BaseModel],
+    model: type[BaseModel] | type[RootModel[uuid.UUID]],
 ) -> None:
-    """An alias would publish a key the declared field name does not name."""
+    """An alias would publish a key the declared field name does not name.
+
+    The three identities are swept too: an alias on a root field is inert in
+    pydantic today, which is a reason it would go unnoticed, not a reason to
+    leave the claim half-asserted.
+    """
     for name, field in model.model_fields.items():
         assert field.alias is None, (model.__name__, name)
         assert field.validation_alias is None, (model.__name__, name)
@@ -912,6 +947,33 @@ def test_from_attributes_reads_a_top_level_object_but_still_guards_its_children(
         )
 
     assert _failures(failure.value) == ((("report",), "value_error"),)
+
+
+@pytest.mark.parametrize(
+    ("model", "child_field"),
+    (
+        pytest.param(SuppliedFaultExplanation, "report", id="explanation"),
+        pytest.param(SuppliedFaultHypothesis, "report", id="hypothesis"),
+        pytest.param(SuppliedFaultExpectedProperty, "report", id="expected-property"),
+    ),
+)
+def test_an_attribute_backed_child_is_refused_under_from_attributes(
+    model: type[BaseModel],
+    child_field: str,
+) -> None:
+    """The one case only the before-guard can refuse.
+
+    Strict mode already refuses a mapping, a raw UUID, a string and a foreign
+    model at a model-typed position. An attribute-backed child read through
+    `from_attributes=True` is the case it does not cover: without the guard the
+    lookalike is materialised into a published report the caller never built.
+    """
+    supplied = BUILDERS[model](**{child_field: ReportLookalike()})
+
+    with pytest.raises(ValidationError) as failure:
+        model.model_validate(supplied, from_attributes=True)
+
+    assert _failures(failure.value) == (((child_field,), "value_error"),)
 
 
 @pytest.mark.parametrize(("model", "fields"), RECORD_CASES)
@@ -1275,6 +1337,12 @@ def test_an_explanation_is_not_more_probable_than_a_hypothesis() -> None:
         for absent in ("probability", "likelihood", "confidence", "strength", "rank"):
             assert absent not in model.model_fields, (model.__name__, absent)
     assert set(_payload(explanation)) & set(_payload(hypothesis)) == {"report"}
+    # "More probable than" is a relation, so the records must not be rankable.
+    with pytest.raises(TypeError):
+        _ = explanation < hypothesis  # type: ignore[operator]
+    with pytest.raises(TypeError):
+        _ = hypothesis < explanation  # type: ignore[operator]
+    assert explanation != hypothesis
 
 
 def test_a_hypothesis_is_not_an_explanation_and_neither_converts() -> None:
@@ -1341,20 +1409,20 @@ def test_a_hypothesis_is_not_a_supported_hypothesis() -> None:
     assert SuppliedFaultHypothesis.model_computed_fields == {}
 
 
-def test_the_retained_stale_cache_account_is_supplied_not_historical_fact() -> None:
-    """Fixture material is a supplied proposition, not a promoted finding.
+def test_the_retained_stale_cache_fixture_is_framed_as_a_supplied_proposition() -> None:
+    """Fixture discipline, asserted over this file's own case-calibrated prose.
 
     The retained case supports that a cache was suspected, not that it was the
-    root cause. Using it here publishes it in the tentative position and adds
-    no field by which it could be read as established.
+    root cause, so the fixture must say so in its own words. This pins the
+    fixture; the module-side claim that nothing promotes it is carried by
+    `test_a_hypothesis_carries_no_position_for_a_later_result` and by the
+    published-description pin.
     """
-    hypothesis = _hypothesis()
-
-    assert "tentatively" in hypothesis.hypothesis_statement
-    assert "The caller proposes" in hypothesis.hypothesis_statement
-    assert type(hypothesis) is SuppliedFaultHypothesis
-    for absent in ("confirmed", "established", "verified", "root_cause"):
-        assert absent not in SuppliedFaultHypothesis.model_fields, absent
+    assert "tentatively" in HYPOTHESIS_STATEMENT
+    assert "The caller proposes" in HYPOTHESIS_STATEMENT
+    for promoted in ("root cause", "confirmed", "established", "proves"):
+        assert promoted not in HYPOTHESIS_STATEMENT.lower(), promoted
+    assert type(_hypothesis()) is SuppliedFaultHypothesis
 
 
 def test_an_expected_property_is_not_a_passing_test() -> None:
@@ -1389,13 +1457,15 @@ def test_an_expected_property_is_not_a_universal_invariant_or_pattern() -> None:
     )
     for absent in ("invariant", "pattern", "universal", "scope", "applies_to"):
         assert absent not in SuppliedFaultExpectedProperty.model_fields, absent
-    # The same property text for a second report is a second, distinct record.
-    other = _expected_property(
-        expected_property=SECOND_PROPERTY, report=_second_report()
-    )
+    # The same property text AND the same identity, on a second report, is a
+    # second distinct record. Holding the identity constant is the point: the
+    # report is what scopes the property, so it alone must separate them.
+    other = _expected_property(report=_second_report())
+    assert other.expected_property == expected.expected_property
     assert other.expected_property_statement == expected.expected_property_statement
-    assert other != expected
     assert other.report != expected.report
+    assert other != expected
+    assert _distinct_value_count(other, expected) == 2
 
 
 def test_an_expected_property_is_not_a_repair_acceptance_criterion() -> None:
@@ -1409,7 +1479,7 @@ def test_an_expected_property_is_not_a_repair_acceptance_criterion() -> None:
         "correctness",
     ):
         assert absent not in SuppliedFaultExpectedProperty.model_fields, absent
-    assert "repair" not in expected.model_dump_json()
+    assert tuple(_payload(expected)) == EXPECTED_PROPERTY_FIELDS
 
 
 def test_an_expected_property_does_not_prove_the_current_behavior_is_wrong() -> None:
@@ -1522,6 +1592,49 @@ def test_no_scenario_occurrence_candidate_run_or_evidence_is_required() -> None:
             assert absent not in payload, absent
 
 
+MODULE_NON_CLAIMS = (
+    "Nothing here is promoted by being represented.",
+    "An explanation is a supplied explanatory claim, not a promoted fact.",
+    "no `root_cause`, `accepted`, `verified`, `confidence`, or `review` field",
+    "A hypothesis stays a hypothesis.",
+    "An expected property is case-local.",
+    "breadth of phrasing is not breadth of claim",
+    "The three kinds do not convert into one another.",
+    "this layer chooses no winner",
+    "Nothing is inferred from the repair or test layers.",
+    "The module performs no I/O.",
+)
+INVERTED_MODULE_CLAIMS = (
+    "Everything is inferred",
+    "makes an explanation true",
+    "confirms the explanation",
+    "verifies the expected property",
+    "disproves every earlier hypothesis",
+    "is promoted to an explanation",
+    "establishes the root cause",
+    "chooses the winner",
+)
+
+
+def test_the_module_docstring_states_its_non_claims_and_no_inversion() -> None:
+    """`__doc__` is a published value, and nothing else here pins it.
+
+    Class docstrings are pinned exactly because rewriting one changes no field,
+    no key and no validator. The module docstring is the same kind of published
+    prose and carries the longest statement of the Slice's non-claims, so each
+    load-bearing sentence is asserted where it stands, and the inverted form of
+    each is refused.
+    """
+    docstring = interpretation_module.__doc__
+    assert docstring is not None
+    flattened = " ".join(docstring.split())
+
+    for sentence in MODULE_NON_CLAIMS:
+        assert sentence in flattened, sentence
+    for inverted in INVERTED_MODULE_CLAIMS:
+        assert inverted not in flattened, inverted
+
+
 def test_the_module_publishes_no_relation_to_the_repair_or_test_layers() -> None:
     """Co-presence in one repository manufactures no relation.
 
@@ -1529,28 +1642,39 @@ def test_the_module_publishes_no_relation_to_the_repair_or_test_layers() -> None
     these records. The module imports neither layer and declares no field that
     could reference one, so no consumer can read a relation out of them.
     """
-    imported = {
-        alias.name if isinstance(node, ast.Import) else cast(str, node.module)
-        for node in ast.walk(_interpretation_tree())
-        if isinstance(node, ast.Import | ast.ImportFrom)
-        for alias in node.names
-    }
+    # `from faultatlas.domain import fault_repair` records only the package as
+    # `node.module`, so the member is resolved here too.
+    reached: set[str] = set()
+    for node in ast.walk(_interpretation_tree()):
+        if isinstance(node, ast.Import):
+            reached.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            module = cast(str, node.module)
+            reached.add(module)
+            reached.update(f"{module}.{alias.name}" for alias in node.names)
 
-    assert "faultatlas.domain.fault_repair" not in imported
-    assert "faultatlas.domain.fault_test" not in imported
-    assert "faultatlas.domain.fault_source_relationship" not in imported
-    assert "faultatlas.domain.evidence" not in imported
-    assert "faultatlas.domain.history" not in imported
+    for layer in (
+        "faultatlas.domain.fault_repair",
+        "faultatlas.domain.fault_test",
+        "faultatlas.domain.fault_source_relationship",
+        "faultatlas.domain.evidence",
+        "faultatlas.domain.history",
+        "faultatlas.domain.history_evidence_link",
+        "faultatlas.domain.source",
+    ):
+        assert layer not in reached, layer
 
+    # The whole file, docstring included: none of these names may appear at all.
     source = INTERPRETATION_SOURCE.read_text(encoding="utf-8")
-    body = source.split('"""', 2)[-1]
     for forbidden in (
         "ReportedFaultTestOutcome",
         "ReportedFaultTestComparison",
         "SuppliedFaultRepairCandidate",
         "DurableEvidenceRecordReference",
+        "FaultRepairCandidateIdentity",
+        "FaultTestRunIdentity",
     ):
-        assert forbidden not in body, forbidden
+        assert forbidden not in source, forbidden
 
 
 def test_a_failed_to_passed_comparison_verifies_no_expected_property() -> None:
@@ -1569,6 +1693,31 @@ def test_a_failed_to_passed_comparison_verifies_no_expected_property() -> None:
     assert beyond == set()
     for absent in ("verified", "satisfied", "comparison", "outcome", "confirmed"):
         assert absent not in expected.model_dump_json(), absent
+
+
+def test_a_hypothesis_carries_no_position_for_a_later_result() -> None:
+    """`model_copy(update=...)` bypasses validation, and the surface holds.
+
+    Pydantic's copy hatch attaches an arbitrary attribute without validating
+    it. That reaches `getattr` and nothing else: the JSON payload, both
+    schemas, equality and revalidation are all unchanged, so no consumer of the
+    published contract can read a resolution out of it.
+    """
+    hypothesis = _hypothesis()
+    smuggled = hypothesis.model_copy(update={"confirmed": True})
+
+    assert getattr(smuggled, "confirmed", None) is True
+    # Nothing published moves: payload, both schemas and equality are unchanged.
+    assert _payload(smuggled) == _payload(hypothesis)
+    assert smuggled == hypothesis
+    for mode in ("validation", "serialization"):
+        schema = SuppliedFaultHypothesis.model_json_schema(mode=mode)  # pyright: ignore[reportArgumentType]
+        assert "confirmed" not in schema["properties"], mode
+    # And the smuggled attribute does not survive a round trip through the
+    # published contract, so no consumer of it can ever read the resolution.
+    restored = SuppliedFaultHypothesis.model_validate_json(smuggled.model_dump_json())
+    assert restored == hypothesis
+    assert not hasattr(restored, "confirmed")
 
 
 def test_a_later_success_disproves_no_earlier_hypothesis() -> None:
@@ -1824,10 +1973,20 @@ EXPECTED_PRODUCTION_MODULES = [
 # --- the no-I/O behavioral witness ----------------------------------------------
 
 
-def test_the_module_names_no_io_entry_point_in_its_executable_body() -> None:
-    """A first, weak, textual screen. The audit-hook witness below carries the
-    real closure: this one only fails fast on the obvious form.
-    """  # noqa: E501
+def test_the_module_reaches_no_eventless_clock_or_environment_call() -> None:
+    """The half an audit hook structurally cannot witness.
+
+    CPython raises no audit event for `os.times`, `os.stat`, `os.environ` or
+    anything in `time`, verified directly: a hook installed around them
+    observes nothing. So the audit witness below cannot see a clock or
+    environment read, and this screen carries that half instead.
+
+    Every such call has to reach `os` somehow. The module imports it nowhere --
+    which `test_the_module_imports_only_its_declared_predecessor` pins by exact
+    set equality -- so the remaining route is an attribute on a module it does
+    import, as in `uuid.os.times()`. That spelling is refused here, along with
+    the clock and environment names themselves.
+    """
     called = {
         node.func.id
         for node in ast.walk(_interpretation_tree())
@@ -1841,12 +2000,22 @@ def test_the_module_names_no_io_entry_point_in_its_executable_body() -> None:
     for forbidden in (
         "import os",
         "import io",
+        "import time",
         "Path(",
         "requests",
         "urllib",
         "now(",
         "subprocess",
         "getattr(",
+        # Reach-through to an eventless call via an already-imported module.
+        ".os.",
+        "os.",
+        "time.",
+        "datetime",
+        "environ",
+        "getenv",
+        "perf_counter",
+        "monotonic",
     ):
         assert forbidden not in body, forbidden
 
@@ -1856,16 +2025,26 @@ import json
 import sys
 import uuid
 
-PROCESS_OR_NETWORK = (
-    "subprocess.", "os.system", "os.exec", "os.fork", "os.posix_spawn",
-    "os.spawn", "os.startfile", "os.popen", "socket.", "urllib.",
-    "ftplib.", "smtplib.", "http.client.", "webbrowser.",
+# Enumerating dangerous events misses whichever one is not listed --
+# `os.utime`, `os.putenv`, `os.listdir` and `os.stat` are all real events that
+# such a list forgets. The set is inverted instead: every event is recorded,
+# and only the interpreter's own import and object machinery is allowed. The
+# import phase additionally needs the filesystem scan the import system does;
+# the use phase does not, so it allows no `os.` event at all.
+IMPORT_PHASE_ALLOWED = frozenset(
+    {
+        "builtins.id", "compile", "exec", "import", "marshal.loads",
+        "object.__getattr__", "object.__setattr__", "open", "os.listdir",
+        "sys._getframe", "sys._getframemodulename",
+    }
 )
-MUTATION = (
-    "os.remove", "os.rename", "os.mkdir", "os.rmdir", "os.chdir", "os.chmod",
-    "os.link", "os.symlink", "os.truncate", "shutil.",
+USE_PHASE_ALLOWED = frozenset(
+    {
+        "builtins.id", "compile", "exec", "import", "marshal.loads",
+        "object.__getattr__", "object.__setattr__", "open",
+        "sys._getframe", "sys._getframemodulename",
+    }
 )
-CLOCK_OR_ENVIRONMENT = ("time.", "os.environ", "os.getenv")
 WRITE_MODES = frozenset("wax+")
 ENTROPY = ("/dev/urandom", "/dev/random")
 INTERPRETER_ROOTS = tuple(
@@ -1876,19 +2055,16 @@ MODULE_SUFFIXES = (".py", ".pyc", ".pth", ".so")
 
 violations = []
 opened = []
+allowed = IMPORT_PHASE_ALLOWED
 recording = False
 
 
 def hook(event, args):
     if not recording:
         return
-    if (
-        event.startswith(PROCESS_OR_NETWORK)
-        or event.startswith(MUTATION)
-        or event.startswith(CLOCK_OR_ENVIRONMENT)
-    ):
-        violations.append(f"{event} {args!r}")
-    elif event == "open":
+    if event not in allowed:
+        violations.append(event)
+    if event == "open":
         path = str(args[0])
         mode = str(args[1] or "")
         if set(mode) & WRITE_MODES:
@@ -1916,6 +2092,10 @@ from faultatlas.domain.identity import (
     ProviderRepositoryId,
     RepositoryIdentity,
 )
+
+import_violations = list(violations)
+violations.clear()
+allowed = USE_PHASE_ALLOWED
 
 report = SuppliedFaultReport(
     report=FaultReportIdentity(uuid.UUID(sys.argv[1])),
@@ -1959,22 +2139,38 @@ for value, model in (
         pass
 
 recording = False
-print(json.dumps({"violations": violations, "opened": opened}))
+print(
+    json.dumps(
+        {
+            "import_violations": sorted(set(import_violations)),
+            "use_violations": sorted(set(violations)),
+            "opened": opened,
+        }
+    )
+)
 """
 
 
 def test_the_module_starts_no_process_and_touches_no_file() -> None:
     """The closure is asserted as a property, not as a list of spellings.
 
-    A textual screen enumerates where I/O could be written; an already-imported
-    module reached by attribute access walks straight through one. This installs
-    an audit hook before the module is imported, in an isolated interpreter so
-    the hook cannot contaminate any other test, and requires that importing it,
-    constructing every published value, revalidating, serializing, refusing a
-    Python dump and building every JSON schema raises no process, network,
-    filesystem-mutation, clock or environment event at all -- whatever it is
-    spelled. The only opens permitted are the interpreter's own read-only
-    imports, which is how pydantic loads lazily.
+    A list of dangerous event names misses whichever one is absent from it, so
+    the set is inverted: every audit event raised is recorded, and only the
+    interpreter's own import and object machinery is allowed through. An
+    `os.utime`, an `os.putenv`, an `os.listdir` or a `subprocess.Popen` fails
+    because it is not on the allowlist, however it is spelled and whichever
+    already-imported module it is reached through.
+
+    The hook is installed before the module is imported and covers import,
+    construction, revalidation, serialization, refusal of a Python dump and
+    schema generation, in an isolated interpreter so it cannot contaminate any
+    other test. The import phase additionally allows the filesystem scan the
+    import system itself performs; the use phase allows no `os` event at all.
+
+    What this cannot witness: CPython raises no audit event for `os.times`,
+    `os.stat`, `os.environ` or `time`, so clock and environment reads are
+    invisible here and are carried by
+    `test_the_module_reaches_no_eventless_clock_or_environment_call` instead.
     """
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
@@ -2005,7 +2201,8 @@ def test_the_module_starts_no_process_and_touches_no_file() -> None:
     )
     reported: dict[str, Any] = json.loads(result.stdout.strip().splitlines()[-1])
 
-    assert reported["violations"] == []
+    assert reported["import_violations"] == []
+    assert reported["use_violations"] == []
     assert reported["opened"] == []
 
 
@@ -2118,6 +2315,10 @@ def test_the_roadmap_names_no_completed_slice_as_remaining_work() -> None:
         assert f"remain `S1.P06.S{index:02d}` work" not in roadmap, index
         assert f"remains `S1.P06.S{index:02d}` work" not in roadmap, index
         assert f"`S1.P06.S{index:02d}` is next and not started" not in roadmap, index
+        # A completed Slice may not be named as the owner of remaining work
+        # either. This phrasing had gone unguarded and stayed stale since S03.
+        assert f"remain owned by `S1.P06.S{index:02d}`" not in roadmap, index
+        assert f"remains owned by `S1.P06.S{index:02d}`" not in roadmap, index
 
 
 def test_the_roadmap_preserves_the_predecessor_history_as_written() -> None:

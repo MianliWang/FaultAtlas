@@ -742,7 +742,6 @@ def test_production_surface_adds_history_fault_and_relations_after_this_decision
         FAULT_REPAIR_MODULE,
         FAULT_TEST_MODULE,
         FAULT_INTERPRETATION_MODULE,
-        FAULT_INTERPRETATION_MODULE,
     }
     assert EXPECTED_PRODUCTION_FILES - observed == set()
     assert len(EXPECTED_PRODUCTION_FILES) == 11

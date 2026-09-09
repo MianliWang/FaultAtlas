@@ -1251,7 +1251,8 @@ failed before-run or passed after-run, no reviewed expected property, and no
 evidence support. `S1.P06.S02` publishes no run, outcome, expected-property,
 root-cause, confidence, review, repair-candidate, source-relationship,
 evidence-link, scenario, or environment model, no reusable pattern or
-invariant, and no complete `FaultInstance`; those remain owned by `S1.P06.S03`
+invariant, and no complete `FaultInstance`; those were taken up by
+`S1.P06.S03` through `S1.P06.S07` and the rest remain owned by `S1.P06.S08`
 through `S1.P06.S09`, `S1.P07`, `S1.P09`, and `S1.P10`. The two model-valued
 child positions are guarded against untyped Python input exactly as the
 context's are, the raw text fields carry no nominal guard, and a report

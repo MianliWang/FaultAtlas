@@ -2766,7 +2766,7 @@ def test_the_roadmap_names_no_completed_slice_as_remaining_work() -> None:
         "Test material, reported outcomes and comparability remain `S1.P06.S06` work"
         not in roadmap
     )
-    for index in range(1, 7):
+    for index in range(1, 8):
         assert f"remain `S1.P06.S{index:02d}` work" not in roadmap, index
         assert f"remains `S1.P06.S{index:02d}` work" not in roadmap, index
 

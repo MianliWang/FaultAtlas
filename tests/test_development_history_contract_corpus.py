@@ -1495,9 +1495,9 @@ def test_the_corpus_changed_no_production_source_and_names_what_followed() -> No
     """The corpus added nothing; a later Slice did, and it is named here.
 
     Publishing this corpus changed no production source, and the surface it
-    froze is still present. The live tree has since gained exactly two modules,
-    which are named rather than absorbed into a count, so a third unexplained
-    module would fail here.
+    froze is still present. Every module the live tree has gained since is
+    named below rather than absorbed into a count, so one more that no Slice
+    explains would fail here.
     """
     observed = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
@@ -1513,7 +1513,6 @@ def test_the_corpus_changed_no_production_source_and_names_what_followed() -> No
         FAULT_SOURCE_RELATIONSHIP_MODULE,
         FAULT_REPAIR_MODULE,
         FAULT_TEST_MODULE,
-        FAULT_INTERPRETATION_MODULE,
         FAULT_INTERPRETATION_MODULE,
     }
     assert len(COVERED_PRODUCTION_FILES) == PRODUCTION_SOURCE_COUNT_AT_PUBLICATION

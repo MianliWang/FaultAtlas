@@ -758,15 +758,18 @@ def test_every_phase_status_summary_records_the_correction() -> None:
     # is inspected where it stands rather than in aggregate.
     summaries = text.split("`S1.P05.S10` are complete")[1:]
     assert len(summaries) == complete
-    terminator = "is next and not started."
     for summary in summaries:
-        # Bound each summary at the end of its own lifecycle sentence, which is
-        # the live-gate claim. A fixed character window had to be widened by
-        # hand as the list of complete Slices grew; this does not, and it names
-        # no Slice number, so it stays correct as the gate advances.
-        end = summary.find(terminator)
-        assert end != -1, summary[:240]
-        head = summary[: end + len(terminator)]
+        # Bound each summary at its own lifecycle sentence. A fixed character
+        # window had to be widened by hand as the list of complete Slices grew;
+        # searching forward for a terminator phrase is worse, because a summary
+        # that lost its own live-gate claim would silently borrow the next
+        # section's, tens of thousands of characters away. Splitting on ". " is
+        # strictly local: the periods inside `S1.P06.S01` are never followed by
+        # a space, so the second element is exactly this summary's own
+        # lifecycle sentence, and it names no Slice number.
+        sentences = summary.split(". ")
+        assert len(sentences) > 1, summary[:240]
+        head = sentences[1]
         assert "`S1.P06` is active and incomplete" in head, head
         assert "`S1.P06.S02` is complete" in head, head
         assert "`S1.P06.S03` is complete" in head, head

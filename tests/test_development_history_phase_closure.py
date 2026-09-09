@@ -1832,15 +1832,14 @@ def test_this_closure_adds_no_production_source_and_names_what_followed() -> Non
     assert tracked.returncode == 0, tracked.stderr
     observed = set(tracked.stdout.decode("utf-8").split())
     # This closure added no production source, and the set it sealed is intact.
-    # What the live tree gained since is named rather than absorbed, so a third
-    # unexplained module would fail here instead of inflating a count.
+    # Every module the live tree gained since is named rather than absorbed, so
+    # one more that no Slice explains fails here instead of inflating a count.
     assert CURRENT_PRODUCTION_FILES - observed == set()
     assert observed - CURRENT_PRODUCTION_FILES == {
         FAULT_MODULE,
         FAULT_SOURCE_RELATIONSHIP_MODULE,
         FAULT_REPAIR_MODULE,
         FAULT_TEST_MODULE,
-        FAULT_INTERPRETATION_MODULE,
         FAULT_INTERPRETATION_MODULE,
     }
     assert len(CURRENT_PRODUCTION_FILES) == 13
