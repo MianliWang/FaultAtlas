@@ -50,10 +50,10 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
-COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 8))
+COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 9))
 COMPLETE_PHASES = ("S1.P00", "S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05")
-NEXT_SLICE = "S1.P06.S08"
-NOT_STARTED_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(9, 13))
+NEXT_SLICE = "S1.P06.S09"
+NOT_STARTED_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(10, 13))
 NOT_STARTED_PHASES = ("S1.P07", "S1.P08", "S1.P09", "S1.P10")
 CORRECTION = "S1.P06.S07.C01"
 
@@ -821,10 +821,10 @@ def test_the_predecessor_corrections_from_s06_and_s07_still_stand() -> None:
         "Test material, reported outcomes and comparability became `S1.P06.S06` "
         "work, case-local explanation and hypothesis became `S1.P06.S07` work" in flat
     )
-    assert "the rest remain owned by `S1.P06.S08` through `S1.P06.S09`" in flat
+    assert "the rest remain owned by `S1.P06.S09`" in flat
     assert (
-        "those were taken up by `S1.P06.S03` through `S1.P06.S07` and the rest "
-        "remain owned by `S1.P06.S08`" in flat
+        "those were taken up by `S1.P06.S03` through `S1.P06.S08` and the rest "
+        "remain owned by `S1.P06.S09`" in flat
     )
 
 
