@@ -165,9 +165,15 @@ def test_the_document_names_exactly_one_live_p06_product_gate() -> None:
 # against the state its unit actually has. A new spelling is caught because it
 # is a claim, not because it was predicted.
 UNIT = r"S1\.P\d\d(?:\.S\d\d)?(?:\.C\d\d)?"
+# A contrastive conjunction bounds how far a negation, an auxiliary or a
+# predicate tail may reach; it is used by several of the grammars below.
+CONTRASTIVE = r"but|however|yet|although|though|whereas|while"
+# A tail may cross a comma only when a contrastive follows it: "is complete,
+# but remains open" is one predicate pair, while "is complete, `S1.P06.S02` is
+# complete" is two separate claims and must stop at the comma.
+TAIL = rf"(?:[^,;:.]|,\s+(?:{CONTRASTIVE})\b){{0,80}}"
 PRESENT_CLAIM = re.compile(
-    rf"`({UNIT})`(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b"
-    rf"([^,;:.]{{0,60}})"
+    rf"`({UNIT})`(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b({TAIL})"
 )
 ACTIVE_PHASE_ID = "S1.P06"
 # How many Slices each Phase contains. A child that does not exist may not
@@ -251,7 +257,6 @@ NEGATABLE_TERMS = f"{COMPLETE_TERMS}|{ACTIVE_TERMS}|{NEXT_TERMS}"
 
 # "not only X but also Y" is a correlative, not a denial of X.
 NEGATOR = r"(?:no longer|never|not(?!\s+only\b)|no)"
-CONTRASTIVE = r"but|however|yet|although|though|whereas|while"
 # Words a negator may reach across: anything that is not a contrastive
 # conjunction, which ends its scope.
 UNCONTRASTED = rf"(?:(?!\b(?:{CONTRASTIVE})\b)\w+\s+)"
@@ -289,8 +294,12 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     states: set[str] = set()
     text = tail.lower()
     # "will not be reopened" and "will never be reopened" deny future work
-    # rather than claiming it.
-    if verb == "will" and not re.match(rf"\s*{NEGATOR}\b", text):
+    # rather than claiming it. Each coordinate is judged on its own, so "will
+    # not be reopened but will implement more work" still claims the future.
+    if verb == "will" and any(
+        segment.strip() and not re.match(rf"\s*(?:will\s+)?{NEGATOR}\b", segment)
+        for segment in re.split(rf"\b(?:{CONTRASTIVE})\b", text)
+    ):
         states.add("future")
     if re.search(rf"\b{NEGATOR}\s+(?:yet\s+)?started\b", text):
         states.add("not_started")
@@ -465,7 +474,8 @@ def _is_past_tense(clause: str, *, shares_auxiliary: bool = False) -> bool:
     governed = re.split(rf"\b(?:{markers})\b", _tail_clause(clause), flags=re.I)[-1]
     return bool(
         re.search(
-            r"\b(?:was|were|had|has been|have been)\b\s*(?:\w+\s+){0,2}$",
+            r"\b(?:was|were|had|(?:has|have)(?:\s+\w+)?\s+been)\b"
+            r"\s*(?:\w+\s+){0,2}$",
             governed,
             re.I,
         )
@@ -866,6 +876,9 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("has", " never been completed", {"negated:complete"}),
     ("has", " never started", {"not_started"}),
     ("will", " never be reopened", set()),
+    # Each coordinate of a future claim is judged on its own.
+    ("will", " not be reopened but will implement more work", {"future"}),
+    ("is", " complete, but remains open", {"complete", "not_started"}),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
@@ -898,6 +911,7 @@ def test_a_denied_term_contributes_no_state(
 TENSE_CASES: tuple[tuple[str, bool, bool], ...] = (
     ("The subject was previously ", True, True),
     ("The subject had been ", True, True),
+    ("The subject has previously been ", True, True),
     ("The subject is ", True, False),
     # One auxiliary shared across two passive participles is history.
     ("The subject was reviewed and ", True, True),
