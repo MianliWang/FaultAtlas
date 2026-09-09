@@ -192,6 +192,7 @@ FAULT_MODULE = "src/faultatlas/domain/fault.py"
 FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 FAULT_REPAIR_MODULE = "src/faultatlas/domain/fault_repair.py"
 FAULT_TEST_MODULE = "src/faultatlas/domain/fault_test.py"
+FAULT_INTERPRETATION_MODULE = "src/faultatlas/domain/fault_interpretation.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION,
     EVIDENCE_MODULE,
@@ -203,6 +204,7 @@ CURRENT_PRODUCTION_FILES = {
     FAULT_SOURCE_RELATIONSHIP_MODULE,
     FAULT_REPAIR_MODULE,
     FAULT_TEST_MODULE,
+    FAULT_INTERPRETATION_MODULE,
 }
 EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunId",
@@ -1906,7 +1908,8 @@ def test_group_m_historical_p03_readiness_and_current_s05_are_scope_guarded() ->
     assert "`S1.P06.S04` is complete" in roadmap
     assert "`S1.P06.S05` is complete" in roadmap
     assert "`S1.P06.S06` is complete" in roadmap
-    assert "`S1.P06.S07` is next and not started" in roadmap
+    assert "`S1.P06.S07` is complete" in roadmap
+    assert "`S1.P06.S08` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
 
 
