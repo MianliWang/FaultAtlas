@@ -289,10 +289,16 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     # Negation is bound to the term it modifies. "is complete but not a public
     # contract" negates "contract", not "complete", and stays a completion
     # claim; "is not complete" does not.
-    if re.search(
-        rf"\b(?:not|no longer)\s+(?:\w+\s+){{0,2}}?(?:{NEGATABLE_TERMS})\b", text
-    ) and not re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
-        states.add("negated")
+    if not re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
+        for group, label in (
+            (COMPLETE_TERMS, "complete"),
+            (ACTIVE_TERMS, "active"),
+            (NEXT_TERMS, "next"),
+        ):
+            if re.search(
+                rf"\b(?:not|no longer)\s+(?:\w+\s+){{0,2}}?(?:{group})\b", text
+            ):
+                states.add(f"negated:{label}")
     return states
 
 
@@ -352,13 +358,26 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
             allowed = _allowed_states(unit)
             assert allowed is not None, (start, unit, sorted(states))
             seen += 1
-            assert states <= allowed, (
-                start,
-                unit,
-                sorted(states),
-                sorted(allowed),
-                tail[:60],
-            )
+            for state in sorted(states):
+                if state.startswith("negated:"):
+                    # Denying a state the unit does not have is ordinary prose.
+                    # Denying one it does have contradicts the lifecycle.
+                    denied = state.partition(":")[2]
+                    assert denied not in allowed, (
+                        start,
+                        unit,
+                        state,
+                        sorted(allowed),
+                        tail[:60],
+                    )
+                    continue
+                assert state in allowed, (
+                    start,
+                    unit,
+                    state,
+                    sorted(allowed),
+                    tail[:60],
+                )
     # A floor, so a grammar that silently stopped matching would fail here
     # rather than pass vacuously. The document currently carries 68 such claims.
     assert seen >= 60, seen
@@ -371,7 +390,7 @@ ATTRIBUTED_TO = re.compile(
     rf"is assigned to|will be (?:added|published|implemented) by)\s+`({UNIT})`"
 )
 # "the unresolved subject remains `S1.P05` work" puts the unit in the middle.
-WORK_ATTRIBUTION = re.compile(rf"\bremains?\s+`({UNIT})`\s+work")
+WORK_ATTRIBUTION = re.compile(rf"\b(?:is|are|remains?)\s+`({UNIT})`\s+work")
 
 
 def _tail_clause(clause: str) -> str:
@@ -799,11 +818,15 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("will", " implement bounded composition", {"future"}),
     ("remains", " open", {"not_started"}),
     # The denial suppresses the completion term and asserts the contradiction.
-    ("is", " not complete", {"negated"}),
-    ("is", " no longer complete", {"negated"}),
+    ("is", " not complete", {"negated:complete"}),
+    ("is", " no longer complete", {"negated:complete"}),
     ("is", " completed", {"complete"}),
-    ("is", " not completed", {"negated"}),
-    ("is", " not finished", {"negated"}),
+    ("is", " not completed", {"negated:complete"}),
+    ("is", " not finished", {"negated:complete"}),
+    # A denial names the term it denies, so the caller can tell a legitimate
+    # denial ("`S1.P05` is not active") from a contradiction.
+    ("is", " not active", {"negated:active"}),
+    ("is", " not next", {"negated:next"}),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
