@@ -41,6 +41,7 @@ ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
 COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 8))
+COMPLETE_PHASES = ("S1.P00", "S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05")
 NEXT_SLICE = "S1.P06.S08"
 NOT_STARTED_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(9, 13))
 NOT_STARTED_PHASES = ("S1.P07", "S1.P08", "S1.P09", "S1.P10")
@@ -147,6 +148,88 @@ def test_the_document_names_exactly_one_live_p06_product_gate() -> None:
     assert set(ACTIVE_PHASE.findall(flat)) == {"S1.P06"}
 
 
+# Enumerating forbidden phrasings does not converge: each round of review
+# supplies a spelling the previous list did not hold. The present-tense state
+# vocabulary of this document is small and closed, so the set is inverted --
+# every present-tense state claim is extracted by one grammar and checked
+# against the state its unit actually has. A new spelling is caught because it
+# is a claim, not because it was predicted.
+PRESENT_CLAIM = re.compile(
+    r"`(S1\.P\d\d(?:\.S\d\d)?)`\s+(is|are|remains|remain|will)\b([^,;:.]{0,60})"
+)
+ACTIVE_PHASE_ID = "S1.P06"
+
+
+def _claimed_state(verb: str, tail: str) -> str | None:
+    """Classify one present-tense predicate into a lifecycle state, or None."""
+    text = tail.lower()
+    if verb == "will":
+        return "future"
+    if "not started" in text or "not yet started" in text:
+        return "not_started"
+    if "next" in text:
+        return "next"
+    if "active" in text:
+        return "active"
+    if "incomplete" in text:
+        return "active"
+    if "complete" in text:
+        return "complete"
+    return None
+
+
+def _allowed_states(unit: str) -> set[str]:
+    if unit in COMPLETE_SLICES or unit in COMPLETE_PHASES:
+        return {"complete"}
+    if unit == NEXT_SLICE:
+        return {"next", "not_started"}
+    if unit == ACTIVE_PHASE_ID:
+        return {"active"}
+    if unit in NOT_STARTED_SLICES or unit in NOT_STARTED_PHASES:
+        return {"not_started"}
+    return set()
+
+
+def test_every_present_tense_state_claim_matches_the_authoritative_state() -> None:
+    """One grammar over the closed predicate vocabulary, sentence-local.
+
+    Past-tense narrative is untouched: only `is`, `are`, `remain(s)` and `will`
+    are read, so "`S1.P05` was `eligible_to_begin`" and "`S1.P05` through
+    `S1.P10` were not started" stay legitimate history.
+    """
+    seen = 0
+    for start, sentence in _sentences():
+        for unit, verb, tail in PRESENT_CLAIM.findall(sentence):
+            state = _claimed_state(verb, tail)
+            if state is None:
+                continue
+            allowed = _allowed_states(unit)
+            if not allowed:
+                continue
+            seen += 1
+            assert state in allowed, (start, unit, state, sorted(allowed), tail[:60])
+    # A floor, so a grammar that silently stopped matching would fail here
+    # rather than pass vacuously. The document currently carries 68 such claims.
+    assert seen >= 60, seen
+
+
+# Attribution reads the other way round: the unit is the object, not the
+# subject. One vocabulary covers Slices and Phases alike.
+ATTRIBUTED_TO = re.compile(
+    r"\b(?:belongs to|is owned by|is deferred to|is scheduled for|awaits|"
+    r"is assigned to|will be (?:added|published|implemented) by)\s+"
+    r"`(S1\.P\d\d(?:\.S\d\d)?)`"
+)
+
+
+def test_no_open_work_is_presently_attributed_to_a_completed_unit() -> None:
+    """A completed Slice or Phase may be a past owner, never the present one."""
+    for start, sentence in _sentences():
+        for unit in ATTRIBUTED_TO.findall(sentence):
+            assert unit not in COMPLETE_SLICES, (start, unit, sentence[:200])
+            assert unit not in COMPLETE_PHASES, (start, unit, sentence[:200])
+
+
 COMPLETION_CLAIM = re.compile(r"`(S1\.P06\.S\d\d)` is complete")
 # A sentence enumerating this many completed Slices is a lifecycle summary,
 # whatever phrase introduces it.
@@ -220,7 +303,11 @@ def _route_entries() -> list[tuple[str, str]]:
 
 
 def test_the_route_states_the_authoritative_state_for_every_position() -> None:
-    entries = dict(_route_entries())
+    rows = _route_entries()
+    # Building the lookup first would let a duplicated row collapse silently.
+    assert len(rows) == 12, rows
+    assert len({slice_id for slice_id, _ in rows}) == 12, rows
+    entries = dict(rows)
 
     assert len(entries) == 12, sorted(entries)
     for slice_id in COMPLETE_SLICES:
@@ -338,9 +425,8 @@ def test_no_completed_phase_is_named_as_a_present_owner_of_open_work() -> None:
     owned by `S1.P05`". A completed phase may be named as a past owner, never
     as the present one.
     """
-    completed_phases = ("S1.P00", "S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05")
     for start, sentence in _sentences():
-        for phase in completed_phases:
+        for phase in COMPLETE_PHASES:
             for shape in (
                 f"is owned by `{phase}`",
                 f"remains owned by `{phase}`",
