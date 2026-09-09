@@ -1229,13 +1229,14 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     assert "`S1.P06.S04` is complete" in roadmap
     assert "`S1.P06.S05` is complete" in roadmap
     assert "`S1.P06.S06` is complete" in roadmap
-    assert "`S1.P06.S07` is next and not started" in roadmap
+    assert "`S1.P06.S07` is complete" in roadmap
+    assert "`S1.P06.S08` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
 
     assert "faultatlas.domain.fault" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    assert "Production Python sources are 17." in current
+    assert "Production Python sources are 18." in current
 
     # The superseded entry-gate claims must be retired, not left standing.
     assert "`S1.P06` is next and not started" not in roadmap
@@ -1249,12 +1250,12 @@ def test_the_roadmap_route_is_provisional_beyond_this_slice() -> None:
         (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
     )
 
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S06`." in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S07`." in roadmap
     for index in range(2, 13):
         assert f"`S1.P06.S{index:02d}`" in roadmap
     assert "`S1.P06.S13`" not in roadmap
-    # Only S01 through S06 are claimed complete in the route.
-    for index in range(7, 13):
+    # Only S01 through S07 are claimed complete in the route.
+    for index in range(8, 13):
         assert f"`S1.P06.S{index:02d}` is complete" not in roadmap
 
 
@@ -1363,6 +1364,7 @@ def test_the_wheel_ships_the_new_module_and_no_corpus_or_test_material(
         "faultatlas/domain/compatibility.py",
         "faultatlas/domain/evidence.py",
         "faultatlas/domain/fault.py",
+        "faultatlas/domain/fault_interpretation.py",
         "faultatlas/domain/fault_repair.py",
         "faultatlas/domain/fault_source_relationship.py",
         "faultatlas/domain/fault_test.py",
@@ -1374,7 +1376,7 @@ def test_the_wheel_ships_the_new_module_and_no_corpus_or_test_material(
         "faultatlas/domain/snapshot_evidence_link.py",
         "faultatlas/domain/source.py",
     ]
-    assert len(modules) == 17
+    assert len(modules) == 18
     for name in names:
         assert "reference_corpus" not in name
         assert not name.startswith("tests/")
@@ -1399,6 +1401,7 @@ def test_the_sdist_ships_the_new_module_and_no_corpus_or_test_material(
         "faultatlas/domain/compatibility.py",
         "faultatlas/domain/evidence.py",
         "faultatlas/domain/fault.py",
+        "faultatlas/domain/fault_interpretation.py",
         "faultatlas/domain/fault_repair.py",
         "faultatlas/domain/fault_source_relationship.py",
         "faultatlas/domain/fault_test.py",
@@ -1410,7 +1413,7 @@ def test_the_sdist_ships_the_new_module_and_no_corpus_or_test_material(
         "faultatlas/domain/snapshot_evidence_link.py",
         "faultatlas/domain/source.py",
     ]
-    assert len(modules) == 17
+    assert len(modules) == 18
     for name in names:
         parts = Path(name).parts
         assert "reference_corpus" not in parts

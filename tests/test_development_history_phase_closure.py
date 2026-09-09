@@ -84,6 +84,7 @@ FAULT_MODULE = "src/faultatlas/domain/fault.py"
 FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 FAULT_REPAIR_MODULE = "src/faultatlas/domain/fault_repair.py"
 FAULT_TEST_MODULE = "src/faultatlas/domain/fault_test.py"
+FAULT_INTERPRETATION_MODULE = "src/faultatlas/domain/fault_interpretation.py"
 
 EXPECTED_OWNED_SYMBOLS = (
     ("S1.P05.S01", "faultatlas.domain.history", "PullRequestRevisionRoleBinding"),
@@ -1839,9 +1840,11 @@ def test_this_closure_adds_no_production_source_and_names_what_followed() -> Non
         FAULT_SOURCE_RELATIONSHIP_MODULE,
         FAULT_REPAIR_MODULE,
         FAULT_TEST_MODULE,
+        FAULT_INTERPRETATION_MODULE,
+        FAULT_INTERPRETATION_MODULE,
     }
     assert len(CURRENT_PRODUCTION_FILES) == 13
-    assert len(observed) == 17
+    assert len(observed) == 18
 
 
 def test_owned_symbols_match_the_live_published_modules() -> None:
@@ -1906,7 +1909,8 @@ def test_roadmap_records_phase_completion_and_p06_readiness() -> None:
     assert "`S1.P06.S04` is complete" in roadmap
     assert "`S1.P06.S05` is complete" in roadmap
     assert "`S1.P06.S06` is complete" in roadmap
-    assert "`S1.P06.S07` is next and not started" in roadmap
+    assert "`S1.P06.S07` is complete" in roadmap
+    assert "`S1.P06.S08` is next and not started" in roadmap
     assert "`S1.P04` is complete" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in roadmap
@@ -1970,7 +1974,7 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S07"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P06.S08"}, sorted(set(live_next))
 
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))

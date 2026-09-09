@@ -44,8 +44,8 @@ aspirational Slice as scheduled work.
   `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
   `S1.P06.S02` is complete, `S1.P06.S03` is complete,
   `S1.P06.S04` is complete, `S1.P06.S05` is complete,
-  `S1.P06.S06` is complete, and
-  `S1.P06.S07` is next and not started.
+  `S1.P06.S06` is complete, `S1.P06.S07` is complete,
+  and `S1.P06.S08` is next and not started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -96,8 +96,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
-`S1.P06.S06` is complete, and
-`S1.P06.S07` is next and not started.
+`S1.P06.S06` is complete, `S1.P06.S07` is complete,
+and `S1.P06.S08` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -699,8 +699,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
-`S1.P06.S06` is complete, and
-`S1.P06.S07` is next and not started.
+`S1.P06.S06` is complete, `S1.P06.S07` is complete,
+and `S1.P06.S08` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1147,8 +1147,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P06` is active and incomplete. `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
-`S1.P06.S06` is complete, and
-`S1.P06.S07` is next and not started.
+`S1.P06.S06` is complete, `S1.P06.S07` is complete,
+and `S1.P06.S08` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1347,7 +1347,7 @@ differing contents are not reconciled here, and `S1.P06.S03` published no
 source relationship, evidence link, root cause, repair, confidence, review,
 reusable pattern or invariant, and no complete `FaultInstance`. The bounded
 source and history relationships came next, in `S1.P06.S04`, and the repair
-candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S07` through
+candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S08` through
 `S1.P06.S09`, `S1.P07`, `S1.P08`, `S1.P09`, and `S1.P10`. The module still
 performs no I/O.
 
@@ -1491,9 +1491,9 @@ about a suspected, latent, unreproduced, or cause-unknown report, and it require
 no root cause either: a repair may target an observed behavioral deviation while
 the cause is still unknown, which is why no cause, explanation, or hypothesis
 field exists. Test material, reported outcomes and comparability became
-`S1.P06.S06` work, case-local explanation and hypothesis remain `S1.P06.S07`
-work, the fault-evidence bridge `S1.P06.S09` work, and generic review, support
-and confidence calculus `S1.P09` work.
+`S1.P06.S06` work, case-local explanation and hypothesis became `S1.P06.S07`
+work, the fault-evidence bridge remains `S1.P06.S09` work, and generic review,
+support and confidence calculus `S1.P09` work.
 
 A candidate is complete without any implementation. `S1.P06.S05` separates the
 proposal from the concrete material deliberately, so a purely conceptual
@@ -1698,7 +1698,82 @@ included, is closed to untyped Python input and is not bypassed by
 lexeme normally so each record round-trips through JSON while refusing its own
 `model_dump` as Python input; and the module performs no I/O.
 
-The `S1.P06` route is provisional beyond `S1.P06.S06`. Later exact schemas are
+`S1.P06.S07` adds one new production module,
+`faultatlas.domain.fault_interpretation`, whose `__all__` is exactly
+`FaultExplanationIdentity`, `SuppliedFaultExplanation`,
+`FaultHypothesisIdentity`, `SuppliedFaultHypothesis`,
+`FaultExpectedPropertyIdentity`, and `SuppliedFaultExpectedProperty`, in that
+order, so production Python sources move from 17 to 18.
+`faultatlas.domain.fault`, `faultatlas.domain.fault_repair`,
+`faultatlas.domain.fault_source_relationship`, `faultatlas.domain.fault_test`,
+`faultatlas.domain.revision`, `faultatlas.domain.history`, and
+`faultatlas.domain.evidence` are unchanged by it and none of them imports it.
+
+`S1.P06.S07` publishes three independent case-local knowledge categories about
+one published fault report, because they are three different epistemic acts. An
+explanation is an account a caller offers of why or how the reported behavioral
+deviation arises. A hypothesis is a proposition a caller explicitly retains as
+tentative. An expected property is a statement of behavior a caller says ought
+to hold for this report. All three anchor on one `SuppliedFaultReport` consumed
+whole, so the fault subject stays reachable through the report and no fault,
+repository, report identity, problem statement, or behavioral deviation is
+restated.
+
+`FaultExplanationIdentity`, `FaultHypothesisIdentity`, and
+`FaultExpectedPropertyIdentity` are three further independent named
+`RootModel[uuid.UUID]` values, so all ten `S1.P06` UUID-rooted identities stay
+nominally distinct even when one scalar is assigned to all ten. The caller
+assigns each UUID; nothing generates, derives, reserves, looks up, deduplicates,
+merges, or registers one, Nil and Max are ordinary values, and each serializes
+as the bare UUID string.
+
+An explanation is a supplied explanatory claim, not a promoted fact. It may
+carry a root-cause-shaped account, and doing so establishes no root cause and
+records no acceptance, review, support, or verification, which is why no
+`root_cause`, `accepted`, `verified`, `confidence`, or `review` field exists and
+why an explanation is never more probable than a hypothesis about the same
+report. A hypothesis stays explicitly tentative merely by being represented in
+that position, and carries no `confirmed`, `rejected`, `supported`, `disproved`,
+`probability`, `confidence`, `review`, or `evidence` field, so it cannot record
+its own resolution; a hypothesis used as fixture material is a supplied
+proposition there too, never a historical fact promoted by appearing in a test.
+
+An expected property is case-local. Its carrier scopes it to exactly one
+supplied fault report, so it is not a passing test, a verified invariant, a
+universal program law, a cross-instance pattern, a repair acceptance criterion,
+or proof that the current behavior is wrong. Cross-instance generalization into
+patterns and invariants is `S1.P07` work and is not begun here. No prose is
+parsed, scope-checked, or classified anywhere in the module, so breadth of
+phrasing is not breadth of claim.
+
+The three kinds do not convert into one another: there is no promotion,
+lifecycle, or transition from hypothesis to explanation or back, and the same
+prose may appear in two of them while the records stay distinct because they
+carry different identities and different epistemic roles. One report may carry
+none, one, or several of each kind independently, including explanations or
+hypotheses that contradict each other, and this layer chooses no winner, so
+no uniqueness, precedence, replacement, supersession, or conflict resolution
+exists.
+Nothing requires a reproduction, scenario, occurrence, repair candidate, test
+material, reported run, or reported outcome to exist first.
+
+Nothing is inferred from the repair or test layers. A repair candidate does not
+make an explanation true, a candidate revision does not make a root cause known,
+a reported `failed` to `passed` comparison neither confirms an explanation nor
+verifies an expected property, a reported `passed` outcome does not satisfy an
+expected property universally, a later reported success does not disprove an
+earlier hypothesis, and a merge accepts nothing. The module publishes no
+relation to repair candidates, test material, runs, outcomes, comparisons,
+source objects, history facts, or evidence records, and co-presence manufactures
+none. Bounded composition and reference integrity remain `S1.P06.S08` work.
+
+All three records are frozen, strict, extra-forbidding and always-revalidating,
+close both model-valued positions to untyped Python input without being
+bypassed by `from_attributes=True`, declare no input or output alias, admit no
+optional or nullable field, round-trip through JSON while refusing their own
+`model_dump` as Python input, and perform no I/O.
+
+The `S1.P06` route is provisional beyond `S1.P06.S07`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -1710,10 +1785,10 @@ tests before the corpus Slice:
    (complete)
 6. `S1.P06.S06` — Test Material, Reported Runs, Outcomes, and Comparability
    (complete)
-7. `S1.P06.S07` — Case-local explanation, hypothesis, and expected property
-   (next, not started)
+7. `S1.P06.S07` — Case-Local Explanation, Hypothesis, and Expected Property
+   (complete)
 8. `S1.P06.S08` — Bounded `FaultInstance` composition and reference integrity
-   (not started)
+   (next, not started)
 9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical (not started)
 10. `S1.P06.S10` — Deferred disposition and readiness (not started)
 11. `S1.P06.S11` — Accumulated contract corpus (not started)
@@ -1972,7 +2047,32 @@ and `did_not_start`, `errored`, and `timed_out` remain distinct from `failed`.
 All five records are frozen, strict, extra-forbidding and always-revalidating,
 close every model-valued position and the outcome position to untyped Python
 input, round-trip through JSON while refusing their own `model_dump` as Python
-input, and perform no I/O. Production Python sources are 17.
+input, and perform no I/O.
+`S1.P06.S07` adds the module `faultatlas.domain.fault_interpretation`, whose
+`__all__` is exactly `FaultExplanationIdentity`, `SuppliedFaultExplanation`,
+`FaultHypothesisIdentity`, `SuppliedFaultHypothesis`,
+`FaultExpectedPropertyIdentity`, and `SuppliedFaultExpectedProperty`. It keeps
+explanation, hypothesis, and expected property as three separate case-local
+knowledge categories, each anchored on one `SuppliedFaultReport` consumed whole,
+and a report may carry none, one, or several of each independently. The three
+new `RootModel[uuid.UUID]` identities bring the `S1.P06` UUID-rooted identities
+to ten, all nominally distinct on one shared scalar. `SuppliedFaultExplanation`
+carries an `explanation_statement` that may be root-cause shaped without
+establishing a root cause or recording acceptance, review, support, or
+verification. `SuppliedFaultHypothesis` carries a `hypothesis_statement` that
+stays explicitly tentative and cannot record its own confirmation, rejection,
+probability, or supporting evidence. `SuppliedFaultExpectedProperty` carries an
+`expected_property_statement` scoped to one report, which is not a passing test,
+a verified invariant, a universal law, a cross-instance pattern, or a repair
+acceptance criterion; generalization is `S1.P07` work. No promotion, lifecycle,
+precedence, or conflict resolution relates the three, identical prose in two
+kinds stays two records, and nothing is inferred from repair candidates, test
+material, runs, outcomes, or comparisons, to which the module publishes no
+relation at all. All three records are frozen, strict, extra-forbidding and
+always-revalidating, close both model-valued positions to untyped Python input,
+declare no alias and no nullable field, round-trip through JSON while refusing
+their own `model_dump` as Python input, and perform no I/O. Production Python
+sources are 18.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
@@ -1980,8 +2080,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
-`S1.P06.S06` is complete, and
-`S1.P06.S07` is next and not started.
+`S1.P06.S06` is complete, `S1.P06.S07` is complete,
+and `S1.P06.S08` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
