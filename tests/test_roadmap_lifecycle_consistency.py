@@ -155,7 +155,8 @@ def test_the_document_names_exactly_one_live_p06_product_gate() -> None:
 # against the state its unit actually has. A new spelling is caught because it
 # is a claim, not because it was predicted.
 PRESENT_CLAIM = re.compile(
-    r"`(S1\.P\d\d(?:\.S\d\d)?)`\s+(is|are|remains|remain|will)\b([^,;:.]{0,60})"
+    r"`(S1\.P\d\d(?:\.S\d\d)?)`\s+(is|are|remains|remain|will|has|have)\b"
+    r"([^,;:.]{0,60})"
 )
 ACTIVE_PHASE_ID = "S1.P06"
 
@@ -238,17 +239,35 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
 # Attribution reads the other way round: the unit is the object, not the
 # subject. One vocabulary covers Slices and Phases alike.
 ATTRIBUTED_TO = re.compile(
-    r"(?<!was )(?<!were )\b(?:belongs to|owned by|is deferred to|"
-    r"is scheduled for|awaits|is assigned to|"
-    r"will be (?:added|published|implemented) by)\s+"
+    r"\b(?:belongs to|owned by|is deferred to|is scheduled for|awaits|"
+    r"is assigned to|will be (?:added|published|implemented) by)\s+"
     r"`(S1\.P\d\d(?:\.S\d\d)?)`"
 )
+# "the unresolved subject remains `S1.P05` work" puts the unit in the middle.
+WORK_ATTRIBUTION = re.compile(r"\bremains?\s+`(S1\.P\d\d(?:\.S\d\d)?)`\s+work")
+
+
+def _tail_clause(clause: str) -> str:
+    return re.split(r"[;:,]", clause)[-1]
 
 
 def _is_negated(clause: str) -> bool:
     """Whether a negation heads the noun phrase this predicate belongs to."""
+    return bool(re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", _tail_clause(clause), re.I))
+
+
+def _is_past_tense(clause: str) -> bool:
+    """Whether a past auxiliary governs the predicate that follows.
+
+    Detected rather than matched adjacently, so legitimate history keeps its
+    modifiers: "was previously owned by" and "had been owned by" are past.
+    """
     return bool(
-        re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", re.split(r"[;:,]", clause)[-1], re.I)
+        re.search(
+            r"\b(?:was|were|had|has been|have been)\b\s*(?:\w+\s+){0,3}$",
+            _tail_clause(clause),
+            re.I,
+        )
     )
 
 
@@ -261,12 +280,14 @@ def test_no_open_work_is_presently_attributed_to_a_completed_unit() -> None:
     opposite and is admitted.
     """
     for start, sentence in _sentences():
-        for match in ATTRIBUTED_TO.finditer(sentence):
-            unit = match.group(1)
-            if _is_negated(sentence[: match.start()]):
-                continue
-            assert unit not in COMPLETE_SLICES, (start, unit, sentence[:200])
-            assert unit not in COMPLETE_PHASES, (start, unit, sentence[:200])
+        for pattern in (ATTRIBUTED_TO, WORK_ATTRIBUTION):
+            for match in pattern.finditer(sentence):
+                unit = match.group(1)
+                before = sentence[: match.start()]
+                if _is_negated(before) or _is_past_tense(before):
+                    continue
+                assert unit not in COMPLETE_SLICES, (start, unit, sentence[:200])
+                assert unit not in COMPLETE_PHASES, (start, unit, sentence[:200])
 
 
 COMPLETION_CLAIM = re.compile(r"`(S1\.P06\.S\d\d)` is complete")
