@@ -1408,6 +1408,167 @@ def test_the_tracked_production_inventory_is_nineteen_modules() -> None:
     assert "src/faultatlas/domain/fault_instance.py" in observed
 
 
+# --- membership is narrowed by key, decided by whole record -------------------
+
+
+def test_an_indexed_lookup_still_refuses_a_same_identity_divergent_record() -> None:
+    """The key selects candidates; it never decides acceptance.
+
+    Reference integrity is checked by looking a reference up under the subject
+    identity it names and comparing the members that key selects. This is the
+    case that separates the two: the key matches a composed member exactly,
+    and the record behind it does not.
+    """
+    composed = _report(problem=PROBLEM)
+    divergent = _report(problem=OTHER_PROBLEM)
+
+    assert divergent.report == composed.report
+    assert divergent != composed
+
+    with pytest.raises(ValidationError) as failure:
+        _instance(reports=(composed,), scenarios=(_scenario(report=divergent),))
+
+    assert "scenarios[0] references a report this composition does not carry" in (
+        _messages(failure.value)
+    )
+
+    assert (
+        _instance(reports=(composed,), scenarios=(_scenario(report=composed),))
+        .scenarios[0]
+        .report
+        == composed
+    )
+
+
+def test_two_outcomes_sharing_a_lookup_key_are_still_told_apart() -> None:
+    """Reported outcomes have no identity, so their key can collide.
+
+    An outcome's key is a projection of the three fields it publishes, so two
+    outcomes agreeing on all three while disagreeing inside their run land in
+    one bucket. The bucket only narrows the search, and full-record equality is
+    what accepts, so the composition must still refuse the one it does not
+    carry. A comparison names two distinct runs, so the colliding pair sits at
+    the `before` end and an unrelated outcome sits at the `after` end.
+    """
+    material = _material()
+    composed_run = _run(RUN, material)
+    divergent_run = _run(RUN, material, statement="Reported as run differently.")
+    later_run = _run(SECOND_RUN, material, statement="Reported as run again.")
+
+    assert divergent_run.run == composed_run.run
+    assert divergent_run != composed_run
+
+    composed_outcome = _outcome(composed_run, ReportedFaultTestOutcomeKind.FAILED)
+    divergent_outcome = _outcome(divergent_run, ReportedFaultTestOutcomeKind.FAILED)
+    later_outcome = _outcome(
+        later_run,
+        ReportedFaultTestOutcomeKind.PASSED,
+        statement="Reported as ending without the described assertion.",
+    )
+
+    # Identical run identity, identical kind, identical prose: one key.
+    assert composed_outcome.run.run == divergent_outcome.run.run
+    assert composed_outcome.outcome == divergent_outcome.outcome
+    assert composed_outcome.outcome_statement == divergent_outcome.outcome_statement
+    assert composed_outcome != divergent_outcome
+
+    support: dict[str, Any] = {
+        "test_materials": (material,),
+        "test_runs": (composed_run, later_run),
+        "test_outcomes": (composed_outcome, later_outcome),
+    }
+    statement = "The caller reports the two attempts for comparison."
+
+    with pytest.raises(ValidationError) as failure:
+        _instance(
+            **support,
+            test_comparisons=(
+                ReportedFaultTestComparison(
+                    before=divergent_outcome,
+                    after=later_outcome,
+                    comparison_statement=statement,
+                ),
+            ),
+        )
+
+    assert "test_comparisons.before[0]" in _messages(failure.value)
+
+    composed = _instance(
+        **support,
+        test_comparisons=(
+            ReportedFaultTestComparison(
+                before=composed_outcome,
+                after=later_outcome,
+                comparison_statement=statement,
+            ),
+        ),
+    )
+    assert composed.test_comparisons[0].before == composed_outcome
+
+
+# The published implementation compared every reference against every member of
+# the collection it pointed into. Counting whole-record comparisons states that
+# directly and is stable across machines in a way that a wall clock is not.
+LINEAR_PROBE_SIZES = (128, 256)
+LINEAR_COMPARISON_ALLOWANCE = 8
+
+
+def _linear_probe_material(
+    count: int,
+) -> tuple[tuple[SuppliedFaultReport, ...], tuple[SuppliedFaultScenario, ...]]:
+    """`count` reports, and one scenario naming each of them."""
+    reports: list[SuppliedFaultReport] = []
+    scenarios: list[SuppliedFaultScenario] = []
+    for index in range(count):
+        report = _report(
+            uuid.uuid5(FAULT, f"probe-report-{index}"),
+            problem=f"Problem number {index}.",
+        )
+        reports.append(report)
+        scenarios.append(
+            _scenario(
+                uuid.uuid5(FAULT, f"probe-scenario-{index}"),
+                report=report,
+                statement=f"Scenario number {index}.",
+            )
+        )
+    return tuple(reports), tuple(scenarios)
+
+
+def test_reference_membership_comparisons_grow_about_linearly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One comparison per reference, not one per reference per member.
+
+    A scan of the whole collection makes this grow with the product of the two
+    sizes, so doubling the edge roughly quadruples the work. Looking the
+    reference up first makes doubling the edge roughly double it. The bound
+    below is deliberately loose: it is asserting a shape, not a constant.
+    """
+    equality = SuppliedFaultReport.__eq__
+    observed = 0
+
+    def counting(left: SuppliedFaultReport, right: object) -> bool:
+        nonlocal observed
+        observed += 1
+        return equality(left, right)
+
+    monkeypatch.setattr(SuppliedFaultReport, "__eq__", counting)
+
+    comparisons: dict[int, int] = {}
+    for size in LINEAR_PROBE_SIZES:
+        reports, scenarios = _linear_probe_material(size)
+        observed = 0
+        _instance(reports=reports, scenarios=scenarios)
+        comparisons[size] = observed
+
+    for size, count in comparisons.items():
+        assert count <= LINEAR_COMPARISON_ALLOWANCE * size, (size, count)
+
+    smaller, larger = LINEAR_PROBE_SIZES
+    assert comparisons[larger] <= 3 * comparisons[smaller], comparisons
+
+
 # --- the same four rules through the JSON input language ----------------------
 
 
@@ -1506,7 +1667,12 @@ def test_each_composition_rule_holds_on_the_json_path(
 # field names, the child fields it reads to check a reference, and `uuid.UUID`.
 EXPECTED_ATTRIBUTE_VOCABULARY = {
     "UUID",
+    "append",
+    "get",
     "mode",
+    "outcome",
+    "outcome_statement",
+    "setdefault",
     "after",
     "before",
     "candidate",
@@ -1575,6 +1741,10 @@ EXPECTED_NAME_VOCABULARY = {
     "_MAX_MEMBERS",
     "__all__",
     "anchored",
+    "candidate",
+    "candidates",
+    "composed",
+    "dict",
     "edges",
     "enumerate",
     "expected_properties",
@@ -1584,13 +1754,19 @@ EXPECTED_NAME_VOCABULARY = {
     "hypotheses",
     "identifiers",
     "index",
+    "key",
     "len",
+    "list",
+    "material",
+    "materials",
     "members",
     "model_config",
     "model_validator",
     "name",
     "object",
     "occurrences",
+    "outcome",
+    "outcomes",
     "record",
     "referenced",
     "repair_candidates",
@@ -1598,6 +1774,9 @@ EXPECTED_NAME_VOCABULARY = {
     "repair_revision_associations",
     "report",
     "reports",
+    "run",
+    "runs",
+    "scenario",
     "scenarios",
     "self",
     "set",
@@ -1824,6 +2003,30 @@ def test_the_roadmap_records_the_p06_s08_transition() -> None:
     assert "`S1.P06.S08` is next and not started" not in roadmap
     assert "`S1.P06.S09` is complete" not in roadmap
     assert "Production Python sources are 18." not in roadmap
+
+
+def test_the_roadmap_records_the_membership_performance_interlude() -> None:
+    """An interlude after `S1.P06.S08`, not a Slice and not a state change."""
+    roadmap = _roadmap()
+
+    for statement in (
+        "A performance interlude follows `S1.P06.S08` and changes none of its",
+        "indexes each target collection once per validation",
+        "Full-record equality remains the",
+        "final authority",
+        "Equal records always produce equal keys",
+        "No whole-record hash contract is introduced",
+        "the 4096 bound is unchanged",
+        "production Python sources remain 19 and `S1.P06.S09` remains next",
+        "Reference-Integrity Membership Performance Interlude",
+    ):
+        assert statement in roadmap, statement
+
+    # The interlude must not read as route progress.
+    assert "`S1.P06.S09` is complete" not in roadmap
+    assert "`S1.P06.S08` is next and not started" not in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S08`." in roadmap
+    assert "Production Python sources are 19." in roadmap
 
 
 def test_the_roadmap_states_the_s08_decisions_and_non_claims() -> None:

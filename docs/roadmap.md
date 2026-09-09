@@ -1862,6 +1862,26 @@ a `RootModel` field reconstructs from its own root type even under strict
 validation, so a bare UUID would otherwise be accepted where a published
 identity is meant.
 
+A performance interlude follows `S1.P06.S08` and changes none of its
+semantics. Reference integrity was checked by comparing each reference against
+every member of the collection it pointed into, so a composition near the 4096
+bound did work proportional to the product of the two sizes. The interlude
+indexes each target collection once per validation and compares a reference
+only against the members its key selects. Full-record equality remains the
+final authority: a key narrows candidates and never accepts one, so a record
+sharing a subject identity with a composed member while differing anywhere else
+is refused exactly as before, and a reference naming nothing composed is still
+dangling. Equal records always produce equal keys, so narrowing hides nothing a
+whole-collection scan would have found. Reported outcomes publish no identity
+and several may name one run, so their key is a projection of the three fields
+they publish; a key two outcomes share only widens the bucket that the equality
+check then decides, and it is never published or treated as a name. No
+whole-record hash contract is introduced, no predecessor model's equality or
+hashing changes, no identifier is added, the indexes are local to one
+validation and nothing keeps them, and the 4096 bound is unchanged. The
+interlude publishes no module and no symbol and does not advance the route:
+production Python sources remain 19 and `S1.P06.S09` remains next.
+
 The `S1.P06` route is provisional beyond `S1.P06.S08`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
@@ -1880,6 +1900,9 @@ tests before the corpus Slice:
   (complete)
 8. `S1.P06.S08` — Bounded `FaultInstance` Composition and Reference Integrity
    (complete)
+- Reference-Integrity Membership Performance Interlude, which follows
+  `S1.P06.S08`, is not a Slice of the route, and changed no semantics
+  (complete)
 9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical
    (next, not started)
 10. `S1.P06.S10` — Deferred disposition and readiness (not started)
@@ -2183,7 +2206,11 @@ outcomes for one run and conflicting explanations or hypotheses for one report
 coexist without resolution, no semantic edge is inferred across layers, order is
 preserved without meaning, no evidence, support or confidence is carried, the
 composed subject and every collection are closed to untyped Python input, and
-the module performs no I/O. Production Python sources are 19.
+the module performs no I/O. Reference membership is resolved through indexes
+built once per validation and discarded with it, with whole-record equality
+still deciding acceptance; that performance interlude changed no `S1.P06.S08`
+semantics, added no symbol, and left the collection bound at 4096. Production
+Python sources are 19.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
