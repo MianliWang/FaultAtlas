@@ -251,7 +251,9 @@ COMPLETE_TERMS = "complete|completed|finished|closed|published|delivered"
 ACTIVE_TERMS = "active|incomplete"
 NEXT_TERMS = "next"
 FUTURE_TERMS = "planned|scheduled|proposed|forthcoming|upcoming"
-UNFINISHED_TERMS = "open|pending|outstanding|unresolved"
+# "incomplete" is deliberately absent: it maps to the active state, because
+# the live Phase is legitimately described as active and incomplete.
+UNFINISHED_TERMS = "open|pending|outstanding|unresolved|unfinished"
 NEGATABLE_TERMS = f"{COMPLETE_TERMS}|{ACTIVE_TERMS}|{NEXT_TERMS}"
 
 
@@ -293,19 +295,6 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     """
     states: set[str] = set()
     text = tail.lower()
-    # "will not be reopened" and "will never be reopened" deny future work
-    # rather than claiming it. Each coordinate is judged on its own, so "will
-    # not be reopened but will implement more work" still claims the future.
-    if verb == "will":
-        segments = [s for s in re.split(rf"\b(?:{CONTRASTIVE})\b", text) if s.strip()]
-        for index, segment in enumerate(segments):
-            # The leading coordinate inherits the verb; a later one is a future
-            # claim only if it carries its own "will".
-            if index and not re.match(r"\s*will\b", segment):
-                continue
-            if not re.match(rf"\s*(?:will\s+)?{NEGATOR}\b", segment):
-                states.add("future")
-                break
     if re.search(rf"\b{NEGATOR}\s+(?:yet\s+|been\s+|yet been\s+)?started\b", text):
         states.add("not_started")
     # Unfinished-work terms. No unit is legitimately described this way here,
@@ -326,6 +315,21 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     # `\b` already excludes "incomplete", which is not a completion claim.
     if _asserts(text, COMPLETE_TERMS):
         states.add("complete")
+
+    if verb == "will" and not states:
+        # "will remain complete" claims a state that persists, not future work,
+        # so a predicate that already asserts a state is not a future claim.
+        segments = [
+            s for s in re.split(rf"\b(?:{CONTRASTIVE}|and|or)\b", text) if s.strip()
+        ]
+        for index, segment in enumerate(segments):
+            # The leading coordinate inherits the verb; a later one is a future
+            # claim only if it carries its own "will".
+            if index and not re.match(r"\s*will\b", segment):
+                continue
+            if not re.match(rf"\s*(?:will\s+)?{NEGATOR}\b", segment):
+                states.add("future")
+                break
     # Negation is bound to the term it modifies. "is complete but not a public
     # contract" negates "contract", not "complete", and stays a completion
     # claim; "is not complete" does not.
@@ -445,7 +449,7 @@ def _is_negated(clause: str) -> bool:
     """
     tail = _tail_clause(clause)
     return bool(
-        re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", tail, re.I)
+        re.search(r"\b(?:no|neither)\b\s+(?:\w+\s+){0,3}$", tail, re.I)
         or re.search(rf"\b{NEGATOR}\s+(?:\w+\s+){{0,2}}$", tail, re.I)
     )
 
@@ -743,9 +747,13 @@ def test_no_completed_phase_is_named_as_a_present_owner_of_open_work() -> None:
     """The class this correction was written for.
 
     `S1.P05` had already carried the `deferred:19` default-branch subject
-    forward to `S5`, yet the `S1.P05.S01` narrative still said the subject "is
-    owned by `S1.P05`". A completed phase may be named as a past owner, never
-    as the present one.
+    forward to `S5`, yet the `S1.P05.S01` narrative still named `S1.P05` as its
+    present owner. A completed phase may be named as a past owner, never as the
+    present one.
+
+    Negation and tense are decided by the shared helpers rather than by a
+    second copy of their vocabularies here, because a copy drifts: adding
+    "neither" to one and not the other is what surfaced this.
     """
     for start, sentence in _sentences():
         for phase in COMPLETE_PHASES:
@@ -757,19 +765,12 @@ def test_no_completed_phase_is_named_as_a_present_owner_of_open_work() -> None:
                 index = sentence.find(shape)
                 if index == -1:
                     continue
-                # A negated claim -- "No subject remains owned by `S1.P04`" --
-                # says the opposite and is correct. The negation has to modify
-                # this predicate's own subject, so it must head the noun phrase
-                # immediately before it. An unrelated negation earlier in the
-                # sentence does not negate the claim, whether or not
-                # punctuation separates the two: "No evidence is available and
-                # the subject remains owned by `S1.P05`" still asserts it.
-                clause = re.split(r"[;:,]", sentence[:index])[-1]
-                assert re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", clause, re.I), (
+                before = sentence[:index]
+                assert _is_negated(before) or _is_past_tense(before), (
                     start,
                     phase,
                     shape,
-                    clause[-80:],
+                    before[-80:],
                 )
 
 
@@ -887,6 +888,10 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("has", " not been started", {"not_started"}),
     # A later coordinate is a future claim only if it carries its own "will".
     ("will", " not be reopened but `S1.P09` owns the remainder", set()),
+    ("will", " not be reopened and will implement more work", {"future"}),
+    # "will remain complete" persists a state; it is not a claim of future work.
+    ("will", " remain complete", {"complete"}),
+    ("is", " unfinished", {"not_started"}),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
@@ -940,6 +945,7 @@ NEGATED_CLAUSES: tuple[tuple[str, bool], ...] = (
     ("The subject is not currently ", True),
     ("The subject is not presently ", True),
     ("No subject remains ", True),
+    ("Neither subject is ", True),
     ("The result is `self_owned_open == 0`: no unresolved subject remains ", True),
     ("The subject is ", False),
     # "not only X but also Y" is a correlative, not a denial of X.
