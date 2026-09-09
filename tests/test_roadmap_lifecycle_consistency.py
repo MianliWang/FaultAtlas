@@ -209,7 +209,8 @@ RANGE_CLAIM = re.compile(
 )
 # Coordination is the same shape as a range: several subjects, one predicate.
 COORDINATED_CLAIM = re.compile(
-    r"((?:`S1\.P\d\d(?:\.S\d\d)?`(?:,\s*|\s+and\s+))+`S1\.P\d\d(?:\.S\d\d)?`)"
+    r"((?:`S1\.P\d\d(?:\.S\d\d)?`(?:,\s+and\s+|,\s*|\s+and\s+))+"
+    r"`S1\.P\d\d(?:\.S\d\d)?`)"
     r"\s+(is|are|remains|remain|will|has|have)\b([^;:.]{0,60})"
 )
 COORDINATED_UNIT = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)`")
@@ -237,25 +238,31 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     """
     states: set[str] = set()
     text = tail.lower()
-    # "is not complete" asserts the opposite of "is complete"; classifying on
-    # the bare word would read a contradiction as agreement.
-    if re.search(r"\bnot\b(?!\s+(?:started|yet started))", text):
-        states.add("negated")
     if verb == "will":
         states.add("future")
-    if "not started" in text or "not yet started" in text:
+    if re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
         states.add("not_started")
-    # "open", "pending", "outstanding", "unresolved" all assert unfinished
-    # work. No unit is legitimately described that way in this document.
-    if any(word in text for word in ("open", "pending", "outstanding", "unresolved")):
+    # Unfinished-work terms. No unit is legitimately described this way here.
+    if re.search(r"\b(?:open|pending|outstanding|unresolved)\b", text):
         states.add("not_started")
-    if "next" in text:
+    if re.search(r"\bnext\b", text):
         states.add("next")
-    if "active" in text or "incomplete" in text:
+    # Word boundaries matter: "inactive" is not "active", and asserts the
+    # opposite of the state the active phase is allowed to be in.
+    if re.search(r"\b(?:active|incomplete)\b", text):
         states.add("active")
-    # "incomplete" is not a completion claim.
-    if re.search(r"(?<!in)complete", text):
+    if re.search(r"\binactive\b", text):
+        states.add("inactive")
+    # `\b` already excludes "incomplete", which is not a completion claim.
+    if re.search(r"\bcomplete\b", text):
         states.add("complete")
+    # Negation is bound to the term it modifies. "is complete but not a public
+    # contract" negates "contract", not "complete", and stays a completion
+    # claim; "is not complete" does not.
+    if re.search(
+        r"\bnot\s+(?:\w+\s+){0,2}?(?:complete|active|next)\b", text
+    ) and not re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
+        states.add("negated")
     return states
 
 
@@ -342,8 +349,16 @@ def _tail_clause(clause: str) -> str:
 
 
 def _is_negated(clause: str) -> bool:
-    """Whether a negation heads the noun phrase this predicate belongs to."""
-    return bool(re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", _tail_clause(clause), re.I))
+    """Whether this predicate is negated.
+
+    Two shapes: a noun phrase headed by "no" ("No subject remains owned by"),
+    and a predicate directly negated ("the subject is not owned by").
+    """
+    tail = _tail_clause(clause)
+    return bool(
+        re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", tail, re.I)
+        or re.search(r"\bnot\s*$", tail, re.I)
+    )
 
 
 def _is_past_tense(clause: str) -> bool:
