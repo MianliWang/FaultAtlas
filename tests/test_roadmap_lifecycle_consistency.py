@@ -760,7 +760,7 @@ def test_the_correction_narrative_records_what_it_changed() -> None:
 # both sides, on the classifier directly, so the next narrowing has to keep
 # them.
 
-ASSERTED_PREDICATES = (
+ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete", {"complete"}),
     ("is", " active and incomplete", {"active"}),
     ("is", " next and not started", {"next", "not_started"}),
@@ -772,7 +772,7 @@ ASSERTED_PREDICATES = (
     # The denial suppresses the completion term and asserts the contradiction.
     ("is", " not complete", {"negated"}),
 )
-DENIED_PREDICATES = (
+DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
     ("is", " complete but not a public contract", {"complete"}),
     ("is", " not scheduled for more work", set()),
