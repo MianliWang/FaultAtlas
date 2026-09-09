@@ -44,8 +44,8 @@ aspirational Slice as scheduled work.
   `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
   `S1.P06.S02` is complete, `S1.P06.S03` is complete,
   `S1.P06.S04` is complete, `S1.P06.S05` is complete,
-  `S1.P06.S06` is complete, `S1.P06.S07` is complete,
-  and `S1.P06.S08` is next and not started.
+  `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
+  `S1.P06.S07.C01` correction, and `S1.P06.S08` is next and not started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -96,8 +96,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
-`S1.P06.S06` is complete, `S1.P06.S07` is complete,
-and `S1.P06.S08` is next and not started.
+`S1.P06.S06` is complete, `S1.P06.S07` is complete including the
+`S1.P06.S07.C01` correction, and `S1.P06.S08` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -699,8 +699,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
-`S1.P06.S06` is complete, `S1.P06.S07` is complete,
-and `S1.P06.S08` is next and not started.
+`S1.P06.S06` is complete, `S1.P06.S07` is complete including the
+`S1.P06.S07.C01` correction, and `S1.P06.S08` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -745,11 +745,12 @@ is not claimed, and an absent binding asserts nothing. The Slice is
 evidence-neutral, leaves the `S1.P04` record-level evidence association exactly
 where it stands, and performs no Git or GitHub I/O.
 
-`S1.P02` `deferred:19` default-branch observation is owned by `S1.P05` but is
-not implemented by `S1.P05.S01`; the historical default branch remains unknown
-and owned by `S2`. The six `S1.P04` handoff constraints are inherited
-unchanged, and the published `S1.P04` contracts, the repository-snapshot v1
-corpus, and all `S1.P00`-`S1.P03` artifacts remain frozen.
+`S1.P02` `deferred:19` default-branch observation was owned by `S1.P05` and
+was not implemented by `S1.P05.S01`; `S1.P05.S08` has since carried it forward
+to `S5`, and the historical default branch remains unknown and owned by `S2`.
+The six `S1.P04` handoff constraints are inherited unchanged, and the published
+`S1.P04` contracts, the repository-snapshot v1 corpus, and all
+`S1.P00`-`S1.P03` artifacts remain frozen.
 
 `S1.P05.S02` extends `faultatlas.domain.history` with `ChangedPathStatus`,
 `PullRequestChangedPath`, and `PullRequestChangeSet`. A change set carries the
@@ -1147,8 +1148,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P06` is active and incomplete. `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
-`S1.P06.S06` is complete, `S1.P06.S07` is complete,
-and `S1.P06.S08` is next and not started.
+`S1.P06.S06` is complete, `S1.P06.S07` is complete including the
+`S1.P06.S07.C01` correction, and `S1.P06.S08` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1774,6 +1775,25 @@ bypassed by `from_attributes=True`, declare no input or output alias, admit no
 optional or nullable field, round-trip through JSON while refusing their own
 `model_dump` as Python input, and perform no I/O.
 
+`S1.P06.S07.C01` corrects roadmap lifecycle narrative without changing any
+published contract. It adds no production module, revises no `S1.P06.S01`
+through `S1.P06.S07` semantics, and does not move the live gate, which stays
+`S1.P06.S08`. A whole-roadmap sentence-local audit reconciled every present
+tense lifecycle and ownership statement against the current state and found one
+stale claim: the `S1.P05.S01` narrative still named `S1.P05` as the present
+owner of the `S1.P02` `deferred:19` default-branch observation, although
+`S1.P05` is complete and `S1.P05.S08` had carried that subject forward to `S5`.
+The clause is now past tense and names the current owner. Correct later
+ownership was left exactly as it stood, including confidence, review and
+interpretation provenance owned by
+`S1.P09`, the fault-evidence bridge owned by `S1.P06.S09`, durable byte
+contracts owned by `S1.P10`, pattern and invariant generalization owned by
+`S1.P07`, and the repository-graph and ingestion subjects owned by `S5` and
+`S2`. The correction also publishes
+`tests/test_roadmap_lifecycle_consistency.py`, which owns this cross-Slice
+narrative rule sentence-locally so it is no longer spread across product Slice
+oracles.
+
 The `S1.P06` route is provisional beyond `S1.P06.S07`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
@@ -1788,6 +1808,8 @@ tests before the corpus Slice:
    (complete)
 7. `S1.P06.S07` — Case-Local Explanation, Hypothesis, and Expected Property
    (complete)
+- `S1.P06.S07.C01` — Roadmap Lifecycle Narrative Consistency Correction
+  (complete)
 8. `S1.P06.S08` — Bounded `FaultInstance` composition and reference integrity
    (next, not started)
 9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical (not started)
@@ -2081,8 +2103,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
-`S1.P06.S06` is complete, `S1.P06.S07` is complete,
-and `S1.P06.S08` is next and not started.
+`S1.P06.S06` is complete, `S1.P06.S07` is complete including the
+`S1.P06.S07.C01` correction, and `S1.P06.S08` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,

@@ -2307,20 +2307,6 @@ def test_the_roadmap_states_the_s07_decisions_and_non_claims() -> None:
     assert "remain `S1.P06.S08` work" in roadmap
 
 
-def test_the_roadmap_names_no_completed_slice_as_remaining_work() -> None:
-    """A completed Slice may not still be described as future work."""
-    roadmap = _roadmap()
-
-    for index in range(1, 8):
-        assert f"remain `S1.P06.S{index:02d}` work" not in roadmap, index
-        assert f"remains `S1.P06.S{index:02d}` work" not in roadmap, index
-        assert f"`S1.P06.S{index:02d}` is next and not started" not in roadmap, index
-        # A completed Slice may not be named as the owner of remaining work
-        # either. This phrasing had gone unguarded and stayed stale since S03.
-        assert f"remain owned by `S1.P06.S{index:02d}`" not in roadmap, index
-        assert f"remains owned by `S1.P06.S{index:02d}`" not in roadmap, index
-
-
 def test_the_roadmap_preserves_the_predecessor_history_as_written() -> None:
     roadmap = _roadmap()
 

@@ -2747,30 +2747,6 @@ def test_the_roadmap_states_the_s06_decisions_and_non_claims() -> None:
     )
 
 
-def test_the_roadmap_names_no_completed_slice_as_remaining_work() -> None:
-    """A completed Slice may not still be described as future work.
-
-    Both sentences below named `S1.P06.S06` in the present tense from within
-    predecessor narratives, and the `S1.P06.S05` publication advanced the first
-    of them for exactly this reason.
-    """
-    roadmap = _roadmap()
-
-    assert "the rest remain owned by `S1.P06.S08` through `S1.P06.S09`" in roadmap
-    assert "the rest remain owned by `S1.P06.S07` through" not in roadmap
-    assert (
-        "Test material, reported outcomes and comparability became `S1.P06.S06` work"
-        in roadmap
-    )
-    assert (
-        "Test material, reported outcomes and comparability remain `S1.P06.S06` work"
-        not in roadmap
-    )
-    for index in range(1, 8):
-        assert f"remain `S1.P06.S{index:02d}` work" not in roadmap, index
-        assert f"remains `S1.P06.S{index:02d}` work" not in roadmap, index
-
-
 def test_the_roadmap_preserves_the_predecessor_history_as_written() -> None:
     roadmap = _roadmap()
 
