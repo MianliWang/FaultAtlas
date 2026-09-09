@@ -1102,7 +1102,10 @@ def test_the_composed_subject_must_already_be_a_published_identity() -> None:
     """
     report = _report()
 
-    for untyped in (FAULT, FAULT_TEXT):
+    # The scalar and its text, which the declared annotation does not admit;
+    # the point of the guard is that validation refuses them at runtime too.
+    untyped_subjects: tuple[Any, ...] = (FAULT, FAULT_TEXT)
+    for untyped in untyped_subjects:
         with pytest.raises(ValidationError) as failure:
             FaultInstance(fault=untyped, reports=(report,))
         assert "fault must be a FaultInstanceIdentity in Python input" in _messages(
