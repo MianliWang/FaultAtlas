@@ -326,7 +326,19 @@ class FaultInstance(BaseModel):
         Membership is by whole record. Two reports may share one identity while
         disagreeing in their supplied text, so matching the embedded identifier
         would silently choose one of them.
+
+        The index only narrows the candidates. Whichever composed reports a
+        reference's own report identity selects, the reference is still
+        compared in full before it is accepted, so a divergent copy sharing an
+        identity is refused exactly as it was when this scanned the whole
+        collection. Equal records always produce equal keys, so narrowing can
+        never hide a member a full scan would have found. The index is local to
+        this call and nothing keeps it.
         """
+        composed: dict[object, list[object]] = {}
+        for record in self.reports:
+            composed.setdefault(record.report.root, []).append(record)
+
         anchored: tuple[tuple[str, tuple[SuppliedFaultReport, ...]], ...] = (
             ("scenarios", tuple(record.report for record in self.scenarios)),
             (
@@ -354,7 +366,7 @@ class FaultInstance(BaseModel):
         )
         for name, referenced in anchored:
             for index, report in enumerate(referenced):
-                if report not in self.reports:
+                if report not in composed.get(report.report.root, ()):
                     raise ValueError(
                         f"{name}[{index}] references a report this composition "
                         f"does not carry"
@@ -367,54 +379,128 @@ class FaultInstance(BaseModel):
 
         Nothing is auto-inserted: a referenced value the composition does not
         already carry makes the reference dangling, not the composition larger.
+
+        Each target collection is indexed once by a key its own published
+        fields already determine, and a reference is then compared in full
+        against only the members that key selects. Equal records always produce
+        equal keys, so a narrowed search finds every member a full scan would
+        have found; a key two different records happen to share only widens the
+        bucket, and full-record equality still decides. The indexes are local
+        to this call and nothing keeps them.
+
+        Reported outcomes carry no identity of their own, and several may name
+        one run and disagree, so their key is a projection of the three fields
+        they publish rather than an identity. It selects candidates for the
+        equality check and is never published, exposed, or treated as a name.
         """
-        edges: tuple[tuple[str, tuple[object, ...], tuple[object, ...]], ...] = (
+        scenarios: dict[object, list[object]] = {}
+        for scenario in self.scenarios:
+            scenarios.setdefault(scenario.scenario.root, []).append(scenario)
+
+        candidates: dict[object, list[object]] = {}
+        for candidate in self.repair_candidates:
+            candidates.setdefault(candidate.candidate.root, []).append(candidate)
+
+        materials: dict[object, list[object]] = {}
+        for material in self.test_materials:
+            materials.setdefault(material.material.root, []).append(material)
+
+        runs: dict[object, list[object]] = {}
+        for run in self.test_runs:
+            runs.setdefault(run.run.root, []).append(run)
+
+        outcomes: dict[object, list[object]] = {}
+        for outcome in self.test_outcomes:
+            outcomes.setdefault(
+                (outcome.run.run.root, outcome.outcome, outcome.outcome_statement),
+                [],
+            ).append(outcome)
+
+        edges: tuple[
+            tuple[str, tuple[tuple[object, object], ...], dict[object, list[object]]],
+            ...,
+        ] = (
             (
                 "occurrences",
-                tuple(record.scenario for record in self.occurrences),
-                self.scenarios,
+                tuple(
+                    (record.scenario.scenario.root, record.scenario)
+                    for record in self.occurrences
+                ),
+                scenarios,
             ),
             (
                 "repair_revision_associations",
-                tuple(record.candidate for record in self.repair_revision_associations),
-                self.repair_candidates,
+                tuple(
+                    (record.candidate.candidate.root, record.candidate)
+                    for record in self.repair_revision_associations
+                ),
+                candidates,
             ),
             (
                 "repair_change_set_associations",
                 tuple(
-                    record.candidate for record in self.repair_change_set_associations
+                    (record.candidate.candidate.root, record.candidate)
+                    for record in self.repair_change_set_associations
                 ),
-                self.repair_candidates,
+                candidates,
             ),
             (
                 "test_runs",
-                tuple(record.test_material for record in self.test_runs),
-                self.test_materials,
+                tuple(
+                    (record.test_material.material.root, record.test_material)
+                    for record in self.test_runs
+                ),
+                materials,
             ),
             (
                 "test_outcomes",
-                tuple(record.run for record in self.test_outcomes),
-                self.test_runs,
+                tuple(
+                    (record.run.run.root, record.run) for record in self.test_outcomes
+                ),
+                runs,
             ),
             (
                 "test_run_revision_associations",
-                tuple(record.run for record in self.test_run_revision_associations),
-                self.test_runs,
+                tuple(
+                    (record.run.run.root, record.run)
+                    for record in self.test_run_revision_associations
+                ),
+                runs,
             ),
             (
                 "test_comparisons.before",
-                tuple(record.before for record in self.test_comparisons),
-                self.test_outcomes,
+                tuple(
+                    (
+                        (
+                            record.before.run.run.root,
+                            record.before.outcome,
+                            record.before.outcome_statement,
+                        ),
+                        record.before,
+                    )
+                    for record in self.test_comparisons
+                ),
+                outcomes,
             ),
             (
                 "test_comparisons.after",
-                tuple(record.after for record in self.test_comparisons),
-                self.test_outcomes,
+                tuple(
+                    (
+                        (
+                            record.after.run.run.root,
+                            record.after.outcome,
+                            record.after.outcome_statement,
+                        ),
+                        record.after,
+                    )
+                    for record in self.test_comparisons
+                ),
+                outcomes,
             ),
         )
         for name, referenced, members in edges:
-            for index, value in enumerate(referenced):
-                if value not in members:
+            for index, (key, value) in enumerate(referenced):
+                if value not in members.get(key, ()):
                     raise ValueError(
                         f"{name}[{index}] references a value this composition "
                         f"does not carry"
