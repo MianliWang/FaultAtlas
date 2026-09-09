@@ -273,7 +273,7 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
     if _asserts(text, "inactive"):
         states.add("inactive")
     # `\b` already excludes "incomplete", which is not a completion claim.
-    if _asserts(text, "complete"):
+    if _asserts(text, "complete|completed|finished|closed|published|delivered"):
         states.add("complete")
     # Negation is bound to the term it modifies. "is complete but not a public
     # contract" negates "contract", not "complete", and stays a completion
@@ -426,9 +426,14 @@ def test_no_open_work_is_presently_attributed_to_a_completed_unit() -> None:
                 if coordinated:
                     units += COORDINATED_UNIT.findall(coordinated.group(0))
                 for unit in units:
-                    assert unit not in COMPLETE_SLICES, (start, unit, sentence[:200])
-                    assert unit not in COMPLETE_PHASES, (start, unit, sentence[:200])
-                    assert ".C" not in unit, (start, unit, sentence[:200])
+                    # A unit whose only allowed state is complete has finished,
+                    # whatever kind it is: a Phase, a Slice of a completed
+                    # Phase, a completed `S1.P06` Slice, or a correction.
+                    assert _allowed_states(unit) != {"complete"}, (
+                        start,
+                        unit,
+                        sentence[:200],
+                    )
 
 
 COMPLETION_CLAIM = re.compile(r"`(S1\.P06\.S\d\d)` is complete")
