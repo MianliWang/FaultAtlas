@@ -229,6 +229,17 @@ def _expand_range(first: str, last: str) -> list[str]:
     return []
 
 
+# One definition per state vocabulary. The negation detector derives its terms
+# from these, so widening a group cannot leave its negation behind -- which is
+# exactly how "is not completed" came to assert nothing at all.
+COMPLETE_TERMS = "complete|completed|finished|closed|published|delivered"
+ACTIVE_TERMS = "active|incomplete"
+NEXT_TERMS = "next"
+FUTURE_TERMS = "planned|scheduled|proposed|forthcoming|upcoming"
+UNFINISHED_TERMS = "open|pending|outstanding|unresolved"
+NEGATABLE_TERMS = f"{COMPLETE_TERMS}|{ACTIVE_TERMS}|{NEXT_TERMS}"
+
+
 def _asserts(text: str, terms: str) -> bool:
     """Whether any term in a group is asserted here rather than denied.
 
@@ -259,27 +270,27 @@ def _claimed_states(verb: str, tail: str) -> set[str]:
         states.add("not_started")
     # Unfinished-work terms. No unit is legitimately described this way here,
     # but a sentence may deny them -- "is complete with no open subjects".
-    if _asserts(text, "open|pending|outstanding|unresolved"):
+    if _asserts(text, UNFINISHED_TERMS):
         states.add("not_started")
     # A planned or proposed unit is being placed in the future.
-    if _asserts(text, "planned|scheduled|proposed|forthcoming|upcoming"):
+    if _asserts(text, FUTURE_TERMS):
         states.add("future")
-    if _asserts(text, "next"):
+    if _asserts(text, NEXT_TERMS):
         states.add("next")
     # Word boundaries matter: "inactive" is not "active", and asserts the
     # opposite of the state the active phase is allowed to be in.
-    if _asserts(text, "active|incomplete"):
+    if _asserts(text, ACTIVE_TERMS):
         states.add("active")
     if _asserts(text, "inactive"):
         states.add("inactive")
     # `\b` already excludes "incomplete", which is not a completion claim.
-    if _asserts(text, "complete|completed|finished|closed|published|delivered"):
+    if _asserts(text, COMPLETE_TERMS):
         states.add("complete")
     # Negation is bound to the term it modifies. "is complete but not a public
     # contract" negates "contract", not "complete", and stays a completion
     # claim; "is not complete" does not.
     if re.search(
-        r"\b(?:not|no longer)\s+(?:\w+\s+){0,2}?(?:complete|active|next)\b", text
+        rf"\b(?:not|no longer)\s+(?:\w+\s+){{0,2}}?(?:{NEGATABLE_TERMS})\b", text
     ) and not re.search(r"\bnot\s+(?:yet\s+)?started\b", text):
         states.add("negated")
     return states
@@ -376,7 +387,7 @@ def _is_negated(clause: str) -> bool:
     tail = _tail_clause(clause)
     return bool(
         re.search(r"\bno\b\s+(?:\w+\s+){0,3}$", tail, re.I)
-        or re.search(r"\bnot\s*$", tail, re.I)
+        or re.search(r"\bnot\s+(?:\w+\s+){0,2}$", tail, re.I)
     )
 
 
@@ -791,6 +802,8 @@ ASSERTED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " not complete", {"negated"}),
     ("is", " no longer complete", {"negated"}),
     ("is", " completed", {"complete"}),
+    ("is", " not completed", {"negated"}),
+    ("is", " not finished", {"negated"}),
 )
 DENIED_PREDICATES: tuple[tuple[str, str, set[str]], ...] = (
     ("is", " complete with no open subjects", {"complete"}),
@@ -832,6 +845,16 @@ TENSE_CASES: tuple[tuple[str, bool, bool], ...] = (
     ("The subject was deferred but now ", False, False),
 )
 
+NEGATED_CLAUSES: tuple[tuple[str, bool], ...] = (
+    ("The subject is not ", True),
+    ("The subject is not currently ", True),
+    ("The subject is not presently ", True),
+    ("No subject remains ", True),
+    ("The result is `self_owned_open == 0`: no unresolved subject remains ", True),
+    ("The subject is ", False),
+    ("No evidence is available and the subject remains ", False),
+)
+
 
 @pytest.mark.parametrize(("clause", "shares", "expected"), TENSE_CASES)
 def test_past_tense_detection_follows_the_predicate_it_governs(
@@ -841,3 +864,11 @@ def test_past_tense_detection_follows_the_predicate_it_governs(
 ) -> None:
     """Coordination is where tense detection is delicate, so it is pinned here."""
     assert _is_past_tense(clause, shares_auxiliary=shares) is expected
+
+
+@pytest.mark.parametrize(("clause", "expected"), NEGATED_CLAUSES)
+def test_negation_detection_reaches_its_own_predicate_and_no_further(
+    clause: str,
+    expected: bool,
+) -> None:
+    assert _is_negated(clause) is expected
