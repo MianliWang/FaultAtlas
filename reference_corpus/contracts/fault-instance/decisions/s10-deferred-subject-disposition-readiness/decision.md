@@ -6,7 +6,7 @@ This internal, case-calibrated `S1.P06.S10` decision is not a production schema,
 
 ## 2. Exact `decision.json` SHA-256
 
-`e9eb2351a056495a52c8019db80a06f29f84b4611c27776c82a4b41af18b51dd`
+`d3588d9dc8baf012b3751d96ab3cc6f01820abd2e8819e96ea095284828f61d5`
 
 ## 3. Result
 
@@ -212,6 +212,19 @@ This record explicitly does not say:
 - a required condition was skipped
 
 Unresolved exceptions: 0.
+
+### 10.2 Evidential status
+
+This verdict is not offline-replayable. The provider responses it rests on are cited by their stable identifiers but are not retained in this repository, so a replay can confirm only that this artifact records them, never that the provider reported them. Model-generated analysis is not verified fact, and this verdict is analysis of an external record rather than a retained observation. Retaining bounded immutable snapshots of those responses is acquisition work outside this Slice's write closure and is not performed here.
+
+| Fact | Value |
+| --- | --- |
+| basis | `provider_ruleset_evaluation_read_at_publication_time` |
+| observed at | `2026-09-10T09:40:00Z` |
+| cited by | `stable_provider_rule_suite_identifiers` |
+| provider records retained | `false` |
+| replayable offline | `false` |
+| `S1.P06.S12` must re-verify | `true` |
 
 Recorded from the provider's own ruleset evaluation rather than from the merging session's account of itself. An earlier S1.P06.S10 draft, and the S1.P06.S09 session report it drew on, described this merge as an administrator override that bypassed the ruleset. That description was wrong in the direction of non-compliance, and it is corrected here rather than sealed. S1.P06.S12 may read this as an ordinary compliant publication. S1.P06.S10 does not decide whether S1.P06.S12 may close the Phase; S1.P06.S12 owns that decision.
 

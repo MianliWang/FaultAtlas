@@ -2066,8 +2066,18 @@ administrator override that bypassed the ruleset. The description was wrong in
 the direction of non-compliance. Sealing a violation that did not happen would
 falsify the governance record exactly as laundering a real one would, so the
 claim is corrected here rather than preserved, and the oracle now refuses both
-directions. Whether the Phase may close remains `S1.P06.S12`'s decision and is
-not decided here.
+directions.
+
+The verdict publishes its own limits. It rests on provider records read at
+publication time and cited by their stable identifiers, and those responses are
+not retained in this repository, so a replay can confirm only that the artifact
+records them and never that the provider reported them. Model-generated
+analysis is not verified fact, and this verdict is analysis of an external
+record rather than a retained observation. Retaining bounded immutable
+snapshots of those responses is acquisition work outside this Slice, so
+`S1.P06.S12` must re-verify the verdict rather than consume it as settled.
+Whether the Phase may close remains `S1.P06.S12`'s decision and is not decided
+here.
 
 The `S1.P06.S08` membership-performance candidate is not part of canonical
 `S1.P06` product state. It remains an unpublished nonblocking implementation

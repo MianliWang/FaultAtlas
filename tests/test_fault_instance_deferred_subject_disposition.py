@@ -288,6 +288,19 @@ def _assert_publication_governance_matches_the_provider_record(
     assert "the ruleset was overridden" in denied
     assert "a required condition was skipped" in denied
 
+    # The verdict must publish what it does and does not rest on. It is
+    # analysis of an external record, not a retained observation, so it may not
+    # present itself as offline-replayable or as settled for S1.P06.S12.
+    status = cast(dict[str, Any], governance["evidential_status"])
+    assert status["provider_records_retained"] is False
+    assert status["replayable_offline"] is False
+    assert status["s12_must_reverify_before_relying_on_it"] is True
+    assert status["observed_at"]
+    assert status["cited_by"] == "stable_provider_rule_suite_identifiers"
+    note = cast(str, status["note"]).lower()
+    assert "not offline-replayable" in note
+    assert "model-generated analysis is not verified fact" in note
+
     # A record claiming compliance may not also assert a bypass anywhere in it.
     asserted = copy.deepcopy(record)
     asserted.pop("explicitly_not", None)
@@ -970,6 +983,20 @@ def test_recording_a_bypass_that_did_not_happen_fails_its_oracle() -> None:
         _assert_publication_governance_matches_the_provider_record(mutated)
 
 
+def test_overclaiming_the_verdict_as_replayable_fails_its_oracle() -> None:
+    """The evidential limits are part of the verdict, not a footnote."""
+    mutated = _document()
+    status = cast(
+        dict[str, Any], mutated["publication_governance"]["evidential_status"]
+    )
+    status["replayable_offline"] = True
+    status["provider_records_retained"] = True
+    status["s12_must_reverify_before_relying_on_it"] = False
+
+    with pytest.raises(AssertionError):
+        _assert_publication_governance_matches_the_provider_record(mutated)
+
+
 def test_laundering_a_real_bypass_into_compliance_fails_its_oracle() -> None:
     """The other direction: a recorded bypass restated as a passing ruleset."""
     mutated = _document()
@@ -1035,6 +1062,8 @@ def test_the_roadmap_states_the_s10_decisions() -> None:
         "evaluated pass on every rule",
         "no publication-governance exception stands against it",
         "wrong in the direction of non-compliance",
+        "The verdict publishes its own limits",
+        "must re-verify the verdict rather than consume it as settled",
         "`S1.P06.S11` contract-corpus readiness is `eligible_to_begin`",
         "Both effective requirements are satisfied",
         "All three effective prohibitions are preserved",
@@ -1444,6 +1473,26 @@ def _render(document: dict[str, Any], digest: str) -> str:
             add(f"- {denied}")
         add()
     add(f"Unresolved exceptions: {governance['unresolved_exceptions']}.")
+    add()
+    status = cast(dict[str, Any], governance["evidential_status"])
+    add("### 10.2 Evidential status")
+    add()
+    add(cast(str, status["note"]))
+    add()
+    add("| Fact | Value |")
+    add("| --- | --- |")
+    add(f"| basis | `{status['basis']}` |")
+    add(f"| observed at | `{status['observed_at']}` |")
+    add(f"| cited by | `{status['cited_by']}` |")
+    add(
+        "| provider records retained | "
+        f"`{str(status['provider_records_retained']).lower()}` |"
+    )
+    add(f"| replayable offline | `{str(status['replayable_offline']).lower()}` |")
+    add(
+        "| `S1.P06.S12` must re-verify | "
+        f"`{str(status['s12_must_reverify_before_relying_on_it']).lower()}` |"
+    )
     add()
     add(cast(str, governance["note"]))
     add()
