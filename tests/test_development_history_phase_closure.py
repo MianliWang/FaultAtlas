@@ -450,6 +450,12 @@ CANDIDATE_FIELDS = frozenset(
 # slice that a sealed publication candidate cannot yet hold.
 EXPECTED_S10_MENTIONS = 3
 
+# Contract roots published after this closure was sealed. A sealed closure locks
+# the corpus as it stood when it was written, so a later Phase's own root lies
+# outside its lock set by construction rather than by omission. Dropping a
+# predecessor artifact is still a failure below.
+SUCCESSOR_CONTRACT_ROOTS = ("reference_corpus/contracts/fault-instance/",)
+
 UNLOCKED_WORKING_ARTIFACTS = frozenset(
     {
         # P00-era working material and the two acquisition-pair sidecars. The
@@ -1002,6 +1008,7 @@ def _assert_source_locks(document: dict[str, Any], *, verify_files: bool) -> Non
             for path in tracked.stdout.decode("utf-8").split()
             if path not in UNLOCKED_WORKING_ARTIFACTS
             and not path.startswith(CLOSURE_RELATIVE)
+            and not path.startswith(SUCCESSOR_CONTRACT_ROOTS)
         }
         assert set(paths) == expected, {
             "unlocked": sorted(expected - set(paths)),
@@ -1916,7 +1923,8 @@ def test_roadmap_records_phase_completion_and_p06_readiness() -> None:
     assert "`S1.P06.S07` is complete" in roadmap
     assert "`S1.P06.S08` is complete" in roadmap
     assert "`S1.P06.S09` is complete" in roadmap
-    assert "`S1.P06.S10` is next and not started" in roadmap
+    assert "`S1.P06.S10` is complete" in roadmap
+    assert "`S1.P06.S11` is next and not started" in roadmap
     assert "`S1.P04` is complete" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in roadmap
@@ -1980,7 +1988,7 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S10"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P06.S11"}, sorted(set(live_next))
 
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))

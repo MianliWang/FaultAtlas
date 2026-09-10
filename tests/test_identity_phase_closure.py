@@ -1538,6 +1538,7 @@ def _assert_exact_s06_locator_contract_corpus() -> None:
     assert {path.name for path in contracts_root.iterdir()} == {
         "development-history",
         "evidence-envelope",
+        "fault-instance",
         "identity",
         "repository-snapshot",
         "revision-locator",
@@ -2012,7 +2013,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P06.S07` is complete" in roadmap
     assert "`S1.P06.S08` is complete" in roadmap
     assert "`S1.P06.S09` is complete" in roadmap
-    assert "`S1.P06.S10` is next and not started" in roadmap
+    assert "`S1.P06.S10` is complete" in roadmap
+    assert "`S1.P06.S11` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
 
 

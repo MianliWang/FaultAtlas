@@ -46,8 +46,8 @@ aspirational Slice as scheduled work.
   `S1.P06.S04` is complete, `S1.P06.S05` is complete,
   `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
   `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
-  `S1.P06.S09` is complete, and `S1.P06.S10` is next and not
-  started.
+  `S1.P06.S09` is complete, `S1.P06.S10` is complete, and
+  `S1.P06.S11` is next and not started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -100,7 +100,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
-`S1.P06.S09` is complete, and `S1.P06.S10` is next and not started.
+`S1.P06.S09` is complete,
+`S1.P06.S10` is complete, and `S1.P06.S11` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -704,7 +705,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
-`S1.P06.S09` is complete, and `S1.P06.S10` is next and not started.
+`S1.P06.S09` is complete,
+`S1.P06.S10` is complete, and `S1.P06.S11` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1154,7 +1156,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
-`S1.P06.S09` is complete, and `S1.P06.S10` is next and not started.
+`S1.P06.S09` is complete,
+`S1.P06.S10` is complete, and `S1.P06.S11` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1458,7 +1461,8 @@ domain relationships `FaultInstance` needs and consumes the bounded
 `S1.P05` history facts without redefining them, while owning no generic Git
 ancestry or reachability graph, reading `S1.P05` as no complete development
 history, and implicitly upgrading no LEVEL-1 evidence association. Formal
-disposition and readiness for the inherited subject remain `S1.P06.S10` work.
+disposition and readiness for the inherited subject became `S1.P06.S10`
+work.
 
 `S1.P06.S05` adds one new production module, `faultatlas.domain.fault_repair`,
 whose `__all__` is exactly `FaultRepairCandidateIdentity`,
@@ -1977,9 +1981,101 @@ expensive near its published bound. `S1.P06.S09` neither repairs nor reopens
 that, changes no indexing, hashing, cache or bound, and states no complexity
 guarantee of its own; it performs one bounded membership check per link and
 leaves the cost a later optimization candidate. Deferred disposition and
-readiness remain `S1.P06.S10` work.
+readiness became `S1.P06.S10` work.
 
-The `S1.P06` route is provisional beyond `S1.P06.S09`. Later exact schemas are
+`S1.P06.S10` publishes no production module, symbol, or product semantics.
+Production Python sources stay 20. It is a governance Slice: it disposes the
+one subject `S1.P06` inherited, accounts for the obligations attached to it,
+locks the accumulated `S1.P06` product surface, and decides whether
+`S1.P06.S11` may begin. The durable record is the sealed decision under
+`reference_corpus/contracts/fault-instance/decisions/`, whose Markdown
+projection is derived from its JSON and never read by production code.
+
+The effective inherited authority is not raw `S1.P05.S08` alone. It is
+`S1.P05.S08` as corrected by `S1.P05.S08.C01` and consolidated by the published
+`S1.P05` phase closure. Under that authority `S1.P06` receives exactly one
+immediate inherited subject, `case relationship vocabulary provisional`,
+carried forward under the wording `universal relationship vocabulary`, together
+with two requirements and three prohibitions. The superseded owner topology,
+which named six received subjects and a broader requirement, is quoted as
+history and is not resurrected as effective.
+
+That subject is `addressed`, with no `S1.P06`-owned remainder, no immediate
+owner and no long-term owner, so no state is attached to it and no
+`S1.P06`-owned deferred subject remains open. The word "universal" in the
+carried-forward wording is the predecessor's phrasing rather than a required
+capability: `S1.P05.S08.C01` narrowed the effective obligation to the bounded
+domain relationship vocabulary needed by `FaultInstance`, and `S1.P06` supplied
+exactly that as eight explicit typed contracts rather than one generic schema.
+A report-to-source-object and a report-to-history-fact association in
+`S1.P06.S04`, a candidate-to-revision and a candidate-to-change-set association
+in `S1.P06.S05`, a run-to-revision association and a reported before-and-after
+comparison in `S1.P06.S06`, the bounded reference-integrity relations of
+`S1.P06.S08`, and the record-to-durable-evidence association of `S1.P06.S09`
+each name their two endpoints by published type. No universal relationship
+ontology, no generic `Relationship`, `Edge`, `Graph` or `RelationKind` type, no
+relationship registry, and no provider-independent relation vocabulary was
+needed and none is published. Arbitrary relationships are not representable, no
+repository evolution graph semantics exist, and generic repository and
+evolution graph semantics remain owned by `S5` under their own authority.
+
+Both effective requirements are satisfied. `S1.P06` owns the bounded domain
+relationship vocabulary through the eight contracts above, and it consumes the
+bounded `S1.P05` history facts without redefining them: `S1.P06.S04` admits
+exactly the six published history facts by type, `S1.P06.S05` consumes
+`PullRequestChangeSet` under repair-candidate semantics without moving it into
+the `S1.P05` evidence-fact union, `S1.P06.S08` composes the `S1.P06` records by
+value, and `S1.P06.S09` keeps the `S1.P05` history and evidence authority
+separate. The published `S1.P05` production bytes are unchanged.
+
+All three effective prohibitions are preserved. No `S1.P06` module publishes
+ancestry, reachability, merge-base, branch-containment or any generic Git graph
+semantics. The bounded `S1.P05` surface is never read as a complete provider or
+repository development history. The LEVEL-1 evidence association is not
+implicitly upgraded: the `S1.P06.S04` associations stay weak caller-supplied
+claims, and `S1.P06.S09` publishes no support, proof, verification, confidence
+or field-level evidence locator and performs no association chaining.
+
+For `S1.P06.S11`, the accumulated surface is locked at seven production modules
+and thirty exported symbols, derived from live `__all__` values rather than
+restated by hand: eight symbols in `faultatlas.domain.fault`, two in
+`faultatlas.domain.fault_source_relationship`, four in
+`faultatlas.domain.fault_repair`, eight in `faultatlas.domain.fault_test`, six
+in `faultatlas.domain.fault_interpretation`, one in
+`faultatlas.domain.fault_instance`, and one in
+`faultatlas.domain.fault_evidence_link`. No alias and no package-level export
+aggregator is published. On that surface, and with the inherited subject
+dispositioned exactly once, `S1.P06.S11` contract-corpus readiness is
+`eligible_to_begin` and `S1.P06.S11` has not begun.
+
+One publication fact is recorded separately rather than folded into that
+readiness, and it is taken from the provider's own ruleset evaluation rather
+than from the merging session's account of itself. The `S1.P06.S09` pull
+request was merged under an active ruleset that evaluated pass on every rule.
+The merge command carried an administrator flag, but the ruleset configures no
+bypass actor, no bypass was recorded, and the flag therefore changed nothing.
+The only condition that ever refused the merge was one unresolved review
+thread, which was resolved before the successful retry, and the pull request's
+single commit was attributed, so the extra-approval condition for unattributed
+changes was never triggered. `S1.P06.S09` is therefore an ordinary compliant
+publication and no publication-governance exception stands against it.
+
+That correction is itself worth recording. An earlier `S1.P06.S10` draft, and
+the `S1.P06.S09` session report it drew on, described the same merge as an
+administrator override that bypassed the ruleset. The description was wrong in
+the direction of non-compliance. Sealing a violation that did not happen would
+falsify the governance record exactly as laundering a real one would, so the
+claim is corrected here rather than preserved, and the oracle now refuses both
+directions. Whether the Phase may close remains `S1.P06.S12`'s decision and is
+not decided here.
+
+The `S1.P06.S08` membership-performance candidate is not part of canonical
+`S1.P06` product state. It remains an unpublished nonblocking implementation
+optimization candidate, it changes no `S1.P06.S08` semantics, and `S1.P06.S11`
+readiness does not depend on it. The canonical surface is what stands on
+`main`.
+
+The `S1.P06` route is provisional beyond `S1.P06.S10`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -1998,8 +2094,8 @@ tests before the corpus Slice:
 8. `S1.P06.S08` — Bounded `FaultInstance` Composition and Reference Integrity
    (complete)
 9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical (complete)
-10. `S1.P06.S10` — Deferred disposition and readiness (next, not started)
-11. `S1.P06.S11` — Accumulated contract corpus (not started)
+10. `S1.P06.S10` — Deferred disposition and readiness (complete)
+11. `S1.P06.S11` — Accumulated contract corpus (next, not started)
 12. `S1.P06.S12` — Integration and Phase closure (not started)
 
 `S1.P06` consumes the bounded `S1.P05` history facts without redefining them
@@ -2014,7 +2110,7 @@ subject is not resolved by `S1.P06.S01`, `S1.P06.S02`, or `S1.P06.S03`.
 `S1.P06.S04` implements the bounded relationship responsibility that handoff
 assigns to `S1.P06`, publishing two named associations and no relationship
 vocabulary, and without resolving the inherited subject formally, which
-remains `S1.P06.S10` work.
+became `S1.P06.S10` work.
 
 ## Preserved later Stage 1 phases
 
@@ -2321,7 +2417,22 @@ record chain does not produce a report to record link, which must be
 constructed explicitly. `FaultInstance` is unchanged and gains no evidence
 field, all three positions are closed to untyped Python input, every admitted
 type round-trips through JSON preserving its exact type and value, and the
-module performs no I/O. Production Python sources are 20.
+module performs no I/O.
+`S1.P06.S10` adds no production module and no symbol. It publishes one sealed
+decision under `reference_corpus/contracts/fault-instance/decisions/`, whose
+`decision.md` is a derived projection of its `decision.json` and which no
+production code reads or writes. It records that `S1.P06` inherited exactly one
+immediate subject under the effective `S1.P05.S08` plus `S1.P05.S08.C01` plus
+`S1.P05` phase-closure authority, that the subject is `addressed` with
+`self_owned_open == 0`, that both effective requirements are satisfied and all
+three effective prohibitions preserved, that `S1.P06` owns seven production
+modules and thirty exported symbols for `S1.P06.S11` to cover, that
+`S1.P06.S11` contract-corpus readiness is `eligible_to_begin`, and that the
+`S1.P06.S09` publication was compliant: its push evaluated pass on every active
+rule, no bypass was configured or recorded, and the administrator flag the
+merge command carried could not take effect, so no publication-governance
+exception stands against it.
+Production Python sources are 20.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
@@ -2331,7 +2442,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
-`S1.P06.S09` is complete, and `S1.P06.S10` is next and not started.
+`S1.P06.S09` is complete,
+`S1.P06.S10` is complete, and `S1.P06.S11` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,

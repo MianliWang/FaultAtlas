@@ -2575,8 +2575,12 @@ RELATIONSHIP_DOCSTRING_SHA256 = (
 # later Slice, so a whole-section digest would make each successor rewrite an
 # `S1.P06.S04` "historical" digest over text this Slice does not own. What this
 # Slice owns is immutable and is locked; what follows it is free to appear.
+# The phase digest moved once, at `S1.P06.S10`: that Slice reconciled this
+# paragraph's closing tense from "remain `S1.P06.S10` work" to "became
+# `S1.P06.S10` work" now that the disposition has been made. Nothing this Slice
+# claims about its own module changed.
 ROADMAP_S04_PHASE_SHA256 = (
-    "4c6b6d069295892e3431ea335d5e595122c1c92c4f23acc46068dfda31fb8391"
+    "44b85b1198b26a07ffd5b55969889a039f5499b376ebd3ee571c3c107dde14fb"
 )
 ROADMAP_S04_MAPPING_SHA256 = (
     "6521aaccec0b2d5d44b174d809a65c853473d34199a0bbff55dc9259dbb184a4"
@@ -2603,7 +2607,7 @@ def _s04_own_roadmap_spans() -> tuple[str, str]:
         _span_inclusive(
             roadmap,
             "`S1.P06.S04` adds one new production module",
-            "disposition and readiness for the inherited subject remain "
+            "disposition and readiness for the inherited subject became "
             "`S1.P06.S10` work.",
         ),
         _span_inclusive(
@@ -2853,7 +2857,8 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
     assert "`S1.P06.S07` is complete" in roadmap
     assert "`S1.P06.S08` is complete" in roadmap
     assert "`S1.P06.S09` is complete" in roadmap
-    assert "`S1.P06.S10` is next and not started" in roadmap
+    assert "`S1.P06.S10` is complete" in roadmap
+    assert "`S1.P06.S11` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P06.S04` — Bounded Source and History Relationships (complete)" in roadmap
@@ -2883,7 +2888,7 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
         roadmap
     )
     assert "`S1.P06` is complete" not in roadmap
-    assert "`S1.P06.S10` is complete" not in roadmap
+    assert "`S1.P06.S11` is complete" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
 
@@ -2907,7 +2912,7 @@ def test_the_roadmap_states_the_s04_decisions_and_non_claims() -> None:
     assert "outside the `S1.P05.S07` fact boundary" in roadmap
     assert "which nesting here would blur with source association" in roadmap
     assert "no complete development history is owned here" in roadmap
-    assert "remain `S1.P06.S10` work" in roadmap
+    assert "became `S1.P06.S10` work" in roadmap
 
 
 def test_the_roadmap_preserves_the_predecessor_history_as_written() -> None:
@@ -2931,12 +2936,12 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S10"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P06.S11"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P06.S10`" in line, line
+            assert "`S1.P06.S11`" in line, line
 
 
 # --- packaging and an isolated installed-wheel smoke --------------------------
