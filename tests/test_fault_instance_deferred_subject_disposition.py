@@ -77,7 +77,14 @@ OVERRIDE_WORDS = (
     "not satisfied",
     "was not enforced",
 )
-# A clause naming one of the above must carry one of these to be a denial.
+# One clause grammar, read by both screens below. A second copy would drift,
+# which is the failure this repository already records for its negation terms.
+# Sentence boundaries only, because a bare "." also ends `S1.P06` and cutting
+# there would sever the "no" that denies the clause; and coordination, because
+# "No warning was emitted, and an ontology exists" is two claims, not one.
+CLAUSE_BOUNDARY = r"[;\n]|\.\s|\.$|,\s+and\s+|,\s+but\s+|\s+but\s+"
+
+# A clause naming a forbidden term must carry one of these to be a denial.
 DENIAL_TOKENS = (
     "no ",
     "not ",
@@ -212,9 +219,7 @@ def _assert_names_no_generalization_it_does_not_deny(document: dict[str, Any]) -
             assert text == CARRIED_FORWARD_WORDING, (pointer, text)
             continue
         masked = _mask_the_quoted_wording(text)
-        # Split on sentence boundaries only. A bare "." also ends `S1.P06`,
-        # and cutting there would sever the "no" that denies the clause.
-        for clause in re.split(r"[;\n]|\.\s|\.$", masked.replace("_", " ")):
+        for clause in re.split(CLAUSE_BOUNDARY, masked.replace("_", " ")):
             lowered = clause.strip().lower()
             named = [
                 word for word in FORBIDDEN_GENERALIZATIONS if word.lower() in lowered
@@ -356,7 +361,7 @@ def _assert_publication_governance_matches_the_provider_record(
             continue
         if "/explicitly_not/" in pointer:
             continue
-        for clause in re.split(r"[;\n]|\.\s|\.$", text.replace("_", " ")):
+        for clause in re.split(CLAUSE_BOUNDARY, text.replace("_", " ")):
             lowered = clause.strip().lower()
             named = [word for word in OVERRIDE_WORDS if word in lowered]
             if not named:
