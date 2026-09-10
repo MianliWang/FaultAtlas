@@ -214,6 +214,7 @@ CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION,
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/fault.py",
+    "src/faultatlas/domain/fault_evidence_link.py",
     "src/faultatlas/domain/fault_instance.py",
     "src/faultatlas/domain/fault_interpretation.py",
     "src/faultatlas/domain/fault_repair.py",
@@ -2010,7 +2011,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P06.S06` is complete" in roadmap
     assert "`S1.P06.S07` is complete" in roadmap
     assert "`S1.P06.S08` is complete" in roadmap
-    assert "`S1.P06.S09` is next and not started" in roadmap
+    assert "`S1.P06.S09` is complete" in roadmap
+    assert "`S1.P06.S10` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
 
 

@@ -82,6 +82,7 @@ FAULT_REPAIR_MODULE = "src/faultatlas/domain/fault_repair.py"
 FAULT_TEST_MODULE = "src/faultatlas/domain/fault_test.py"
 FAULT_INTERPRETATION_MODULE = "src/faultatlas/domain/fault_interpretation.py"
 FAULT_INSTANCE_MODULE = "src/faultatlas/domain/fault_instance.py"
+FAULT_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/fault_evidence_link.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION_FILES,
     HISTORY_MODULE,
@@ -92,6 +93,7 @@ CURRENT_PRODUCTION_FILES = {
     FAULT_TEST_MODULE,
     FAULT_INTERPRETATION_MODULE,
     FAULT_INSTANCE_MODULE,
+    FAULT_EVIDENCE_LINK_MODULE,
 }
 
 # Every deferred-subject state published by S1.P00 through S1.P03. S08 may not
@@ -735,7 +737,7 @@ def test_production_surface_adds_history_fault_and_relations_after_this_decision
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert observed == CURRENT_PRODUCTION_FILES
-    assert len(observed) == 19
+    assert len(observed) == 20
     assert observed - EXPECTED_PRODUCTION_FILES == {
         HISTORY_MODULE,
         HISTORY_EVIDENCE_LINK_MODULE,
@@ -745,6 +747,7 @@ def test_production_surface_adds_history_fault_and_relations_after_this_decision
         FAULT_TEST_MODULE,
         FAULT_INTERPRETATION_MODULE,
         FAULT_INSTANCE_MODULE,
+        FAULT_EVIDENCE_LINK_MODULE,
     }
     assert EXPECTED_PRODUCTION_FILES - observed == set()
     assert len(EXPECTED_PRODUCTION_FILES) == 11
@@ -818,7 +821,8 @@ def test_roadmap_records_the_s08_disposition_and_transition() -> None:
     assert "`S1.P06.S06` is complete" in roadmap
     assert "`S1.P06.S07` is complete" in roadmap
     assert "`S1.P06.S08` is complete" in roadmap
-    assert "`S1.P06.S09` is next and not started" in roadmap
+    assert "`S1.P06.S09` is complete" in roadmap
+    assert "`S1.P06.S10` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert "inherited exactly seven such subjects" in roadmap
     assert "`self_owned_open == 0`" in roadmap

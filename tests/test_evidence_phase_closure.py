@@ -179,6 +179,7 @@ EXPECTED_PRODUCTION_SOURCES = (
 CURRENT_PRODUCTION_SOURCES = (
     *EXPECTED_PRODUCTION_SOURCES,
     "src/faultatlas/domain/fault.py",
+    "src/faultatlas/domain/fault_evidence_link.py",
     "src/faultatlas/domain/fault_instance.py",
     "src/faultatlas/domain/fault_interpretation.py",
     "src/faultatlas/domain/fault_repair.py",
@@ -1740,7 +1741,8 @@ def test_roadmap_advances_p04_while_case_preserves_p03_closure_state() -> None:
     assert "`S1.P06.S06` is complete" in roadmap
     assert "`S1.P06.S07` is complete" in roadmap
     assert "`S1.P06.S08` is complete" in roadmap
-    assert "`S1.P06.S09` is next and not started" in roadmap
+    assert "`S1.P06.S09` is complete" in roadmap
+    assert "`S1.P06.S10` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented" in roadmap
     assert CLOSURE_RELATIVE in case

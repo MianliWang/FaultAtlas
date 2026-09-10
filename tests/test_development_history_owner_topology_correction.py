@@ -36,16 +36,21 @@ PRECEDENT_STATES = (
 VALID_OWNERS = ("S1.P06", "S2", "S5")
 # The sealed governance count is a historical fact about this artifact.
 # The live inventory moved on: S1.P06.S01 published faultatlas.domain.fault,
-# S1.P06.S04 published faultatlas.domain.fault_source_relationship, and
-# S1.P06.S05 published faultatlas.domain.fault_repair.
+# S1.P06.S04 published faultatlas.domain.fault_source_relationship,
+# S1.P06.S05 published faultatlas.domain.fault_repair, S1.P06.S06 published
+# faultatlas.domain.fault_test, S1.P06.S07 published
+# faultatlas.domain.fault_interpretation, S1.P06.S08 published
+# faultatlas.domain.fault_instance, and S1.P06.S09 published
+# faultatlas.domain.fault_evidence_link.
 PRODUCTION_SOURCE_COUNT_AT_CORRECTION = 13
-CURRENT_PRODUCTION_SOURCE_COUNT = 19
+CURRENT_PRODUCTION_SOURCE_COUNT = 20
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
 FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 FAULT_REPAIR_MODULE = "src/faultatlas/domain/fault_repair.py"
 FAULT_TEST_MODULE = "src/faultatlas/domain/fault_test.py"
 FAULT_INTERPRETATION_MODULE = "src/faultatlas/domain/fault_interpretation.py"
 FAULT_INSTANCE_MODULE = "src/faultatlas/domain/fault_instance.py"
+FAULT_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/fault_evidence_link.py"
 
 
 def _correction() -> dict[str, Any]:
@@ -687,6 +692,7 @@ def test_the_correction_introduces_no_product_semantics() -> None:
     assert FAULT_TEST_MODULE in observed
     assert FAULT_INTERPRETATION_MODULE in observed
     assert FAULT_INSTANCE_MODULE in observed
+    assert FAULT_EVIDENCE_LINK_MODULE in observed
     assert (
         governance["production_python_source_count"]
         == PRODUCTION_SOURCE_COUNT_AT_CORRECTION
@@ -780,7 +786,8 @@ def test_every_phase_status_summary_records_the_correction() -> None:
         assert "`S1.P06.S06` is complete" in head, head
         assert "`S1.P06.S07` is complete" in head, head
         assert "`S1.P06.S08` is complete" in head, head
-        assert "`S1.P06.S09` is next and not started" in head, head
+        assert "`S1.P06.S09` is complete" in head, head
+        assert "`S1.P06.S10` is next and not started" in head, head
 
 
 def test_the_derived_summary_preserves_whole_rationale_sentences() -> None:
@@ -817,7 +824,8 @@ def test_the_roadmap_records_the_correction_and_holds_the_phase_state() -> None:
     assert "`S1.P06.S06` is complete" in text
     assert "`S1.P06.S07` is complete" in text
     assert "`S1.P06.S08` is complete" in text
-    assert "`S1.P06.S09` is next and not started" in text
+    assert "`S1.P06.S09` is complete" in text
+    assert "`S1.P06.S10` is next and not started" in text
     assert "`S1.P05.S09` — Development History Contract Corpus (complete)" in text
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in text
     assert "`S1.P05` is complete" in text
