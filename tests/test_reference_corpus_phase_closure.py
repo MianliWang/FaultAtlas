@@ -1751,6 +1751,7 @@ def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
     assert {path.name for path in contracts_root.iterdir()} == {
         "development-history",
         "evidence-envelope",
+        "fault-instance",
         "identity",
         "repository-snapshot",
         "revision-locator",
@@ -2104,7 +2105,8 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P06.S07` is complete" in normalized_roadmap
     assert "`S1.P06.S08` is complete" in normalized_roadmap
     assert "`S1.P06.S09` is complete" in normalized_roadmap
-    assert "`S1.P06.S10` is next and not started" in normalized_roadmap
+    assert "`S1.P06.S10` is complete" in normalized_roadmap
+    assert "`S1.P06.S11` is next and not started" in normalized_roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:

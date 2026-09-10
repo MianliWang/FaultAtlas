@@ -2161,6 +2161,7 @@ def test_revision_locator_corpus_is_an_independent_contract_sibling() -> None:
     assert {path.name for path in contracts_root.iterdir()} == {
         "development-history",
         "evidence-envelope",
+        "fault-instance",
         "identity",
         "repository-snapshot",
         "revision-locator",

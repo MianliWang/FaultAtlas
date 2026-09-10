@@ -629,7 +629,8 @@ def test_the_roadmap_records_the_s08_disposition_and_transition() -> None:
     assert "`S1.P06.S07` is complete" in text
     assert "`S1.P06.S08` is complete" in text
     assert "`S1.P06.S09` is complete" in text
-    assert "`S1.P06.S10` is next and not started" in text
+    assert "`S1.P06.S10` is complete" in text
+    assert "`S1.P06.S11` is next and not started" in text
     assert "`self_owned_open == 0`" in text
     assert "reference_corpus/contracts/development-history/decisions" in text
 
