@@ -1378,7 +1378,7 @@ def test_the_module_imports_only_the_layers_it_composes() -> None:
 
 
 def test_no_evidence_is_consumed() -> None:
-    """The fault-evidence bridge is `S1.P06.S09` work."""
+    """The fault-evidence bridge became `S1.P06.S09` work, in its own module."""
     source = INSTANCE_SOURCE.read_text(encoding="utf-8")
 
     for forbidden in (
@@ -1393,7 +1393,7 @@ def test_no_evidence_is_consumed() -> None:
         assert absent not in FaultInstance.model_fields, absent
 
 
-def test_the_tracked_production_inventory_is_nineteen_modules() -> None:
+def test_the_tracked_production_inventory_is_twenty_modules() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -1404,7 +1404,7 @@ def test_the_tracked_production_inventory_is_nineteen_modules() -> None:
     observed = sorted(tracked.stdout.decode("utf-8").split())
 
     assert observed == [f"src/{name}" for name in EXPECTED_PRODUCTION_MODULES]
-    assert len(observed) == 19
+    assert len(observed) == 20
     assert "src/faultatlas/domain/fault_instance.py" in observed
 
 
@@ -1810,20 +1810,22 @@ def test_the_roadmap_records_the_p06_s08_transition() -> None:
     current = mapping[1]
 
     assert "`S1.P06.S08` is complete" in roadmap
-    assert "`S1.P06.S09` is next and not started" in roadmap
+    assert "`S1.P06.S09` is complete" in roadmap
+    assert "`S1.P06.S10` is next and not started" in roadmap
     assert (
         "`S1.P06.S08` — Bounded `FaultInstance` Composition and Reference "
         "Integrity (complete)" in roadmap
     )
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S08`." in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S09`." in roadmap
 
     assert "faultatlas.domain.fault_instance" in current
     assert "`FaultInstance`" in current
-    assert "Production Python sources are 19." in current
+    assert "Production Python sources are 20." in current
 
     assert "`S1.P06.S08` is next and not started" not in roadmap
-    assert "`S1.P06.S09` is complete" not in roadmap
-    assert "Production Python sources are 18." not in roadmap
+    assert "`S1.P06.S09` is next and not started" not in roadmap
+    assert "`S1.P06.S10` is complete" not in roadmap
+    assert "Production Python sources are 19." not in roadmap
 
 
 def test_the_roadmap_states_the_s08_decisions_and_non_claims() -> None:
@@ -1841,7 +1843,7 @@ def test_the_roadmap_states_the_s08_decisions_and_non_claims() -> None:
         "Conflicts survive composition.",
         "creates no semantic edge a predecessor did not publish",
         "canonical durable ordering remains `S1.P10` work",
-        "remains `S1.P06.S09` work",
+        "became `S1.P06.S09` work",
     ):
         assert statement in roadmap, statement
 
@@ -1865,6 +1867,7 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/compatibility.py",
     "faultatlas/domain/evidence.py",
     "faultatlas/domain/fault.py",
+    "faultatlas/domain/fault_evidence_link.py",
     "faultatlas/domain/fault_instance.py",
     "faultatlas/domain/fault_interpretation.py",
     "faultatlas/domain/fault_repair.py",
@@ -2052,7 +2055,7 @@ def offline_distributions(
     return wheels[0], sdists[0]
 
 
-def test_the_wheel_ships_nineteen_modules_and_no_corpus_or_test_material(
+def test_the_wheel_ships_twenty_modules_and_no_corpus_or_test_material(
     offline_distributions: tuple[Path, Path],
 ) -> None:
     wheel, _ = offline_distributions
@@ -2061,7 +2064,7 @@ def test_the_wheel_ships_nineteen_modules_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 19
+    assert len(modules) == 20
     assert "faultatlas/domain/fault_instance.py" in modules
     for name in names:
         assert "reference_corpus" not in name
@@ -2069,7 +2072,7 @@ def test_the_wheel_ships_nineteen_modules_and_no_corpus_or_test_material(
         assert not name.startswith("docs/")
 
 
-def test_the_sdist_ships_nineteen_modules_and_no_corpus_or_test_material(
+def test_the_sdist_ships_twenty_modules_and_no_corpus_or_test_material(
     offline_distributions: tuple[Path, Path],
 ) -> None:
     _, sdist = offline_distributions
@@ -2080,7 +2083,7 @@ def test_the_sdist_ships_nineteen_modules_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 19
+    assert len(modules) == 20
     assert "faultatlas/domain/fault_instance.py" in modules
     for name in names:
         parts = Path(name).parts

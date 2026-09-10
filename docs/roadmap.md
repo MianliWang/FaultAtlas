@@ -45,8 +45,9 @@ aspirational Slice as scheduled work.
   `S1.P06.S02` is complete, `S1.P06.S03` is complete,
   `S1.P06.S04` is complete, `S1.P06.S05` is complete,
   `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
-  `S1.P06.S07.C01` correction, `S1.P06.S08` is complete, and
-  `S1.P06.S09` is next and not started.
+  `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
+  `S1.P06.S09` is complete, and `S1.P06.S10` is next and not
+  started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -98,8 +99,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
-`S1.P06.S07.C01` correction, `S1.P06.S08` is complete, and
-`S1.P06.S09` is next and not started.
+`S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
+`S1.P06.S09` is complete, and `S1.P06.S10` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -702,8 +703,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
-`S1.P06.S07.C01` correction, `S1.P06.S08` is complete, and
-`S1.P06.S09` is next and not started.
+`S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
+`S1.P06.S09` is complete, and `S1.P06.S10` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1152,8 +1153,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
-`S1.P06.S07.C01` correction, `S1.P06.S08` is complete, and
-`S1.P06.S09` is next and not started.
+`S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
+`S1.P06.S09` is complete, and `S1.P06.S10` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1257,8 +1258,8 @@ evidence support. `S1.P06.S02` publishes no run, outcome, expected-property,
 root-cause, confidence, review, repair-candidate, source-relationship,
 evidence-link, scenario, or environment model, no reusable pattern or
 invariant, and no complete `FaultInstance`; those were taken up by
-`S1.P06.S03` through `S1.P06.S08` and the rest remain owned by `S1.P06.S09`,
-`S1.P07`, `S1.P09`, and `S1.P10`. The two model-valued child positions are
+`S1.P06.S03` through `S1.P06.S09` and the rest remain owned by `S1.P07`,
+`S1.P09`, and `S1.P10`. The two model-valued child positions are
 guarded against untyped Python input exactly as the context's are, the raw
 text fields carry no nominal guard, and a report round-trips through JSON
 while refusing its own `model_dump` as Python input.
@@ -1353,8 +1354,9 @@ differing contents are not reconciled here, and `S1.P06.S03` published no
 source relationship, evidence link, root cause, repair, confidence, review,
 reusable pattern or invariant, and no complete `FaultInstance`. The bounded
 source and history relationships came next, in `S1.P06.S04`, and the repair
-candidates in `S1.P06.S05`; the rest remain owned by `S1.P06.S09`, `S1.P07`,
-`S1.P08`, `S1.P09`, and `S1.P10`. The module still performs no I/O.
+candidates in `S1.P06.S05`; the evidence link became `S1.P06.S09` work, and
+the rest remain owned by `S1.P07`, `S1.P08`, `S1.P09`, and `S1.P10`. The
+module still performs no I/O.
 
 `S1.P06.S04` adds one new production module,
 `faultatlas.domain.fault_source_relationship`, whose `__all__` is exactly
@@ -1497,8 +1499,8 @@ no root cause either: a repair may target an observed behavioral deviation while
 the cause is still unknown, which is why no cause, explanation, or hypothesis
 field exists. Test material, reported outcomes and comparability became
 `S1.P06.S06` work, case-local explanation and hypothesis became `S1.P06.S07`
-work, the fault-evidence bridge remains `S1.P06.S09` work, and generic review,
-support and confidence calculus `S1.P09` work.
+work, the fault-evidence bridge became `S1.P06.S09` work, and generic review,
+support and confidence calculus remains `S1.P09` work.
 
 A candidate is complete without any implementation. `S1.P06.S05` separates the
 proposal from the concrete material deliberately, so a purely conceptual
@@ -1621,8 +1623,9 @@ requires no scenario, occurrence, repair candidate, or run, and it establishes n
 repository presence, no retained test bytes, no inspected locator, no execution,
 no sufficiency, no reproduction, no evidence, and no regression completeness. It
 is a knowledge object about a procedure rather than captured code, so no source
-or evidence field exists; the fault-evidence bridge remains `S1.P06.S09` work and
-durable byte contracts remain `S1.P10` work.
+or evidence field exists; the fault-evidence bridge became `S1.P06.S09` work,
+which associates such a record from outside rather than adding a field here,
+and durable byte contracts remain `S1.P10` work.
 
 `ReportedFaultTestRun` carries exactly `run`, `test_material`, and
 `run_statement`, consuming the material whole. The statement is opaque prose
@@ -1788,16 +1791,16 @@ present owner of the `S1.P02` `deferred:19` default-branch observation,
 although `S1.P05` is complete and `S1.P05.S08` had carried that subject forward
 to `S5`. The claim had stood since `S1.P05.S08` itself, which introduced the
 carry-forward statement beside it. The clause is now past tense and names the
-current owner. Correct later ownership was left exactly as it stood, including
-confidence, review and interpretation provenance owned by
-`S1.P09`, the fault-evidence bridge owned by `S1.P06.S09`, durable byte
-contracts owned by `S1.P10`, pattern and invariant generalization owned by
-`S1.P07`, and the repository-graph and ingestion subjects owned by `S5` and
-`S2`. The correction also publishes
-`tests/test_roadmap_lifecycle_consistency.py`, which owns this cross-Slice
-narrative rule sentence-locally. Two diverged copies of that rule are removed
-from the product Slice oracles, which keep their own product-specific roadmap
-facts.
+current owner. Correct later ownership was left exactly as it stood:
+confidence, review and interpretation provenance were still owned by
+`S1.P09`, the fault-evidence bridge was still owned by `S1.P06.S09`, durable
+byte contracts were still owned by `S1.P10`, pattern and invariant
+generalization was still owned by `S1.P07`, and the repository-graph and
+ingestion subjects were still owned by `S5` and `S2`. The correction also
+publishes `tests/test_roadmap_lifecycle_consistency.py`, which owns this
+cross-Slice narrative rule sentence-locally. Two diverged copies of that rule
+are removed from the product Slice oracles, which keep their own
+product-specific roadmap facts.
 
 `S1.P06.S08` adds one new production module,
 `faultatlas.domain.fault_instance`, whose `__all__` is exactly `FaultInstance`,
@@ -1850,9 +1853,12 @@ equal its report's.
 
 Order is preserved exactly as supplied and carries no priority, confidence,
 causality, chronology or ownership; nothing is sorted or canonicalised, and
-canonical durable ordering remains `S1.P10` work. No evidence is consumed: the
-fault-evidence bridge remains `S1.P06.S09` work, and the `S1.P06.S04`
-associations stay weak associations rather than becoming support. Each
+canonical durable ordering remains `S1.P10` work. No evidence is consumed by
+the aggregate. The
+fault-evidence bridge became `S1.P06.S09` work, which publishes it as a
+separate cross-domain value and adds no field here, so `FaultInstance` is
+unchanged by it, and the `S1.P06.S04` associations stay weak associations
+rather than becoming support. Each
 collection is bounded to a fixed private maximum that limits one in-memory
 composition and is neither a claim about how many records may exist nor a
 durable-format limit. The aggregate is frozen, strict, extra-forbidding and
@@ -1862,7 +1868,118 @@ a `RootModel` field reconstructs from its own root type even under strict
 validation, so a bare UUID would otherwise be accepted where a published
 identity is meant.
 
-The `S1.P06` route is provisional beyond `S1.P06.S08`. Later exact schemas are
+`S1.P06.S09` adds one new production module,
+`faultatlas.domain.fault_evidence_link`, whose `__all__` is exactly
+`FaultInstanceEvidenceLink`, so production Python sources move from 19 to 20.
+It publishes one frozen strict record of exactly three fields --
+`fault_instance`, `subject`, `evidence_record` -- and nothing else.
+
+The relation is weak and uniform, and it is the same association strength the
+published `S1.P04` and `S1.P05` evidence links already carry: a link records
+that its caller associated one record already composed inside one supplied
+`FaultInstance` with one already published durable evidence-record reference.
+It does not claim that FaultAtlas read the record, that the record contains,
+supports, corroborates or proves the subject, that the subject was observed in
+that record or derived from it, or that the subject is true, verified or
+independently reproduced. It raises no confidence, confirms no hypothesis,
+accepts no explanation, establishes no repair as correct, and records no
+support role, strength, status, review state or verification outcome. Generic
+support, confidence and review calculus remains `S1.P09` work.
+
+The subject position admits exactly eleven substantive `S1.P06` record types
+and no others: `SuppliedFaultReport`, `SuppliedFaultScenario`,
+`SuppliedFaultOccurrenceContext`, `SuppliedFaultRepairCandidate`,
+`SuppliedFaultTestMaterial`, `ReportedFaultTestRun`,
+`ReportedFaultTestOutcome`, `ReportedFaultTestComparison`,
+`SuppliedFaultExplanation`,
+`SuppliedFaultHypothesis`, and `SuppliedFaultExpectedProperty`. Each is reused
+whole and gains no field. The exclusions are the boundary rather than an
+oversight. `FaultInstance` itself is excluded, because it is a caller's bounded
+composition rather than a substantive claim and attaching a record to it would
+attach evidence to the act of composing. `FaultInstanceIdentity` and every
+other identity are excluded, because a name is not a record. The five
+association records `S1.P06.S04` through `S1.P06.S06` publish are excluded,
+because they are themselves weak caller-declared relations and evidence
+attached to a relation about records rather than to the records would be a
+claim about the caller's own act of associating. The published
+`PullRequestHistoryFactEvidenceLink` and `RepositorySnapshotFactEvidenceLink`
+are excluded and each remains the authority for its own domain, and
+`PullRequestChangeSet` with the repository, snapshot and history aggregate
+values are excluded because they are not `S1.P06` knowledge records.
+
+The subject must already be an exact member of the supplied composition, and
+membership is by whole published record exactly as `S1.P06.S08` decides its own
+reference integrity. Two records may carry one subject identity while
+disagreeing in their supplied content, so matching an embedded UUID, report
+identity, run identity or subject identity would silently associate a record
+the caller never supplied; a same-identity record differing anywhere else is
+refused. Each admitted type is checked against the one collection that carries
+it. Nothing is auto-inserted, and the supplied composition is never mutated or
+reconstructed.
+
+No association chaining exists, and that boundary is load-bearing. A report
+associated with a history fact, where the same fact is elsewhere associated
+with a durable record, is not thereby associated with that record. A report
+associated with a pull request and a repair candidate carrying a change set
+from it manufacture no evidence linkage for the candidate. Every chain stays
+exactly as long as the links a caller explicitly supplied, and no link of this
+type is ever derived, inferred, computed or returned; constructing one is a
+separate deliberate act.
+
+The record is referenced as one whole durable record. No evidence identifier,
+strength, support role, confidence, verification state, kind, field pointer,
+JSON pointer, semantic path, byte span, locator, artifact path or request
+exists, and the link does not say where inside the record the subject can be
+found. Each link carries one subject and one record; associating one subject
+with several records is several independent links, one record may be
+associated with several subjects, two identical links are equal values, and no
+registry, collection, ordering, precedence, uniqueness, deduplication or
+completeness semantics over multiple links exists. Absence of a link means only
+that none is supplied, never that a subject is unsupported, that no evidence
+exists, that a search was performed, or that anything was disproved.
+
+`FaultInstance` is unchanged. Its exact seventeen-field surface stays published
+and gains no evidence field, so one bounded knowledge composition does not
+become an implicit evidence graph. All three positions are closed to untyped
+Python input and `from_attributes` bypasses none of them: a strict constraint
+is not applicable to a union schema, a strict union still admits a mapping
+whose children are typed, and a strict model field admits one too, so each
+position carries its own guard. JSON reconstructs the declared values normally
+and every one of the eleven admitted types round-trips preserving its exact
+type and value, which the focused tests assert over every ordered pair rather
+than by sampling. One transport step is required and exactly one is performed:
+because a guard standing above a value hands back an already materialized
+object, and the composed collections are tuples a strict schema will not read
+from parsed arrays, the composition is reconstructed in JSON input by the
+published aggregate's own JSON grammar rather than rewritten here, so every
+bound, uniqueness rule and reference-integrity rule the aggregate declares
+still applies. The module performs no I/O.
+
+`S1.P06.S09` demonstrates one bounded canonical vertical over the retained
+pytest #4412 / #4414 case, in focused tests and here rather than in a new
+persisted corpus, which stays `S1.P06.S11` work. The vertical keeps five layers
+distinct and deliberately does not flatten them into one evidence-derived
+fault: a retained normalized `S1.P05` observation binding a head revision of
+pull request #4414; the existing `PullRequestHistoryFactEvidenceLink` from that
+observation to the retained acquisition record; a caller-supplied
+`SuppliedFaultReport` calibrated to the retained fault, carrying a synthetic
+fault identity because the case supplies none; a caller-supplied
+`FaultReportHistoryFactAssociation` joining that report to the published
+observation; a bounded `FaultInstance` composing both; and one explicitly
+constructed `FaultInstanceEvidenceLink` from an admitted subject to that same
+retained record. FaultAtlas did not execute pytest, the retained stale-cache
+hypothesis stays a supplied hypothesis rather than a fact, the Issue #4412 to
+PR #4414 pairing stays a caller-supplied association rather than a provider
+fact, and the last link is not inferred from the first two.
+
+`S1.P06.S08` records that its own reference-integrity validation can become
+expensive near its published bound. `S1.P06.S09` neither repairs nor reopens
+that, changes no indexing, hashing, cache or bound, and states no complexity
+guarantee of its own; it performs one bounded membership check per link and
+leaves the cost a later optimization candidate. Deferred disposition and
+readiness remain `S1.P06.S10` work.
+
+The `S1.P06` route is provisional beyond `S1.P06.S09`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -1880,9 +1997,8 @@ tests before the corpus Slice:
   (complete)
 8. `S1.P06.S08` — Bounded `FaultInstance` Composition and Reference Integrity
    (complete)
-9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical
-   (next, not started)
-10. `S1.P06.S10` — Deferred disposition and readiness (not started)
+9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical (complete)
+10. `S1.P06.S10` — Deferred disposition and readiness (next, not started)
 11. `S1.P06.S11` — Accumulated contract corpus (not started)
 12. `S1.P06.S12` — Integration and Phase closure (not started)
 
@@ -2183,7 +2299,29 @@ outcomes for one run and conflicting explanations or hypotheses for one report
 coexist without resolution, no semantic edge is inferred across layers, order is
 preserved without meaning, no evidence, support or confidence is carried, the
 composed subject and every collection are closed to untyped Python input, and
-the module performs no I/O. Production Python sources are 19.
+the module performs no I/O.
+`S1.P06.S09` adds the module `faultatlas.domain.fault_evidence_link`, whose
+`__all__` is exactly `FaultInstanceEvidenceLink`: one frozen strict record of
+exactly three fields, `fault_instance`, `subject`, and `evidence_record`. It
+bridges one substantive record already composed inside one `FaultInstance` to
+one `DurableEvidenceRecordReference`, carrying the same weak association the
+published history-fact and snapshot-fact evidence links carry and no more: no
+support, proof, verification, corroboration, observation, derivation,
+confidence, review or status. The subject position admits exactly the eleven
+substantive `S1.P06` records and excludes the aggregate itself, every identity,
+the five association records, both published evidence links, and every
+repository, snapshot and history aggregate value. The subject must already be
+an exact whole-record member of the collection that carries its type, a
+same-identity record differing anywhere else is refused, and nothing is
+auto-inserted. The record is referenced as one whole durable record with no
+locator, pointer, span or field path, several links are several values with no
+registry or ordering over them, and absence of a link asserts nothing. No
+association chaining exists: a report to history fact and history fact to
+record chain does not produce a report to record link, which must be
+constructed explicitly. `FaultInstance` is unchanged and gains no evidence
+field, all three positions are closed to untyped Python input, every admitted
+type round-trips through JSON preserving its exact type and value, and the
+module performs no I/O. Production Python sources are 20.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
@@ -2192,8 +2330,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
-`S1.P06.S07.C01` correction, `S1.P06.S08` is complete, and
-`S1.P06.S09` is next and not started.
+`S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
+`S1.P06.S09` is complete, and `S1.P06.S10` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,

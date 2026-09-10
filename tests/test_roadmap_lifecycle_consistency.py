@@ -50,10 +50,10 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
-COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 9))
+COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 10))
 COMPLETE_PHASES = ("S1.P00", "S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05")
-NEXT_SLICE = "S1.P06.S09"
-NOT_STARTED_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(10, 13))
+NEXT_SLICE = "S1.P06.S10"
+NOT_STARTED_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(11, 13))
 NOT_STARTED_PHASES = ("S1.P07", "S1.P08", "S1.P09", "S1.P10")
 CORRECTION = "S1.P06.S07.C01"
 
@@ -435,7 +435,7 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
                     tail[:60],
                 )
     # A floor, so a grammar that silently stopped matching would fail here
-    # rather than pass vacuously. The document currently carries 68 such claims.
+    # rather than pass vacuously. The document currently carries 188 such claims.
     assert seen >= 60, seen
 
 
@@ -821,10 +821,10 @@ def test_the_predecessor_corrections_from_s06_and_s07_still_stand() -> None:
         "Test material, reported outcomes and comparability became `S1.P06.S06` "
         "work, case-local explanation and hypothesis became `S1.P06.S07` work" in flat
     )
-    assert "the rest remain owned by `S1.P06.S09`" in flat
+    assert "the rest remain owned by `S1.P07`, `S1.P09`, and `S1.P10`" in flat
     assert (
-        "those were taken up by `S1.P06.S03` through `S1.P06.S08` and the rest "
-        "remain owned by `S1.P06.S09`" in flat
+        "those were taken up by `S1.P06.S03` through `S1.P06.S09` and the rest "
+        "remain owned by `S1.P07`, `S1.P09`, and `S1.P10`" in flat
     )
 
 
@@ -838,7 +838,7 @@ def test_correct_later_ownership_is_preserved() -> None:
 
     for statement in (
         "confidence, review, and interpretation provenance remain owned by `S1.P09`",
-        "the fault-evidence bridge remains `S1.P06.S09` work",
+        "the fault-evidence bridge became `S1.P06.S09` work",
         "durable byte contracts remain `S1.P10` work",
         "which remains `S1.P06.S10` work",
         "the historical default branch remains unknown and owned by `S2`",

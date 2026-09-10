@@ -2621,9 +2621,11 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
 
     A hand-written list of six covered six of the predecessors; the inventory
     is read from the tree so a module added later is swept too. The
-    `S1.P06.S08` aggregate is excluded because it is a successor rather than a
-    predecessor: composing the published values is what it publishes, so it
-    imports this module by design.
+    `S1.P06.S08` aggregate and the `S1.P06.S09` evidence bridge are excluded
+    because each is a successor rather than a predecessor: composing the
+    published values is what the aggregate publishes, and associating one
+    composed record with one evidence record is what the bridge publishes, so
+    both import this module by design.
     """
     predecessors = [
         name
@@ -2632,6 +2634,7 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
         not in {
             "faultatlas/domain/fault_test.py",
             "faultatlas/domain/fault_instance.py",
+            "faultatlas/domain/fault_evidence_link.py",
         }
     ]
 
@@ -2643,7 +2646,7 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
             assert symbol not in source, (name, symbol)
 
 
-def test_the_tracked_production_inventory_is_nineteen_modules() -> None:
+def test_the_tracked_production_inventory_is_twenty_modules() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -2654,7 +2657,7 @@ def test_the_tracked_production_inventory_is_nineteen_modules() -> None:
     observed = sorted(tracked.stdout.decode("utf-8").split())
 
     assert observed == [f"src/{name}" for name in EXPECTED_PRODUCTION_MODULES]
-    assert len(observed) == 19
+    assert len(observed) == 20
     assert "src/faultatlas/domain/fault_test.py" in observed
 
 
@@ -2673,14 +2676,14 @@ def test_the_current_status_section_states_exactly_the_live_lifecycle() -> None:
     section = _current_status_section()
 
     assert "`S1.P06` is active and incomplete" in section
-    for index in range(1, 9):
+    for index in range(1, 10):
         assert f"`S1.P06.S{index:02d}` is complete" in section, index
-    assert "`S1.P06.S09` is next and not started" in section
+    assert "`S1.P06.S10` is next and not started" in section
     assert "`S1.P07` through `S1.P10` remain not started" in section
 
-    for index in range(9, 13):
+    for index in range(10, 13):
         assert f"`S1.P06.S{index:02d}` is complete" not in section, index
-    for index in range(1, 9):
+    for index in range(1, 10):
         assert f"`S1.P06.S{index:02d}` is next and not started" not in section, index
     assert "`S1.P06` is complete" not in section
     assert "`S1.P06` is `eligible_to_begin`" not in section
@@ -2693,12 +2696,12 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S09"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P06.S10"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P06.S09`" in line, line
+            assert "`S1.P06.S10`" in line, line
 
 
 def test_the_roadmap_records_the_p06_s06_transition() -> None:
@@ -2711,17 +2714,18 @@ def test_the_roadmap_records_the_p06_s06_transition() -> None:
     assert "`S1.P06.S06` is complete" in roadmap
     assert "`S1.P06.S07` is complete" in roadmap
     assert "`S1.P06.S08` is complete" in roadmap
-    assert "`S1.P06.S09` is next and not started" in roadmap
+    assert "`S1.P06.S09` is complete" in roadmap
+    assert "`S1.P06.S10` is next and not started" in roadmap
     assert (
         "`S1.P06.S06` — Test Material, Reported Runs, Outcomes, and "
         "Comparability (complete)" in roadmap
     )
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S08`." in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S09`." in roadmap
 
     assert "faultatlas.domain.fault_test" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    assert "Production Python sources are 19." in current
+    assert "Production Python sources are 20." in current
     assert "`test_material.report.context.fault`" in roadmap
 
     # The superseded live gate and the provisional S06 title must be retired.
@@ -2730,7 +2734,7 @@ def test_the_roadmap_records_the_p06_s06_transition() -> None:
         "`S1.P06.S06` — Test material, reported outcomes, and comparability "
         "(next, not started)" not in roadmap
     )
-    assert "`S1.P06.S09` is complete" not in roadmap
+    assert "`S1.P06.S10` is complete" not in roadmap
     assert "Production Python sources are 16." not in current
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
@@ -2956,6 +2960,7 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/compatibility.py",
     "faultatlas/domain/evidence.py",
     "faultatlas/domain/fault.py",
+    "faultatlas/domain/fault_evidence_link.py",
     "faultatlas/domain/fault_instance.py",
     "faultatlas/domain/fault_interpretation.py",
     "faultatlas/domain/fault_repair.py",
@@ -2980,7 +2985,7 @@ def test_the_wheel_ships_the_test_module_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 19
+    assert len(modules) == 20
     assert "faultatlas/domain/fault_test.py" in modules
     for name in names:
         assert "reference_corpus" not in name
@@ -2999,7 +3004,7 @@ def test_the_sdist_ships_the_test_module_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 19
+    assert len(modules) == 20
     assert "faultatlas/domain/fault_test.py" in modules
     for name in names:
         parts = Path(name).parts

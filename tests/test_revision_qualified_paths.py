@@ -166,6 +166,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/compatibility.py",
     "src/faultatlas/domain/evidence.py",
     "src/faultatlas/domain/fault.py",
+    "src/faultatlas/domain/fault_evidence_link.py",
     "src/faultatlas/domain/fault_instance.py",
     "src/faultatlas/domain/fault_interpretation.py",
     "src/faultatlas/domain/fault_repair.py",
