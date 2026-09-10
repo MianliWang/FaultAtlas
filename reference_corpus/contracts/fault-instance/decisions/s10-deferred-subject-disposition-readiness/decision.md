@@ -6,7 +6,7 @@ This internal, case-calibrated `S1.P06.S10` decision is not a production schema,
 
 ## 2. Exact `decision.json` SHA-256
 
-`d3588d9dc8baf012b3751d96ab3cc6f01820abd2e8819e96ea095284828f61d5`
+`57e9fdf8befdb4844459857f26dc5e69e91388f2d8a7a27994825882815d4fac`
 
 ## 3. Result
 
@@ -226,7 +226,7 @@ This verdict is not offline-replayable. The provider responses it rests on are c
 | replayable offline | `false` |
 | `S1.P06.S12` must re-verify | `true` |
 
-Recorded from the provider's own ruleset evaluation rather than from the merging session's account of itself. An earlier S1.P06.S10 draft, and the S1.P06.S09 session report it drew on, described this merge as an administrator override that bypassed the ruleset. That description was wrong in the direction of non-compliance, and it is corrected here rather than sealed. S1.P06.S12 may read this as an ordinary compliant publication. S1.P06.S10 does not decide whether S1.P06.S12 may close the Phase; S1.P06.S12 owns that decision.
+Recorded from the provider's own ruleset evaluation rather than from the merging session's account of itself. An earlier S1.P06.S10 draft, and the S1.P06.S09 session report it drew on, described this merge as an administrator override that never occurred and a bypass that was never exercised. That description was wrong in the direction of non-compliance, and it is corrected here rather than sealed. S1.P06.S12 may read this as an ordinary compliant publication. S1.P06.S10 does not decide whether S1.P06.S12 may close the Phase; S1.P06.S12 owns that decision.
 
 ## 11. Non-Generalizations
 

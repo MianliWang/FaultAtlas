@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import hashlib
 import importlib
 import json
@@ -67,6 +66,16 @@ FORBIDDEN_GENERALIZATIONS = (
     "relationship ontology",
     "relationship registry",
     "universal relationship",
+)
+# Words that assert a governance override. A clause naming one must deny it,
+# in the same shape the generalization screen uses.
+OVERRIDE_WORDS = (
+    "bypass",
+    "override",
+    "overridden",
+    "skipped",
+    "not satisfied",
+    "was not enforced",
 )
 # A clause naming one of the above must carry one of these to be a denial.
 DENIAL_TOKENS = (
@@ -135,28 +144,51 @@ def _assert_single_subject_addressed(document: dict[str, Any]) -> None:
     assert register["long_term_owner_totals"] == {}
 
 
-def _generalization_bearing_text(document: dict[str, Any]) -> list[str]:
-    """Every place a universal-relation claim could plausibly be written."""
-    texts = list(cast(list[str], document["non_generalizations"]["items"]))
-    item = cast(list[dict[str, Any]], document["inherited_subject_register"]["items"])[
-        0
-    ]
-    for value in item.values():
-        if isinstance(value, str):
-            texts.append(value)
-        elif isinstance(value, dict):
-            texts.extend(
-                entry
-                for entry in cast(dict[str, Any], value).values()
-                if isinstance(entry, str)
-            )
-    # A prohibition's own statement is the NAME of the forbidden thing, denied
-    # by its `state` rather than by its wording, so only its evidence is read.
-    for entry in cast(
-        list[dict[str, Any]], document["prohibition_accounting"]["items"]
+def _every_string(node: object, path: str = "") -> list[tuple[str, str]]:
+    """Every string in the document, with the pointer it sits at.
+
+    Enumerating regions is the losing shape: whichever field is left off the
+    list is where a false claim can be written. So the screen below reads the
+    whole document instead.
+    """
+    found: list[tuple[str, str]] = []
+    if isinstance(node, str):
+        found.append((path, node))
+    elif isinstance(node, dict):
+        for key, value in cast(dict[str, Any], node).items():
+            found.extend(_every_string(value, f"{path}/{key}"))
+    elif isinstance(node, list):
+        for index, value in enumerate(cast(list[Any], node)):
+            found.extend(_every_string(value, f"{path}/{index}"))
+    return found
+
+
+# A prohibition's own statement, and the identifiers built from it, are the
+# NAME of the forbidden thing. They are denied by the record's `state` rather
+# than by their wording, so they are the one exemption from the screen below.
+_PROHIBITION_NAME_KEYS = ("statement", "prohibition_id")
+
+# The one field whose whole content is the predecessor's carried-forward
+# wording. It is exempt only while it holds exactly that wording, so it cannot
+# be widened into a claim.
+_QUOTED_WORDING_KEYS = ("carried_forward_wording",)
+
+
+def _mask_the_quoted_wording(text: str) -> str:
+    """Mask the predecessor's carried-forward wording only where it is quoted.
+
+    The Slice's subject is literally named "universal relationship vocabulary",
+    so that phrase has to be sayable. Masking every occurrence would also erase
+    an affirmative claim written in the same words, so only occurrences inside
+    quotation marks -- the form in which the predecessor is quoted -- are
+    masked, and a bare use is left for the screen to judge.
+    """
+    for quoted in (
+        f'"{CARRIED_FORWARD_WORDING}"',
+        f"`{CARRIED_FORWARD_WORDING}`",
     ):
-        texts.extend(cast(list[str], entry["evidence"]))
-    return texts
+        text = text.replace(quoted, "<quoted predecessor wording>")
+    return text
 
 
 def _assert_names_no_generalization_it_does_not_deny(document: dict[str, Any]) -> None:
@@ -169,8 +201,17 @@ def _assert_names_no_generalization_it_does_not_deny(document: dict[str, Any]) -
     sanctioned use is the predecessor's own carried-forward wording, which is
     quoted rather than claimed, so it is masked before the check.
     """
-    for text in _generalization_bearing_text(document):
-        masked = text.replace(CARRIED_FORWARD_WORDING, "<carried-forward wording>")
+    for pointer, text in _every_string(document):
+        key = pointer.rsplit("/", 1)[-1]
+        if (
+            pointer.startswith("/prohibition_accounting/")
+            and key in _PROHIBITION_NAME_KEYS
+        ):
+            continue
+        if key in _QUOTED_WORDING_KEYS:
+            assert text == CARRIED_FORWARD_WORDING, (pointer, text)
+            continue
+        masked = _mask_the_quoted_wording(text)
         # Split on sentence boundaries only. A bare "." also ends `S1.P06`,
         # and cutting there would sever the "no" that denies the clause.
         for clause in re.split(r"[;\n]|\.\s|\.$", masked.replace("_", " ")):
@@ -180,7 +221,11 @@ def _assert_names_no_generalization_it_does_not_deny(document: dict[str, Any]) -
             ]
             if not named:
                 continue
-            assert any(token in lowered for token in DENIAL_TOKENS), (named, clause)
+            assert any(token in lowered for token in DENIAL_TOKENS), (
+                pointer,
+                named,
+                clause,
+            )
 
 
 def _assert_no_generic_relationship_claim(document: dict[str, Any]) -> None:
@@ -301,12 +346,26 @@ def _assert_publication_governance_matches_the_provider_record(
     assert "not offline-replayable" in note
     assert "model-generated analysis is not verified fact" in note
 
-    # A record claiming compliance may not also assert a bypass anywhere in it.
-    asserted = copy.deepcopy(record)
-    asserted.pop("explicitly_not", None)
-    prose = json.dumps(asserted).lower()
-    for claim in ("was bypassed", "administrator override", "override of the"):
-        assert claim not in prose, claim
+    # A record characterizing this publication as compliant may not assert a
+    # bypass anywhere in the block, including in the note beside it. Screening
+    # for three spellings is the wrong shape, so this reads every string in the
+    # whole governance block and requires any clause naming an override to deny
+    # it, exactly as the generalization screen does.
+    for pointer, text in _every_string(governance, "/publication_governance"):
+        if pointer.rsplit("/", 1)[-1] == "explicitly_not":
+            continue
+        if "/explicitly_not/" in pointer:
+            continue
+        for clause in re.split(r"[;\n]|\.\s|\.$", text.replace("_", " ")):
+            lowered = clause.strip().lower()
+            named = [word for word in OVERRIDE_WORDS if word in lowered]
+            if not named:
+                continue
+            assert any(token in lowered for token in DENIAL_TOKENS), (
+                pointer,
+                named,
+                clause,
+            )
 
 
 def _assert_s11_is_eligible_but_not_started(document: dict[str, Any]) -> None:
@@ -818,7 +877,12 @@ def test_the_readiness_prerequisites_are_the_declared_twelve() -> None:
 
 
 def test_governance_readiness_is_recorded_separately_from_semantic_readiness() -> None:
-    """The bypass must not be flattened into corpus readiness."""
+    """Publication governance must not be flattened into corpus readiness.
+
+    Whatever the publication state turns out to be, it is recorded beside the
+    semantic prerequisites rather than inside them, so a governance question
+    can never silently decide whether the corpus may begin.
+    """
     readiness = cast(dict[str, Any], _document()["readiness"])
     governance = cast(dict[str, Any], readiness["governance_readiness"])
 
@@ -828,8 +892,8 @@ def test_governance_readiness_is_recorded_separately_from_semantic_readiness() -
     assert governance["must_be_preserved_for_s12_closure"] is True
     assert governance["separate_from_semantic_readiness"] is True
 
-    # No semantic prerequisite mentions the exception, and the exception is not
-    # one of the twelve.
+    # No semantic prerequisite mentions publication governance at all, so the
+    # twelve are decided on semantics alone.
     subjects = " ".join(
         cast(str, entry["subject"])
         for entry in cast(list[dict[str, Any]], readiness["prerequisites"])
