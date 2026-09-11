@@ -7,10 +7,12 @@ fails closed on anything it does not already name.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
 import subprocess
+import sys
 import tarfile
 import uuid
 import zipfile
@@ -123,6 +125,29 @@ DISCRIMINATORLESS_UNIONS = {
     "FaultInstanceEvidenceLink.subject": ("FaultInstanceEvidenceLink", "subject"),
 }
 
+# Each published rule that refuses at the document root, and the fragment of
+# that module's OWN authored ValueError text which names it. Several of these
+# rules report `value_error` with an empty location, so type and location alone
+# cannot tell them apart: a vector meant to prove one could trip another and
+# still satisfy the oracle. The fragments below are written by the sealed
+# modules themselves, not by the validator library, so naming a rule locks no
+# envelope prose and no branch label.
+ROOT_RULE_SIGNATURES = {
+    "distinct_run_subjects": "before and after must report distinct run subjects",
+    "layer_references_are_members": (
+        "references a value this composition does not carry"
+    ),
+    "one_supplied_test_material": (
+        "before and after must report the same supplied test material"
+    ),
+    "report_references_are_members": (
+        "references a report this composition does not carry"
+    ),
+    "reports_name_the_composed_fault": "describes a different fault subject",
+    "subject_is_composed_member": "is not a member of fault_instance.",
+    "unique_primary_subjects": "names one subject identity more than once",
+}
+
 REPLAY_CLASSIFICATIONS = (
     "caller_supplied_association",
     "caller_supplied_composition",
@@ -205,6 +230,12 @@ MANIFEST = _load("manifest")
 VALID = _load("valid-vectors")
 INVALID = _load("invalid-vectors")
 REPLAY = _load("replay-vectors")
+
+CARDINALITY = cast(dict[str, Any], MANIFEST["execution_contract"]["cardinality_probes"])
+CARDINALITY_DUMP_EXEMPT = frozenset(
+    cast(list[str], CARDINALITY["may_omit_semantic_dump"])
+)
+BOUND_PROBES = frozenset(cast(list[str], CARDINALITY["bound_probe_vectors"]))
 
 FAMILIES = (
     ("valid", VALID, frozenset({"json", "python"}), frozenset({"construct"})),
@@ -631,7 +662,12 @@ def test_every_valid_vector_constructs_its_declared_value(
     assert observed["runtime_target"] == expected["runtime_target"], vector["id"]
     assert type(value).__name__ == expected["concrete_type"], vector["id"]
     if expected.get("cardinality_probe"):
-        # A cardinality probe declares its size rather than a whole dump.
+        # A cardinality probe declares its size rather than a four-thousand
+        # member dump. The shape is a kill switch for the dump comparison, so
+        # only a vector the manifest names may reach it, and it must actually
+        # be a synthesized sequence rather than an ordinary input opting out.
+        assert cast(str, vector["id"]) in CARDINALITY_DUMP_EXEMPT, vector["id"]
+        assert "indexed_value" in json.dumps(vector["input"], sort_keys=True)
         assert "semantic_dump" not in expected, vector["id"]
         members = getattr(value, cast(str, expected["member_collection"]))
         assert isinstance(members, tuple)
@@ -672,6 +708,19 @@ def test_every_invalid_vector_is_rejected_as_declared(vector: dict[str, Any]) ->
         first = errors[0]
         assert tuple(cast(list[Any], first["loc"])) == location, (vector["id"], errors)
         assert first["type"] == expected["error_type"], (vector["id"], errors)
+        if location:
+            assert "failing_rule" not in expected, vector["id"]
+            return
+        # A root-located refusal comes from a model validator, and several of
+        # them are indistinguishable by type and location. The vector names
+        # which rule it proves, and the rule is confirmed against that module's
+        # own authored message. The refusal must also be the only one reported,
+        # so a second rule cannot have fired unnoticed.
+        assert len(errors) == 1, (vector["id"], errors)
+        rule = cast(str, expected["failing_rule"])
+        assert rule in ROOT_RULE_SIGNATURES, (vector["id"], rule)
+        raised = str(cast(dict[str, Any], first["ctx"])["error"])
+        assert ROOT_RULE_SIGNATURES[rule] in raised, (vector["id"], raised)
         return
 
     # Prefix mode. Some reported error of the declared type lies under the
@@ -857,7 +906,11 @@ def test_the_execution_contract_matches_the_executor() -> None:
     assert (REPOSITORY_ROOT / cast(str, contract["test_only_executor"])).samefile(
         Path(__file__).resolve()
     )
-    assert contract["expectation_contract"]["production_dump_used_as_oracle"] is False
+    expectation = cast(dict[str, Any], contract["expectation_contract"])
+    assert expectation["production_dump_used_as_oracle"] is False
+    assert expectation["explicit_semantic_dump"] == (
+        "authored_from_declared_fixture_values"
+    )
 
     # Every allowed marker is used, and every marker used is allowed.
     serialised = "".join(
@@ -1073,12 +1126,19 @@ def test_replay_retained_support_is_declared_exactly_and_not_inferred() -> None:
 
 def test_no_synthetic_s1_p06_value_is_replayed_as_a_retained_observation() -> None:
     """Replayability never promotes a supplied claim into a retained fact."""
-    synthetic: list[str] = [
+    # Every synthetic fixture, not only the scalar ones: screening on
+    # `isinstance(str)` silently exempted the invented repository identity,
+    # which is exactly the kind of value that must never be replayed as
+    # retained.
+    fixtures = _fixtures_by_provenance("synthetic_caller_supplied")
+    synthetic = [
         fixture["value"]
-        for fixture in _fixtures_by_provenance("synthetic_caller_supplied")
         if isinstance(fixture["value"], str)
+        else json.dumps(fixture["value"], sort_keys=True, ensure_ascii=False)
+        for fixture in fixtures
     ]
-    assert len(synthetic) == 11
+    assert len(synthetic) == len(fixtures) == 12
+    assert sum(1 for value in fixtures if isinstance(value["value"], str)) == 11
 
     for vector in cast(list[dict[str, Any]], REPLAY["vectors"]):
         serialised = json.dumps(vector["input"], sort_keys=True, ensure_ascii=False)
@@ -1087,6 +1147,7 @@ def test_no_synthetic_s1_p06_value_is_replayed_as_a_retained_observation() -> No
                 assert scalar not in serialised, (vector["id"], scalar)
             assert cast(str, vector["target"]) in SUPPORT_TARGETS, vector["id"]
         if vector["evidence_classification"] == "caller_supplied_identity":
+            assert isinstance(vector["input"], str), vector["id"]
             assert vector["input"] in synthetic, vector["id"]
             assert vector["retained_support"] == [], vector["id"]
             assert cast(str, vector["target"]) in OWNED, vector["id"]
@@ -1173,6 +1234,42 @@ def test_the_outcome_vocabulary_is_exactly_seven_members_with_no_alias() -> None
     assert covered == {member.value for member in members.values()}
 
 
+def test_the_order_pair_is_two_different_composed_values() -> None:
+    """Order is preserved and meaningless, and the pair proves both halves."""
+    forward, reversed_ = (
+        next(
+            cast(dict[str, Any], vector)
+            for vector in cast(list[Any], VALID["vectors"])
+            if vector["id"] == f"fault-instance.valid.composition.{slug}"
+        )
+        for slug in ("tuple-order-as-supplied", "tuple-order-reversed")
+    )
+
+    # Two vectors that differ only in label would read as covered while
+    # exercising one behaviour, so the pair is required to be two inputs.
+    assert forward["input"] != reversed_["input"]
+    built_forward = _execute(forward)["value"]
+    built_reversed = _execute(reversed_)["value"]
+    assert built_forward != built_reversed
+    assert set(built_forward.explanations) == set(built_reversed.explanations)
+    assert built_forward.explanations == tuple(reversed(built_reversed.explanations))
+
+    # No two vectors anywhere share one executable payload.
+    payloads = Counter(
+        json.dumps(
+            {
+                key: vector[key]
+                for key in ("target", "input_mode", "operation", "input")
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        for vector in ALL_VECTORS
+    )
+    duplicated = [count for count in payloads.values() if count > 1]
+    assert not duplicated, duplicated
+
+
 def test_a_did_not_start_report_is_not_a_failure_and_absence_is_not_either() -> None:
     """Two refusals the corpus must never quietly convert into a failure."""
     kind = test_module.ReportedFaultTestOutcomeKind
@@ -1248,6 +1345,234 @@ def test_prefix_location_is_used_only_at_the_declared_union_positions() -> None:
     assert len(exact) > len(cast(list[Any], INVALID["vectors"])) // 2
 
 
+def test_every_root_located_rule_is_named_proven_and_exercised() -> None:
+    """The rules that share one type and one location are told apart.
+
+    Thirteen vectors refuse at the document root. Nine of them report the same
+    `value_error` with the same empty location, so the type-and-location oracle
+    alone would accept a vector that proved a different rule than it claims.
+    Each names its rule, each rule is confirmed against the sealed module's own
+    message, and every declared rule is required to be exercised.
+    """
+    declared = cast(list[str], MANIFEST["rejection_contract"]["root_located_rules"])
+    assert sorted(declared) == sorted(ROOT_RULE_SIGNATURES)
+    assert "failing_rule" in cast(
+        list[str], MANIFEST["rejection_contract"]["error_oracle"]
+    )
+
+    root_located = [
+        cast(dict[str, Any], vector)
+        for vector in cast(list[Any], INVALID["vectors"])
+        if cast(dict[str, Any], vector["expected"])["failure_category"]
+        == "validation_error"
+        and not cast(dict[str, Any], vector["expected"])["error_location"]
+    ]
+    assert len(root_located) == 13, [v["id"] for v in root_located]
+
+    used = Counter(
+        cast(str, cast(dict[str, Any], vector["expected"])["failing_rule"])
+        for vector in root_located
+    )
+    assert sorted(used) == sorted(ROOT_RULE_SIGNATURES), sorted(used)
+
+    # No vector outside that set may name a rule, and every named rule really
+    # is the one the live module raises.
+    for vector in cast(list[dict[str, Any]], INVALID["vectors"]):
+        expected = cast(dict[str, Any], vector["expected"])
+        names_rule = "failing_rule" in expected
+        assert names_rule == (vector in root_located), vector["id"]
+        if not names_rule:
+            continue
+        errors = cast(list[dict[str, Any]], _execute(vector)["errors"])
+        assert len(errors) == 1, vector["id"]
+        raised = str(cast(dict[str, Any], errors[0]["ctx"])["error"])
+        rule = cast(str, expected["failing_rule"])
+        assert ROOT_RULE_SIGNATURES[rule] in raised, (vector["id"], raised)
+        # And no other rule's signature also matches, so the naming is exact.
+        others = [
+            name
+            for name, fragment in ROOT_RULE_SIGNATURES.items()
+            if name != rule and fragment in raised
+        ]
+        assert not others, (vector["id"], others)
+
+
+def test_only_the_declared_cardinality_probes_may_omit_a_semantic_dump() -> None:
+    """The dump comparison may be skipped only where the corpus says so.
+
+    Declaring the exemption in the document rather than in the expectation
+    block is what keeps it from being a switch any vector can throw: a vector
+    that dropped its dump and claimed to be a probe would not be in this set.
+    """
+    declared = cast(
+        dict[str, Any], MANIFEST["execution_contract"]["cardinality_probes"]
+    )
+    assert set(cast(list[str], declared["bound_probe_vectors"])) == {
+        "fault-instance.invalid.composition.above-maximum-reports",
+        "fault-instance.valid.composition.maximum-reports",
+    }
+    assert set(cast(list[str], declared["may_omit_semantic_dump"])) == {
+        "fault-instance.valid.composition.maximum-reports"
+    }
+    assert BOUND_PROBES == set(cast(list[str], declared["bound_probe_vectors"]))
+    assert CARDINALITY_DUMP_EXEMPT == set(
+        cast(list[str], declared["may_omit_semantic_dump"])
+    )
+    assert CARDINALITY_DUMP_EXEMPT < BOUND_PROBES
+
+    exempt = {
+        cast(str, vector["id"])
+        for vector in ALL_VECTORS
+        if cast(dict[str, Any], vector["expected"]).get("cardinality_probe")
+    }
+    assert exempt == CARDINALITY_DUMP_EXEMPT
+
+    # Every other accepted vector really does carry an authored dump.
+    for vector in ALL_VECTORS:
+        expected = cast(dict[str, Any], vector["expected"])
+        if expected["outcome"] != ACCEPTED:
+            continue
+        if cast(str, vector["id"]) in CARDINALITY_DUMP_EXEMPT:
+            continue
+        assert "semantic_dump" in expected, vector["id"]
+        assert "cardinality_probe" not in expected, vector["id"]
+
+    # And the marker is used by exactly the declared bound probes.
+    using = {
+        cast(str, vector["id"])
+        for vector in ALL_VECTORS
+        if "indexed_value" in json.dumps(vector["input"], sort_keys=True)
+    }
+    assert using == BOUND_PROBES
+
+    # A vector that drops its dump without being declared is refused.
+    victim = next(
+        vector
+        for vector in cast(list[dict[str, Any]], VALID["vectors"])
+        if vector["id"] == "fault-instance.valid.composition.minimal"
+    )
+    smuggled = copy.deepcopy(victim)
+    expected = cast(dict[str, Any], smuggled["expected"])
+    del expected["semantic_dump"]
+    expected["cardinality_probe"] = True
+    expected["member_collection"] = "reports"
+    expected["member_count"] = 1
+    with pytest.raises(AssertionError):
+        test_every_valid_vector_constructs_its_declared_value(smuggled)
+
+
+def test_every_symbol_publishing_slice_matches_the_sealed_decision() -> None:
+    """The per-symbol slice is a historical fact with an authority to check."""
+    sealed = {
+        (cast(str, entry["module"]), cast(str, entry["symbol"])): cast(
+            str, entry["publishing_slice"]
+        )
+        for entry in cast(
+            list[dict[str, Any]],
+            _parse_canonical_json(
+                (
+                    REPOSITORY_ROOT / cast(str, MANIFEST["entry_authority"]["path"])
+                ).read_bytes()
+            )["product_inventory"]["symbols"],
+        )
+    }
+    declared = cast(list[dict[str, Any]], MANIFEST["target_symbols"])
+
+    assert len(sealed) == len(declared) == 30
+    for entry in declared:
+        key = (cast(str, entry["module"]), cast(str, entry["symbol"]))
+        assert key in sealed, key
+        assert entry["publishing_slice"] == sealed[key], key
+        assert entry["publishing_slice"] in cast(
+            list[str], MANIFEST["scope"]["covered_slices"]
+        ), key
+
+    # Every covered Slice published at least one symbol, so the mapping is not
+    # a constant wearing nine different labels.
+    assert {cast(str, entry["publishing_slice"]) for entry in declared} == set(
+        cast(list[str], MANIFEST["scope"]["covered_slices"])
+    )
+
+
+# Each corpus file's role follows from what the file is, so the role is derived
+# here and compared rather than read back out of the document it describes.
+def _expected_role(filename: str) -> str:
+    if filename.endswith(".sha256"):
+        return "digest_sidecar"
+    if filename == "contract.md":
+        return "derived_prose"
+    if filename == "manifest.json":
+        return "canonical_manifest"
+    return "canonical_vector_file"
+
+
+def test_every_corpus_file_declares_the_role_its_own_name_implies() -> None:
+    entries = cast(list[dict[str, Any]], MANIFEST["corpus_files"])
+
+    for entry in entries:
+        filename = cast(str, entry["filename"])
+        assert entry["role"] == _expected_role(filename), filename
+    assert Counter(_expected_role(name) for name in CORPUS_FILES) == {
+        "digest_sidecar": 4,
+        "canonical_vector_file": 3,
+        "canonical_manifest": 1,
+        "derived_prose": 1,
+    }
+    assert MANIFEST["entry_authority"]["role"] == (
+        "sealed_predecessor_readiness_and_scope_decision"
+    )
+
+
+def test_every_retained_fixture_value_comes_from_the_retained_material() -> None:
+    """A retained label must be answerable, or it is just a word.
+
+    Nothing stopped a fabricated digest from carrying the retained provenance
+    label, so every scalar inside a retained fixture is looked up in the bytes
+    of the retained case material this corpus is calibrated to.
+    """
+    provenance = cast(dict[str, Any], MANIFEST["fixture_provenance"])
+    sources = cast(list[str], provenance["retained_material"])
+    assert sources, "a retained label needs a source"
+    assert provenance["retained_values_verified_against_retained_material"] is True
+
+    corpus_root = REPOSITORY_ROOT / "reference_corpus"
+    material = ""
+    for relative in sources:
+        path = (REPOSITORY_ROOT / relative).resolve()
+        # The path is canonical data. It is confined before it is opened.
+        assert corpus_root.resolve() in path.parents, relative
+        assert path.is_file(), relative
+        material += path.read_text("utf-8")
+
+    def _scalars(value: Any) -> Iterator[str]:
+        if isinstance(value, dict):
+            for item in cast(dict[str, Any], value).values():
+                yield from _scalars(item)
+        elif isinstance(value, list):
+            for item in cast(list[Any], value):
+                yield from _scalars(item)
+        elif isinstance(value, str):
+            yield value
+
+    # Structural leaves the retained record has no reason to spell, and the two
+    # durable references, which are checked against live bytes elsewhere.
+    STRUCTURAL = {"commit", "blob", "sha1", "added", "modified", "base", "head"}
+    checked = 0
+    for fixture in _fixtures_by_provenance("retained_case_value"):
+        value = fixture["value"]
+        if isinstance(value, dict) and "sha256" in cast(dict[str, Any], value):
+            continue
+        for scalar in _scalars(value):
+            if scalar in STRUCTURAL:
+                continue
+            assert scalar in material, (fixture["id"], scalar)
+            checked += 1
+    assert checked >= 40, checked
+
+    # A fabricated digest carrying the retained label is refused.
+    assert "0" * 40 not in material
+
+
 def test_the_rejection_contract_locks_no_unstable_surface() -> None:
     contract = cast(dict[str, Any], MANIFEST["rejection_contract"])
 
@@ -1265,8 +1590,10 @@ def test_the_rejection_contract_locks_no_unstable_surface() -> None:
         "error_location",
         "error_location_mode",
         "error_type",
+        "failing_rule",
         "failure_category",
     ]
+    assert cast(str, contract["root_located_rule_source"]).strip()
 
     # No vector may pin a Pydantic message, a branch label, or a URL.
     serialised = json.dumps(INVALID, sort_keys=True, ensure_ascii=False)
@@ -1536,9 +1863,58 @@ def test_the_contract_markdown_names_nothing_the_json_does_not_carry() -> None:
     for digest in set(re.findall(r"\b[0-9a-f]{64}\b", text)):
         assert digest in serialised, digest
 
+    # Numbers are claims too, and quoting rules do not reach them: an inventory
+    # count sitting in ordinary prose was unconstrained until this read it.
+    def _integers(document: Any) -> Iterator[int]:
+        if isinstance(document, dict):
+            for item in cast(dict[str, Any], document).values():
+                yield from _integers(item)
+        elif isinstance(document, list):
+            for item in cast(list[Any], document):
+                yield from _integers(item)
+        elif isinstance(document, bool):
+            return
+        elif isinstance(document, int):
+            yield document
+
+    carried = set(_integers(MANIFEST))
+    assert len(carried) >= 20, sorted(carried)
+    # The nine section numbers this projection is organised into.
+    section_numbers = set(range(0, 10))
+    printed = {
+        int(token) for token in re.findall(r"(?<![\w.`-])(\d+)(?![\w.`-])", text)
+    }
+    assert printed, "the projection reports numbers"
+    unexplained_numbers = sorted(printed - carried - section_numbers)
+    assert not unexplained_numbers, unexplained_numbers
+
+    # And the retained case numbers it prints are the ones the fixtures carry.
+    retained = cast(dict[str, Any], MANIFEST["replay_contract"]["retained_case"])
+    repository = next(
+        cast(dict[str, Any], fixture)["value"]
+        for fixture in cast(list[Any], VALID["fixtures"])
+        if fixture["id"] == "fault-instance.fixture.repository.pytest"
+    )
+    assert str(retained["repository_id"]) == repository["provider_repository_id"]
+    assert retained["provider"] == repository["provider"]
+    for key, fixture_id in (
+        ("issue_number", "fault-instance.fixture.issue.4412"),
+        ("pull_request_number", "fault-instance.fixture.pull-request.4414"),
+    ):
+        value = next(
+            cast(dict[str, Any], fixture)["value"]
+            for fixture in cast(list[Any], VALID["fixtures"])
+            if fixture["id"] == fixture_id
+        )
+        assert str(retained[key]) == value["repository_scoped_number"], key
+
     # The authority sentence the corpus does publish is present verbatim.
     assert "The four canonical JSON files are the semantic authority" in text
     assert "this Markdown is a derived projection" in text
+    assert (
+        "every name, digest and number it reports is one the canonical JSON "
+        "carries" in text
+    )
     # The refusals are asserted in the form the projection actually states them,
     # rather than by scanning for a phrase that also occurs inside its own
     # denial.
@@ -1562,27 +1938,58 @@ def test_the_contract_markdown_names_nothing_the_json_does_not_carry() -> None:
 # prefix the manifest itself declares as human-oriented prose. The two sets are
 # disjoint, so prose can never quietly absorb an assurance claim.
 
-VALIDATOR_PREFIXES: dict[str, str] = {
-    "/assurance": "test_the_assurance_block_is_recomputed",
-    "/corpus_files": "test_the_manifest_records_the_vector_file_digests_and_lengths",
-    "/corpus_identity": "test_the_corpus_identity_is_the_authored_constant",
-    "/descriptive_metadata/prefixes": (
-        "test_every_manifest_leaf_is_validated_or_declared_descriptive"
+VALIDATOR_PREFIXES: dict[str, tuple[str, ...]] = {
+    "/assurance": ("test_the_assurance_block_is_recomputed",),
+    "/corpus_files": (
+        "test_every_corpus_file_declares_the_role_its_own_name_implies",
+        "test_the_manifest_records_the_vector_file_digests_and_lengths",
+        "test_the_corpus_directory_holds_exactly_the_declared_files",
+    ),
+    "/corpus_identity": ("test_the_corpus_identity_is_the_authored_constant",),
+    "/descriptive_metadata/leaves": (
+        "test_every_manifest_leaf_is_validated_or_declared_descriptive",
     ),
     "/entry_authority": (
-        "test_the_owned_inventory_equals_what_the_sealed_s10_decision_recorded"
+        "test_the_owned_inventory_equals_what_the_sealed_s10_decision_recorded",
+        "test_every_corpus_file_declares_the_role_its_own_name_implies",
     ),
-    "/execution_contract": "test_the_execution_contract_matches_the_executor",
-    "/fixture_provenance": "test_declared_fixtures_are_shared_locked_and_actually_used",
-    "/format": "test_the_declared_canonicalization_is_the_one_enforced",
-    "/non_goals": "test_the_non_generalizations_are_declared_and_specific",
-    "/rejection_contract": "test_the_rejection_contract_locks_no_unstable_surface",
-    "/replay_contract": "test_replay_classifications_are_exactly_the_five_published_kinds",
-    "/scope": "test_the_scope_matches_the_live_surface",
-    "/source_locks": "test_the_seven_production_modules_match_their_sealed_source_locks",
-    "/support_targets": "test_no_supporting_authority_symbol_is_counted_as_owned",
-    "/target_symbols": "test_the_thirty_product_targets_come_from_live_dunder_all",
-    "/vector_summary": "test_the_declared_counts_match_the_vector_files",
+    "/execution_contract": (
+        "test_the_execution_contract_matches_the_executor",
+        "test_unknown_target_operation_mode_and_marker_all_fail_closed",
+    ),
+    "/execution_contract/cardinality_probes": (
+        "test_only_the_declared_cardinality_probes_may_omit_a_semantic_dump",
+    ),
+    "/fixture_provenance": (
+        "test_every_retained_fixture_value_comes_from_the_retained_material",
+        "test_declared_fixtures_are_shared_locked_and_actually_used",
+    ),
+    "/format": ("test_the_declared_canonicalization_is_the_one_enforced",),
+    "/non_goals": ("test_the_non_generalizations_are_declared_and_specific",),
+    "/rejection_contract": (
+        "test_the_rejection_contract_locks_no_unstable_surface",
+        "test_prefix_location_is_used_only_at_the_declared_union_positions",
+        "test_every_root_located_rule_is_named_proven_and_exercised",
+    ),
+    "/replay_contract": (
+        "test_replay_classifications_are_exactly_the_five_published_kinds",
+        "test_the_replay_vertical_reaches_every_semantic_layer",
+        "test_the_contract_markdown_is_derived_from_the_json_authorities",
+    ),
+    "/scope": (
+        "test_the_scope_matches_the_live_surface",
+        "test_the_corpus_is_source_only_and_adds_no_production_file",
+        "test_no_supporting_authority_symbol_is_counted_as_owned",
+    ),
+    "/source_locks": (
+        "test_the_seven_production_modules_match_their_sealed_source_locks",
+    ),
+    "/support_targets": ("test_no_supporting_authority_symbol_is_counted_as_owned",),
+    "/target_symbols": (
+        "test_every_symbol_publishing_slice_matches_the_sealed_decision",
+        "test_the_thirty_product_targets_come_from_live_dunder_all",
+    ),
+    "/vector_summary": ("test_the_declared_counts_match_the_vector_files",),
 }
 
 
@@ -1608,34 +2015,34 @@ def _leaf_pointers(document: Any, prefix: str = "") -> Iterator[str]:
 
 
 def test_every_manifest_leaf_is_validated_or_declared_descriptive() -> None:
-    descriptive = tuple(cast(list[str], MANIFEST["descriptive_metadata"]["prefixes"]))
-    assert descriptive == (
-        "/descriptive_metadata/contract",
-        "/replay_contract/note",
-        "/scope/note",
-    )
+    """Prose is declared leaf by leaf, and every other leaf must be answerable.
+
+    Declaring prose by PREFIX was the defect this replaces: one assertion
+    anywhere under a prefix discharged every leaf beneath it, so fifty-two
+    objective leaves could be falsified with the suite green. The declaration
+    is now an exact leaf list, and the sweep below answers the rest by
+    falsifying each remaining leaf and requiring the corpus to refuse it.
+    """
+    descriptive = tuple(cast(list[str], MANIFEST["descriptive_metadata"]["leaves"]))
+    assert len(descriptive) == len(set(descriptive)) == 17
+    assert tuple(sorted(descriptive)) == descriptive, "declared in sorted order"
     assert not set(descriptive) & set(VALIDATOR_PREFIXES)
     assert cast(str, MANIFEST["descriptive_metadata"]["contract"]).strip()
 
     leaves = sorted(set(_leaf_pointers(MANIFEST)))
     assert leaves, "the manifest has leaves"
+    assert set(descriptive) <= set(leaves), sorted(set(descriptive) - set(leaves))
 
-    unexplained: list[str] = []
-    prose: list[str] = []
-    for leaf in leaves:
-        matches = [
-            prefix
-            for prefix in (*VALIDATOR_PREFIXES, *descriptive)
-            if leaf == prefix or leaf.startswith(prefix + "/")
-        ]
-        if not matches:
-            unexplained.append(leaf)
-            continue
-        longest = max(matches, key=len)
-        if longest in descriptive:
-            prose.append(leaf)
+    unexplained = [
+        leaf
+        for leaf in leaves
+        if leaf not in descriptive
+        and not any(
+            leaf == prefix or leaf.startswith(prefix + "/")
+            for prefix in VALIDATOR_PREFIXES
+        )
+    ]
     assert not unexplained, unexplained
-    assert sorted(prose) == sorted(descriptive), prose
 
     # Every authored prefix answers something: an unused one is a validator
     # claiming to cover a part of the manifest that no longer exists.
@@ -1644,8 +2051,10 @@ def test_every_manifest_leaf_is_validated_or_declared_descriptive() -> None:
             leaf == prefix or leaf.startswith(prefix + "/") for leaf in leaves
         ), prefix
     module_source = Path(__file__).read_text("utf-8")
-    for prefix, test_name in VALIDATOR_PREFIXES.items():
-        assert f"def {test_name}(" in module_source, (prefix, test_name)
+    for prefix, names in VALIDATOR_PREFIXES.items():
+        assert names, prefix
+        for test_name in names:
+            assert f"def {test_name}(" in module_source, (prefix, test_name)
 
 
 def test_the_assurance_block_is_recomputed() -> None:
@@ -1795,3 +2204,105 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     # The corpus stays out of the package and no production module reads it.
     assert "excludes the corpus" in roadmap
     assert "production module count stays at 20" in roadmap
+
+
+# --- the leaf-coverage claim, answered by falsifying every leaf --------------
+
+
+def _resolve_leaf(document: Any, pointer: str) -> Any:
+    node: Any = document
+    for raw in pointer.split("/")[1:]:
+        part = raw.replace("~1", "/").replace("~0", "~")
+        node = (
+            cast(list[Any], node)[int(part)]
+            if isinstance(node, list)
+            else cast(dict[str, Any], node)[part]
+        )
+    return node
+
+
+def _set_leaf(document: Any, pointer: str, value: Any) -> None:
+    parts = [
+        raw.replace("~1", "/").replace("~0", "~") for raw in pointer.split("/")[1:]
+    ]
+    node: Any = document
+    for part in parts[:-1]:
+        node = (
+            cast(list[Any], node)[int(part)]
+            if isinstance(node, list)
+            else cast(dict[str, Any], node)[part]
+        )
+    last = parts[-1]
+    if isinstance(node, list):
+        cast(list[Any], node)[int(last)] = value
+    else:
+        cast(dict[str, Any], node)[last] = value
+
+
+def _falsify(value: Any) -> Any:
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value + 1
+    if isinstance(value, str):
+        return "FALSIFIED-" + value
+    raise AssertionError(f"unfalsifiable leaf value: {value!r}")
+
+
+def test_falsifying_any_objective_manifest_leaf_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The leaf-coverage claim, executed rather than asserted.
+
+    The manifest says every leaf outside the declared prose list is refused
+    when falsified. Checking that a validator NAME exists proves nothing about
+    whether it reads the leaf, so each leaf is actually falsified here and the
+    validators registered for it are required to refuse the result. A leaf no
+    registered validator answers shows up as a survivor.
+    """
+    module = sys.modules[__name__]
+    descriptive = set(cast(list[str], MANIFEST["descriptive_metadata"]["leaves"]))
+    validators = {
+        prefix: tuple(getattr(module, name) for name in names)
+        for prefix, names in VALIDATOR_PREFIXES.items()
+    }
+
+    pointers = sorted(set(_leaf_pointers(MANIFEST)))
+    survivors: list[str] = []
+    swept = 0
+    for pointer in pointers:
+        if pointer in descriptive:
+            continue
+        value = _resolve_leaf(MANIFEST, pointer)
+        if not isinstance(value, (bool, int, str)):
+            # An empty container is a leaf with nothing to falsify.
+            continue
+        swept += 1
+        mutated = copy.deepcopy(MANIFEST)
+        _set_leaf(mutated, pointer, _falsify(value))
+        monkeypatch.setattr(module, "MANIFEST", mutated)
+        try:
+            # The question is only whether anything objects. A falsified path
+            # that no longer resolves, a falsified digest that no longer
+            # matches and a falsified count that no longer adds up are all
+            # refusals.
+            refused = False
+            for prefix, registered in validators.items():
+                if not (pointer == prefix or pointer.startswith(prefix + "/")):
+                    continue
+                for validator in registered:
+                    try:
+                        validator()
+                    except Exception:  # noqa: BLE001
+                        refused = True
+                        break
+                if refused:
+                    break
+            if not refused:
+                survivors.append(pointer)
+        finally:
+            monkeypatch.setattr(module, "MANIFEST", MANIFEST)
+
+    assert not survivors, survivors
+    assert swept >= 400, swept
+    assert len(descriptive) == 17

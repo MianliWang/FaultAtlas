@@ -2,7 +2,7 @@
 
 ## 1. Scope and Authority Warning
 
-This internal, source-only `S1.P06.S11` contract corpus is not a production schema, class, adapter, reader, writer, migration, persistence contract, or public API. The four canonical JSON files are the semantic authority; this Markdown is a derived projection over them and states nothing they do not. The corpus is executed only by `tests/test_fault_instance_contract_corpus.py` and is excluded from the wheel and the sdist.
+This internal, source-only `S1.P06.S11` contract corpus is not a production schema, class, adapter, reader, writer, migration, persistence contract, or public API. The four canonical JSON files are the semantic authority; this Markdown is a derived projection over them: every name, digest and number it reports is one the canonical JSON carries, so a claim can only be dropped from this file, never added to it. The corpus is executed only by `tests/test_fault_instance_contract_corpus.py` and is excluded from the wheel and the sdist.
 
 Corpus `faultatlas-fault-instance-contract-corpus` version `1`. Phase closure is owned by `S1.P06.S12` and serialization and migration by `S1.P10`.
 
@@ -11,13 +11,13 @@ Corpus `faultatlas-fault-instance-contract-corpus` version `1`. Phase closure is
 | File | Role | SHA-256 | Bytes |
 | --- | --- | --- | --- |
 | `contract.md` | `derived_prose` | n/a | n/a |
-| `invalid-vectors.json` | `canonical_vector_file` | `957574ef2722ab4d844d42a63cf8b937a5577966915c9ec09230bf021628f261` | 171567 |
+| `invalid-vectors.json` | `canonical_vector_file` | `9bfabd902052102b742a62878a597543a2e38da6015c5330bab16c07af40e7c0` | 172147 |
 | `invalid-vectors.sha256` | `digest_sidecar` | n/a | n/a |
 | `manifest.json` | `canonical_manifest` | n/a | n/a |
 | `manifest.sha256` | `digest_sidecar` | n/a | n/a |
 | `replay-vectors.json` | `canonical_vector_file` | `14eb01c8f6d7fd51ef4bbef01a09ed0e5f5658c4144c730e74a5511a0b4ca5a2` | 129528 |
 | `replay-vectors.sha256` | `digest_sidecar` | n/a | n/a |
-| `valid-vectors.json` | `canonical_vector_file` | `e8a3ed49dcb86554fd44ee46c9835b1d7eade96fd8c6d150938de04597c301ad` | 285303 |
+| `valid-vectors.json` | `canonical_vector_file` | `2407d48598ce4cb7bc53da1383686c02754a349844bf0958a352e8dcc4525915` | 287863 |
 | `valid-vectors.sha256` | `digest_sidecar` | n/a | n/a |
 
 Nine files exactly. `manifest.json` carries no digest of itself; its `manifest.sha256` sidecar does. `contract.md` has no sidecar because it is not semantic authority.
@@ -95,7 +95,7 @@ Nine files exactly. `manifest.json` carries no digest of itself; its `manifest.s
 
 Three input modes: `json`, `python`, `replay`. Two operations: `construct`, `reject`. Four test-only input markers: `enum_value`, `indexed_value`, `tuple_value`, `typed_value`. An unknown target, operation, or marker fails closed. No marker reaches production validation.
 
-Accepted vectors declare an explicitly authored semantic dump; a production dump is never used as its own oracle. Rejected vectors declare a failure category, an error type and an error location. Prefix locations are used only at the three discriminatorless union positions `FaultReportHistoryFactAssociation.history_fact`, `FaultReportSourceObjectAssociation.source_object`, `FaultInstanceEvidenceLink.subject`, where branch-internal labels are not a stable contract. No Pydantic message prose is locked.
+Accepted vectors declare an explicitly authored semantic dump, except the one declared cardinality probe, which declares its member count instead of a four-thousand-member dump; a production dump is never used as its own oracle in either shape. Rejected vectors declare a failure category, an error type and an error location. Prefix locations are used only at the three discriminatorless union positions `FaultReportHistoryFactAssociation.history_fact`, `FaultReportSourceObjectAssociation.source_object`, `FaultInstanceEvidenceLink.subject`, where branch-internal labels are not a stable contract. No Pydantic message prose is locked.
 
 ## 6. Replay and Provenance
 
@@ -120,6 +120,8 @@ The retained case keeps every boundary it already had:
 - an expected property is not an S1.P07 invariant
 - the S1.P06.S09 evidence association is explicitly supplied, never inferred
 - the whole evidence record is referenced with no field-level locator
+
+17 manifest leaves are declared human-oriented prose and are never counted as verified assurance. Every other leaf is refused when falsified.
 
 ## 7. Package Boundary
 
