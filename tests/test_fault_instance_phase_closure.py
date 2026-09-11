@@ -712,6 +712,13 @@ def _render_markdown(document: dict[str, Any], digest: str) -> str:
     for entry in cast(list[dict[str, Any]], er["boundary"]):
         add(f"- `{entry['boundary_id']}` — {_plain(entry['statement'])}")
     add("")
+    dependency = cast(dict[str, Any], er["publication_dependency"])
+    add(
+        f"{_plain(dependency['note'])} Required before `{er['next_phase']}` "
+        f"begins: `{dependency['required_before_p07_begins']}`; recorded in "
+        f"this candidate: `{dependency['recorded_in_candidate']}`; evidence at "
+        f"`{dependency['evidence_location']}`.\n"
+    )
 
     add("## Publication candidate boundary\n")
     add(
@@ -908,6 +915,16 @@ def test_no_supporting_authority_symbol_was_counted_as_owned() -> None:
 
 
 def test_the_production_module_count_is_exactly_twenty() -> None:
+    """Two claims, only one of which a later Phase may change.
+
+    The sealed claim is permanent: `S1.P06` closed with exactly these twenty
+    production modules, and that stays true however the tree grows. The second
+    claim is that the tree has not diverged from that snapshot yet, which is
+    what catches a production module smuggled in under a governance Slice. When
+    `S1.P07` publishes its first module the second claim legitimately stops
+    holding and is migrated here, exactly as `S1.P06` migrated the `S1.P05`
+    closure inventory. That migration is the mechanism, not a defect in it.
+    """
     ii = cast(dict[str, Any], _closure()["implementation_inventory"])
     recorded = cast(list[str], ii["production_modules"])
     live = sorted(
@@ -915,9 +932,14 @@ def test_the_production_module_count_is_exactly_twenty() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     )
 
-    assert ii["production_module_count"] == PRODUCTION_MODULE_COUNT
-    assert recorded == live
-    assert len(live) == PRODUCTION_MODULE_COUNT, live
+    # Sealed, and permanent.
+    assert ii["production_module_count"] == len(recorded) == PRODUCTION_MODULE_COUNT
+    assert len(set(recorded)) == PRODUCTION_MODULE_COUNT
+    for relative in recorded:
+        assert (REPOSITORY_ROOT / "src" / relative).is_file(), relative
+
+    # The closed-Phase snapshot, which a later Phase migrates.
+    assert recorded == live, "the tree has diverged from the closed-Phase snapshot"
 
 
 def test_the_owned_modules_still_carry_the_sealed_s10_source_locks() -> None:
@@ -1923,6 +1945,35 @@ def test_p07_is_eligible_to_begin_with_every_prerequisite_satisfied() -> None:
         assert entry["status"] == "satisfied", entry["prerequisite_id"]
 
 
+def test_no_prerequisite_claims_this_closure_was_already_published() -> None:
+    """Readiness may rest on the closure being sealed, never on its publication.
+
+    The twelfth prerequisite is the one that could quietly assert an outcome
+    that has not happened: at seal time there is no pull request, no squash and
+    no natural-main run for this Slice, so a prerequisite reading "published"
+    and marked satisfied would record an unknown external event as fact.
+    """
+    er = cast(dict[str, Any], _closure()["entry_readiness"])
+    final = cast(list[dict[str, Any]], er["prerequisites"])[-1]
+
+    assert final["prerequisite_id"] == "p07-entry:12"
+    assert final["subject"] == "P06_phase_closure_sealed_publication_candidate"
+    assert final["publication_is_external_to_this_record"] is True
+
+    dependency = cast(dict[str, Any], er["publication_dependency"])
+    assert dependency["required_before_p07_begins"] is True
+    assert dependency["recorded_in_candidate"] is False
+    assert (
+        dependency["evidence_location"]
+        == "Git_history_GitHub_and_final_execution_report"
+    )
+
+    # No prerequisite anywhere may assert the publication as an accomplished
+    # fact, and no publication row may name this Slice.
+    for entry in cast(list[dict[str, Any]], er["prerequisites"]):
+        assert "published" not in cast(str, entry["subject"]), entry["prerequisite_id"]
+
+
 def test_the_p07_boundary_is_carried_forward_unweakened() -> None:
     er = cast(dict[str, Any], _closure()["entry_readiness"])
     boundary = cast(list[dict[str, Any]], er["boundary"])
@@ -2185,6 +2236,12 @@ def _mutate(document: dict[str, Any], mutation: str) -> dict[str, Any]:
         ]
         debt["count"] = len(cast(list[Any], debt["items"]))
         return document
+    if mutation == "closure-claims-its-own-publication":
+        readiness = cast(dict[str, Any], document["entry_readiness"])
+        final = cast(list[dict[str, Any]], readiness["prerequisites"])[-1]
+        final["subject"] = "P06_phase_closure_published"
+        final["publication_is_external_to_this_record"] = False
+        return document
     if mutation == "p07-marked-started":
         readiness = cast(dict[str, Any], document["entry_readiness"])
         readiness["implementation_state"] = "in_progress"
@@ -2210,6 +2267,10 @@ MUTATION_CHECKS: tuple[tuple[str, str], ...] = (
     ),
     ("one-assurance-limitation-erased", "test_every_known_debt_item_is_present"),
     ("p07-marked-started", "test_p07_is_eligible_to_begin"),
+    (
+        "closure-claims-its-own-publication",
+        "test_no_prerequisite_claims_this_closure_was_already_published",
+    ),
 )
 
 
@@ -2264,6 +2325,11 @@ def _assert_mutated_document_is_refused(mutated: dict[str, Any]) -> None:
         for entry in boundary
     ):
         failures.append("P07 invariant boundary")
+    final = cast(list[dict[str, Any]], er["prerequisites"])[-1]
+    if final["subject"] != "P06_phase_closure_sealed_publication_candidate":
+        failures.append("P07 publication prerequisite")
+    if final.get("publication_is_external_to_this_record") is not True:
+        failures.append("P07 publication externality")
 
     assert failures, "the mutated closure was accepted by every owned assertion"
 

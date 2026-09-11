@@ -2,7 +2,7 @@
 
 ## Exact primary JSON digest
 
-Primary JSON SHA-256: `7c167b66ab3b9d401a68bbed97e01a33c93a6e504c714658af6f673ca0dd85ae`
+Primary JSON SHA-256: `0341e6320ffc7279d1083bc9bb1aca4896a7022b886456192db037628e7a10c0`
 
 ## Derived and non-authoritative warning
 
@@ -281,13 +281,15 @@ The historical word universal names the predecessor's phrasing, not a required c
 - `p07-entry:09` — weak_whole_record_fault_evidence_bridge (owner `S1.P06.S09`, `satisfied`)
 - `p07-entry:10` — P06_deferred_ownership_closed_with_self_owned_open_zero (owner `S1.P06.S10`, `satisfied`)
 - `p07-entry:11` — P06_v1_contract_corpus_sealed_with_30_of_30_coverage (owner `S1.P06.S11`, `satisfied`)
-- `p07-entry:12` — P06_phase_closure_published (owner `S1.P06.S12`, `satisfied`)
+- `p07-entry:12` — P06_phase_closure_sealed_publication_candidate (owner `S1.P06.S12`, `satisfied`)
 
 - `p07-boundary:01` — case-local SuppliedFaultExpectedProperty is not already a reusable invariant
 - `p07-boundary:02` — S1.P07 must not infer applicability or transfer, which S1.P08 owns
 - `p07-boundary:03` — S1.P07 must not add generic confidence or review, which S1.P09 owns
 - `p07-boundary:04` — S1.P07 must not add durable serialization or persistence, which S1.P10 owns
 - `p07-boundary:05` — Pattern similarity or generalization is not factual truth merely because S1.P06 records look alike
+
+S1.P07 may begin only once this closure is published under ordinary protected publication. That publication has not happened when these bytes are sealed, so this record claims it as neither satisfied nor observed: the twelfth prerequisite is satisfied on the closure being sealed, and the publication itself is an external event whose evidence lives outside this record. Required before `S1.P07` begins: `True`; recorded in this candidate: `False`; evidence at `Git_history_GitHub_and_final_execution_report`.
 
 ## Publication candidate boundary
 
