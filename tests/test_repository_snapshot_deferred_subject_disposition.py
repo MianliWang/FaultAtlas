@@ -823,7 +823,8 @@ def test_roadmap_records_the_s08_disposition_and_transition() -> None:
     assert "`S1.P06.S08` is complete" in roadmap
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
-    assert "`S1.P06.S11` is next and not started" in roadmap
+    assert "`S1.P06.S11` is complete" in roadmap
+    assert "`S1.P06.S12` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert "inherited exactly seven such subjects" in roadmap
     assert "`self_owned_open == 0`" in roadmap

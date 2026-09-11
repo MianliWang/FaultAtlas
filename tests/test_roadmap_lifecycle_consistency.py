@@ -50,10 +50,12 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
-COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 11))
+COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 12))
 COMPLETE_PHASES = ("S1.P00", "S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05")
-NEXT_SLICE = "S1.P06.S11"
-NOT_STARTED_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(12, 13))
+NEXT_SLICE = "S1.P06.S12"
+# `S1.P06.S12` is the live gate rather than a plain not-started position, so
+# this tuple is empty: the Phase has no Slice that is neither complete nor next.
+NOT_STARTED_SLICES: tuple[str, ...] = ()
 NOT_STARTED_PHASES = ("S1.P07", "S1.P08", "S1.P09", "S1.P10")
 CORRECTION = "S1.P06.S07.C01"
 

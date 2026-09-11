@@ -46,8 +46,8 @@ aspirational Slice as scheduled work.
   `S1.P06.S04` is complete, `S1.P06.S05` is complete,
   `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
   `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
-  `S1.P06.S09` is complete, `S1.P06.S10` is complete, and
-  `S1.P06.S11` is next and not started.
+  `S1.P06.S09` is complete, `S1.P06.S10` is complete,
+  `S1.P06.S11` is complete, and `S1.P06.S12` is next and not started.
   `S1.P07` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -101,7 +101,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
-`S1.P06.S10` is complete, and `S1.P06.S11` is next and not started.
+`S1.P06.S10` is complete, `S1.P06.S11` is complete, and
+`S1.P06.S12` is next and not started.
 `S1.P07` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -706,7 +707,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
-`S1.P06.S10` is complete, and `S1.P06.S11` is next and not started.
+`S1.P06.S10` is complete, `S1.P06.S11` is complete, and
+`S1.P06.S12` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1157,7 +1159,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
-`S1.P06.S10` is complete, and `S1.P06.S11` is next and not started.
+`S1.P06.S10` is complete, `S1.P06.S11` is complete, and
+`S1.P06.S12` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1961,7 +1964,7 @@ still applies. The module performs no I/O.
 
 `S1.P06.S09` demonstrates one bounded canonical vertical over the retained
 pytest #4412 / #4414 case, in focused tests and here rather than in a new
-persisted corpus, which stays `S1.P06.S11` work. The vertical keeps five layers
+persisted corpus, which became `S1.P06.S11` work. The vertical keeps five layers
 distinct and deliberately does not flatten them into one evidence-derived
 fault: a retained normalized `S1.P05` observation binding a head revision of
 pull request #4414; the existing `PullRequestHistoryFactEvidenceLink` from that
@@ -2045,8 +2048,9 @@ in `faultatlas.domain.fault_interpretation`, one in
 `faultatlas.domain.fault_instance`, and one in
 `faultatlas.domain.fault_evidence_link`. No alias and no package-level export
 aggregator is published. On that surface, and with the inherited subject
-dispositioned exactly once, `S1.P06.S11` contract-corpus readiness is
-`eligible_to_begin` and `S1.P06.S11` has not begun.
+dispositioned exactly once, `S1.P06.S10` recorded `S1.P06.S11`
+contract-corpus readiness as `eligible_to_begin`, and `S1.P06.S11` had not
+begun when that decision was sealed.
 
 One publication fact is recorded separately rather than folded into that
 readiness, and it is taken from the provider's own ruleset evaluation rather
@@ -2085,7 +2089,69 @@ optimization candidate, it changes no `S1.P06.S08` semantics, and `S1.P06.S11`
 readiness does not depend on it. The canonical surface is what stands on
 `main`.
 
-The `S1.P06` route is provisional beyond `S1.P06.S10`. Later exact schemas are
+`S1.P06.S11` adds no production module, no symbol and no product semantic. It
+publishes the source-only contract corpus under
+`reference_corpus/contracts/fault-instance/v1` in exactly nine files: four
+canonical JSON files, `manifest.json`, `valid-vectors.json`,
+`invalid-vectors.json` and `replay-vectors.json`, one SHA-256 sidecar for each,
+and one derived `contract.md`. The four JSON files are the semantic authority
+under the established `json-sort-keys-compact-utf8-lf-v1` canonicalization; the
+Markdown is a deterministic projection over them and is never a second
+authority, which is why it has no sidecar of its own.
+
+The corpus covers the accumulated `S1.P06.S01` through `S1.P06.S09` surface:
+seven owned production modules and thirty owned product symbols, derived again
+from live `__all__` values and required to equal the inventory the sealed
+`S1.P06.S10` decision recorded. That decision is cited by exact path and
+SHA-256 as the entry authority for readiness and scope, and is never vectorized
+as product behavior. Executable coverage of the owned surface is 30/30. The
+predecessor types the executor needs, from `faultatlas.domain.evidence`,
+`faultatlas.domain.history`, `faultatlas.domain.history_evidence_link`,
+`faultatlas.domain.identity`, `faultatlas.domain.revision` and
+`faultatlas.domain.snapshot_evidence_link`, are a closed support registry: they
+are consumed, not owned, they count toward no coverage, and they gain no new
+semantics.
+
+The corpus carries 254 vectors over 29 declared fixtures: 103 accepted, 110
+refused and 41 replayed, each in a distinct semantic partition. Accepted
+vectors declare an explicitly authored semantic dump, except the one declared
+cardinality probe, which declares its member count instead of a
+four-thousand-member dump; in neither shape is an expectation a restatement of
+what the product produced. Refused vectors declare a failure
+category, an error type and an error location, and a location prefix is used
+only at the three discriminatorless union positions whose branch-internal
+labels are not a stable contract. Bounded cardinality is probed at 4096 and
+4097 through a test-only marker that is expanded into published values before
+anything reaches production validation.
+
+Replay is one deterministic, case-calibrated vertical over the retained pytest
+#4412 and #4414 case, spanning every semantic layer from identity to evidence
+link. `S1.P06` has no historical UUID identity, so every `S1.P06` identifier in
+the vertical is fixed, synthetic and caller-supplied, and is labelled as such;
+appearing in replay promotes nothing into a retained observation. The retained
+case keeps every boundary it already had: the Issue and pull-request pairing is
+not a provider fact, stale-cache causation stays a hypothesis, FaultAtlas did
+not execute pytest, a reported run is not an independent execution, a reported
+failed-then-passed pair is not repair correctness, an expected property is not
+an `S1.P07` invariant, and the evidence association is explicitly supplied
+rather than inferred.
+
+The corpus is source-only. The wheel and the sdist exclude
+`reference_corpus/`, `tests/` and `docs/`, so installing the package never
+makes the corpus available; the production module count stays at 20 and the
+package excludes the corpus entirely. No production API locates or reads it,
+no production corpus reader or executor exists, and the only executor is the
+test-only `tests/test_fault_instance_contract_corpus.py`. The seven owned
+production modules are sealed inputs, locked by SHA-256 and byte length and
+verified against live bytes before the corpus is trusted to describe them; no
+predecessor corpus or decision byte is edited.
+
+The `S1.P06.S10` deferred register remains closed with `self_owned_open == 0`,
+and `S1.P06.S11` introduces no new deferred subject. `S1.P06.S12` is next and
+owns integration and `S1.P06` Phase closure, including re-verifying the
+`S1.P06.S09` publication verdict rather than consuming it as settled.
+
+The `S1.P06` route is provisional beyond `S1.P06.S11`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -2105,8 +2171,8 @@ tests before the corpus Slice:
    (complete)
 9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical (complete)
 10. `S1.P06.S10` — Deferred disposition and readiness (complete)
-11. `S1.P06.S11` — Accumulated contract corpus (next, not started)
-12. `S1.P06.S12` — Integration and Phase closure (not started)
+11. `S1.P06.S11` — Accumulated contract corpus (complete)
+12. `S1.P06.S12` — Integration and Phase closure (next, not started)
 
 `S1.P06` consumes the bounded `S1.P05` history facts without redefining them
 and does not read them as a complete development history. It does not own a
@@ -2442,6 +2508,14 @@ modules and thirty exported symbols for `S1.P06.S11` to cover, that
 rule, no bypass was configured or recorded, and the administrator flag the
 merge command carried could not take effect, so no publication-governance
 exception stands against it.
+`S1.P06.S11` adds no production module and no symbol. It publishes the
+source-only contract corpus under
+`reference_corpus/contracts/fault-instance/v1` as four canonical JSON files,
+four SHA-256 sidecars and one derived `contract.md`, freezing seven owned
+production modules and thirty owned product symbols across 254 vectors with
+30/30 executable coverage and one deterministic synthetic `S1.P06` vertical
+over the retained pytest #4412 and #4414 case. No production code reads it and
+the built distributions exclude it.
 Production Python sources are 20.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
@@ -2453,7 +2527,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
-`S1.P06.S10` is complete, and `S1.P06.S11` is next and not started.
+`S1.P06.S10` is complete, `S1.P06.S11` is complete, and
+`S1.P06.S12` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
