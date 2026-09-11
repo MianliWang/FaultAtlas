@@ -1565,7 +1565,13 @@ def test_every_retained_fixture_value_comes_from_the_retained_material() -> None
         for scalar in _scalars(value):
             if scalar in STRUCTURAL:
                 continue
-            assert scalar in material, (fixture["id"], scalar)
+            # Anchored to a whole JSON string token. Raw containment would let
+            # any substring of the retained bytes, down to one character,
+            # satisfy a retained provenance label.
+            assert json.dumps(scalar, ensure_ascii=False) in material, (
+                fixture["id"],
+                scalar,
+            )
             checked += 1
     assert checked >= 40, checked
 
@@ -1881,9 +1887,13 @@ def test_the_contract_markdown_names_nothing_the_json_does_not_carry() -> None:
     assert len(carried) >= 20, sorted(carried)
     # The nine section numbers this projection is organised into.
     section_numbers = set(range(0, 10))
+    # The lookahead excludes a following digit, word character, backtick or
+    # hyphen but NOT a full stop: excluding it skipped every sentence-final
+    # number, which is exactly where an inventory count tends to land.
     printed = {
-        int(token) for token in re.findall(r"(?<![\w.`-])(\d+)(?![\w.`-])", text)
+        int(token) for token in re.findall(r"(?<![\w`-])(\d+)(?![\d\w`-])", text)
     }
+    assert 20 in printed, "the package-boundary count is read"
     assert printed, "the projection reports numbers"
     unexplained_numbers = sorted(printed - carried - section_numbers)
     assert not unexplained_numbers, unexplained_numbers
@@ -1956,6 +1966,7 @@ VALIDATOR_PREFIXES: dict[str, tuple[str, ...]] = {
     "/execution_contract": (
         "test_the_execution_contract_matches_the_executor",
         "test_unknown_target_operation_mode_and_marker_all_fail_closed",
+        "test_no_supporting_authority_symbol_is_counted_as_owned",
     ),
     "/execution_contract/cardinality_probes": (
         "test_only_the_declared_cardinality_probes_may_omit_a_semantic_dump",
@@ -1975,6 +1986,7 @@ VALIDATOR_PREFIXES: dict[str, tuple[str, ...]] = {
         "test_replay_classifications_are_exactly_the_five_published_kinds",
         "test_the_replay_vertical_reaches_every_semantic_layer",
         "test_the_contract_markdown_is_derived_from_the_json_authorities",
+        "test_the_contract_markdown_names_nothing_the_json_does_not_carry",
     ),
     "/scope": (
         "test_the_scope_matches_the_live_surface",
@@ -2205,6 +2217,31 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     assert "excludes the corpus" in roadmap
     assert "production module count stays at 20" in roadmap
 
+    # The roadmap narrative is a second published account of this Slice, so the
+    # claims it shares with contract.md are required to agree. The unqualified
+    # semantic-dump sentence survived one repair round here after being fixed
+    # one directory away, because nothing read it.
+    flat = " ".join(roadmap.split())
+    exempt = cast(
+        list[str],
+        MANIFEST["execution_contract"]["cardinality_probes"]["may_omit_semantic_dump"],
+    )
+    assert len(exempt) == 1
+    assert "except the one declared cardinality probe" in flat
+    assert "semantic dump, so no expectation is a restatement" not in flat, (
+        "the unqualified claim is false for the declared probe"
+    )
+    summary = cast(dict[str, Any], MANIFEST["vector_summary"])
+    assert f"{summary['total_vectors']} vectors" in flat
+    assert f"{summary['fixtures']} declared fixtures" in flat
+    assert (
+        f"{summary['valid']['count']} accepted, {summary['invalid']['count']} "
+        f"refused and {summary['replay']['count']} replayed" in flat
+    )
+    assert len(cast(list[Any], MANIFEST["target_symbols"])) == 30
+    assert "thirty owned product symbols" in flat
+    assert "seven owned production modules" in flat
+
 
 # --- the leaf-coverage claim, answered by falsifying every leaf --------------
 
@@ -2261,24 +2298,29 @@ def test_falsifying_any_objective_manifest_leaf_is_refused(
     registered validator answers shows up as a survivor.
     """
     module = sys.modules[__name__]
-    descriptive = set(cast(list[str], MANIFEST["descriptive_metadata"]["leaves"]))
+    # Captured by value before anything is patched. Restoring with the bare
+    # name would re-read the module global that the mutation just replaced,
+    # which leaves every later leaf judged against an accumulated corruption
+    # and makes the sweep pass whatever it is given.
+    original = MANIFEST
+    descriptive = set(cast(list[str], original["descriptive_metadata"]["leaves"]))
     validators = {
         prefix: tuple(getattr(module, name) for name in names)
         for prefix, names in VALIDATOR_PREFIXES.items()
     }
 
-    pointers = sorted(set(_leaf_pointers(MANIFEST)))
+    pointers = sorted(set(_leaf_pointers(original)))
     survivors: list[str] = []
     swept = 0
     for pointer in pointers:
         if pointer in descriptive:
             continue
-        value = _resolve_leaf(MANIFEST, pointer)
+        value = _resolve_leaf(original, pointer)
         if not isinstance(value, (bool, int, str)):
             # An empty container is a leaf with nothing to falsify.
             continue
         swept += 1
-        mutated = copy.deepcopy(MANIFEST)
+        mutated = copy.deepcopy(original)
         _set_leaf(mutated, pointer, _falsify(value))
         monkeypatch.setattr(module, "MANIFEST", mutated)
         try:
@@ -2301,8 +2343,10 @@ def test_falsifying_any_objective_manifest_leaf_is_refused(
             if not refused:
                 survivors.append(pointer)
         finally:
-            monkeypatch.setattr(module, "MANIFEST", MANIFEST)
+            monkeypatch.setattr(module, "MANIFEST", original)
 
+    # The restore is load-bearing, so it is checked rather than assumed.
+    assert module.MANIFEST is original
     assert not survivors, survivors
     assert swept >= 400, swept
     assert len(descriptive) == 17

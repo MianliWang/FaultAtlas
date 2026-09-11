@@ -2114,8 +2114,10 @@ semantics.
 
 The corpus carries 254 vectors over 29 declared fixtures: 103 accepted, 110
 refused and 41 replayed, each in a distinct semantic partition. Accepted
-vectors declare an explicitly authored semantic dump, so no expectation is a
-restatement of what the product produced. Refused vectors declare a failure
+vectors declare an explicitly authored semantic dump, except the one declared
+cardinality probe, which declares its member count instead of a
+four-thousand-member dump; in neither shape is an expectation a restatement of
+what the product produced. Refused vectors declare a failure
 category, an error type and an error location, and a location prefix is used
 only at the three discriminatorless union positions whose branch-internal
 labels are not a stable contract. Bounded cardinality is probed at 4096 and
