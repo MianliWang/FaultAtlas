@@ -50,10 +50,21 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
-# `S1.P06.S12` published the Phase closure, so every `S1.P06` Slice is complete,
-# `S1.P06` joins the completed Phases, and the live gate moves up a level: the
-# next unit is the Phase `S1.P07`, not a Slice.
-COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 13))
+# `S1.P06.S12` published the Phase closure, so every `S1.P06` Slice is complete
+# and `S1.P06` joins the completed Phases. `S1.P07.S01` has since exercised the
+# eligibility that closure established: `S1.P07` is active and incomplete, its
+# first Slice is published, and the live gate is a Slice again.
+#
+# The completed Slices carry two roles and are therefore two tuples. The route
+# block `_route_entries` parses is the `S1.P06` route alone, which holds exactly
+# twelve positions, so the route tests read `P06_ROUTE_SLICES`; the
+# document-wide checks are about every published Slice this module tracks, so
+# they read the combined `COMPLETE_SLICES`. One shared tuple would make the
+# route lookups miscount.
+P06_ROUTE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 13))
+# Added by `S1.P07.S01`, the first published `S1.P07` Slice.
+P07_COMPLETE_SLICES = ("S1.P07.S01",)
+COMPLETE_SLICES = (*P06_ROUTE_SLICES, *P07_COMPLETE_SLICES)
 COMPLETE_PHASES = (
     "S1.P00",
     "S1.P01",
@@ -63,10 +74,18 @@ COMPLETE_PHASES = (
     "S1.P05",
     "S1.P06",
 )
-NEXT_UNIT = "S1.P07"
-# No Slice is neither complete nor next: the Phase closed with all twelve
-# published, and `S1.P07` has no numbered Slices in this document yet.
-NOT_STARTED_SLICES: tuple[str, ...] = ()
+# The gate is a Slice rather than a Phase again: `S1.P07` itself is under way,
+# so the next unit is its second Slice.
+NEXT_UNIT = "S1.P07.S02"
+# The Phase the live gate sits inside. It is neither complete nor not started,
+# so it is named separately from both groups below.
+ACTIVE_PHASE_UNIT = "S1.P07"
+# No longer empty. The `S1.P07` route names nine provisional positions, of which
+# `S1.P07.S01` is complete and `S1.P07.S02` is the gate; the remaining seven are
+# not started.
+NOT_STARTED_SLICES: tuple[str, ...] = tuple(
+    f"S1.P07.S{index:02d}" for index in range(3, 10)
+)
 NOT_STARTED_PHASES = ("S1.P08", "S1.P09", "S1.P10")
 CORRECTION = "S1.P06.S07.C01"
 
@@ -75,9 +94,10 @@ CORRECTION = "S1.P06.S07.C01"
 SLICE_TOKEN = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)`")
 GATE_CLAIM = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started")
 ACTIVE_PHASE = re.compile(r"`(S1\.P\d\d)` is active and incomplete")
-# With `S1.P06` closed the document names no active Phase at all, and a
-# reappearing one would be a stale narrative rather than a new gate.
-ACTIVE_PHASES_EXPECTED: frozenset[str] = frozenset()
+# `S1.P07.S01` began the Phase, so the document now does name an active Phase --
+# and exactly one. A second one would be a stale narrative rather than a second
+# gate, so the set is compared whole rather than for membership.
+ACTIVE_PHASES_EXPECTED: frozenset[str] = frozenset({ACTIVE_PHASE_UNIT})
 
 
 def _text() -> str:
@@ -136,11 +156,19 @@ def test_the_current_status_section_states_the_authoritative_lifecycle() -> None
 
     assert "`S1.P06` is complete" in section
     assert "`S1.P06` is active and incomplete" not in section
+    # The closed Phase is stated as complete and the Phase the gate sits inside
+    # is stated as active; neither may be stated as the other.
+    assert f"`{ACTIVE_PHASE_UNIT}` is active and incomplete" in section
     for slice_id in COMPLETE_SLICES:
         assert f"`{slice_id}` is complete" in section, slice_id
     assert f"`{NEXT_UNIT}` is next and not started" in section
     assert "`S1.P08` through `S1.P10` remain not started" in section
-    for unit in (NEXT_UNIT, *NOT_STARTED_SLICES, *NOT_STARTED_PHASES):
+    for unit in (
+        ACTIVE_PHASE_UNIT,
+        NEXT_UNIT,
+        *NOT_STARTED_SLICES,
+        *NOT_STARTED_PHASES,
+    ):
         assert f"`{unit}` is complete" not in section, unit
 
 
@@ -165,7 +193,13 @@ def test_the_correction_is_not_a_gate_and_not_a_phase(  # noqa: D401
     assert f"`{CORRECTION}` is not started" not in flat
 
 
-def test_the_document_names_one_live_gate_and_no_active_phase() -> None:
+def test_the_document_names_one_live_gate_and_one_active_phase() -> None:
+    """One live gate, and -- unlike at the `S1.P06` closure -- one active Phase.
+
+    Renamed with the state it asserts: `S1.P07.S01` started a Phase, so the
+    document does name an active Phase again. Both sets are still compared
+    whole, so a stale second gate or a second active Phase fails here.
+    """
     flat = _flat(_text())
     gates = set(GATE_CLAIM.findall(flat))
 
@@ -200,6 +234,9 @@ PHASE_SLICE_COUNT = {
     "S1.P04": 10,
     "S1.P05": 10,
     "S1.P06": 12,
+    # The `S1.P07` route is provisional beyond `S1.P07.S01`, but the document
+    # numbers nine positions, so a claim about `S1.P07.S10` is still refused.
+    "S1.P07": 9,
 }
 KNOWN_CORRECTIONS = frozenset(
     {
@@ -217,11 +254,10 @@ def _is_known_unit(unit: str) -> bool:
         return unit in KNOWN_CORRECTIONS
     phase, _, suffix = unit.partition(".S")
     if not suffix:
-        return (
-            phase in PHASE_SLICE_COUNT
-            or phase in NOT_STARTED_PHASES
-            or phase == NEXT_UNIT
-        )
+        # `S1.P07` now has numbered Slices and so appears in
+        # `PHASE_SLICE_COUNT`; the gate no longer needs a special case here,
+        # and would not get one, since the gate is a Slice rather than a Phase.
+        return phase in PHASE_SLICE_COUNT or phase in NOT_STARTED_PHASES
     return 1 <= int(suffix) <= PHASE_SLICE_COUNT.get(phase, 0)
 
 
@@ -397,8 +433,16 @@ def _allowed_states(unit: str) -> set[str] | None:  # noqa: PLR0911
         return {"complete"}
     if unit in NOT_STARTED_PHASES or phase in NOT_STARTED_PHASES:
         return {"not_started"}
-    if phase == NEXT_UNIT:
-        return {"not_started"}
+    if unit == ACTIVE_PHASE_UNIT:
+        # The Phase the gate sits inside is under way, so it is neither
+        # complete nor not started. It is not a gate either: the gate is the
+        # Slice returned above, and the Phase inherits no state from it.
+        return {"active"}
+    if phase == ACTIVE_PHASE_UNIT:
+        # A Slice of the active Phase is complete if it has been published and
+        # not started otherwise. The gate was already returned above, so the
+        # active state does not reach any Slice.
+        return {"complete"} if unit in P07_COMPLETE_SLICES else {"not_started"}
     return None
 
 
@@ -449,7 +493,8 @@ def test_every_present_tense_state_claim_matches_the_authoritative_state() -> No
                     tail[:60],
                 )
     # A floor, so a grammar that silently stopped matching would fail here
-    # rather than pass vacuously. The document currently carries 193 such claims.
+    # rather than pass vacuously. The document currently carries 209 such
+    # claims, up from 193 with the `S1.P07` section added.
     assert seen >= 60, seen
 
 
@@ -592,9 +637,14 @@ def test_every_lifecycle_sentence_carries_its_own_live_gate() -> None:
         for slice_id in COMPLETE_SLICES:
             assert f"`{slice_id}` is complete" in sentence, (start, slice_id)
         assert f"`{NEXT_UNIT}` is next and not started" in sentence, start
+        # The gate is a Slice again, so the Phase it sits inside has a state of
+        # its own. A sentence naming the gate without it would leave that state
+        # to be borrowed from somewhere else, which is what locality forbids.
+        assert f"`{ACTIVE_PHASE_UNIT}` is active and incomplete" in sentence, start
         # The live gate is neither complete nor absent from this check: a
-        # sentence asserting both states at once is self-contradictory.
-        for unit in (NEXT_UNIT, *NOT_STARTED_SLICES):
+        # sentence asserting both states at once is self-contradictory. The
+        # active Phase is checked the same way, for the same reason.
+        for unit in (ACTIVE_PHASE_UNIT, NEXT_UNIT, *NOT_STARTED_SLICES):
             assert f"`{unit}` is complete" not in sentence, (start, unit)
 
 
@@ -664,10 +714,13 @@ def test_the_route_states_the_authoritative_state_for_every_position() -> None:
     entries = {slice_id: state for _, slice_id, _, state in rows}
 
     assert len(entries) == 12, sorted(entries)
-    for slice_id in COMPLETE_SLICES:
+    for slice_id in P06_ROUTE_SLICES:
         assert entries[slice_id] == "complete", slice_id
-    for slice_id in NOT_STARTED_SLICES:
-        assert entries[slice_id] == "not started", slice_id
+    # The programme's not-started Slices are now `S1.P07` positions, which this
+    # block does not contain, so the loop over `NOT_STARTED_SLICES` that used to
+    # stand here would raise rather than check anything. The equivalent check
+    # over this route is that no position carries any state but complete.
+    assert set(entries.values()) == {"complete"}, sorted(set(entries.values()))
 
 
 def test_the_closed_route_carries_no_next_position() -> None:
@@ -676,7 +729,7 @@ def test_the_closed_route_carries_no_next_position() -> None:
 
     assert states.count("next, not started") == 0
     assert states.count("not started") == 0
-    assert states.count("complete") == len(COMPLETE_SLICES) == 12
+    assert states.count("complete") == len(P06_ROUTE_SLICES) == 12
 
 
 def test_the_correction_is_not_a_numbered_route_position() -> None:

@@ -88,6 +88,8 @@ FAULT_TEST_MODULE = "src/faultatlas/domain/fault_test.py"
 FAULT_INTERPRETATION_MODULE = "src/faultatlas/domain/fault_interpretation.py"
 FAULT_INSTANCE_MODULE = "src/faultatlas/domain/fault_instance.py"
 FAULT_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/fault_evidence_link.py"
+# Added by `S1.P07.S01`, the first `S1.P07` production module.
+PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 
 EXPECTED_OWNED_SYMBOLS = (
     ("S1.P05.S01", "faultatlas.domain.history", "PullRequestRevisionRoleBinding"),
@@ -1853,9 +1855,10 @@ def test_this_closure_adds_no_production_source_and_names_what_followed() -> Non
         FAULT_INTERPRETATION_MODULE,
         FAULT_INSTANCE_MODULE,
         FAULT_EVIDENCE_LINK_MODULE,
+        PATTERN_MODULE,
     }
     assert len(CURRENT_PRODUCTION_FILES) == 13
-    assert len(observed) == 20
+    assert len(observed) == 21
 
 
 def test_owned_symbols_match_the_live_published_modules() -> None:
@@ -1926,7 +1929,11 @@ def test_roadmap_records_phase_completion_and_p06_readiness() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is next and not started" in roadmap
+    # `S1.P07` was the next gate; it has since begun, so the roadmap names its
+    # first Slice complete and carries the gate one level down.
+    assert "`S1.P07.S01` is complete" in roadmap
+    assert "`S1.P07.S02` is next and not started" in roadmap
+    assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P04` is complete" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in roadmap
@@ -1979,21 +1986,23 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
     roadmap = " ".join(
         (REPOSITORY_ROOT / ROADMAP_RELATIVE).read_text(encoding="utf-8").split()
     )
-    # No phase is awaiting entry any more: P06 has commenced, so its sealed
-    # eligibility now reads in the past tense and the live gate is a Slice.
+    # No phase is awaiting entry any more: P06 and now P07 have both commenced,
+    # so each sealed eligibility reads in the past tense and the gate is a Slice.
     live_gates = re.findall(r"`(S1\.P\d\d)` is `eligible_to_begin`", roadmap)
     assert live_gates == [], live_gates
     exercised = re.findall(r"`(S1\.P\d\d)` was `eligible_to_begin`", roadmap)
-    assert sorted(exercised) == ["S1.P05", "S1.P06"], exercised
+    assert sorted(exercised) == ["S1.P05", "S1.P06", "S1.P07"], exercised
 
     live_next = re.findall(
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P07"}, sorted(set(live_next))
+    # `S1.P07` has commenced, so the one live gate is the Slice `S1.P07.S02`
+    # rather than the Phase, and `S1.P07` is the one Phase now open.
+    assert set(live_next) == {"S1.P07.S02"}, sorted(set(live_next))
 
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
-    assert set(live_phases) == set(), sorted(set(live_phases))
+    assert set(live_phases) == {"S1.P07"}, sorted(set(live_phases))
 
     # A phase this closure records as complete must not also be claimed open.
     for phase in ("S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05"):

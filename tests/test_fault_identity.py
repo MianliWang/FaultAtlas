@@ -30,6 +30,11 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 FAULT_SOURCE = REPOSITORY_ROOT / "src/faultatlas/domain/fault.py"
 CHECKOUT_SOURCE_ROOT = REPOSITORY_ROOT / "src"
 
+# Added by `S1.P07.S01`, the first `S1.P07` production module. It is not an
+# `S1.P06.S01` product and nothing below validates it; the packaging oracles
+# here enumerate whatever the live tree ships, so it has to be named.
+PATTERN_MODULE = "faultatlas/domain/pattern.py"
+
 # The retained pytest #4412 case supplies a repository identity and no fault
 # instance identifier at all, so every UUID below is a fixed synthetic value
 # supplied by this oracle. Pairing one with the retained repository is a
@@ -1235,19 +1240,30 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is next and not started" in roadmap
+    # `S1.P07` was the next-and-not-started gate at `S1.P06.S12`; `S1.P07.S01`
+    # has since exercised that eligibility, so the live gate moved on to
+    # `S1.P07.S02` and the Phase itself is now active.
+    assert "`S1.P07` is active and incomplete" in roadmap
+    assert "`S1.P07.S02` is next and not started" in roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
     assert "faultatlas.domain.fault" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    assert "Production Python sources are 20." in current
+    # `S1.P07.S01` published `faultatlas.domain.pattern`, so the live count
+    # moved 20 -> 21. The sealed `S1.P06` records still say 20 and are not
+    # read here.
+    assert "Production Python sources are 21." in current
 
     # The superseded entry-gate claims must be retired, not left standing.
     assert "`S1.P06` is next and not started" not in roadmap
     assert "`S1.P06` is `eligible_to_begin`" not in roadmap
+    assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P07` is complete" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
+    # `S1.P07` became an active section of its own exactly as `S1.P06` did,
+    # so it too must have left the preserved-later-phases list.
+    assert "- **S1.P07 — Pattern & Invariant Model**" not in raw
 
 
 def test_the_roadmap_route_is_closed_at_the_final_slice() -> None:
@@ -1380,12 +1396,13 @@ def test_the_wheel_ships_the_new_module_and_no_corpus_or_test_material(
         "faultatlas/domain/history.py",
         "faultatlas/domain/history_evidence_link.py",
         "faultatlas/domain/identity.py",
+        PATTERN_MODULE,
         "faultatlas/domain/revision.py",
         "faultatlas/domain/snapshot.py",
         "faultatlas/domain/snapshot_evidence_link.py",
         "faultatlas/domain/source.py",
     ]
-    assert len(modules) == 20
+    assert len(modules) == 21
     for name in names:
         assert "reference_corpus" not in name
         assert not name.startswith("tests/")
@@ -1419,12 +1436,13 @@ def test_the_sdist_ships_the_new_module_and_no_corpus_or_test_material(
         "faultatlas/domain/history.py",
         "faultatlas/domain/history_evidence_link.py",
         "faultatlas/domain/identity.py",
+        PATTERN_MODULE,
         "faultatlas/domain/revision.py",
         "faultatlas/domain/snapshot.py",
         "faultatlas/domain/snapshot_evidence_link.py",
         "faultatlas/domain/source.py",
     ]
-    assert len(modules) == 20
+    assert len(modules) == 21
     for name in names:
         parts = Path(name).parts
         assert "reference_corpus" not in parts

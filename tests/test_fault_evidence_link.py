@@ -1973,7 +1973,7 @@ def test_the_roadmap_records_the_p06_s09_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is next and not started" in roadmap
+    assert "`S1.P07.S02` is next and not started" in roadmap
     assert (
         "`S1.P06.S09` — Fault-evidence bridge and canonical vertical (complete)"
         in roadmap
@@ -1982,7 +1982,8 @@ def test_the_roadmap_records_the_p06_s09_transition() -> None:
 
     assert "faultatlas.domain.fault_evidence_link" in current
     assert "`FaultInstanceEvidenceLink`" in current
-    assert "Production Python sources are 20." in current
+    # Twenty-one since `S1.P07.S01` published `faultatlas.domain.pattern`.
+    assert "Production Python sources are 21." in current
 
     assert "`S1.P06.S09` is next and not started" not in roadmap
     assert "`S1.P07` is complete" not in roadmap
@@ -2044,6 +2045,8 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/history.py",
     "faultatlas/domain/history_evidence_link.py",
     "faultatlas/domain/identity.py",
+    # Added by `S1.P07.S01`, the first `S1.P07` production module.
+    "faultatlas/domain/pattern.py",
     "faultatlas/domain/revision.py",
     "faultatlas/domain/snapshot.py",
     "faultatlas/domain/snapshot_evidence_link.py",
@@ -2051,15 +2054,17 @@ EXPECTED_PRODUCTION_MODULES = [
 ]
 
 
-def test_the_checkout_carries_exactly_twenty_production_modules() -> None:
+def test_the_checkout_carries_exactly_twenty_one_production_modules() -> None:
     observed = sorted(
         str(path.relative_to(CHECKOUT_SOURCE_ROOT))
         for path in CHECKOUT_SOURCE_ROOT.rglob("*.py")
     )
 
     assert observed == EXPECTED_PRODUCTION_MODULES
-    assert len(observed) == 20
+    # Twenty-one since `S1.P07.S01` published `faultatlas/domain/pattern.py`.
+    assert len(observed) == 21
     assert "faultatlas/domain/fault_evidence_link.py" in observed
+    assert "faultatlas/domain/pattern.py" in observed
 
 
 ISOLATED_SMOKE = """
@@ -2200,7 +2205,7 @@ def offline_distributions(
     return wheels[0], sdists[0]
 
 
-def test_the_wheel_ships_twenty_modules_and_no_corpus_or_test_material(
+def test_the_wheel_ships_twenty_one_modules_and_no_corpus_or_test_material(
     offline_distributions: tuple[Path, Path],
 ) -> None:
     wheel, _ = offline_distributions
@@ -2209,15 +2214,17 @@ def test_the_wheel_ships_twenty_modules_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 20
+    # Twenty-one since `S1.P07.S01` published `faultatlas/domain/pattern.py`.
+    assert len(modules) == 21
     assert "faultatlas/domain/fault_evidence_link.py" in modules
+    assert "faultatlas/domain/pattern.py" in modules
     for name in names:
         assert "reference_corpus" not in name
         assert not name.startswith("tests/")
         assert not name.startswith("docs/")
 
 
-def test_the_sdist_ships_twenty_modules_and_no_corpus_or_test_material(
+def test_the_sdist_ships_twenty_one_modules_and_no_corpus_or_test_material(
     offline_distributions: tuple[Path, Path],
 ) -> None:
     _, sdist = offline_distributions
@@ -2228,8 +2235,10 @@ def test_the_sdist_ships_twenty_modules_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 20
+    # Twenty-one since `S1.P07.S01` published `faultatlas/domain/pattern.py`.
+    assert len(modules) == 21
     assert "faultatlas/domain/fault_evidence_link.py" in modules
+    assert "faultatlas/domain/pattern.py" in modules
     for name in names:
         parts = Path(name).parts
         assert "reference_corpus" not in parts

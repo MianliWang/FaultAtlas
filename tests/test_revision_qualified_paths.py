@@ -175,6 +175,8 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/history_evidence_link.py",
     "src/faultatlas/domain/identity.py",
+    # Added by `S1.P07.S01`, the first `S1.P07` production module.
+    "src/faultatlas/domain/pattern.py",
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/snapshot_evidence_link.py",

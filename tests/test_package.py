@@ -88,6 +88,8 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/history_evidence_link.py",
     "src/faultatlas/domain/identity.py",
+    # Added by `S1.P07.S01`, the first `S1.P07` production module.
+    "src/faultatlas/domain/pattern.py",
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/snapshot_evidence_link.py",
@@ -95,6 +97,7 @@ EXPECTED_PRODUCTION_FILES = {
 }
 EVIDENCE_MODULE_PATH = "src/faultatlas/domain/evidence.py"
 SNAPSHOT_MODULE_PATH = "src/faultatlas/domain/snapshot.py"
+PATTERN_MODULE_PATH = "src/faultatlas/domain/pattern.py"
 
 type ArchiveKind = Literal["wheel", "sdist"]
 type MemberKind = Literal["file", "directory", "link", "special"]
@@ -393,6 +396,7 @@ def test_offline_build_excludes_reference_corpus_and_historical_license(
         "unexpected-source",
         "missing-evidence-source",
         "missing-snapshot-source",
+        "missing-pattern-source",
         "evidence-byte-mismatch",
     ),
 )
@@ -405,6 +409,8 @@ def test_package_source_inventory_mutation_is_rejected(mutation: str) -> None:
         del packaged[EVIDENCE_MODULE_PATH]
     elif mutation == "missing-snapshot-source":
         del packaged[SNAPSHOT_MODULE_PATH]
+    elif mutation == "missing-pattern-source":
+        del packaged[PATTERN_MODULE_PATH]
     else:
         assert mutation == "evidence-byte-mismatch"
         packaged[EVIDENCE_MODULE_PATH] += b"\n"

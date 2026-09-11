@@ -422,6 +422,10 @@ FAULT_TEST_MODULE = "src/faultatlas/domain/fault_test.py"
 FAULT_INTERPRETATION_MODULE = "src/faultatlas/domain/fault_interpretation.py"
 FAULT_INSTANCE_MODULE = "src/faultatlas/domain/fault_instance.py"
 FAULT_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/fault_evidence_link.py"
+# Added by `S1.P07.S01`, the first `S1.P07` production module. It is neither a
+# history record nor a fault record, so it is named here rather than folded
+# into the `S1.P06` group above.
+PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 P03_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, EVIDENCE_MODULE}
 CURRENT_PRODUCTION_FILES = {
     *P03_PRODUCTION_FILES,
@@ -436,6 +440,7 @@ CURRENT_PRODUCTION_FILES = {
     FAULT_INTERPRETATION_MODULE,
     FAULT_INSTANCE_MODULE,
     FAULT_EVIDENCE_LINK_MODULE,
+    PATTERN_MODULE,
 }
 EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunId",
@@ -2108,7 +2113,9 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P06.S10` is complete" in normalized_roadmap
     assert "`S1.P06.S11` is complete" in normalized_roadmap
     assert "`S1.P06.S12` is complete" in normalized_roadmap
-    assert "`S1.P07` is next and not started" in normalized_roadmap
+    assert "`S1.P07` is active and incomplete" in normalized_roadmap
+    assert "`S1.P07.S01` is complete" in normalized_roadmap
+    assert "`S1.P07.S02` is next and not started" in normalized_roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:

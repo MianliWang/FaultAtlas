@@ -195,6 +195,8 @@ FAULT_TEST_MODULE = "src/faultatlas/domain/fault_test.py"
 FAULT_INTERPRETATION_MODULE = "src/faultatlas/domain/fault_interpretation.py"
 FAULT_INSTANCE_MODULE = "src/faultatlas/domain/fault_instance.py"
 FAULT_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/fault_evidence_link.py"
+# Added by `S1.P07.S01`, the first `S1.P07` production module.
+PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION,
     EVIDENCE_MODULE,
@@ -209,6 +211,7 @@ CURRENT_PRODUCTION_FILES = {
     FAULT_INTERPRETATION_MODULE,
     FAULT_INSTANCE_MODULE,
     FAULT_EVIDENCE_LINK_MODULE,
+    PATTERN_MODULE,
 }
 EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunId",
@@ -1918,7 +1921,12 @@ def test_group_m_historical_p03_readiness_and_current_s05_are_scope_guarded() ->
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is next and not started" in roadmap
+    # The sealed closure still records `S1.P07` as eligible and not started; the
+    # live roadmap has since exercised that eligibility, so `S1.P07` is active
+    # and `S1.P07.S02`, not `S1.P07`, is what is next and not started.
+    assert "`S1.P07` is active and incomplete" in roadmap
+    assert "`S1.P07.S01` is complete" in roadmap
+    assert "`S1.P07.S02` is next and not started" in roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
 

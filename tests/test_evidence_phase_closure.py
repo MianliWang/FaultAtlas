@@ -187,6 +187,8 @@ CURRENT_PRODUCTION_SOURCES = (
     "src/faultatlas/domain/fault_test.py",
     "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/history_evidence_link.py",
+    # Added by `S1.P07.S01`, the first `S1.P07` production module.
+    "src/faultatlas/domain/pattern.py",
     "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/snapshot_evidence_link.py",
 )
@@ -1745,7 +1747,11 @@ def test_roadmap_advances_p04_while_case_preserves_p03_closure_state() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is next and not started" in roadmap
+    # `S1.P07.S01` exercised the eligibility this sealed closure recorded, so
+    # the live roadmap now opens the phase instead of queueing it.
+    assert "`S1.P07` is active and incomplete" in roadmap
+    assert "`S1.P07.S01` is complete" in roadmap
+    assert "`S1.P07.S02` is next and not started" in roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented" in roadmap
     assert CLOSURE_RELATIVE in case
