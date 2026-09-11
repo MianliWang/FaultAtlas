@@ -13,7 +13,7 @@ import tarfile
 import uuid
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic import (
@@ -335,28 +335,39 @@ def _current_status_section() -> str:
     return roadmap[start:end]
 
 
-def _live_uuid_rooted_identities() -> dict[str, type[RootModel[uuid.UUID]]]:
-    """Every UUID-rooted identity the live domain package publishes.
+def _live_uuid_rooted_identities() -> set[type[BaseModel]]:
+    """Every UUID-rooted identity the live domain package defines.
 
     The tuple above is the readable witness; this is the guard. Reading the
     comparison set back out of that tuple would make its own exactness
     unfalsifiable: the assertion could then fail only if someone shrank the
-    literal, never because a module published an identity the literal forgot.
+    literal, never because a module defined an identity the literal forgot.
+
+    Classes are collected rather than export names, because two modules may
+    publish one name and a mapping keyed by name would drop one of them
+    silently -- the enumeration basis has to be the thing being compared.
+    Every class a module defines is collected rather than only the ones it
+    lists, because a module need not have an `__all__` at all, as
+    `faultatlas.domain.source` does not, and an identity a module declines to
+    export is a live nominal type regardless. The `__module__` filter keeps a
+    class to the module that defines it, so a predecessor imported for
+    composition is not counted twice.
     """
-    found: dict[str, type[RootModel[uuid.UUID]]] = {}
+    found: set[type[BaseModel]] = set()
     for path in sorted((CHECKOUT_SOURCE_ROOT / "faultatlas/domain").glob("*.py")):
         if path.name == "__init__.py":
             continue
-        module = importlib.import_module(f"faultatlas.domain.{path.stem}")
-        for name in getattr(module, "__all__", ()):
-            value = getattr(module, name)
-            if (
-                isinstance(value, type)
-                and issubclass(value, RootModel)
-                and "root" in value.model_fields
-                and value.model_fields["root"].annotation is uuid.UUID
-            ):
-                found[name] = value
+        dotted = f"faultatlas.domain.{path.stem}"
+        module = importlib.import_module(dotted)
+        for value in vars(module).values():
+            if not (isinstance(value, type) and issubclass(value, RootModel)):
+                continue
+            model = cast(type[BaseModel], value)
+            if getattr(model, "__module__", None) != dotted:
+                continue
+            field = model.model_fields.get("root")
+            if field is not None and field.annotation is uuid.UUID:
+                found.add(model)
     return found
 
 
@@ -711,8 +722,8 @@ def test_the_pattern_identity_is_nominally_distinct_from_every_p06_identity() ->
     """
     live = _live_uuid_rooted_identities()
 
-    assert set(live.values()) == {FaultPatternIdentity, *P06_UUID_IDENTITIES}
-    assert set(P06_UUID_IDENTITIES) == set(live.values()) - {FaultPatternIdentity}
+    assert live == {FaultPatternIdentity, *P06_UUID_IDENTITIES}
+    assert set(P06_UUID_IDENTITIES) == live - {FaultPatternIdentity}
     assert len(P06_UUID_IDENTITIES) == len(live) - 1
     assert len({identity.__name__ for identity in P06_UUID_IDENTITIES}) == len(
         P06_UUID_IDENTITIES

@@ -2656,11 +2656,21 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
 
     # And one claim about the `S1.P07.S01` module stronger than the loop makes:
     # its executable body names nothing from `faultatlas` at all, so it cannot
-    # reach this module under any spelling, a relative import included.
-    pattern = (CHECKOUT_SOURCE_ROOT / "faultatlas/domain/pattern.py").read_text(
-        encoding="utf-8"
+    # reach this module under any spelling, a relative import included. The
+    # body is taken by removing the docstring node from the parsed module
+    # rather than by slicing at the docstring quotes, because a slice drops
+    # every statement written above the docstring.
+    tree = ast.parse(
+        (CHECKOUT_SOURCE_ROOT / "faultatlas/domain/pattern.py").read_bytes()
     )
-    assert "faultatlas" not in pattern.split('"""', 2)[-1]
+    first = tree.body[0] if tree.body else None
+    if (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Constant)
+        and isinstance(first.value.value, str)
+    ):
+        del tree.body[0]
+    assert "faultatlas" not in ast.unparse(tree)
 
 
 def test_the_tracked_production_inventory_is_twenty_one_modules() -> None:

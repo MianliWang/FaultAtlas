@@ -1959,11 +1959,23 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
     # executable body is screened here for the same needles the loop applies,
     # plus the stronger claim that it names nothing from `faultatlas` at all --
     # which refuses a relative import too, spelling no package path.
-    body = (
-        (CHECKOUT_SOURCE_ROOT / "faultatlas/domain/pattern.py")
-        .read_text(encoding="utf-8")
-        .split('"""', 2)[-1]
+    # pattern.py is excluded from the loop, so this is the only screen applied
+    # to it and it has to be exact. A text slice at the docstring quotes is
+    # not the executable body: it drops every statement written ABOVE the
+    # docstring, which is where an import would sit. The docstring node is
+    # removed from the parsed module instead, and what is left is unparsed, so
+    # every executable statement is screened wherever it stands.
+    tree = ast.parse(
+        (CHECKOUT_SOURCE_ROOT / "faultatlas/domain/pattern.py").read_bytes()
     )
+    first = tree.body[0] if tree.body else None
+    if (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Constant)
+        and isinstance(first.value.value, str)
+    ):
+        del tree.body[0]
+    body = ast.unparse(tree)
     assert "faultatlas" not in body
     assert "fault_interpretation" not in body
     for symbol in EXPECTED_EXPORTS:
