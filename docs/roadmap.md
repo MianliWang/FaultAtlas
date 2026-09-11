@@ -41,14 +41,15 @@ aspirational Slice as scheduled work.
   `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
   `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
   correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-  `S1.P06` is active and incomplete; `S1.P06.S01` is complete,
+  `S1.P06` is complete; `S1.P06.S01` is complete,
   `S1.P06.S02` is complete, `S1.P06.S03` is complete,
   `S1.P06.S04` is complete, `S1.P06.S05` is complete,
   `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
   `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
   `S1.P06.S09` is complete, `S1.P06.S10` is complete,
-  `S1.P06.S11` is complete, and `S1.P06.S12` is next and not started.
-  `S1.P07` through `S1.P10` remain not started.
+  `S1.P06.S11` is complete, and `S1.P06.S12` is complete, so
+  `S1.P07` is next and not started.
+  `S1.P08` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 ## Program stages
@@ -95,15 +96,15 @@ complete, `S1.P04.S05` is complete, `S1.P04.S06` is complete,
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-`S1.P06` is active and incomplete; `S1.P06.S01` is complete,
+`S1.P06` is complete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
-`S1.P06.S12` is next and not started.
-`S1.P07` through `S1.P10` remain not started, and `S2-S9`
+`S1.P06.S12` is complete, so `S1.P07` is next and not started.
+`S1.P08` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
@@ -701,14 +702,14 @@ otherwise.
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-`S1.P06` is active and incomplete; `S1.P06.S01` is complete,
+`S1.P06` is complete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
-`S1.P06.S12` is next and not started.
+`S1.P06.S12` is complete, so `S1.P07` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1153,14 +1154,14 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 
 ## S1.P06 — Fault Instance Model
 
-`S1.P06` is active and incomplete. `S1.P06.S01` is complete,
+`S1.P06` is complete. `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
-`S1.P06.S12` is next and not started.
+`S1.P06.S12` is complete, so `S1.P07` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1790,8 +1791,8 @@ optional or nullable field, round-trip through JSON while refusing their own
 
 `S1.P06.S07.C01` corrects roadmap lifecycle narrative without changing any
 published contract. It adds no production module, revises no `S1.P06.S01`
-through `S1.P06.S07` semantics, and does not move the live gate, which stays
-`S1.P06.S08`. A whole-roadmap sentence-local audit reconciled every
+through `S1.P06.S07` semantics, and did not move the live gate, which was
+`S1.P06.S08` when it published. A whole-roadmap sentence-local audit reconciled every
 present-tense lifecycle and ownership statement against the current state and
 found one stale claim: the `S1.P05.S01` narrative still named `S1.P05` as the
 present owner of the `S1.P02` `deferred:19` default-branch observation,
@@ -2079,9 +2080,9 @@ records them and never that the provider reported them. Model-generated
 analysis is not verified fact, and this verdict is analysis of an external
 record rather than a retained observation. Retaining bounded immutable
 snapshots of those responses is acquisition work outside this Slice, so
-`S1.P06.S12` must re-verify the verdict rather than consume it as settled.
-Whether the Phase may close remains `S1.P06.S12`'s decision and is not decided
-here.
+`S1.P06.S12` was required to re-verify the verdict rather than consume it as
+settled, and did. Whether the Phase could close was `S1.P06.S12`'s decision and
+was not decided here.
 
 The `S1.P06.S08` membership-performance candidate is not part of canonical
 `S1.P06` product state. It remains an unpublished nonblocking implementation
@@ -2147,12 +2148,75 @@ verified against live bytes before the corpus is trusted to describe them; no
 predecessor corpus or decision byte is edited.
 
 The `S1.P06.S10` deferred register remains closed with `self_owned_open == 0`,
-and `S1.P06.S11` introduces no new deferred subject. `S1.P06.S12` is next and
-owns integration and `S1.P06` Phase closure, including re-verifying the
-`S1.P06.S09` publication verdict rather than consuming it as settled.
+and `S1.P06.S11` introduces no new deferred subject. `S1.P06.S12` took up
+integration and `S1.P06` Phase closure, and re-verified the `S1.P06.S09`
+publication verdict rather than consuming it as settled.
 
-The `S1.P06` route is provisional beyond `S1.P06.S11`. Later exact schemas are
-not authorized by appearing here, and every product Slice owns its focused
+`S1.P06.S12` adds no production module, no symbol and no product semantic. It
+publishes the sealed Phase closure under
+`reference_corpus/contracts/fault-instance/closures/s1-p06-phase-closure` as
+`closure.json`, the sole durable semantic authority under the established
+`json-sort-keys-compact-utf8-lf-v1` canonicalization, and `closure.md`, a
+deterministic projection over it that is never a second authority. The closure
+is internal governance material: it is not a production schema, a persistence
+format, a public API, a reader or writer, a migration, or a registry.
+
+The Phase closes with the product that actually stands on canonical `main`: 7
+`S1.P06`-owned production modules exporting 30 owned product symbols, 20
+production Python modules in total, one sealed v1 contract corpus, and no
+`S1.P06`-owned open deferred subject. The surface spans one bounded
+`FaultInstance` aggregate and a weak whole-record fault-evidence bridge. The
+`S1.P06.S10` deferred register is closed with `self_owned_open == 0`, the
+`S1.P06.S11` source-only corpus is sealed at 254 vectors over 29 fixtures with
+30-of-30 owned coverage, and every owned module is re-derived from live
+`__all__` and locked to the digest the sealed `S1.P06.S10` decision recorded.
+
+`S1.P06.S12` builds a canonical publication ledger over the twelve `S1.P06`
+publications from Git and provider state rather than from earlier reports.
+Every canonical reviewed tree equals its squash tree, every exact-head check
+and every natural-main check succeeded, and every publication was a protected
+squash merge. Publication metadata is recorded separately from product
+correctness: the `S1.P06.S05` squash-message understatement, the `S1.P06.S07.C01`
+stale counts, the `S1.P06.S09` pull-request test count and the `S1.P06.S10`
+10147-against-10148 figure are all preserved as corrected descriptive counts,
+none of which is a product failure where the reviewed tree equals the squash
+tree and the required checks succeeded. The retracted `S1.P06.S09`
+non-compliance claim is preserved as history rather than erased.
+
+The `S1.P06.S09` publication governance verdict is freshly re-verified against
+the provider rather than consumed as settled. The active `main` ruleset
+configures no bypass actor, permits squash as its only merge method, and has
+not changed since before the first `S1.P06` merge; the first merge attempt was
+refused by the active pull-request rule for one unresolved review thread, the
+thread was resolved, and the successful rule suite evaluated pass on all five
+active rules with no bypass recorded. That an administrator flag appeared on a
+command line is not evidence of a bypass. The closure separates the provider
+facts observed at closure time from the offline-replayable evidence this
+repository retains, and records that provider responses are not retained here.
+
+Known limitations are recorded rather than dissolved. The `S1.P06.S08`
+membership-performance candidate in pull request 82 is not canonical `S1.P06`
+state and blocks nothing; predecessor source locks verified SHA-256 and byte
+length but never a recorded blob identity or file mode, so `S1.P06.S12` locks
+only what it verified; the `S1.P06.S10` prose screens stay heuristic and are
+compensated by direct structural closure assertions; one `S1.P06.S11` replay
+vector carries a coarse descriptive category while its authoritative provenance
+axis is correct; and some `S1.P06.S11` roadmap checks read the whole file, which
+the closure test compensates by extracting the bounded section first. Each is
+known nonblocking debt that remains explicitly recorded at closure, and none of
+them disappeared.
+
+`S1.P07` is eligible to begin, with implementation state not started, on twelve
+satisfied prerequisites. The `S1.P07 — Pattern & Invariant Model` boundary is
+carried forward unweakened: a case-local `SuppliedFaultExpectedProperty` is not
+already a reusable invariant, applicability and transfer remain `S1.P08` work,
+generic confidence and review remain `S1.P09` work, durable serialization
+remains `S1.P10` work, and Pattern similarity is not factual truth merely
+because `S1.P06` records look alike. No exact `S1.P07` schema is authorized by
+this closure.
+
+The `S1.P06` route is closed at `S1.P06.S12`. Later exact schemas are
+not authorized by appearing here, and every product Slice owned its focused
 tests before the corpus Slice:
 
 1. `S1.P06.S01` — Fault Instance Identity and Repository Context (complete)
@@ -2172,7 +2236,7 @@ tests before the corpus Slice:
 9. `S1.P06.S09` — Fault-evidence bridge and canonical vertical (complete)
 10. `S1.P06.S10` — Deferred disposition and readiness (complete)
 11. `S1.P06.S11` — Accumulated contract corpus (complete)
-12. `S1.P06.S12` — Integration and Phase closure (next, not started)
+12. `S1.P06.S12` — Integration and Phase closure (complete)
 
 `S1.P06` consumes the bounded `S1.P05` history facts without redefining them
 and does not read them as a complete development history. It does not own a
@@ -2516,19 +2580,30 @@ production modules and thirty owned product symbols across 254 vectors with
 30/30 executable coverage and one deterministic synthetic `S1.P06` vertical
 over the retained pytest #4412 and #4414 case. No production code reads it and
 the built distributions exclude it.
+`S1.P06.S12` adds no production module and no symbol. It publishes the sealed
+`S1.P06` Phase closure under
+`reference_corpus/contracts/fault-instance/closures/s1-p06-phase-closure`,
+whose `closure.md` is a deterministic projection of its `closure.json` and
+which no production code reads or writes. It records the canonical publication
+ledger for all twelve `S1.P06` publications with reviewed tree equal to squash
+tree throughout, the freshly re-verified `S1.P06.S09` publication governance
+verdict, the 7-module and 30-symbol owned surface, the sealed corpus figures,
+five explicitly dispositioned nonblocking known-debt items, 32 satisfied exit
+criteria with none unsatisfied, and `S1.P07` readiness as `eligible_to_begin`
+with implementation state `not_started`.
 Production Python sources are 20.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the
 `S1.P05.S02.C01` correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`,
 `S1.P05.S06`, `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01`
 correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
-`S1.P06` is active and incomplete; `S1.P06.S01` is complete,
+`S1.P06` is complete; `S1.P06.S01` is complete,
 `S1.P06.S02` is complete, `S1.P06.S03` is complete,
 `S1.P06.S04` is complete, `S1.P06.S05` is complete,
 `S1.P06.S06` is complete, `S1.P06.S07` is complete including the
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
-`S1.P06.S12` is next and not started.
+`S1.P06.S12` is complete, so `S1.P07` is next and not started.
 `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,

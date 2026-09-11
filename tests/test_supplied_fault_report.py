@@ -1987,7 +1987,7 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     current = mapping[1]
 
     assert "## S1.P06 — Fault Instance Model" in roadmap
-    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06` is complete" in roadmap
     assert "`S1.P06.S01` is complete" in roadmap
     assert "`S1.P06.S02` is complete" in roadmap
     assert "`S1.P06.S03` is complete" in roadmap
@@ -1999,8 +1999,9 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
-    assert "`S1.P06.S12` is next and not started" in roadmap
-    assert "`S1.P07` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P06.S12` is complete" in roadmap
+    assert "`S1.P07` is next and not started" in roadmap
+    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P06.S01` — Fault Instance Identity and Repository Context (complete)"
         in roadmap
@@ -2020,8 +2021,8 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     # The superseded live gate and the provisional S02 title must be retired.
     assert "`S1.P06.S02` is next and not started" not in roadmap
     assert "Minimal supplied fault report" not in roadmap
-    assert "`S1.P06` is complete" not in roadmap
-    assert "`S1.P06.S12` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
 
@@ -2054,19 +2055,21 @@ def test_the_roadmap_preserves_the_s01_history_as_written() -> None:
     assert "`S1.P06` is `eligible_to_begin`" not in roadmap
 
 
-def test_the_roadmap_route_is_provisional_beyond_this_slice() -> None:
+def test_the_roadmap_route_is_closed_at_the_final_slice() -> None:
     roadmap = _roadmap()
 
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S11`." in roadmap
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S08`." not in roadmap
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S09`." not in roadmap
+    assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
+    assert "The `S1.P06` route is closed at `S1.P06.S08`." not in roadmap
+    assert "The `S1.P06` route is closed at `S1.P06.S09`." not in roadmap
     for index in range(1, 13):
         assert f"`S1.P06.S{index:02d}`" in roadmap
     assert "`S1.P06.S13`" not in roadmap
-    # Only S01 through S10 are claimed complete in the route.
-    for index in range(12, 13):
-        assert f"`S1.P06.S{index:02d}` is complete" not in roadmap
-        assert f"`S1.P06.S{index:02d}` — " in roadmap
+    # The Phase is closed, so every route position is complete and each one
+    # still carries its own titled row.
+    for index in range(1, 13):
+        assert f"`S1.P06.S{index:02d}` is complete" in roadmap, index
+        assert f"`S1.P06.S{index:02d}` — " in roadmap, index
+    assert "`S1.P06.S13` is complete" not in roadmap
     assert (
         "subject is not resolved by `S1.P06.S01`, `S1.P06.S02`, or `S1.P06.S03`"
         in roadmap
@@ -2080,13 +2083,13 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S12"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P07"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
-    assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
+    assert set(live_phases) == set(), sorted(set(live_phases))
     # Line-based readers pair the Slice with the phrase on one raw line.
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P06.S12`" in line, line
+            assert "`S1.P07`" in line, line
 
 
 # --- packaging and an isolated installed-wheel smoke -------------------------

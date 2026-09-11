@@ -50,13 +50,24 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
-COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 12))
-COMPLETE_PHASES = ("S1.P00", "S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05")
-NEXT_SLICE = "S1.P06.S12"
-# `S1.P06.S12` is the live gate rather than a plain not-started position, so
-# this tuple is empty: the Phase has no Slice that is neither complete nor next.
+# `S1.P06.S12` published the Phase closure, so every `S1.P06` Slice is complete,
+# `S1.P06` joins the completed Phases, and the live gate moves up a level: the
+# next unit is the Phase `S1.P07`, not a Slice.
+COMPLETE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 13))
+COMPLETE_PHASES = (
+    "S1.P00",
+    "S1.P01",
+    "S1.P02",
+    "S1.P03",
+    "S1.P04",
+    "S1.P05",
+    "S1.P06",
+)
+NEXT_UNIT = "S1.P07"
+# No Slice is neither complete nor next: the Phase closed with all twelve
+# published, and `S1.P07` has no numbered Slices in this document yet.
 NOT_STARTED_SLICES: tuple[str, ...] = ()
-NOT_STARTED_PHASES = ("S1.P07", "S1.P08", "S1.P09", "S1.P10")
+NOT_STARTED_PHASES = ("S1.P08", "S1.P09", "S1.P10")
 CORRECTION = "S1.P06.S07.C01"
 
 # A Slice token, deliberately excluding a `.C01` correction suffix: a
@@ -64,6 +75,9 @@ CORRECTION = "S1.P06.S07.C01"
 SLICE_TOKEN = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)`")
 GATE_CLAIM = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started")
 ACTIVE_PHASE = re.compile(r"`(S1\.P\d\d)` is active and incomplete")
+# With `S1.P06` closed the document names no active Phase at all, and a
+# reappearing one would be a stale narrative rather than a new gate.
+ACTIVE_PHASES_EXPECTED: frozenset[str] = frozenset()
 
 
 def _text() -> str:
@@ -120,15 +134,14 @@ def _section(heading: str) -> str:
 def test_the_current_status_section_states_the_authoritative_lifecycle() -> None:
     section = _section("Current status")
 
-    assert "`S1.P06` is active and incomplete" in section
+    assert "`S1.P06` is complete" in section
+    assert "`S1.P06` is active and incomplete" not in section
     for slice_id in COMPLETE_SLICES:
         assert f"`{slice_id}` is complete" in section, slice_id
-    assert f"`{NEXT_SLICE}` is next and not started" in section
-    assert "`S1.P07` through `S1.P10` remain not started" in section
-    for slice_id in (NEXT_SLICE, *NOT_STARTED_SLICES):
-        assert f"`{slice_id}` is complete" not in section, slice_id
-    for phase in NOT_STARTED_PHASES:
-        assert f"`{phase}` is complete" not in section, phase
+    assert f"`{NEXT_UNIT}` is next and not started" in section
+    assert "`S1.P08` through `S1.P10` remain not started" in section
+    for unit in (NEXT_UNIT, *NOT_STARTED_SLICES, *NOT_STARTED_PHASES):
+        assert f"`{unit}` is complete" not in section, unit
 
 
 def test_the_current_status_section_records_the_correction_as_complete() -> None:
@@ -152,12 +165,12 @@ def test_the_correction_is_not_a_gate_and_not_a_phase(  # noqa: D401
     assert f"`{CORRECTION}` is not started" not in flat
 
 
-def test_the_document_names_exactly_one_live_p06_product_gate() -> None:
+def test_the_document_names_one_live_gate_and_no_active_phase() -> None:
     flat = _flat(_text())
     gates = set(GATE_CLAIM.findall(flat))
 
-    assert gates == {NEXT_SLICE}, sorted(gates)
-    assert set(ACTIVE_PHASE.findall(flat)) == {"S1.P06"}
+    assert gates == {NEXT_UNIT}, sorted(gates)
+    assert set(ACTIVE_PHASE.findall(flat)) == ACTIVE_PHASES_EXPECTED
 
 
 # Enumerating forbidden phrasings does not converge: each round of review
@@ -177,7 +190,6 @@ TAIL = rf"(?:[^,;:.]|,\s+(?:{CONTRASTIVE})\b){{0,80}}"
 PRESENT_CLAIM = re.compile(
     rf"`({UNIT})`(?:\s+work)?\s+(is|are|remains|remain|will|has|have)\b({TAIL})"
 )
-ACTIVE_PHASE_ID = "S1.P06"
 # How many Slices each Phase contains. A child that does not exist may not
 # inherit its Phase's completed state.
 PHASE_SLICE_COUNT = {
@@ -205,7 +217,11 @@ def _is_known_unit(unit: str) -> bool:
         return unit in KNOWN_CORRECTIONS
     phase, _, suffix = unit.partition(".S")
     if not suffix:
-        return phase in PHASE_SLICE_COUNT or phase in NOT_STARTED_PHASES
+        return (
+            phase in PHASE_SLICE_COUNT
+            or phase in NOT_STARTED_PHASES
+            or phase == NEXT_UNIT
+        )
     return 1 <= int(suffix) <= PHASE_SLICE_COUNT.get(phase, 0)
 
 
@@ -373,19 +389,15 @@ def _allowed_states(unit: str) -> set[str] | None:  # noqa: PLR0911
         # A published correction is complete, and never a gate.
         return {"complete"}
     phase = unit.partition(".S")[0]
+    if unit == NEXT_UNIT:
+        return {"next", "not_started"}
     if phase in COMPLETE_PHASES:
+        # A completed Phase and every Slice of it are complete; a Slice number
+        # the Phase does not contain was already refused by `_is_known_unit`.
         return {"complete"}
-    if unit == ACTIVE_PHASE_ID:
-        return {"active"}
-    if phase == ACTIVE_PHASE_ID:
-        if unit in COMPLETE_SLICES:
-            return {"complete"}
-        if unit == NEXT_SLICE:
-            return {"next", "not_started"}
-        if unit in NOT_STARTED_SLICES:
-            return {"not_started"}
-        return None
     if unit in NOT_STARTED_PHASES or phase in NOT_STARTED_PHASES:
+        return {"not_started"}
+    if phase == NEXT_UNIT:
         return {"not_started"}
     return None
 
@@ -579,11 +591,11 @@ def test_every_lifecycle_sentence_carries_its_own_live_gate() -> None:
     for start, sentence in lifecycle:
         for slice_id in COMPLETE_SLICES:
             assert f"`{slice_id}` is complete" in sentence, (start, slice_id)
-        assert f"`{NEXT_SLICE}` is next and not started" in sentence, start
+        assert f"`{NEXT_UNIT}` is next and not started" in sentence, start
         # The live gate is neither complete nor absent from this check: a
         # sentence asserting both states at once is self-contradictory.
-        for slice_id in (NEXT_SLICE, *NOT_STARTED_SLICES):
-            assert f"`{slice_id}` is complete" not in sentence, (start, slice_id)
+        for unit in (NEXT_UNIT, *NOT_STARTED_SLICES):
+            assert f"`{unit}` is complete" not in sentence, (start, unit)
 
 
 def test_no_sentence_anywhere_calls_a_not_started_unit_complete() -> None:
@@ -594,7 +606,7 @@ def test_no_sentence_anywhere_calls_a_not_started_unit_complete() -> None:
     summary.
     """
     for start, sentence in _sentences():
-        for unit in (NEXT_SLICE, *NOT_STARTED_SLICES, *NOT_STARTED_PHASES):
+        for unit in (NEXT_UNIT, *NOT_STARTED_SLICES, *NOT_STARTED_PHASES):
             assert f"`{unit}` is complete" not in sentence, (start, unit)
             assert f"`{unit}` was completed" not in sentence, (start, unit)
 
@@ -610,7 +622,7 @@ def _route_entries() -> list[tuple[str, str, str, str]]:
     wrong marker leaves the set of (slice, state) pairs unchanged.
     """
     text = _text()
-    start = text.index("The `S1.P06` route is provisional")
+    start = text.index("The `S1.P06` route is closed")
     end = text.index("`S1.P06` consumes the bounded", start)
     block = text[start:end]
     # Every numbered row is parsed, then validated. Matching only rows whose
@@ -654,22 +666,23 @@ def test_the_route_states_the_authoritative_state_for_every_position() -> None:
     assert len(entries) == 12, sorted(entries)
     for slice_id in COMPLETE_SLICES:
         assert entries[slice_id] == "complete", slice_id
-    assert entries[NEXT_SLICE] == "next, not started"
     for slice_id in NOT_STARTED_SLICES:
         assert entries[slice_id] == "not started", slice_id
 
 
-def test_the_route_carries_exactly_one_next_position() -> None:
+def test_the_closed_route_carries_no_next_position() -> None:
+    """The Phase is closed, so no route position is still ahead."""
     states = [state for _, _, _, state in _route_entries()]
 
-    assert states.count("next, not started") == 1
-    assert states.count("complete") == len(COMPLETE_SLICES)
+    assert states.count("next, not started") == 0
+    assert states.count("not started") == 0
+    assert states.count("complete") == len(COMPLETE_SLICES) == 12
 
 
 def test_the_correction_is_not_a_numbered_route_position() -> None:
     """C01 is an unnumbered child bullet, as `S1.P05.S08.C01` is."""
     text = _text()
-    start = text.index("The `S1.P06` route is provisional")
+    start = text.index("The `S1.P06` route is closed")
     end = text.index("`S1.P06` consumes the bounded", start)
     block = text[start:end]
 
@@ -845,7 +858,7 @@ def test_correct_later_ownership_is_preserved() -> None:
         "which became `S1.P06.S10` work",
         "the historical default branch remains unknown and owned by `S2`",
         "which remains `S5` ownership",
-        "`S1.P07` through `S1.P10` remain not started",
+        "`S1.P08` through `S1.P10` remain not started",
     ):
         assert statement in flat, statement
 
@@ -858,7 +871,12 @@ def test_the_correction_narrative_records_what_it_changed() -> None:
         "any published contract." in flat
     )
     assert "It adds no production module" in flat
-    assert "does not move the live gate, which stays `S1.P06.S08`" in flat
+    # Recorded in the past tense since `S1.P06.S12` closed the Phase: the gate
+    # `S1.P06.S07.C01` left in place is history, not the document's live state.
+    assert "did not move the live gate, which was `S1.P06.S08` when it published" in (
+        flat
+    )
+    assert "does not move the live gate, which stays" not in flat
 
 
 # --- the classifier itself, in both directions --------------------------------

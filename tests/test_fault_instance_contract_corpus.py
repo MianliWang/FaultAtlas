@@ -2195,14 +2195,15 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     roadmap = ROADMAP.read_text("utf-8")
 
     assert "`S1.P06.S11` is complete" in roadmap
-    assert "`S1.P06.S12` is next and not started" in roadmap
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S11`." in roadmap
-    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06.S12` is complete" in roadmap
+    assert "`S1.P07` is next and not started" in roadmap
+    assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
+    assert "`S1.P06` is complete" in roadmap
     assert "`S1.P06.S07.C01` correction" in roadmap
 
     assert "`S1.P06.S11` is next and not started" not in roadmap
-    assert "`S1.P06.S12` is complete" not in roadmap
-    assert "`S1.P06` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
 
     for claim in (
         "reference_corpus/contracts/fault-instance/v1",

@@ -1219,7 +1219,7 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     current = mapping[1]
 
     assert "## S1.P06 — Fault Instance Model" in roadmap
-    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06` is complete" in roadmap
     assert (
         "`S1.P06.S01` — Fault Instance Identity and Repository Context (complete)"
         in roadmap
@@ -1234,8 +1234,9 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
-    assert "`S1.P06.S12` is next and not started" in roadmap
-    assert "`S1.P07` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P06.S12` is complete" in roadmap
+    assert "`S1.P07` is next and not started" in roadmap
+    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
     assert "faultatlas.domain.fault" in current
     for symbol in EXPECTED_EXPORTS:
@@ -1245,22 +1246,24 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     # The superseded entry-gate claims must be retired, not left standing.
     assert "`S1.P06` is next and not started" not in roadmap
     assert "`S1.P06` is `eligible_to_begin`" not in roadmap
-    assert "`S1.P06` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
 
-def test_the_roadmap_route_is_provisional_beyond_this_slice() -> None:
+def test_the_roadmap_route_is_closed_at_the_final_slice() -> None:
     roadmap = " ".join(
         (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
     )
 
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S11`." in roadmap
+    assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
     for index in range(2, 13):
         assert f"`S1.P06.S{index:02d}`" in roadmap
     assert "`S1.P06.S13`" not in roadmap
-    # Only S01 through S11 are claimed complete in the route.
-    for index in range(12, 13):
-        assert f"`S1.P06.S{index:02d}` is complete" not in roadmap
+    # The Phase is closed, so every route position is complete and nothing
+    # beyond the last one may be claimed at all.
+    for index in range(1, 13):
+        assert f"`S1.P06.S{index:02d}` is complete" in roadmap, index
+    assert "`S1.P06.S13` is complete" not in roadmap
 
 
 # --- packaging and an isolated installed-wheel smoke -------------------------

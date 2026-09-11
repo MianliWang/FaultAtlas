@@ -1925,7 +1925,8 @@ def test_roadmap_records_phase_completion_and_p06_readiness() -> None:
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
-    assert "`S1.P06.S12` is next and not started" in roadmap
+    assert "`S1.P06.S12` is complete" in roadmap
+    assert "`S1.P07` is next and not started" in roadmap
     assert "`S1.P04` is complete" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in roadmap
@@ -1989,10 +1990,10 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S12"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P07"}, sorted(set(live_next))
 
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
-    assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
+    assert set(live_phases) == set(), sorted(set(live_phases))
 
     # A phase this closure records as complete must not also be claimed open.
     for phase in ("S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05"):

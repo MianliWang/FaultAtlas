@@ -879,7 +879,11 @@ def test_the_s11_contract_corpus_now_stands_where_s10_authorized_it() -> None:
     """
     root = REPOSITORY_ROOT / "reference_corpus/contracts/fault-instance"
     assert root.is_dir()
-    assert sorted(path.name for path in root.iterdir()) == ["decisions", "v1"]
+    assert sorted(path.name for path in root.iterdir()) == [
+        "closures",
+        "decisions",
+        "v1",
+    ]
 
     corpus = root / "v1"
     assert sorted(path.name for path in corpus.iterdir()) == [
@@ -1145,13 +1149,14 @@ def test_the_roadmap_records_the_p06_s10_transition() -> None:
 
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
-    assert "`S1.P06.S12` is next and not started" in roadmap
+    assert "`S1.P06.S12` is complete" in roadmap
+    assert "`S1.P07` is next and not started" in roadmap
     assert "`S1.P06.S10` — Deferred disposition and readiness (complete)" in roadmap
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S11`." in roadmap
+    assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
     assert "Production Python sources are 20." in current
 
     assert "`S1.P06.S10` is next and not started" not in roadmap
-    assert "`S1.P06.S12` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
 
 
 def test_the_roadmap_states_the_s10_decisions() -> None:
@@ -1167,7 +1172,7 @@ def test_the_roadmap_states_the_s10_decisions() -> None:
         "no publication-governance exception stands against it",
         "wrong in the direction of non-compliance",
         "The verdict publishes its own limits",
-        "must re-verify the verdict rather than consume it as settled",
+        "was required to re-verify the verdict rather than consume it as",
         "recorded `S1.P06.S11` contract-corpus readiness as `eligible_to_begin`",
         "Both effective requirements are satisfied",
         "All three effective prohibitions are preserved",
@@ -1179,9 +1184,9 @@ def test_the_roadmap_states_the_s10_decisions() -> None:
 def test_the_roadmap_leaves_later_ownership_where_it_was() -> None:
     roadmap = _roadmap()
 
-    assert "`S1.P06.S12` — Integration and Phase closure (next, not started)" in roadmap
-    assert "`S1.P07` through `S1.P10` remain not started" in roadmap
-    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06.S12` — Integration and Phase closure (complete)" in roadmap
+    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P06` is complete" in roadmap
 
 
 def test_the_roadmap_adds_no_production_module_claim() -> None:

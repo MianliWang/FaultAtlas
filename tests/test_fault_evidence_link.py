@@ -1972,19 +1972,20 @@ def test_the_roadmap_records_the_p06_s09_transition() -> None:
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
-    assert "`S1.P06.S12` is next and not started" in roadmap
+    assert "`S1.P06.S12` is complete" in roadmap
+    assert "`S1.P07` is next and not started" in roadmap
     assert (
         "`S1.P06.S09` — Fault-evidence bridge and canonical vertical (complete)"
         in roadmap
     )
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S11`." in roadmap
+    assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
 
     assert "faultatlas.domain.fault_evidence_link" in current
     assert "`FaultInstanceEvidenceLink`" in current
     assert "Production Python sources are 20." in current
 
     assert "`S1.P06.S09` is next and not started" not in roadmap
-    assert "`S1.P06.S12` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
     assert "Production Python sources are 19." not in roadmap
 
 
@@ -2012,15 +2013,15 @@ def test_the_roadmap_preserves_the_predecessor_history_as_written() -> None:
     assert "production Python sources move from 18 to 19" in roadmap
     assert "`S1.P06.S07.C01` correction" in roadmap
     assert "`S1.P05` is complete" in roadmap
-    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06` is complete" in roadmap
 
 
 def test_the_roadmap_leaves_later_ownership_where_it_was() -> None:
     roadmap = _roadmap()
 
     assert "`S1.P06.S11` — Accumulated contract corpus (complete)" in roadmap
-    assert "`S1.P06.S12` — Integration and Phase closure (next, not started)" in roadmap
-    assert "`S1.P07` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P06.S12` — Integration and Phase closure (complete)" in roadmap
+    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
 
 # --- packaging and an isolated installed-wheel smoke -------------------------

@@ -1686,7 +1686,7 @@ def test_the_roadmap_names_exactly_one_next_gate() -> None:
 
     assert claims
     for claim in claims:
-        assert "`S1.P06.S12`" in claim, claim
+        assert "`S1.P07`" in claim, claim
         assert "`S1.P05.S10`" not in claim, claim
         assert "`S1.P06` is next and not started" not in claim, claim
         assert "`S1.P06.S02` is next and not started" not in claim, claim
@@ -1709,7 +1709,8 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     assert "`S1.P06.S09` is complete" in text
     assert "`S1.P06.S10` is complete" in text
     assert "`S1.P06.S11` is complete" in text
-    assert "`S1.P06.S12` is next and not started" in text
+    assert "`S1.P06.S12` is complete" in text
+    assert "`S1.P07` is next and not started" in text
     assert "`S1.P06` was `eligible_to_begin`" in text
     assert "`S1.P06` is `eligible_to_begin`" not in text
     assert "reference_corpus/contracts/development-history/v1" in text
