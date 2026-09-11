@@ -2239,19 +2239,20 @@ def test_the_current_status_section_states_exactly_the_live_lifecycle() -> None:
     """
     section = _current_status_section()
 
-    assert "`S1.P06` is active and incomplete" in section
-    for index in range(1, 12):
+    assert "`S1.P06` is complete" in section
+    for index in range(1, 13):
         assert f"`S1.P06.S{index:02d}` is complete" in section, index
     assert "`S1.P06.S11` is complete" in section
-    assert "`S1.P06.S12` is next and not started" in section
-    assert "`S1.P07` through `S1.P10` remain not started" in section
+    assert "`S1.P06.S12` is complete" in section
+    assert "`S1.P07` is next and not started" in section
+    assert "`S1.P08` through `S1.P10` remain not started" in section
 
-    # Nothing beyond S10 may be claimed complete, and no superseded gate stands.
-    for index in range(12, 13):
-        assert f"`S1.P06.S{index:02d}` is complete" not in section, index
-    for index in range(1, 12):
+    # Nothing beyond the Phase's twelve Slices may be claimed, and no Slice is
+    # still a gate now that the Phase is closed.
+    assert "`S1.P06.S13`" not in section
+    for index in range(1, 13):
         assert f"`S1.P06.S{index:02d}` is next and not started" not in section, index
-    assert "`S1.P06` is complete" not in section
+    assert "`S1.P07` is complete" not in section
     assert "`S1.P06` is `eligible_to_begin`" not in section
 
 
@@ -2262,12 +2263,12 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S12"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P07"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
-    assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
+    assert set(live_phases) == set(), sorted(set(live_phases))
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P06.S12`" in line, line
+            assert "`S1.P07`" in line, line
 
 
 def test_the_roadmap_records_the_p06_s07_transition() -> None:
@@ -2282,12 +2283,13 @@ def test_the_roadmap_records_the_p06_s07_transition() -> None:
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
-    assert "`S1.P06.S12` is next and not started" in roadmap
+    assert "`S1.P06.S12` is complete" in roadmap
+    assert "`S1.P07` is next and not started" in roadmap
     assert (
         "`S1.P06.S07` — Case-Local Explanation, Hypothesis, and Expected "
         "Property (complete)" in roadmap
     )
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S11`." in roadmap
+    assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
 
     assert "faultatlas.domain.fault_interpretation" in current
     for symbol in EXPECTED_EXPORTS:
@@ -2300,7 +2302,7 @@ def test_the_roadmap_records_the_p06_s07_transition() -> None:
         "`S1.P06.S07` — Case-local explanation, hypothesis, and expected "
         "property (next, not started)" not in roadmap
     )
-    assert "`S1.P06.S12` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
     assert "Production Python sources are 17." not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 

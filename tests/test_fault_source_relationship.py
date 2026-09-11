@@ -2847,7 +2847,7 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
     assert len(mapping) == 2, "roadmap must retain a current-code mapping section"
     current = mapping[1]
 
-    assert "`S1.P06` is active and incomplete" in roadmap
+    assert "`S1.P06` is complete" in roadmap
     assert "`S1.P06.S01` is complete" in roadmap
     assert "`S1.P06.S02` is complete" in roadmap
     assert "`S1.P06.S03` is complete" in roadmap
@@ -2859,8 +2859,9 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
-    assert "`S1.P06.S12` is next and not started" in roadmap
-    assert "`S1.P07` through `S1.P10` remain not started" in roadmap
+    assert "`S1.P06.S12` is complete" in roadmap
+    assert "`S1.P07` is next and not started" in roadmap
+    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P06.S04` — Bounded Source and History Relationships (complete)" in roadmap
     )
@@ -2888,8 +2889,8 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
     assert "`S1.P06.S04` — Bounded source relationships (next, not started)" not in (
         roadmap
     )
-    assert "`S1.P06` is complete" not in roadmap
-    assert "`S1.P06.S12` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
 
@@ -2937,12 +2938,12 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P06.S12"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P07"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
-    assert set(live_phases) == {"S1.P06"}, sorted(set(live_phases))
+    assert set(live_phases) == set(), sorted(set(live_phases))
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P06.S12`" in line, line
+            assert "`S1.P07`" in line, line
 
 
 # --- packaging and an isolated installed-wheel smoke --------------------------

@@ -1813,12 +1813,13 @@ def test_the_roadmap_records_the_p06_s08_transition() -> None:
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
-    assert "`S1.P06.S12` is next and not started" in roadmap
+    assert "`S1.P06.S12` is complete" in roadmap
+    assert "`S1.P07` is next and not started" in roadmap
     assert (
         "`S1.P06.S08` — Bounded `FaultInstance` Composition and Reference "
         "Integrity (complete)" in roadmap
     )
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S11`." in roadmap
+    assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
 
     assert "faultatlas.domain.fault_instance" in current
     assert "`FaultInstance`" in current
@@ -1827,7 +1828,7 @@ def test_the_roadmap_records_the_p06_s08_transition() -> None:
     assert "`S1.P06.S08` is next and not started" not in roadmap
     assert "`S1.P06.S09` is next and not started" not in roadmap
     assert "`S1.P06.S10` is next and not started" not in roadmap
-    assert "`S1.P06.S12` is complete" not in roadmap
+    assert "`S1.P07` is complete" not in roadmap
     assert "Production Python sources are 19." not in roadmap
 
 
