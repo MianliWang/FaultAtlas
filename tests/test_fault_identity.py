@@ -1233,7 +1233,8 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     assert "`S1.P06.S08` is complete" in roadmap
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
-    assert "`S1.P06.S11` is next and not started" in roadmap
+    assert "`S1.P06.S11` is complete" in roadmap
+    assert "`S1.P06.S12` is next and not started" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
 
     assert "faultatlas.domain.fault" in current
@@ -1253,12 +1254,12 @@ def test_the_roadmap_route_is_provisional_beyond_this_slice() -> None:
         (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8").split()
     )
 
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S10`." in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S11`." in roadmap
     for index in range(2, 13):
         assert f"`S1.P06.S{index:02d}`" in roadmap
     assert "`S1.P06.S13`" not in roadmap
-    # Only S01 through S10 are claimed complete in the route.
-    for index in range(11, 13):
+    # Only S01 through S11 are claimed complete in the route.
+    for index in range(12, 13):
         assert f"`S1.P06.S{index:02d}` is complete" not in roadmap
 
 

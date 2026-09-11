@@ -1069,7 +1069,8 @@ def test_the_roadmap_records_the_s04_transition() -> None:
     assert "`S1.P06.S08` is complete" in roadmap
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
-    assert "`S1.P06.S11` is next and not started" in roadmap
+    assert "`S1.P06.S11` is complete" in roadmap
+    assert "`S1.P06.S12` is next and not started" in roadmap
     # The superseded provisional title and status must not survive.
     assert "Merge Outcome and Ordered Merge Parents" not in roadmap
     assert "`S1.P05.S04` is next and not started" not in roadmap

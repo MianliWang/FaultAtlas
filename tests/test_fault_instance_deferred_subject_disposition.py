@@ -373,7 +373,14 @@ def _assert_publication_governance_matches_the_provider_record(
             )
 
 
-def _assert_s11_is_eligible_but_not_started(document: dict[str, Any]) -> None:
+def _assert_s10_sealed_s11_as_eligible_to_begin(document: dict[str, Any]) -> None:
+    """What the sealed decision recorded, read as history rather than as state.
+
+    `S1.P06.S11` has since been published, so the live tree no longer answers
+    "has S11 begun". The sealed record still says what S1.P06.S10 found when it
+    was sealed, and that statement stays historically correct: the decision is
+    not edited and this oracle no longer reads the working tree to confirm it.
+    """
     readiness = cast(dict[str, Any], document["readiness"])
 
     assert readiness["s11_contract_corpus"] == "eligible_to_begin"
@@ -384,7 +391,6 @@ def _assert_s11_is_eligible_but_not_started(document: dict[str, Any]) -> None:
     prerequisites = cast(list[dict[str, Any]], readiness["prerequisites"])
     assert readiness["prerequisite_count"] == len(prerequisites)
     assert all(entry["status"] == "satisfied" for entry in prerequisites)
-    assert not DECISION_ROOT.parent.parent.joinpath("v1").exists()
 
 
 # --- JSON is the semantic authority ------------------------------------------
@@ -859,15 +865,43 @@ def test_this_slice_changes_no_production_source() -> None:
 # --- S1.P06.S11 readiness ----------------------------------------------------
 
 
-def test_s11_is_eligible_to_begin_and_has_not_begun() -> None:
-    _assert_s11_is_eligible_but_not_started(_document())
+def test_s10_sealed_s11_as_eligible_to_begin() -> None:
+    _assert_s10_sealed_s11_as_eligible_to_begin(_document())
 
 
-def test_no_s11_contract_corpus_exists_yet() -> None:
+def test_the_s11_contract_corpus_now_stands_where_s10_authorized_it() -> None:
+    """S1.P06.S11 exercised the readiness this decision sealed.
+
+    The sealed bytes are untouched, so the two statements live side by side: the
+    decision records that no corpus existed when it was written, and the tree
+    now carries the corpus that record authorized. The oracle reads the live
+    layout rather than asserting an absence the Phase has moved past.
+    """
     root = REPOSITORY_ROOT / "reference_corpus/contracts/fault-instance"
     assert root.is_dir()
-    assert sorted(path.name for path in root.iterdir()) == ["decisions"]
-    assert not (root / "v1").exists()
+    assert sorted(path.name for path in root.iterdir()) == ["decisions", "v1"]
+
+    corpus = root / "v1"
+    assert sorted(path.name for path in corpus.iterdir()) == [
+        "contract.md",
+        "invalid-vectors.json",
+        "invalid-vectors.sha256",
+        "manifest.json",
+        "manifest.sha256",
+        "replay-vectors.json",
+        "replay-vectors.sha256",
+        "valid-vectors.json",
+        "valid-vectors.sha256",
+    ]
+    # The corpus cites this decision as its entry authority by exact digest, so
+    # the two artifacts cannot drift apart silently.
+    manifest = json.loads((corpus / "manifest.json").read_text("utf-8"))
+    authority = cast(dict[str, Any], manifest["entry_authority"])
+    assert authority["slice"] == "S1.P06.S10"
+    assert (
+        REPOSITORY_ROOT / cast(str, authority["path"])
+    ).resolve() == DECISION_JSON.resolve()
+    assert authority["sha256"] == hashlib.sha256(DECISION_JSON.read_bytes()).hexdigest()
 
 
 def test_the_readiness_prerequisites_are_the_declared_twelve() -> None:
@@ -1088,7 +1122,7 @@ def test_marking_s11_implemented_fails_its_oracle() -> None:
     readiness["s11_contract_corpus"] = "complete"
 
     with pytest.raises(AssertionError):
-        _assert_s11_is_eligible_but_not_started(mutated)
+        _assert_s10_sealed_s11_as_eligible_to_begin(mutated)
 
 
 # --- the roadmap transition --------------------------------------------------
@@ -1110,13 +1144,14 @@ def test_the_roadmap_records_the_p06_s10_transition() -> None:
     current = mapping[1]
 
     assert "`S1.P06.S10` is complete" in roadmap
-    assert "`S1.P06.S11` is next and not started" in roadmap
+    assert "`S1.P06.S11` is complete" in roadmap
+    assert "`S1.P06.S12` is next and not started" in roadmap
     assert "`S1.P06.S10` — Deferred disposition and readiness (complete)" in roadmap
-    assert "The `S1.P06` route is provisional beyond `S1.P06.S10`." in roadmap
+    assert "The `S1.P06` route is provisional beyond `S1.P06.S11`." in roadmap
     assert "Production Python sources are 20." in current
 
     assert "`S1.P06.S10` is next and not started" not in roadmap
-    assert "`S1.P06.S11` is complete" not in roadmap
+    assert "`S1.P06.S12` is complete" not in roadmap
 
 
 def test_the_roadmap_states_the_s10_decisions() -> None:
@@ -1133,7 +1168,7 @@ def test_the_roadmap_states_the_s10_decisions() -> None:
         "wrong in the direction of non-compliance",
         "The verdict publishes its own limits",
         "must re-verify the verdict rather than consume it as settled",
-        "`S1.P06.S11` contract-corpus readiness is `eligible_to_begin`",
+        "recorded `S1.P06.S11` contract-corpus readiness as `eligible_to_begin`",
         "Both effective requirements are satisfied",
         "All three effective prohibitions are preserved",
         "not part of canonical `S1.P06` product state",
@@ -1144,7 +1179,7 @@ def test_the_roadmap_states_the_s10_decisions() -> None:
 def test_the_roadmap_leaves_later_ownership_where_it_was() -> None:
     roadmap = _roadmap()
 
-    assert "`S1.P06.S12` — Integration and Phase closure (not started)" in roadmap
+    assert "`S1.P06.S12` — Integration and Phase closure (next, not started)" in roadmap
     assert "`S1.P07` through `S1.P10` remain not started" in roadmap
     assert "`S1.P06` is active and incomplete" in roadmap
 
