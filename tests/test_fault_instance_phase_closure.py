@@ -60,6 +60,10 @@ DECISION_RELATIVE = (
     "s10-deferred-subject-disposition-readiness"
 )
 DECISION = REPOSITORY_ROOT / DECISION_RELATIVE
+P05_CLOSURE_RELATIVE = (
+    "reference_corpus/contracts/development-history/closures/"
+    "s1-p05-phase-closure/closure.json"
+)
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 EXPECTED_CLOSURE_FILES = frozenset({"closure.json", "closure.md"})
@@ -1256,9 +1260,21 @@ def test_every_canonical_publication_satisfies_the_four_publication_rules() -> N
 
 
 def test_the_squash_commits_form_the_linear_chain_on_canonical_main() -> None:
-    """Retained Git evidence, checked offline against the ledger's own claim."""
+    """Retained Git evidence, checked offline against the ledger's own claim.
+
+    CI checks out a shallow merge ref, so the first-parent history genuinely is
+    not there. That is allowed for, but it may not become an exemption: in a
+    complete clone every publication must be present and must agree, and the
+    shallow marker is what distinguishes the two cases. Without that the check
+    would pass by finding nothing, which is how a guard stops guarding.
+    """
     pl = cast(dict[str, Any], _closure()["publication_ledger"])
     publications = cast(list[dict[str, Any]], pl["publications"])
+    expected = {
+        cast(str, entry["squash_sha"]): cast(str, entry["squash_tree"])
+        for entry in publications
+    }
+    assert len(expected) == len(publications)
 
     result = subprocess.run(
         ["git", "log", "--first-parent", "--format=%H %T", "-40"],
@@ -1274,13 +1290,11 @@ def test_the_squash_commits_form_the_linear_chain_on_canonical_main() -> None:
         if line.strip()
     }
 
-    for entry in publications:
-        squash = cast(str, entry["squash_sha"])
-        if squash not in trees:
-            # Only the recent window is guaranteed present in a shallow or
-            # truncated log; a commit that is present must still agree.
-            continue
-        assert trees[squash] == entry["squash_tree"], entry["slice_id"]
+    present = {sha for sha in expected if sha in trees}
+    if not (REPOSITORY_ROOT / ".git" / "shallow").exists():
+        assert present == set(expected), sorted(set(expected) - present)
+    for sha in sorted(present):
+        assert trees[sha] == expected[sha], sha
 
 
 def test_the_slice_ledger_covers_all_twelve_slices_in_order() -> None:
@@ -1991,6 +2005,15 @@ def test_the_locked_inputs_cover_the_decision_and_every_corpus_file() -> None:
 
 
 def test_s12_adds_no_production_module_symbol_or_semantic() -> None:
+    """Proved against sealed predecessors rather than against a Git range.
+
+    `git diff origin/main` is not available in a shallow CI checkout, and a
+    check that quietly skips there proves nothing. Every one of the twenty
+    production modules is instead compared to a digest some earlier Slice
+    sealed: the thirteen pre-`S1.P06` modules to the `S1.P05` Phase closure,
+    and the seven owned modules to the `S1.P06.S10` decision. Neither baseline
+    was written by this Slice, so the argument is not circular.
+    """
     document = _closure()
     assurance = cast(dict[str, Any], document["assurance"])
     identity = cast(dict[str, Any], document["phase_identity"])
@@ -2000,26 +2023,41 @@ def test_s12_adds_no_production_module_symbol_or_semantic() -> None:
     assert assurance["production_python_source_count"] == PRODUCTION_MODULE_COUNT
     assert assurance["predecessor_artifacts_unmodified"] is True
 
-    result = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            "origin/main",
-            "--",
-            "src",
-            "pyproject.toml",
-            "uv.lock",
-            "reference_corpus/contracts/fault-instance/v1",
-            "reference_corpus/contracts/fault-instance/decisions",
-        ],
-        cwd=REPOSITORY_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
+    sealed: dict[str, str] = {}
+    p05 = cast(
+        dict[str, Any],
+        json.loads((REPOSITORY_ROOT / P05_CLOSURE_RELATIVE).read_bytes()),
     )
-    if result.returncode == 0:
-        assert result.stdout.strip() == "", result.stdout
+    for record in cast(
+        list[dict[str, Any]],
+        cast(dict[str, Any], p05["source_locks"])["production_observations"],
+    ):
+        sealed[cast(str, record["path"])] = cast(str, record["sha256"])
+    assert len(sealed) == 13, sorted(sealed)
+
+    for record in cast(
+        list[dict[str, Any]],
+        cast(dict[str, Any], _decision()["product_inventory"])["modules"],
+    ):
+        path = cast(str, record["path"])
+        assert path not in sealed, path
+        sealed[path] = cast(str, record["sha256"])
+    assert len(sealed) == PRODUCTION_MODULE_COUNT, sorted(sealed)
+
+    live = sorted(
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in (REPOSITORY_ROOT / "src").rglob("*.py")
+    )
+    assert live == sorted(sealed), (live, sorted(sealed))
+    for path, digest in sorted(sealed.items()):
+        assert _sha256((REPOSITORY_ROOT / path).read_bytes()) == digest, path
+
+    # The other bytes this Slice may not touch, against their sealed digests.
+    assert _sha256((DECISION / "decision.json").read_bytes()) == S10_DECISION_DIGEST
+    for name, (digest, length) in S11_CANONICAL_JSON.items():
+        raw = (CORPUS / name).read_bytes()
+        assert _sha256(raw) == digest, name
+        assert len(raw) == length, name
 
 
 def test_the_assurance_block_agrees_with_the_sections_it_summarises() -> None:
