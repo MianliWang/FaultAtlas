@@ -140,66 +140,78 @@ EXPECTED_PUBLICATION_COUNT = 12
 # The reviewed head and the squash commit of every canonical publication, so a
 # ledger whose rows were swapped between Slices fails rather than merely
 # staying internally consistent.
-EXPECTED_PUBLICATION_IDENTITY: dict[str, tuple[int, str, str]] = {
+EXPECTED_PUBLICATION_IDENTITY: dict[str, tuple[int, str, str, str]] = {
     "S1.P06.S01": (
         73,
         "dadf64ef1617369563086e4862101b420188e811",
         "cf9b522f47bf18dc024ad29c5ad5a6f67533df8c",
+        "bbd63377c474796bc0d56d5ecfa74f58024ae120",
     ),
     "S1.P06.S02": (
         74,
         "4e5fc4a5d52395593efe60c99a3f61cae664057a",
         "3788654147884bad79c99444d2accacd9ef16bd0",
+        "025de19d780e9e3c8088bde735deb9bc401907ea",
     ),
     "S1.P06.S03": (
         75,
         "b2b6f8e227e725ecf514522d89445347e334cf3d",
         "1566902b56238712a3253d34a473a2754e1423cf",
+        "cd43571085900475d72eb7eeb73237d856ba9666",
     ),
     "S1.P06.S04": (
         76,
         "cba21ee6ea1e3ca2f459e74acb261bfe6b1df805",
         "3c79395ca53f7b3a4326ebcb86d34117cbd7a591",
+        "ebfa89e7adb6b5ae89010d5f3b0b1c6bedd4761e",
     ),
     "S1.P06.S05": (
         77,
         "4a2bb008c62643ec80d46377ac01baaf30aa79a3",
         "50688ad8474aa28e1d483c480941e1f573981375",
+        "2d6ec0c08ff6614f5aad12b67c4209c24e4e62dc",
     ),
     "S1.P06.S06": (
         78,
         "d6404ed98b680ae9f5dd6d1f2c6cf70214c7baaf",
         "b3ffb0c76d676ff61857764a549c21b1e94d07f4",
+        "dfd070746722e05657f24c6beb570bbaa72689dd",
     ),
     "S1.P06.S07": (
         79,
         "f99e55ef8a8f9830b24a271a8a367c931042d6d7",
         "c54300ca49ab26116a490c31afc21b8bded6f674",
+        "337690a72c8d41c20956516963833bb51cc74e94",
     ),
     "S1.P06.S07.C01": (
         80,
         "646c49a96943e9784457c49372fa294ea26dd04c",
         "3f2ac32c3d00ee4fe1a673b913d8c867ebd353e4",
+        "60e526fd32369ac0f6cb3fb4cd4d2a9fc51915cc",
     ),
     "S1.P06.S08": (
         81,
         "b26a9cdacbc9743a46b55758beeaeb5ee4c87c6a",
         "60e842e5d3ca2d14c5c9f672557a4d2c07c1cb1c",
+        "80d44caf7596a150a63bd5200390bb9309586678",
     ),
     "S1.P06.S09": (
         83,
         "1083dd26a8a0a4e71651ac0e4a6844cb4f751150",
         "8fcc1fbda571d7bc0447e1a298f51d810915d287",
+        "2bc107981e3573fefb132af366a09d05045d0506",
     ),
     "S1.P06.S10": (
         84,
         "9da8b24a5b90d9856faf3471e9dfce52aec8b782",
         "09f1c8a319f61a8c24466e4e62f321aaa1c0cb45",
+        "394a0f024554025e1f9affff900c9c8a21472aaa",
     ),
     "S1.P06.S11": (
         85,
         "b8fee4e7d72b74ad36c445e7e005b151663d000a",
         "aacde1dc89a135d3efd1963d74e2ca6e77494441",
+        "8b9a9baf03b88916f9357f782cf86519465ee0bc",
     ),
 }
 # The suite total each publication actually carried, corrections applied.
@@ -1244,11 +1256,17 @@ def test_every_ledger_row_names_the_publication_it_actually_describes() -> None:
     }
 
     assert set(publications) == set(EXPECTED_PUBLICATION_IDENTITY)
-    for slice_id, (pull_request, head, squash) in EXPECTED_PUBLICATION_IDENTITY.items():
+    for slice_id, pins in EXPECTED_PUBLICATION_IDENTITY.items():
+        pull_request, head, squash, tree = pins
         entry = publications[slice_id]
         assert entry["pull_request"] == pull_request, slice_id
         assert entry["reviewed_head_sha"] == head, slice_id
         assert entry["squash_sha"] == squash, slice_id
+        # The tree is pinned here as well as compared against Git, because the
+        # Git cross-check verifies nothing in a shallow checkout and a ledger
+        # value no oracle reads offline would survive the required CI run.
+        assert entry["reviewed_tree"] == tree, slice_id
+        assert entry["squash_tree"] == tree, slice_id
         assert (
             entry["publication_test_count"]
             == EXPECTED_PUBLICATION_TEST_COUNTS[slice_id]
@@ -1289,6 +1307,11 @@ def test_the_squash_commits_form_the_linear_chain_on_canonical_main() -> None:
     complete clone every publication must be present and must agree, and the
     shallow marker is what distinguishes the two cases. Without that the check
     would pass by finding nothing, which is how a guard stops guarding.
+
+    This is the second witness, not the only one. Every squash tree is also
+    pinned offline in `EXPECTED_PUBLICATION_IDENTITY`, so a corrupted ledger
+    tree is refused in a shallow checkout too, where this check can verify
+    nothing at all.
     """
     pl = cast(dict[str, Any], _closure()["publication_ledger"])
     publications = cast(list[dict[str, Any]], pl["publications"])
