@@ -2822,7 +2822,7 @@ def test_only_the_declared_private_helpers_exist() -> None:
         assert name not in relationship_module.__all__
 
 
-def test_the_tracked_production_inventory_is_twenty_modules() -> None:
+def test_the_tracked_production_inventory_is_twenty_one_modules() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -2833,7 +2833,7 @@ def test_the_tracked_production_inventory_is_twenty_modules() -> None:
     observed = sorted(tracked.stdout.decode("utf-8").split())
 
     assert observed == [f"src/{name}" for name in EXPECTED_PRODUCTION_MODULES]
-    assert len(observed) == 20
+    assert len(observed) == 21
     assert "src/faultatlas/domain/fault_source_relationship.py" in observed
 
 
@@ -2860,7 +2860,7 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is next and not started" in roadmap
+    assert "`S1.P07.S02` is next and not started" in roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P06.S04` — Bounded Source and History Relationships (complete)" in roadmap
@@ -2881,7 +2881,7 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
     assert "faultatlas.domain.fault_source_relationship" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    assert "Production Python sources are 20." in current
+    assert "Production Python sources are 21." in current
     assert "`association.report.context.fault`" in roadmap
 
     # The superseded live gate and the provisional S04 title must be retired.
@@ -2890,7 +2890,9 @@ def test_the_roadmap_records_the_p06_s04_transition() -> None:
         roadmap
     )
     assert "`S1.P07` is complete" not in roadmap
-    assert "`S1.P07` is complete" not in roadmap
+    # `S1.P07.S01` began the Phase, so the phase-level gate this file used to
+    # read is itself superseded by the Slice gate above.
+    assert "`S1.P07` is next and not started" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
 
@@ -2938,12 +2940,15 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P07"}, sorted(set(live_next))
+    # `S1.P07.S01` moved the gate from the Phase to its first Slice: `S1.P07`
+    # has begun, so the single live gate is now `S1.P07.S02`.
+    assert set(live_next) == {"S1.P07.S02"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
-    assert set(live_phases) == set(), sorted(set(live_phases))
+    # Exactly one Phase is now active, and it is the one that just began.
+    assert set(live_phases) == {"S1.P07"}, sorted(set(live_phases))
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P07`" in line, line
+            assert "`S1.P07.S02`" in line, line
 
 
 # --- packaging and an isolated installed-wheel smoke --------------------------
@@ -3097,6 +3102,9 @@ def offline_distributions(
     return wheels[0], sdists[0]
 
 
+# Added by `S1.P07.S01`, the first `S1.P07` production module.
+PATTERN_MODULE = "faultatlas/domain/pattern.py"
+
 EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/__init__.py",
     "faultatlas/__main__.py",
@@ -3114,6 +3122,7 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/history.py",
     "faultatlas/domain/history_evidence_link.py",
     "faultatlas/domain/identity.py",
+    PATTERN_MODULE,
     "faultatlas/domain/revision.py",
     "faultatlas/domain/snapshot.py",
     "faultatlas/domain/snapshot_evidence_link.py",
@@ -3130,7 +3139,7 @@ def test_the_wheel_ships_the_bridge_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 20
+    assert len(modules) == 21
     assert "faultatlas/domain/fault_source_relationship.py" in modules
     assert "faultatlas/domain/fault.py" in modules
     for name in names:
@@ -3150,7 +3159,7 @@ def test_the_sdist_ships_the_bridge_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 20
+    assert len(modules) == 21
     assert "faultatlas/domain/fault_source_relationship.py" in modules
     for name in names:
         parts = Path(name).parts

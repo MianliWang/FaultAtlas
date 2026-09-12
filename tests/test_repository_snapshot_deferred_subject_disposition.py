@@ -83,6 +83,10 @@ FAULT_TEST_MODULE = "src/faultatlas/domain/fault_test.py"
 FAULT_INTERPRETATION_MODULE = "src/faultatlas/domain/fault_interpretation.py"
 FAULT_INSTANCE_MODULE = "src/faultatlas/domain/fault_instance.py"
 FAULT_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/fault_evidence_link.py"
+# Added by `S1.P07.S01`, the first `S1.P07` production module. It is neither a
+# history record nor a fault record, so it is named here rather than folded
+# into the `S1.P06` group above.
+PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION_FILES,
     HISTORY_MODULE,
@@ -94,6 +98,7 @@ CURRENT_PRODUCTION_FILES = {
     FAULT_INTERPRETATION_MODULE,
     FAULT_INSTANCE_MODULE,
     FAULT_EVIDENCE_LINK_MODULE,
+    PATTERN_MODULE,
 }
 
 # Every deferred-subject state published by S1.P00 through S1.P03. S08 may not
@@ -729,15 +734,13 @@ def test_p02_still_assigns_exactly_four_subjects_to_p04() -> None:
 # --- governance-only boundary ----------------------------------------------
 
 
-def test_production_surface_adds_history_fault_and_relations_after_this_decision() -> (
-    None
-):
+def test_production_surface_adds_every_module_published_after_this_decision() -> None:
     observed = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert observed == CURRENT_PRODUCTION_FILES
-    assert len(observed) == 20
+    assert len(observed) == 21
     assert observed - EXPECTED_PRODUCTION_FILES == {
         HISTORY_MODULE,
         HISTORY_EVIDENCE_LINK_MODULE,
@@ -748,6 +751,7 @@ def test_production_surface_adds_history_fault_and_relations_after_this_decision
         FAULT_INTERPRETATION_MODULE,
         FAULT_INSTANCE_MODULE,
         FAULT_EVIDENCE_LINK_MODULE,
+        PATTERN_MODULE,
     }
     assert EXPECTED_PRODUCTION_FILES - observed == set()
     assert len(EXPECTED_PRODUCTION_FILES) == 11
@@ -825,7 +829,9 @@ def test_roadmap_records_the_s08_disposition_and_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is next and not started" in roadmap
+    assert "`S1.P07` is active and incomplete" in roadmap
+    assert "`S1.P07.S01` is complete" in roadmap
+    assert "`S1.P07.S02` is next and not started" in roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "inherited exactly seven such subjects" in roadmap
     assert "`self_owned_open == 0`" in roadmap

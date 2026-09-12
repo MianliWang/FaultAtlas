@@ -114,7 +114,22 @@ OWNED_MODULE_PATHS = (
 )
 OWNED_MODULE_COUNT = 7
 OWNED_SYMBOL_COUNT = 30
-PRODUCTION_MODULE_COUNT = 20
+# Two counts, not one. The sealed count is what `S1.P06` closed with and stays
+# 20 forever: it is read out of the closure, out of the sealed source-lock rows
+# and out of the baseline reconstructed from the `S1.P05` closure and the
+# `S1.P06.S10` decision. The live count is what the working tree and a freshly
+# built distribution carry now, and it moves when a later Phase publishes a
+# module.
+SEALED_PRODUCTION_MODULE_COUNT = 20
+LIVE_PRODUCTION_MODULE_COUNT = 21
+
+# Added by `S1.P07.S01`, the first `S1.P07` production module. It is named in
+# both spellings this module already uses: the closure's own inventory is
+# `src`-relative, while its source locks and the reconstructed baseline are
+# repository-relative. A wheel or sdist member ends with the `src`-relative
+# form, so that spelling serves the distribution check too.
+PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
+PATTERN_MODULE_UNDER_SRC = "faultatlas/domain/pattern.py"
 VECTOR_TOTAL = 254
 FIXTURE_COUNT = 29
 SYMBOL_COVERAGE = "30/30"
@@ -277,22 +292,27 @@ EXPECTED_SECTIONS = (
     "Source locks",
 )
 
-# The P07 product surface must not exist yet. These are the names a started
-# S1.P07 would publish; none of them may be importable or on disk.
-FORBIDDEN_P07_MODULES = (
-    "src/faultatlas/domain/pattern.py",
+# The P07 product surface, as it stands. At this closure none of it existed;
+# `S1.P07.S01` has since published exactly one module and exactly two symbols,
+# so the guard is now an equality on that surface rather than a blanket
+# refusal. Everything `S1.P07` has not published yet is still refused by name.
+P07_PUBLISHED_MODULES = (PATTERN_MODULE,)
+P07_PUBLISHED_SYMBOLS = (
+    "FaultPatternIdentity",
+    "SuppliedFaultPattern",
+)
+ABSENT_P07_MODULES = (
     "src/faultatlas/domain/invariant.py",
     "src/faultatlas/domain/fault_pattern.py",
     "src/faultatlas/domain/fault_invariant.py",
     "src/faultatlas/domain/pattern_invariant.py",
 )
-FORBIDDEN_P07_SYMBOLS = (
+ABSENT_P07_SYMBOLS = (
     "FaultPattern",
     "FaultInvariant",
     "PatternIdentity",
     "InvariantIdentity",
     "ReusableInvariant",
-    "SuppliedFaultPattern",
 )
 
 # Vocabulary that would announce a semantic S1.P06 never published. None of it
@@ -926,16 +946,18 @@ def test_no_supporting_authority_symbol_was_counted_as_owned() -> None:
             assert symbol not in owned, (dotted, symbol)
 
 
-def test_the_production_module_count_is_exactly_twenty() -> None:
+def test_the_sealed_twenty_modules_stand_and_the_tree_added_only_pattern() -> None:
     """Two claims, only one of which a later Phase may change.
 
     The sealed claim is permanent: `S1.P06` closed with exactly these twenty
     production modules, and that stays true however the tree grows. The second
-    claim is that the tree has not diverged from that snapshot yet, which is
-    what catches a production module smuggled in under a governance Slice. When
-    `S1.P07` publishes its first module the second claim legitimately stops
-    holding and is migrated here, exactly as `S1.P06` migrated the `S1.P05`
-    closure inventory. That migration is the mechanism, not a defect in it.
+    claim was that the tree had not diverged from that snapshot yet, which is
+    what catches a production module smuggled in under a governance Slice.
+    `S1.P07.S01` has now published its first module, so that claim is migrated
+    here exactly as `S1.P06` migrated the `S1.P05` closure inventory: the
+    sealed set must still be present in full, and the difference must be
+    exactly the one module a published Slice explains. A second module no
+    Slice explains fails here instead of inflating a count.
     """
     ii = cast(dict[str, Any], _closure()["implementation_inventory"])
     recorded = cast(list[str], ii["production_modules"])
@@ -945,13 +967,18 @@ def test_the_production_module_count_is_exactly_twenty() -> None:
     )
 
     # Sealed, and permanent.
-    assert ii["production_module_count"] == len(recorded) == PRODUCTION_MODULE_COUNT
-    assert len(set(recorded)) == PRODUCTION_MODULE_COUNT
+    assert ii["production_module_count"] == SEALED_PRODUCTION_MODULE_COUNT
+    assert len(recorded) == len(set(recorded)) == SEALED_PRODUCTION_MODULE_COUNT
     for relative in recorded:
         assert (REPOSITORY_ROOT / "src" / relative).is_file(), relative
 
-    # The closed-Phase snapshot, which a later Phase migrates.
-    assert recorded == live, "the tree has diverged from the closed-Phase snapshot"
+    # The closed-Phase snapshot against the tree as it now stands: intact, and
+    # grown by exactly the named `S1.P07.S01` module.
+    assert set(recorded) - set(live) == set(), sorted(set(recorded) - set(live))
+    assert set(live) - set(recorded) == {PATTERN_MODULE_UNDER_SRC}, sorted(
+        set(live) - set(recorded)
+    )
+    assert len(live) == LIVE_PRODUCTION_MODULE_COUNT, live
 
 
 def test_the_owned_modules_still_carry_the_sealed_s10_source_locks() -> None:
@@ -1197,7 +1224,7 @@ def test_the_corpus_stays_source_only_and_was_not_touched_by_s12() -> None:
         assert "s1-p06-phase-closure" not in text, path
 
 
-def test_the_built_wheel_and_sdist_carry_twenty_sources_and_no_governance(
+def test_the_built_wheel_and_sdist_carry_twenty_one_sources_and_no_governance(
     tmp_path: Path,
 ) -> None:
     """Neither the corpus nor this closure may arrive by installing the package."""
@@ -1223,7 +1250,10 @@ def test_the_built_wheel_and_sdist_carry_twenty_sources_and_no_governance(
 
     for names, label in ((wheel_names, "wheel"), (sdist_names, "sdist")):
         sources = [name for name in names if name.endswith(".py")]
-        assert len(sources) == PRODUCTION_MODULE_COUNT, (label, sorted(sources))
+        # Twenty at the sealed closure; `S1.P07.S01` added the twenty-first,
+        # which is named here rather than absorbed into a bumped integer.
+        assert len(sources) == LIVE_PRODUCTION_MODULE_COUNT, (label, sorted(sources))
+        assert any(name.endswith(PATTERN_MODULE_UNDER_SRC) for name in sources), label
         for excluded in ("reference_corpus", "tests/", "docs/"):
             assert not any(excluded in name for name in names), (label, excluded)
         assert not any("phase-closure" in name for name in names), label
@@ -1854,19 +1884,30 @@ def test_the_s11_section_keeps_the_case_boundaries_locally() -> None:
         assert claim in section, claim
 
 
-def test_the_roadmap_records_the_closed_phase_and_the_next_one() -> None:
+def test_the_roadmap_records_the_closed_phase_and_the_begun_next_one() -> None:
     roadmap = ROADMAP.read_text("utf-8")
 
     assert "`S1.P06` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is next and not started" in roadmap
+    # `S1.P07` was next and not started when this closure was sealed. That
+    # eligibility has since been exercised, so the live roadmap names the Phase
+    # as active and its own next Slice as the gate. Nothing sealed moved; only
+    # the roadmap's projection of it did.
+    assert "`S1.P07` is active and incomplete" in roadmap
+    assert "`S1.P07.S01` is complete" in roadmap
+    assert "`S1.P07.S02` is next and not started" in roadmap
+    assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P06` is active and incomplete" not in roadmap
     assert "`S1.P06.S12` is next and not started" not in roadmap
     assert "`S1.P07` is complete" not in roadmap
 
+    # A `## S1.P07 — Pattern & Invariant Model` section now sits between the
+    # `S1.P06` narrative and the preserved-phase list, so the bound ends at
+    # that heading. Ending it at the preserved-phase list would swallow the
+    # whole `S1.P07` section and stop being a check on the `S1.P06` narrative.
     section = _roadmap_section(
         "## S1.P06 — Fault Instance Model",
-        "## Preserved later Stage 1 phases",
+        "## S1.P07 — Pattern & Invariant Model",
     )
     for claim in (
         "7 `S1.P06`-owned production modules",
@@ -1877,10 +1918,14 @@ def test_the_roadmap_records_the_closed_phase_and_the_next_one() -> None:
         "29 fixtures",
         "30-of-30",
         "pull request 82 is not canonical `S1.P06` state",
-        "`S1.P07` is eligible to begin",
+        # The sealed entry state, reported in the past tense, beside the fact
+        # that the Phase has begun. The closure's own fields are unchanged.
+        "`S1.P07` was `eligible_to_begin` with implementation state `not_started`",
+        "`S1.P07` implementation has begun with `S1.P07.S01`",
     ):
         assert claim in section, claim
     assert "known nonblocking debt" in section
+    assert "`S1.P07` is eligible to begin" not in section
 
 
 # --- 11: exit criteria and P07 readiness --------------------------------------
@@ -2010,12 +2055,27 @@ def test_the_p07_boundary_is_carried_forward_unweakened() -> None:
     assert "not factual truth" in statements
 
 
-def test_no_p07_pattern_or_invariant_product_exists_yet() -> None:
-    """Readiness is a claim about what is absent, so absence is checked."""
+def test_the_live_p07_surface_is_exactly_what_s01_published() -> None:
+    """Readiness was a claim about absence; now it bounds what exists.
+
+    At this closure `S1.P07` had published nothing and every one of these
+    names was refused outright. `S1.P07.S01` has since published exactly one
+    module exporting exactly two symbols, so the guard is migrated rather than
+    dropped: that module and those two symbols are pinned as the whole
+    published `S1.P07` surface, and every name the Phase has not published is
+    still refused. A third, unexplained `Pattern` symbol fails here.
+    """
     import importlib
 
-    for relative in FORBIDDEN_P07_MODULES:
+    for relative in P07_PUBLISHED_MODULES:
+        assert (REPOSITORY_ROOT / relative).is_file(), relative
+    for relative in ABSENT_P07_MODULES:
         assert not (REPOSITORY_ROOT / relative).exists(), relative
+
+    published = importlib.import_module("faultatlas.domain.pattern")
+    assert tuple(cast(tuple[str, ...], published.__all__)) == P07_PUBLISHED_SYMBOLS, (
+        published.__all__
+    )
 
     exported: set[str] = set()
     for path in (REPOSITORY_ROOT / "src").rglob("*.py"):
@@ -2030,10 +2090,16 @@ def test_no_p07_pattern_or_invariant_product_exists_yet() -> None:
         module = importlib.import_module(dotted)
         exported |= set(cast(tuple[str, ...], getattr(module, "__all__", ())))
 
-    for symbol in FORBIDDEN_P07_SYMBOLS:
+    for symbol in ABSENT_P07_SYMBOLS:
         assert symbol not in exported, symbol
-    assert not any("Pattern" in symbol for symbol in exported), sorted(exported)
+    # The `Invariant` half of the screen still holds in full: `S1.P07` has
+    # published no invariant surface at all. The `Pattern` half is now bounded
+    # by the two symbols `S1.P07.S01` published rather than by their absence,
+    # so an unexplained third still fails.
     assert not any("Invariant" in symbol for symbol in exported), sorted(exported)
+    assert {symbol for symbol in exported if "Pattern" in symbol} == set(
+        P07_PUBLISHED_SYMBOLS
+    ), sorted(exported)
 
 
 # --- 12: source locks and the no-production-change claim ----------------------
@@ -2058,7 +2124,7 @@ def test_every_source_lock_matches_the_bytes_it_names() -> None:
     ids = [cast(str, record["lock_id"]) for record in immutable]
     assert len(ids) == len(set(ids))
     paths = [cast(str, record["path"]) for record in observations]
-    assert len(paths) == len(set(paths)) == PRODUCTION_MODULE_COUNT
+    assert len(paths) == len(set(paths)) == SEALED_PRODUCTION_MODULE_COUNT
 
 
 def test_the_locked_inputs_cover_the_decision_and_every_corpus_file() -> None:
@@ -2083,10 +2149,13 @@ def test_s12_adds_no_production_module_symbol_or_semantic() -> None:
 
     `git diff origin/main` is not available in a shallow CI checkout, and a
     check that quietly skips there proves nothing. Every one of the twenty
-    production modules is instead compared to a digest some earlier Slice
-    sealed: the thirteen pre-`S1.P06` modules to the `S1.P05` Phase closure,
-    and the seven owned modules to the `S1.P06.S10` decision. Neither baseline
-    was written by this Slice, so the argument is not circular.
+    production modules this Phase closed with is instead compared to a digest
+    some earlier Slice sealed: the thirteen pre-`S1.P06` modules to the
+    `S1.P05` Phase closure, and the seven owned modules to the `S1.P06.S10`
+    decision. Neither baseline was written by this Slice, so the argument is
+    not circular. The live tree has since gained the `S1.P07.S01` module; it is
+    named below rather than absorbed, so a further module no Slice explains
+    still fails here.
     """
     document = _closure()
     assurance = cast(dict[str, Any], document["assurance"])
@@ -2094,7 +2163,7 @@ def test_s12_adds_no_production_module_symbol_or_semantic() -> None:
 
     assert identity["production_change"] is False
     assert assurance["no_production_change"] is True
-    assert assurance["production_python_source_count"] == PRODUCTION_MODULE_COUNT
+    assert assurance["production_python_source_count"] == SEALED_PRODUCTION_MODULE_COUNT
     assert assurance["predecessor_artifacts_unmodified"] is True
 
     sealed: dict[str, str] = {}
@@ -2116,13 +2185,17 @@ def test_s12_adds_no_production_module_symbol_or_semantic() -> None:
         path = cast(str, record["path"])
         assert path not in sealed, path
         sealed[path] = cast(str, record["sha256"])
-    assert len(sealed) == PRODUCTION_MODULE_COUNT, sorted(sealed)
+    assert len(sealed) == SEALED_PRODUCTION_MODULE_COUNT, sorted(sealed)
 
     live = sorted(
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     )
-    assert live == sorted(sealed), (live, sorted(sealed))
+    # The sealed baseline is intact, and the live tree exceeds it by exactly
+    # the one module `S1.P07.S01` published.
+    assert set(sealed) - set(live) == set(), sorted(set(sealed) - set(live))
+    assert set(live) - set(sealed) == {PATTERN_MODULE}, sorted(set(live) - set(sealed))
+    assert len(live) == LIVE_PRODUCTION_MODULE_COUNT, live
     for path, digest in sorted(sealed.items()):
         assert _sha256((REPOSITORY_ROOT / path).read_bytes()) == digest, path
 

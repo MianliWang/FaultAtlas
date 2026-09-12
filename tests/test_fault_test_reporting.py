@@ -2625,7 +2625,10 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
     because each is a successor rather than a predecessor: composing the
     published values is what the aggregate publishes, and associating one
     composed record with one evidence record is what the bridge publishes, so
-    both import this module by design.
+    both import this module by design. `S1.P07.S01`'s
+    `faultatlas.domain.pattern` is held to the same standard as every other
+    module here rather than exempted, and one stronger claim is made about it
+    below.
     """
     predecessors = [
         name
@@ -2638,15 +2641,39 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
         }
     ]
 
-    assert len(predecessors) == 17
+    # Eighteen since `S1.P07.S01` added `faultatlas/domain/pattern.py` to the
+    # inventory. Nothing this screen looks for -- `fault_test` or any symbol
+    # this module publishes -- appears anywhere in that file, docstring
+    # included, so exempting it would narrow the screen for no reason it could
+    # state. It is swept with the rest.
+    assert len(predecessors) == 18
+    assert "faultatlas/domain/pattern.py" in predecessors
     for name in predecessors:
         source = (CHECKOUT_SOURCE_ROOT / name).read_text(encoding="utf-8")
         assert "fault_test" not in source, name
         for symbol in EXPECTED_EXPORTS:
             assert symbol not in source, (name, symbol)
 
+    # And one claim about the `S1.P07.S01` module stronger than the loop makes:
+    # its executable body names nothing from `faultatlas` at all, so it cannot
+    # reach this module under any spelling, a relative import included. The
+    # body is taken by removing the docstring node from the parsed module
+    # rather than by slicing at the docstring quotes, because a slice drops
+    # every statement written above the docstring.
+    tree = ast.parse(
+        (CHECKOUT_SOURCE_ROOT / "faultatlas/domain/pattern.py").read_bytes()
+    )
+    first = tree.body[0] if tree.body else None
+    if (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Constant)
+        and isinstance(first.value.value, str)
+    ):
+        del tree.body[0]
+    assert "faultatlas" not in ast.unparse(tree)
 
-def test_the_tracked_production_inventory_is_twenty_modules() -> None:
+
+def test_the_tracked_production_inventory_is_twenty_one_modules() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -2657,8 +2684,10 @@ def test_the_tracked_production_inventory_is_twenty_modules() -> None:
     observed = sorted(tracked.stdout.decode("utf-8").split())
 
     assert observed == [f"src/{name}" for name in EXPECTED_PRODUCTION_MODULES]
-    assert len(observed) == 20
+    # Twenty-one since `S1.P07.S01` published `src/faultatlas/domain/pattern.py`.
+    assert len(observed) == 21
     assert "src/faultatlas/domain/fault_test.py" in observed
+    assert "src/faultatlas/domain/pattern.py" in observed
 
 
 # --- the roadmap transition -------------------------------------------------
@@ -2680,7 +2709,11 @@ def test_the_current_status_section_states_exactly_the_live_lifecycle() -> None:
         assert f"`S1.P06.S{index:02d}` is complete" in section, index
     assert "`S1.P06.S11` is complete" in section
     assert "`S1.P06.S12` is complete" in section
-    assert "`S1.P07` is next and not started" in section
+    # `S1.P07.S01` began the Phase, so the Phase is active and the live gate is
+    # its second Slice rather than the Phase itself.
+    assert "`S1.P07` is active and incomplete" in section
+    assert "`S1.P07.S01` is complete" in section
+    assert "`S1.P07.S02` is next and not started" in section
     assert "`S1.P08` through `S1.P10` remain not started" in section
 
     # Nothing beyond the Phase's twelve Slices may be claimed, and no Slice is
@@ -2699,12 +2732,14 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P07"}, sorted(set(live_next))
+    # `S1.P07.S01` is complete, so the one live gate is the Slice `S1.P07.S02`
+    # and `S1.P07` is now the one active Phase rather than an unstarted one.
+    assert set(live_next) == {"S1.P07.S02"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
-    assert set(live_phases) == set(), sorted(set(live_phases))
+    assert set(live_phases) == {"S1.P07"}, sorted(set(live_phases))
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P07`" in line, line
+            assert "`S1.P07.S02`" in line, line
 
 
 def test_the_roadmap_records_the_p06_s06_transition() -> None:
@@ -2721,7 +2756,7 @@ def test_the_roadmap_records_the_p06_s06_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is next and not started" in roadmap
+    assert "`S1.P07.S02` is next and not started" in roadmap
     assert (
         "`S1.P06.S06` — Test Material, Reported Runs, Outcomes, and "
         "Comparability (complete)" in roadmap
@@ -2731,7 +2766,8 @@ def test_the_roadmap_records_the_p06_s06_transition() -> None:
     assert "faultatlas.domain.fault_test" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    assert "Production Python sources are 20." in current
+    # Twenty-one since `S1.P07.S01` published `faultatlas.domain.pattern`.
+    assert "Production Python sources are 21." in current
     assert "`test_material.report.context.fault`" in roadmap
 
     # The superseded live gate and the provisional S06 title must be retired.
@@ -2977,6 +3013,8 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/history.py",
     "faultatlas/domain/history_evidence_link.py",
     "faultatlas/domain/identity.py",
+    # Added by `S1.P07.S01`, the first `S1.P07` production module.
+    "faultatlas/domain/pattern.py",
     "faultatlas/domain/revision.py",
     "faultatlas/domain/snapshot.py",
     "faultatlas/domain/snapshot_evidence_link.py",
@@ -2993,7 +3031,8 @@ def test_the_wheel_ships_the_test_module_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 20
+    # Twenty-one since `S1.P07.S01` published `faultatlas/domain/pattern.py`.
+    assert len(modules) == 21
     assert "faultatlas/domain/fault_test.py" in modules
     for name in names:
         assert "reference_corpus" not in name
@@ -3012,7 +3051,8 @@ def test_the_sdist_ships_the_test_module_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == 20
+    # Twenty-one since `S1.P07.S01` published `faultatlas/domain/pattern.py`.
+    assert len(modules) == 21
     assert "faultatlas/domain/fault_test.py" in modules
     for name in names:
         parts = Path(name).parts

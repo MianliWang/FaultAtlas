@@ -308,6 +308,8 @@ EXPECTED_REPLAY_CATEGORIES = {
     "hunk-derivation": 3,
     "reviewed-line-interpretation": 3,
 }
+# Added by `S1.P07.S01`, the first `S1.P07` production module.
+PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
     "src/faultatlas/__main__.py",
@@ -325,6 +327,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/history_evidence_link.py",
     "src/faultatlas/domain/identity.py",
+    PATTERN_MODULE,
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/snapshot_evidence_link.py",
