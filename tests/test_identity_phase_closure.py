@@ -218,6 +218,7 @@ PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
+PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION,
     "src/faultatlas/domain/evidence.py",
@@ -233,6 +234,7 @@ CURRENT_PRODUCTION_FILES = {
     INVARIANT_MODULE,
     INVARIANT_RELATIONSHIP_MODULE,
     PATTERN_MODULE,
+    PATTERN_COMPOSITION_MODULE,
     PATTERN_EXEMPLAR_MODULE,
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/snapshot.py",
@@ -2034,7 +2036,7 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S05` is next and not started" in current_status
+    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
 

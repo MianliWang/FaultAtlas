@@ -121,7 +121,7 @@ OWNED_SYMBOL_COUNT = 30
 # built distribution carry now, and it moves when a later Phase publishes a
 # module.
 SEALED_PRODUCTION_MODULE_COUNT = 20
-LIVE_PRODUCTION_MODULE_COUNT = 24
+LIVE_PRODUCTION_MODULE_COUNT = 25
 
 # Added by `S1.P07.S01`, the first `S1.P07` production module. It is named in
 # both spellings this module already uses: the closure's own inventory is
@@ -135,10 +135,12 @@ PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
+PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
 PATTERN_MODULE_UNDER_SRC = "faultatlas/domain/pattern.py"
 PATTERN_EXEMPLAR_MODULE_UNDER_SRC = "faultatlas/domain/pattern_exemplar.py"
 INVARIANT_MODULE_UNDER_SRC = "faultatlas/domain/invariant.py"
 INVARIANT_RELATIONSHIP_MODULE_UNDER_SRC = "faultatlas/domain/invariant_relationship.py"
+PATTERN_COMPOSITION_MODULE_UNDER_SRC = "faultatlas/domain/pattern_composition.py"
 VECTOR_TOTAL = 254
 FIXTURE_COUNT = 29
 SYMBOL_COVERAGE = "30/30"
@@ -302,13 +304,14 @@ EXPECTED_SECTIONS = (
 )
 
 # The P07 product surface, as it stands. At this closure none of it existed;
-# S01 through S04 have since published four modules and seven symbols,
+# S01 through S05 have since published five modules and eight symbols,
 # so the guard is now an equality on that surface rather than a blanket
 # refusal. Everything `S1.P07` has not published yet is still refused by name.
 P07_PUBLISHED_MODULES = (
     INVARIANT_MODULE,
     INVARIANT_RELATIONSHIP_MODULE,
     PATTERN_MODULE,
+    PATTERN_COMPOSITION_MODULE,
     PATTERN_EXEMPLAR_MODULE,
 )
 S01_PUBLISHED_SYMBOLS = (
@@ -325,6 +328,7 @@ P07_PUBLISHED_SYMBOLS = (
     "FaultPatternExemplarAssociation",
     *S03_PUBLISHED_SYMBOLS,
     *S04_PUBLISHED_SYMBOLS,
+    "FaultPatternComposition",
 )
 ABSENT_P07_MODULES = (
     "src/faultatlas/domain/fault_pattern.py",
@@ -997,12 +1001,13 @@ def test_the_sealed_twenty_modules_stand_with_exact_named_p07_additions() -> Non
         assert (REPOSITORY_ROOT / "src" / relative).is_file(), relative
 
     # The closed-Phase snapshot against the tree as it now stands: intact, and
-    # grown by exactly the named S01 through S04 modules.
+    # grown by exactly the named S01 through S05 modules.
     assert set(recorded) - set(live) == set(), sorted(set(recorded) - set(live))
     assert set(live) - set(recorded) == {
         INVARIANT_MODULE_UNDER_SRC,
         INVARIANT_RELATIONSHIP_MODULE_UNDER_SRC,
         PATTERN_MODULE_UNDER_SRC,
+        PATTERN_COMPOSITION_MODULE_UNDER_SRC,
         PATTERN_EXEMPLAR_MODULE_UNDER_SRC,
     }, sorted(set(live) - set(recorded))
     assert len(live) == LIVE_PRODUCTION_MODULE_COUNT, live
@@ -1930,7 +1935,7 @@ def test_the_roadmap_records_the_closed_phase_and_the_begun_next_one() -> None:
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S05` is next and not started" in current_status
+    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P06` is active and incomplete" not in roadmap
     assert "`S1.P06.S12` is next and not started" not in roadmap
@@ -2090,11 +2095,12 @@ def test_the_p07_boundary_is_carried_forward_unweakened() -> None:
     assert "not factual truth" in statements
 
 
-def test_the_live_p07_surface_is_exactly_what_s01_through_s04_published() -> None:
-    """The sealed P06 absence stays historical; live P07 is bounded by S01 through S04.
+def test_the_live_p07_surface_is_exactly_what_s01_through_s05_published() -> None:
+    """The sealed P06 absence stays historical; live P07 is bounded by S01 through S05.
 
     S01 retains its exact two exports, S02 its association, and S03 adds
-    two invariant exports; S04 adds two associations. Other family exports are refused.
+    two invariant exports; S04 adds two associations and S05 one composition.
+    Other family exports are refused.
     """
     import importlib
 
@@ -2114,8 +2120,10 @@ def test_the_live_p07_surface_is_exactly_what_s01_through_s04_published() -> Non
     assert tuple(invariant.__all__) == S03_PUBLISHED_SYMBOLS
     relationships = importlib.import_module("faultatlas.domain.invariant_relationship")
     assert tuple(relationships.__all__) == S04_PUBLISHED_SYMBOLS
-    assert len(P07_PUBLISHED_MODULES) == 4
-    assert len(P07_PUBLISHED_SYMBOLS) == len(set(P07_PUBLISHED_SYMBOLS)) == 7
+    composition = importlib.import_module("faultatlas.domain.pattern_composition")
+    assert composition.__all__ == ["FaultPatternComposition"]
+    assert len(P07_PUBLISHED_MODULES) == 5
+    assert len(P07_PUBLISHED_SYMBOLS) == len(set(P07_PUBLISHED_SYMBOLS)) == 8
 
     exported: set[str] = set()
     for path in (REPOSITORY_ROOT / "src").rglob("*.py"):
@@ -2234,6 +2242,7 @@ def test_s12_adds_no_production_module_symbol_or_semantic() -> None:
         INVARIANT_MODULE,
         INVARIANT_RELATIONSHIP_MODULE,
         PATTERN_MODULE,
+        PATTERN_COMPOSITION_MODULE,
         PATTERN_EXEMPLAR_MODULE,
     }, sorted(set(live) - set(sealed))
     assert len(live) == LIVE_PRODUCTION_MODULE_COUNT, live

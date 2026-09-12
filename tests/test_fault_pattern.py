@@ -275,6 +275,8 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/invariant_relationship.py",
     # Added by `S1.P07.S01`, the first `S1.P07` production module.
     "faultatlas/domain/pattern.py",
+    # Added by `S1.P07.S05`, the bounded pattern composition.
+    "faultatlas/domain/pattern_composition.py",
     # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
     "faultatlas/domain/pattern_exemplar.py",
     "faultatlas/domain/revision.py",
@@ -282,7 +284,7 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/snapshot_evidence_link.py",
     "faultatlas/domain/source.py",
 ]
-PRODUCTION_MODULE_COUNT = 24
+PRODUCTION_MODULE_COUNT = 25
 
 
 # --- helpers -----------------------------------------------------------------
@@ -2175,7 +2177,7 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
     """Dependency direction is downstream only, over every tracked module.
 
     All twenty baseline predecessors and independent S03 module remain screened.
-    The two S02/S04 downstream consumers have their owner imports checked separately.
+    The three S02/S04/S05 downstream consumers have their owner imports checked separately.
     """
     predecessors = [
         name
@@ -2185,15 +2187,17 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
             "faultatlas/domain/pattern.py",
             "faultatlas/domain/pattern_exemplar.py",
             "faultatlas/domain/invariant_relationship.py",
+            "faultatlas/domain/pattern_composition.py",
         }
     ]
 
-    assert len(predecessors) == PRODUCTION_MODULE_COUNT - 3 == 21
+    assert len(predecessors) == PRODUCTION_MODULE_COUNT - 4 == 21
     assert "faultatlas/domain/invariant.py" in predecessors
-    # S02 and S04 each consume exactly this published proposition type.
+    # S02, S04 and S05 each consume exactly this published proposition type.
     for consumer in (
         "faultatlas/domain/pattern_exemplar.py",
         "faultatlas/domain/invariant_relationship.py",
+        "faultatlas/domain/pattern_composition.py",
     ):
         assert consumer in EXPECTED_PRODUCTION_MODULES
         imports = [
@@ -2232,7 +2236,7 @@ def test_the_roadmap_records_the_p07_s01_transition() -> None:
     assert "`S1.P07.S01` is complete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
     assert "`S1.P07.S02` is complete" in current_status
-    assert "`S1.P07.S05` is next and not started" in current_status
+    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P07.S01` — Pattern Identity and Supplied Pattern Proposition (complete)"
@@ -2247,7 +2251,7 @@ def test_the_roadmap_records_the_p07_s01_transition() -> None:
     assert "faultatlas.domain.pattern" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    assert "Production Python sources are 24." in current
+    assert "Production Python sources are 25." in current
 
     # The superseded entry-gate claims must be retired, not left standing.
     assert "`S1.P07` is next and not started" not in roadmap
@@ -2291,16 +2295,16 @@ def test_the_roadmap_states_the_s01_boundaries_and_non_claims() -> None:
 def test_the_roadmap_route_is_provisional_beyond_the_published_slice() -> None:
     roadmap = _roadmap()
 
-    assert "The `S1.P07` route is provisional beyond `S1.P07.S04`." in roadmap
+    assert "The `S1.P07` route is provisional beyond `S1.P07.S05`." in roadmap
     for index in range(1, 10):
         assert f"`S1.P07.S{index:02d}`" in roadmap, index
     assert "`S1.P07.S10`" not in roadmap
-    # S01 through S04 are complete; later positions remain provisional.
+    # S01 through S05 are complete; later positions remain provisional.
     assert "`S1.P07.S01` is complete" in roadmap
     assert "`S1.P07.S02` is complete" in roadmap
     assert "`S1.P07.S03` is complete" in roadmap
     assert "`S1.P07.S04` is complete" in roadmap
-    for index in range(5, 10):
+    for index in range(6, 10):
         assert f"`S1.P07.S{index:02d}` is complete" not in roadmap, index
 
 
@@ -2318,7 +2322,7 @@ def test_the_route_numbers_every_p07_position_in_order() -> None:
 
 
 def test_the_p07_route_states_the_authoritative_state_for_every_position() -> None:
-    """Four published positions, one gate, and four positions still ahead.
+    """Five published positions, one gate, and three positions still ahead.
 
     Building the lookup first would let a duplicated row collapse silently, so
     the rows are counted before they become a mapping.
@@ -2332,13 +2336,14 @@ def test_the_p07_route_states_the_authoritative_state_for_every_position() -> No
     assert entries["S1.P07.S02"] == "complete"
     assert entries["S1.P07.S03"] == "complete"
     assert entries["S1.P07.S04"] == "complete"
-    assert entries["S1.P07.S05"] == "next, not started"
-    for index in range(6, 10):
+    assert entries["S1.P07.S05"] == "complete"
+    assert entries["S1.P07.S06"] == "next, not started"
+    for index in range(7, 10):
         assert entries[f"S1.P07.S{index:02d}"] == "not started", index
     states = [state for _, _, _, state in rows]
-    assert states.count("complete") == 4
+    assert states.count("complete") == 5
     assert states.count("next, not started") == 1
-    assert states.count("not started") == 4
+    assert states.count("not started") == 3
 
 
 def test_the_roadmap_carries_exactly_one_live_gate() -> None:
@@ -2348,13 +2353,13 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P07.S05"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P07.S06"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P07"}, sorted(set(live_phases))
     # Line-based readers pair the Slice with the phrase on one raw line.
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P07.S05`" in line, line
+            assert "`S1.P07.S06`" in line, line
 
 
 def test_the_current_status_section_states_exactly_the_live_lifecycle() -> None:
@@ -2371,7 +2376,7 @@ def test_the_current_status_section_states_exactly_the_live_lifecycle() -> None:
         assert f"`S1.P06.S{index:02d}` is complete" in section, index
     assert "`S1.P07` is active and incomplete" in section
     assert "`S1.P07.S01` is complete" in section
-    assert "`S1.P07.S05` is next and not started" in section
+    assert "`S1.P07.S06` is next and not started" in section
     assert "`S1.P08` through `S1.P10` remain not started" in section
 
     assert "`S1.P07` is next and not started" not in section
@@ -2379,7 +2384,8 @@ def test_the_current_status_section_states_exactly_the_live_lifecycle() -> None:
     assert "`S1.P07.S02` is complete" in section
     assert "`S1.P07.S03` is complete" in section
     assert "`S1.P07.S04` is complete" in section
-    assert "`S1.P07.S05` is complete" not in section
+    assert "`S1.P07.S05` is complete" in section
+    assert "`S1.P07.S06` is complete" not in section
     assert "`S1.P07.S10`" not in section
 
 
@@ -2454,7 +2460,7 @@ def offline_distributions(
     return wheels[0], sdists[0]
 
 
-def test_the_tracked_production_inventory_is_twenty_four_modules() -> None:
+def test_the_tracked_production_inventory_is_twenty_five_modules() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -2472,7 +2478,7 @@ def test_the_tracked_production_inventory_is_twenty_four_modules() -> None:
     assert "src/faultatlas/domain/pattern.py" in observed
 
 
-def test_the_checkout_carries_exactly_twenty_four_production_modules() -> None:
+def test_the_checkout_carries_exactly_twenty_five_production_modules() -> None:
     observed = sorted(
         path.relative_to(CHECKOUT_SOURCE_ROOT).as_posix()
         for path in CHECKOUT_SOURCE_ROOT.rglob("*.py")

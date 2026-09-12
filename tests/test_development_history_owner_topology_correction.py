@@ -43,7 +43,7 @@ VALID_OWNERS = ("S1.P06", "S2", "S5")
 # faultatlas.domain.fault_instance, and S1.P06.S09 published
 # faultatlas.domain.fault_evidence_link.
 PRODUCTION_SOURCE_COUNT_AT_CORRECTION = 13
-CURRENT_PRODUCTION_SOURCE_COUNT = 24
+CURRENT_PRODUCTION_SOURCE_COUNT = 25
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
 FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 FAULT_REPAIR_MODULE = "src/faultatlas/domain/fault_repair.py"
@@ -59,6 +59,7 @@ PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
+PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
 
 
 def _correction() -> dict[str, Any]:
@@ -804,7 +805,7 @@ def test_every_phase_status_summary_records_the_correction() -> None:
         # `S1.P07` has begun, so each summary must carry the gate one level
         # down rather than still naming the Phase.
         assert "`S1.P07.S01` is complete" in head, head
-        assert "`S1.P07.S05` is next and not started" in head, head
+        assert "`S1.P07.S06` is next and not started" in head, head
         assert "`S1.P07` is next and not started" not in head, head
 
 
@@ -848,7 +849,7 @@ def test_the_roadmap_records_the_correction_and_holds_the_phase_state() -> None:
     assert "`S1.P06.S12` is complete" in text
     assert "`S1.P07.S01` is complete" in text
     current_status = text.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S05` is next and not started" in current_status
+    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P07` is next and not started" not in text
     assert "`S1.P05.S09` — Development History Contract Corpus (complete)" in text
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in text

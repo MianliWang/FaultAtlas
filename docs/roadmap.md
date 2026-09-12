@@ -52,7 +52,8 @@ aspirational Slice as scheduled work.
   `S1.P07.S02` is complete and
   `S1.P07.S03` is complete and
   `S1.P07.S04` is complete and
-  `S1.P07.S05` is next and not started.
+  `S1.P07.S05` is complete and
+  `S1.P07.S06` is next and not started.
   `S1.P08` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -111,7 +112,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
-`S1.P07.S05` is next and not started.
+`S1.P07.S05` is complete and
+`S1.P07.S06` is next and not started.
 `S1.P08` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -721,7 +723,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
-`S1.P07.S05` is next and not started.
+`S1.P07.S05` is complete and
+`S1.P07.S06` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1177,7 +1180,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
-`S1.P07.S05` is next and not started.
+`S1.P07.S05` is complete and
+`S1.P07.S06` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -2278,7 +2282,8 @@ became `S1.P06.S10` work.
 `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
-`S1.P07.S05` is next and not started.
+`S1.P07.S05` is complete and
+`S1.P07.S06` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2419,8 +2424,9 @@ owned three named modules and five exports; that is the historical S03 surface.
 
 `S1.P07.S04` publishes `faultatlas.domain.invariant_relationship`, exporting
 exactly `FaultPatternInvariantAssociation` and
-`FaultInvariantExpectedPropertyAssociation`. P07 now owns four named modules
-and seven exports; its twelve UUID-root identity types are unchanged.
+`FaultInvariantExpectedPropertyAssociation`. At S04 publication, P07 owned
+four named modules and seven exports; the repository had twelve UUID-root
+identity types.
 
 The pattern-invariant record requires the full `SuppliedFaultPattern` followed
 by the full `SuppliedFaultInvariant`. It records only the caller's explicit
@@ -2452,8 +2458,8 @@ satisfaction, violation, generalization or repair-correctness result. An
 existing case-property evidence link transfers nothing to an invariant or
 pattern. No relationship-kind vocabulary, direct pattern-to-expectation record,
 rationale, confidence/review/status or applicability/transfer field is added.
-P08/P09/P10 and later-runtime boundaries remain unchanged; S05 composition and
-S06 accumulated vertical assurance remain later work.
+P08/P09/P10 and later-runtime boundaries remain unchanged; S05 now composes these values separately;
+S06 accumulated vertical assurance remains later work.
 
 Both frozen strict records require typed Python endpoints and revalidate their
 owners. Native JSON delegates only the case dictionary to its own validator,
@@ -2463,7 +2469,43 @@ The bounded full-member search retains all predecessor revalidation costs; no
 constant-time or linear-total guarantee is made. The module performs no I/O,
 lookup outside the case, identifier allocation, execution or discovery.
 
-The `S1.P07` route is provisional beyond `S1.P07.S04`. Later exact schemas are
+### S1.P07.S05 — Bounded pattern composition
+
+`S1.P07.S05` publishes `faultatlas.domain.pattern_composition`, exporting only
+`FaultPatternComposition`. P07 now owns five named modules and eight exports;
+the repository retains twelve UUID-root identity types. No composition identity
+is added. Its fields, in order, are `pattern`, `exemplar_associations`,
+`invariants`, `pattern_invariant_associations`, and
+`invariant_expected_property_associations`.
+
+The full supplied Pattern is the root. A minimum Pattern-only composition is
+valid, with four default empty tuples. Each collection is bounded to 4096
+members within this in-memory value; the bound is not world completeness or a
+durable-format limit. Empty means only that no supplied member is carried in
+that category, not known absence, failed search, disproof or impossibility.
+Python requires typed children and strict tuples, refusing explicit nulls and
+untyped members; native JSON reconstructs through the published owners.
+
+Every exemplar or pattern-invariant relation must carry the full-record-equal
+root Pattern. Invariant identities are unique within this composition, even
+for equal duplicates or conflicting statements. Both invariant relationship
+collections must reference full-record-equal members of `invariants`, and every
+carried invariant must have an explicit pattern-invariant association attaching
+it to the root. Nothing is inserted, replaced, deduplicated or reconciled.
+Repeated relationship values remain structurally valid. The S04 owner retains
+its own full expected-property membership rule unchanged.
+
+An invariant-expected-property link may name a non-exemplar case; an exemplar
+needs no invariant or expectation chain. Neither direction synthesizes the
+other relationship. No inferred/transitive edges, truth, satisfaction,
+violation, evidence support, confidence/review, applicability/transfer,
+similarity, causation, repair correctness or completeness semantics are added.
+Order is preserved and contributes to value equality, but carries no priority,
+chronology, confidence, causality or support strength. Durable canonicalization
+remains P10 work. No I/O, discovery or identifier allocation occurs; all
+predecessor production modules and sealed corpus bytes remain unchanged.
+
+The `S1.P07` route is provisional beyond `S1.P07.S05`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -2475,9 +2517,9 @@ tests before the corpus Slice:
 4. `S1.P07.S04` — Pattern, invariant, and case-local expected-property
    relationships (complete)
 5. `S1.P07.S05` — Bounded pattern composition and reference integrity
-   (next, not started)
+   (complete)
 6. `S1.P07.S06` — Cross-instance canonical vertical and boundary assurance
-   (not started)
+   (next, not started)
 7. `S1.P07.S07` — Deferred disposition and corpus readiness (not started)
 8. `S1.P07.S08` — Accumulated pattern/invariant contract corpus (not started)
 9. `S1.P07.S09` — Integration and Phase closure (not started)
@@ -2862,7 +2904,11 @@ added by `S1.P07.S04` with exactly `FaultPatternInvariantAssociation` and
 only the composition-qualified expected-property membership rule, without
 inference, promotion or changes to either endpoint owner.
 
-Production Python sources are 24.
+`faultatlas.domain.pattern_composition` owns `FaultPatternComposition`: one
+bounded supplied Pattern composition with explicit full-record reference
+integrity and root attachment closure, without inferred edges.
+
+Production Python sources are 25.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the `S1.P05.S02.C01`
 correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, `S1.P05.S06`,
 `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01` correction,
@@ -2875,7 +2921,8 @@ complete, and `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
-`S1.P07.S05` is next and not started. `S1.P04.S10`
+`S1.P07.S05` is complete and
+`S1.P07.S06` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==

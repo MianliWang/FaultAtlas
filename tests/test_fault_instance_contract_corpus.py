@@ -113,7 +113,8 @@ PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
-LIVE_PRODUCTION_MODULE_COUNT = 24
+PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
+LIVE_PRODUCTION_MODULE_COUNT = 25
 ALLOWED_MARKERS = ("enum_value", "indexed_value", "tuple_value", "typed_value")
 MAX_INDEXED_COUNT = 4097
 ALLOWED_OPERATIONS = ("construct", "reject")
@@ -1711,6 +1712,7 @@ def test_the_corpus_is_source_only_and_adds_no_production_file() -> None:
         INVARIANT_MODULE,
         INVARIANT_RELATIONSHIP_MODULE,
         PATTERN_MODULE,
+        PATTERN_COMPOSITION_MODULE,
         PATTERN_EXEMPLAR_MODULE,
         "src/faultatlas/domain/revision.py",
         "src/faultatlas/domain/snapshot.py",
@@ -2142,6 +2144,7 @@ def test_the_scope_matches_the_live_surface() -> None:
         INVARIANT_MODULE,
         INVARIANT_RELATIONSHIP_MODULE,
         PATTERN_MODULE,
+        PATTERN_COMPOSITION_MODULE,
         PATTERN_EXEMPLAR_MODULE,
     } <= live
     assert scope["production_module_count"] == len(
@@ -2150,6 +2153,7 @@ def test_the_scope_matches_the_live_surface() -> None:
             INVARIANT_MODULE,
             INVARIANT_RELATIONSHIP_MODULE,
             PATTERN_MODULE,
+            PATTERN_COMPOSITION_MODULE,
             PATTERN_EXEMPLAR_MODULE,
         }
     )
@@ -2250,7 +2254,7 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     # gate moved: `S1.P07` is no longer the thing that has not started.
     assert "`S1.P07` is active and incomplete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S05` is next and not started" in current_status
+    assert "`S1.P07.S06` is next and not started" in current_status
     assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
     assert "`S1.P06` is complete" in roadmap
     assert "`S1.P06.S07.C01` correction" in roadmap
