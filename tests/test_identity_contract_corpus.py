@@ -19,7 +19,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any, NoReturn, cast
 
 import pytest
+from _repository_contract import PRODUCTION_FILES
 from pydantic import BaseModel, TypeAdapter, ValidationError
+from test_package import assert_complete_source_package, assert_current_inventory
 
 import faultatlas
 import faultatlas.domain as domain_package
@@ -300,33 +302,7 @@ INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
 PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
-EXPECTED_PRODUCTION_FILES = {
-    "src/faultatlas/__init__.py",
-    "src/faultatlas/__main__.py",
-    "src/faultatlas/cli.py",
-    "src/faultatlas/domain/__init__.py",
-    "src/faultatlas/domain/compatibility.py",
-    "src/faultatlas/domain/evidence.py",
-    "src/faultatlas/domain/fault.py",
-    "src/faultatlas/domain/fault_evidence_link.py",
-    "src/faultatlas/domain/fault_instance.py",
-    "src/faultatlas/domain/fault_interpretation.py",
-    "src/faultatlas/domain/fault_repair.py",
-    "src/faultatlas/domain/fault_source_relationship.py",
-    "src/faultatlas/domain/fault_test.py",
-    "src/faultatlas/domain/history.py",
-    "src/faultatlas/domain/history_evidence_link.py",
-    "src/faultatlas/domain/identity.py",
-    INVARIANT_MODULE,
-    INVARIANT_RELATIONSHIP_MODULE,
-    PATTERN_MODULE,
-    PATTERN_COMPOSITION_MODULE,
-    PATTERN_EXEMPLAR_MODULE,
-    "src/faultatlas/domain/revision.py",
-    "src/faultatlas/domain/snapshot.py",
-    "src/faultatlas/domain/snapshot_evidence_link.py",
-    "src/faultatlas/domain/source.py",
-}
+EXPECTED_PRODUCTION_FILES = set(PRODUCTION_FILES)
 EVIDENCE_MODULE_PATH = "src/faultatlas/domain/evidence.py"
 EXPECTED_REVISION_EXPORTS = {
     "ArtifactByteLocator",
@@ -1404,7 +1380,7 @@ def _production_files() -> set[str]:
 
 
 def _validate_current_production_file_inventory(production_files: set[str]) -> None:
-    assert production_files == EXPECTED_PRODUCTION_FILES
+    assert_current_inventory(production_files)
 
 
 def _working_source_bytes() -> dict[str, bytes]:
@@ -1574,11 +1550,7 @@ def _assert_complete_package_sources(
     packaged: dict[str, bytes],
     working: dict[str, bytes],
 ) -> None:
-    assert set(working) == EXPECTED_PRODUCTION_FILES
-    assert set(packaged) == EXPECTED_PRODUCTION_FILES
-    assert len(working) == len(packaged) == len(EXPECTED_PRODUCTION_FILES)
-    assert packaged[EVIDENCE_MODULE_PATH] == working[EVIDENCE_MODULE_PATH]
-    assert packaged == working
+    assert_complete_source_package(packaged, working)
 
 
 def _assert_safe_archive(
@@ -1622,34 +1594,6 @@ def _assert_safe_archive(
             for relative in EXPECTED_PRODUCTION_FILES
         }
         _assert_complete_package_sources(_archive_source_bytes(members), working)
-
-
-def _git_status() -> bytes:
-    result = subprocess.run(
-        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        cwd=REPOSITORY_ROOT,
-        check=True,
-        capture_output=True,
-    )
-    return result.stdout
-
-
-def _repository_file_snapshot() -> tuple[tuple[str, int, str], ...]:
-    snapshot: list[tuple[str, int, str]] = []
-    for path in REPOSITORY_ROOT.rglob("*"):
-        relative = path.relative_to(REPOSITORY_ROOT)
-        if relative.parts[0] in {".git", ".venv"}:
-            continue
-        if path.is_symlink():
-            payload = os.readlink(path).encode("utf-8")
-        elif path.is_file():
-            payload = path.read_bytes()
-        else:
-            continue
-        snapshot.append(
-            (relative.as_posix(), stat.S_IMODE(path.lstat().st_mode), _sha256(payload))
-        )
-    return tuple(sorted(snapshot))
 
 
 def _parse_git_stage_z(raw: bytes) -> dict[str, str]:
@@ -1748,52 +1692,6 @@ def _validate_current_permission_contract(tmp_path: Path) -> None:
             _assert_untracked_path(relative)
         prospective_modes = _prospective_new_file_modes(untracked, tmp_path)
         _assert_git_modes_100644(prospective_modes, untracked)
-
-
-def _build_archives(tmp_path: Path) -> tuple[Path, Path]:
-    uv = shutil.which("uv")
-    assert uv is not None
-    output = tmp_path / "dist"
-    cache = tmp_path / "uv-cache"
-    output.mkdir()
-    cache.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "UV_CACHE_DIR": str(cache),
-            "UV_NO_SYNC": "1",
-            "UV_OFFLINE": "1",
-        }
-    )
-    status_before = _git_status()
-    files_before = _repository_file_snapshot()
-    result = subprocess.run(
-        [
-            uv,
-            "build",
-            "--offline",
-            "--no-create-gitignore",
-            "--out-dir",
-            str(output),
-        ],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    status_after = _git_status()
-    files_after = _repository_file_snapshot()
-    assert status_after == status_before
-    assert files_after == files_before
-    assert result.returncode == 0, (
-        f"offline build failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    wheels = tuple(output.glob("*.whl"))
-    sdists = tuple(output.glob("*.tar.gz"))
-    assert len(wheels) == len(sdists) == 1
-    return wheels[0], sdists[0]
 
 
 def _write_synthetic_archive(
@@ -2128,8 +2026,7 @@ def test_missing_or_extra_s06_closure_artifact_is_rejected() -> None:
 
 def test_current_correction_whole_source_inventory_is_exact() -> None:
     working = _working_source_bytes()
-    assert set(working) == EXPECTED_PRODUCTION_FILES
-    assert len(working) == len(EXPECTED_PRODUCTION_FILES)
+    assert_current_inventory(set(working))
 
 
 def test_p02_revision_and_s06_s07_evidence_are_outside_the_immutable_p01_contract() -> (
@@ -2253,8 +2150,10 @@ def test_git_mode_100755_mutation_is_rejected() -> None:
         _assert_git_modes_100644(modes, {relative})
 
 
-def test_actual_offline_wheel_and_sdist_exclude_corpus(tmp_path: Path) -> None:
-    wheel, sdist = _build_archives(tmp_path)
+def test_actual_offline_wheel_and_sdist_exclude_corpus(
+    offline_distributions: tuple[Path, Path],
+) -> None:
+    wheel, sdist = offline_distributions
     wheel_members = _wheel_members(wheel)
     sdist_members = _sdist_members(sdist)
     _assert_safe_archive(wheel_members, expect_modules=True)

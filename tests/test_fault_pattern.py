@@ -5,17 +5,15 @@ import enum
 import importlib
 import json
 import os
-import re
-import shutil
 import subprocess
 import sys
-import tarfile
 import uuid
 import zipfile
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from _repository_contract import PRODUCTION_FILES, PRODUCTION_MODULES
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -252,39 +250,8 @@ EXPECTED_NAME_VOCABULARY = {
 }
 
 # The live inventory includes S01 and the explicitly downstream S02 module.
-EXPECTED_PRODUCTION_MODULES = [
-    "faultatlas/__init__.py",
-    "faultatlas/__main__.py",
-    "faultatlas/cli.py",
-    "faultatlas/domain/__init__.py",
-    "faultatlas/domain/compatibility.py",
-    "faultatlas/domain/evidence.py",
-    "faultatlas/domain/fault.py",
-    "faultatlas/domain/fault_evidence_link.py",
-    "faultatlas/domain/fault_instance.py",
-    "faultatlas/domain/fault_interpretation.py",
-    "faultatlas/domain/fault_repair.py",
-    "faultatlas/domain/fault_source_relationship.py",
-    "faultatlas/domain/fault_test.py",
-    "faultatlas/domain/history.py",
-    "faultatlas/domain/history_evidence_link.py",
-    "faultatlas/domain/identity.py",
-    # Added by `S1.P07.S03`, the independent invariant proposition.
-    "faultatlas/domain/invariant.py",
-    # Added by `S1.P07.S04`, the two explicit invariant associations.
-    "faultatlas/domain/invariant_relationship.py",
-    # Added by `S1.P07.S01`, the first `S1.P07` production module.
-    "faultatlas/domain/pattern.py",
-    # Added by `S1.P07.S05`, the bounded pattern composition.
-    "faultatlas/domain/pattern_composition.py",
-    # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
-    "faultatlas/domain/pattern_exemplar.py",
-    "faultatlas/domain/revision.py",
-    "faultatlas/domain/snapshot.py",
-    "faultatlas/domain/snapshot_evidence_link.py",
-    "faultatlas/domain/source.py",
-]
-PRODUCTION_MODULE_COUNT = 25
+EXPECTED_PRODUCTION_MODULES = list(PRODUCTION_MODULES)
+PRODUCTION_MODULE_COUNT = len(PRODUCTION_FILES)
 
 
 # --- helpers -----------------------------------------------------------------
@@ -304,43 +271,6 @@ def _pattern_source_tree() -> ast.Module:
 
 def _roadmap() -> str:
     return " ".join(ROADMAP.read_text(encoding="utf-8").split())
-
-
-def _p07_route_entries() -> list[tuple[str, str, str, str]]:
-    """The numbered `S1.P07` route, parsed structurally rather than by phrase.
-
-    Each row is (list ordinal, slice id, the slice's numeric suffix,
-    parenthesised state). The ordinal is carried because a Slice sitting at the
-    wrong marker leaves the set of (slice, state) pairs unchanged. Every
-    numbered row is parsed and then validated: matching only rows whose state
-    is already one of the allowed words would make a row carrying any other
-    state invisible while the counts still looked right.
-    """
-    text = ROADMAP.read_text(encoding="utf-8")
-    start = text.index("The `S1.P07` route is provisional")
-    end = text.index("\n## ", start)
-    block = text[start:end]
-    rows: list[tuple[str, str, str, str]] = re.findall(
-        r"^(\d+)\.\s+`(S1\.P07\.S(\d\d))`[^\n]*(?:\n\s+)?[^\n]*?\(([^)]*)\)",
-        block,
-        re.M,
-    )
-    numbered = re.findall(r"^(\d+)\.\s", block, re.M)
-    assert len(rows) == len(numbered), (len(rows), len(numbered))
-    for _, slice_id, _, state in rows:
-        assert state in {"complete", "next, not started", "not started"}, (
-            slice_id,
-            state,
-        )
-    return rows
-
-
-def _current_status_section() -> str:
-    roadmap = _roadmap()
-    start = roadmap.index("## Current status")
-    end = roadmap.index("## Program stages")
-    assert start < end
-    return roadmap[start:end]
 
 
 def _live_uuid_rooted_identities() -> set[type[BaseModel]]:
@@ -730,12 +660,7 @@ def test_the_pattern_identity_is_nominally_distinct_from_every_p06_identity() ->
     """
     live = _live_uuid_rooted_identities()
 
-    assert live == {FaultPatternIdentity, FaultInvariantIdentity, *P06_UUID_IDENTITIES}
-    assert set(P06_UUID_IDENTITIES) == live - {
-        FaultPatternIdentity,
-        FaultInvariantIdentity,
-    }
-    assert len(P06_UUID_IDENTITIES) == len(live) - 2
+    assert {FaultPatternIdentity, FaultInvariantIdentity, *P06_UUID_IDENTITIES} <= live
     assert len({identity.__name__ for identity in P06_UUID_IDENTITIES}) == len(
         P06_UUID_IDENTITIES
     )
@@ -2191,7 +2116,7 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
         }
     ]
 
-    assert len(predecessors) == PRODUCTION_MODULE_COUNT - 4 == 21
+    assert len(predecessors) == PRODUCTION_MODULE_COUNT - 4
     assert "faultatlas/domain/invariant.py" in predecessors
     # S02, S04 and S05 each consume exactly this published proposition type.
     for consumer in (
@@ -2229,14 +2154,10 @@ def test_the_roadmap_records_the_p07_s01_transition() -> None:
     roadmap = _roadmap()
     mapping = roadmap.split("## Current-code mapping", 1)
     assert len(mapping) == 2, "roadmap must retain a current-code mapping section"
-    current = mapping[1]
 
     assert "## S1.P07 — Pattern & Invariant Model" in roadmap
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S02` is complete" in current_status
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P07.S01` — Pattern Identity and Supplied Pattern Proposition (complete)"
@@ -2248,11 +2169,6 @@ def test_the_roadmap_records_the_p07_s01_transition() -> None:
         "`FaultPatternIdentity` and `SuppliedFaultPattern`." in roadmap
     )
 
-    assert "faultatlas.domain.pattern" in current
-    for symbol in EXPECTED_EXPORTS:
-        assert f"`{symbol}`" in current
-    assert "Production Python sources are 25." in current
-
     # The superseded entry-gate claims must be retired, not left standing.
     assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P07` is `eligible_to_begin`" not in roadmap
@@ -2260,6 +2176,11 @@ def test_the_roadmap_records_the_p07_s01_transition() -> None:
     assert "`S1.P07` is complete" not in roadmap
     assert "Production Python sources are 20." not in roadmap
     assert "- **S1.P07 — Pattern & Invariant Model**" not in raw
+
+    current = mapping[1]
+    assert "faultatlas.domain.pattern" in current
+    for symbol in EXPECTED_EXPORTS:
+        assert f"`{symbol}`" in current
 
 
 def test_the_roadmap_records_the_sealed_p06_eligibility_in_the_past_tense() -> None:
@@ -2290,103 +2211,6 @@ def test_the_roadmap_states_the_s01_boundaries_and_non_claims() -> None:
     assert "durable serialization and persistence remain `S1.P10` work" in roadmap
     assert "nominally distinct from every `S1.P06` identity" in roadmap
     assert "Dependency direction is downstream only" in roadmap
-
-
-def test_the_roadmap_route_is_provisional_beyond_the_published_slice() -> None:
-    roadmap = _roadmap()
-
-    assert "The `S1.P07` route is provisional beyond `S1.P07.S05`." in roadmap
-    for index in range(1, 10):
-        assert f"`S1.P07.S{index:02d}`" in roadmap, index
-    assert "`S1.P07.S10`" not in roadmap
-    # S01 through S05 are complete; later positions remain provisional.
-    assert "`S1.P07.S01` is complete" in roadmap
-    assert "`S1.P07.S02` is complete" in roadmap
-    assert "`S1.P07.S03` is complete" in roadmap
-    assert "`S1.P07.S04` is complete" in roadmap
-    for index in range(6, 10):
-        assert f"`S1.P07.S{index:02d}` is complete" not in roadmap, index
-
-
-def test_the_route_numbers_every_p07_position_in_order() -> None:
-    """The list marker is part of the route, not decoration.
-
-    Swapping two markers leaves the same set of (Slice, state) pairs, so the
-    ordinal is captured and required to match the Slice it labels.
-    """
-    rows = _p07_route_entries()
-
-    assert [ordinal for ordinal, _, _, _ in rows] == [str(n) for n in range(1, 10)]
-    for ordinal, slice_id, suffix, _ in rows:
-        assert int(ordinal) == int(suffix), (ordinal, slice_id)
-
-
-def test_the_p07_route_states_the_authoritative_state_for_every_position() -> None:
-    """Five published positions, one gate, and three positions still ahead.
-
-    Building the lookup first would let a duplicated row collapse silently, so
-    the rows are counted before they become a mapping.
-    """
-    rows = _p07_route_entries()
-    assert len(rows) == 9, rows
-    assert len({slice_id for _, slice_id, _, _ in rows}) == 9, rows
-    entries = {slice_id: state for _, slice_id, _, state in rows}
-
-    assert entries["S1.P07.S01"] == "complete"
-    assert entries["S1.P07.S02"] == "complete"
-    assert entries["S1.P07.S03"] == "complete"
-    assert entries["S1.P07.S04"] == "complete"
-    assert entries["S1.P07.S05"] == "complete"
-    assert entries["S1.P07.S06"] == "next, not started"
-    for index in range(7, 10):
-        assert entries[f"S1.P07.S{index:02d}"] == "not started", index
-    states = [state for _, _, _, state in rows]
-    assert states.count("complete") == 5
-    assert states.count("next, not started") == 1
-    assert states.count("not started") == 3
-
-
-def test_the_roadmap_carries_exactly_one_live_gate() -> None:
-    roadmap = _roadmap()
-
-    live_next = re.findall(
-        r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
-    )
-    assert live_next, "the roadmap names no next gate"
-    assert set(live_next) == {"S1.P07.S06"}, sorted(set(live_next))
-    live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
-    assert set(live_phases) == {"S1.P07"}, sorted(set(live_phases))
-    # Line-based readers pair the Slice with the phrase on one raw line.
-    for line in ROADMAP.read_text(encoding="utf-8").splitlines():
-        if "next and not started" in line:
-            assert "`S1.P07.S06`" in line, line
-
-
-def test_the_current_status_section_states_exactly_the_live_lifecycle() -> None:
-    """A direct structural witness over the section every Slice must migrate.
-
-    `## Current status` is deliberately mutable and is not digest-protected, so
-    it needs an oracle that reads it directly rather than a document-wide
-    phrase search that another section could satisfy by coincidence.
-    """
-    section = _current_status_section()
-
-    assert "`S1.P06` is complete" in section
-    for index in range(1, 13):
-        assert f"`S1.P06.S{index:02d}` is complete" in section, index
-    assert "`S1.P07` is active and incomplete" in section
-    assert "`S1.P07.S01` is complete" in section
-    assert "`S1.P07.S06` is next and not started" in section
-    assert "`S1.P08` through `S1.P10` remain not started" in section
-
-    assert "`S1.P07` is next and not started" not in section
-    assert "`S1.P07` is complete" not in section
-    assert "`S1.P07.S02` is complete" in section
-    assert "`S1.P07.S03` is complete" in section
-    assert "`S1.P07.S04` is complete" in section
-    assert "`S1.P07.S05` is complete" in section
-    assert "`S1.P07.S06` is complete" not in section
-    assert "`S1.P07.S10`" not in section
 
 
 # --- packaging and an isolated installed-wheel smoke -------------------------
@@ -2421,108 +2245,6 @@ assert FaultPatternIdentity.model_validate_json(identity.model_dump_json()) == i
 assert SuppliedFaultPattern.model_validate_json(supplied.model_dump_json()) == supplied
 print(json.dumps({"module": str(resolved), "pattern": supplied.model_dump_json()}))
 """
-
-
-@pytest.fixture(scope="session")
-def offline_distributions(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> tuple[Path, Path]:
-    uv = shutil.which("uv")
-    assert uv is not None, "uv must be available to build the supported distributions"
-
-    root = tmp_path_factory.mktemp("fault-pattern-package")
-    output = root / "distributions"
-    output.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "UV_CACHE_DIR": str(root / "uv-cache"),
-            "UV_NO_SYNC": "1",
-            "UV_OFFLINE": "1",
-        }
-    )
-    result = subprocess.run(  # noqa: S603 - literal argv, no shell
-        [uv, "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"offline build failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    wheels = tuple(output.glob("*.whl"))
-    sdists = tuple(output.glob("*.tar.gz"))
-    assert len(wheels) == 1, f"expected one wheel, found {wheels!r}"
-    assert len(sdists) == 1, f"expected one sdist, found {sdists!r}"
-    return wheels[0], sdists[0]
-
-
-def test_the_tracked_production_inventory_is_twenty_five_modules() -> None:
-    tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
-        ["git", "ls-files", "src/"],
-        cwd=REPOSITORY_ROOT,
-        capture_output=True,
-        check=False,
-    )
-    assert tracked.returncode == 0, tracked.stderr
-    observed = sorted(tracked.stdout.decode("utf-8").split())
-
-    assert observed == [f"src/{name}" for name in EXPECTED_PRODUCTION_MODULES]
-    assert len(observed) == PRODUCTION_MODULE_COUNT
-    # `git ls-files` cannot see an untracked file, so the new module is named
-    # explicitly: an unstaged module would fail here rather than pass by
-    # being invisible.
-    assert "src/faultatlas/domain/pattern.py" in observed
-
-
-def test_the_checkout_carries_exactly_twenty_five_production_modules() -> None:
-    observed = sorted(
-        path.relative_to(CHECKOUT_SOURCE_ROOT).as_posix()
-        for path in CHECKOUT_SOURCE_ROOT.rglob("*.py")
-    )
-
-    assert observed == EXPECTED_PRODUCTION_MODULES
-    assert len(observed) == PRODUCTION_MODULE_COUNT
-
-
-def test_the_wheel_ships_the_new_module_and_no_corpus_or_test_material(
-    offline_distributions: tuple[Path, Path],
-) -> None:
-    wheel, _ = offline_distributions
-    with zipfile.ZipFile(wheel) as archive:
-        names = tuple(info.filename for info in archive.infolist() if not info.is_dir())
-
-    modules = sorted(name for name in names if name.endswith(".py"))
-    assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == PRODUCTION_MODULE_COUNT
-    assert "faultatlas/domain/pattern.py" in modules
-    for name in names:
-        assert "reference_corpus" not in name
-        assert not name.startswith("tests/")
-        assert not name.startswith("docs/")
-
-
-def test_the_sdist_ships_the_new_module_and_no_corpus_or_test_material(
-    offline_distributions: tuple[Path, Path],
-) -> None:
-    _, sdist = offline_distributions
-    with tarfile.open(sdist, "r:gz") as archive:
-        names = tuple(member.name for member in archive.getmembers() if member.isfile())
-
-    modules = sorted(
-        name.split("/src/", 1)[1] for name in names if name.endswith(".py")
-    )
-    assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == PRODUCTION_MODULE_COUNT
-    assert "faultatlas/domain/pattern.py" in modules
-    for name in names:
-        parts = Path(name).parts
-        assert "reference_corpus" not in parts
-        assert "tests" not in parts
-        assert "docs" not in parts
 
 
 def test_the_installed_wheel_exercises_the_same_new_types(

@@ -8,9 +8,7 @@ import json
 import os
 import subprocess
 import sys
-import tarfile
 import uuid
-import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -568,101 +566,12 @@ def test_bounded_roadmap_section_states_designation_and_live_gate() -> None:
         "cross-repository",
     ):
         assert phrase in section, phrase
-    current = " ".join(
-        text.split("## Current status\n", 1)[1].split("\n## ", 1)[0].split()
-    )
-    for phrase in (
-        "`S1.P06` is complete",
-        "`S1.P07` is active and incomplete",
-        "`S1.P07.S01` is complete",
-        "`S1.P07.S02` is complete",
-        "`S1.P07.S06` is next and not started",
-        "`S1.P08` through `S1.P10` remain not started",
-    ):
-        assert phrase in current, phrase
-
-
-@pytest.fixture(scope="module")
-def distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    output = tmp_path_factory.mktemp("pattern-exemplar-dist")
-    env = os.environ | {
-        "UV_OFFLINE": "1",
-        "UV_NO_SYNC": "1",
-        "UV_CACHE_DIR": str(output / "cache"),
-        "PYTHONDONTWRITEBYTECODE": "1",
-    }
-    result = subprocess.run(
-        ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    return next(output.glob("*.whl")), next(output.glob("*.tar.gz"))
-
-
-def test_tracked_checkout_wheel_and_sdist_are_exact(
-    distributions: tuple[Path, Path],
-) -> None:
-    expected = sorted(
-        [
-            *BASELINE_PRODUCTION,
-            MODULE,
-            INVARIANT_MODULE,
-            INVARIANT_RELATIONSHIP_MODULE,
-            PATTERN_COMPOSITION_MODULE,
-        ]
-    )
-    assert len(expected) == 25
-    result = subprocess.run(
-        ["git", "ls-files", "src/"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert sorted(result.stdout.splitlines()) == expected
-    assert (
-        sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "src").rglob("*.py"))
-        == expected
-    )
-    wheel, sdist = distributions
-    with zipfile.ZipFile(wheel) as archive:
-        names = [i.filename for i in archive.infolist() if not i.is_dir()]
-        assert sorted("src/" + n for n in names if n.endswith(".py")) == expected
-        for relative in expected:
-            assert (
-                archive.read(relative.removeprefix("src/"))
-                == (ROOT / relative).read_bytes()
-            )
-    with tarfile.open(sdist) as archive:
-        members = [m for m in archive.getmembers() if m.isfile()]
-        assert (
-            sorted(m.name.split("/", 1)[1] for m in members if m.name.endswith(".py"))
-            == expected
-        )
-        for member in members:
-            if member.name.endswith(".py"):
-                stream = archive.extractfile(member)
-                assert stream is not None
-                assert (
-                    stream.read() == (ROOT / member.name.split("/", 1)[1]).read_bytes()
-                )
-        names.extend(m.name for m in members)
-    assert names
-    for name in names:
-        assert not {"docs", "tests", "reference_corpus"}.intersection(
-            Path(name).parts
-        ), name
 
 
 def test_installed_wheel_outside_checkout(
-    distributions: tuple[Path, Path], tmp_path: Path
+    offline_distributions: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    wheel, _ = distributions
+    wheel, _ = offline_distributions
     installed = tmp_path / "installed"
     # Install the already-built local wheel only; owning dependencies stay locked.
     env = os.environ | {

@@ -5,11 +5,12 @@ import importlib
 import json
 import pathlib
 import re
-import tarfile
-import zipfile
 from typing import Any, cast
 
 import pytest
+from _repository_contract import (
+    P07_PUBLISHED_MODULES,
+)
 
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
 CHECKOUT_SOURCE_ROOT = REPOSITORY_ROOT / "src"
@@ -47,7 +48,6 @@ INVARIANT_MODULE = "faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "faultatlas/domain/invariant_relationship.py"
 PATTERN_COMPOSITION_MODULE = "faultatlas/domain/pattern_composition.py"
-LIVE_PRODUCTION_MODULE_COUNT = 25
 
 SUBJECT_ID = "gap:s05-known:case-relationship-vocabulary-provisional"
 HISTORICAL_WORDING = "case relationship vocabulary provisional"
@@ -853,13 +853,7 @@ def test_no_p06_product_module_is_left_unaccounted() -> None:
     }
     live_fault_modules: set[str] = set()
     for relative in _live_production_modules():
-        if relative in {
-            INVARIANT_MODULE,
-            INVARIANT_RELATIONSHIP_MODULE,
-            PATTERN_MODULE,
-            PATTERN_COMPOSITION_MODULE,
-            PATTERN_EXEMPLAR_MODULE,
-        }:
+        if relative in {p.removeprefix("src/") for p in P07_PUBLISHED_MODULES}:
             continue
         module_name = relative.removesuffix(".py").replace("/", ".")
         module_name = module_name.removesuffix(".__init__")
@@ -896,27 +890,12 @@ def test_the_package_now_carries_twenty_five_production_modules() -> None:
     inventory = cast(dict[str, Any], _document()["product_inventory"])
     live = _live_production_modules()
 
-    assert len(live) == LIVE_PRODUCTION_MODULE_COUNT
-    assert {
-        INVARIANT_MODULE,
-        INVARIANT_RELATIONSHIP_MODULE,
-        PATTERN_MODULE,
-        PATTERN_COMPOSITION_MODULE,
-        PATTERN_EXEMPLAR_MODULE,
-    } <= set(live)
     assert inventory["production_module_count"] == SEALED_PRODUCTION_MODULE_COUNT
-    assert cast(list[str], inventory["production_modules"]) == [
-        relative
-        for relative in live
-        if relative
-        not in {
-            INVARIANT_MODULE,
-            INVARIANT_RELATIONSHIP_MODULE,
-            PATTERN_MODULE,
-            PATTERN_COMPOSITION_MODULE,
-            PATTERN_EXEMPLAR_MODULE,
-        }
-    ]
+    assert (
+        len(cast(list[str], inventory["production_modules"]))
+        == SEALED_PRODUCTION_MODULE_COUNT
+    )
+    assert set(cast(list[str], inventory["production_modules"])) <= set(live)
     assert (
         _document()["assurance"]["governance_only"]["production_python_source_count"]
         == SEALED_PRODUCTION_MODULE_COUNT
@@ -1217,7 +1196,6 @@ def test_the_roadmap_records_the_p06_s10_transition() -> None:
     roadmap = _roadmap()
     mapping = roadmap.split("## Current-code mapping", 1)
     assert len(mapping) == 2, "roadmap must retain a current-code mapping section"
-    current = mapping[1]
 
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
@@ -1225,14 +1203,11 @@ def test_the_roadmap_records_the_p06_s10_transition() -> None:
     # `S1.P07.S01` has since begun the Phase this Slice pointed at, so the
     # gate moved on from `S1.P07` to `S1.P07.S02`.
     assert "`S1.P07` is active and incomplete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P06.S10` — Deferred disposition and readiness (complete)" in roadmap
     assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
     # The current-code mapping reports the live tree, which `S1.P07.S01`
     # moved from twenty sources to twenty-one. The sealed decision read
     # elsewhere in this file still says twenty, and stays right.
-    assert "Production Python sources are 25." in current
 
     assert "`S1.P06.S10` is next and not started" not in roadmap
     assert "`S1.P07` is next and not started" not in roadmap
@@ -1288,118 +1263,6 @@ def test_the_roadmap_carries_no_superseded_production_source_count() -> None:
 
 
 # --- packaging ---------------------------------------------------------------
-
-
-EXPECTED_PRODUCTION_MODULES = [
-    "faultatlas/__init__.py",
-    "faultatlas/__main__.py",
-    "faultatlas/cli.py",
-    "faultatlas/domain/__init__.py",
-    "faultatlas/domain/compatibility.py",
-    "faultatlas/domain/evidence.py",
-    "faultatlas/domain/fault.py",
-    "faultatlas/domain/fault_evidence_link.py",
-    "faultatlas/domain/fault_instance.py",
-    "faultatlas/domain/fault_interpretation.py",
-    "faultatlas/domain/fault_repair.py",
-    "faultatlas/domain/fault_source_relationship.py",
-    "faultatlas/domain/fault_test.py",
-    "faultatlas/domain/history.py",
-    "faultatlas/domain/history_evidence_link.py",
-    "faultatlas/domain/identity.py",
-    INVARIANT_MODULE,
-    INVARIANT_RELATIONSHIP_MODULE,
-    PATTERN_MODULE,
-    PATTERN_COMPOSITION_MODULE,
-    PATTERN_EXEMPLAR_MODULE,
-    "faultatlas/domain/revision.py",
-    "faultatlas/domain/snapshot.py",
-    "faultatlas/domain/snapshot_evidence_link.py",
-    "faultatlas/domain/source.py",
-]
-
-
-def test_the_checkout_carries_exactly_twenty_five_production_modules() -> None:
-    assert _live_production_modules() == EXPECTED_PRODUCTION_MODULES
-    assert len(EXPECTED_PRODUCTION_MODULES) == LIVE_PRODUCTION_MODULE_COUNT
-
-
-@pytest.fixture(scope="session")
-def offline_distributions(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> tuple[pathlib.Path, pathlib.Path]:
-    import os
-    import shutil
-    import subprocess
-
-    uv = shutil.which("uv")
-    assert uv is not None, "uv must be available to build the supported distributions"
-
-    root = tmp_path_factory.mktemp("fault-instance-decision-package")
-    output = root / "distributions"
-    output.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "UV_CACHE_DIR": str(root / "uv-cache"),
-            "UV_NO_SYNC": "1",
-            "UV_OFFLINE": "1",
-        }
-    )
-    result = subprocess.run(
-        [uv, "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"offline build failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    wheels = tuple(output.glob("*.whl"))
-    sdists = tuple(output.glob("*.tar.gz"))
-    assert len(wheels) == 1, f"expected one wheel, found {wheels!r}"
-    assert len(sdists) == 1, f"expected one sdist, found {sdists!r}"
-    return wheels[0], sdists[0]
-
-
-def test_the_wheel_excludes_the_new_decision_and_keeps_twenty_five_modules(
-    offline_distributions: tuple[pathlib.Path, pathlib.Path],
-) -> None:
-    wheel, _ = offline_distributions
-    with zipfile.ZipFile(wheel) as archive:
-        names = tuple(info.filename for info in archive.infolist() if not info.is_dir())
-
-    modules = sorted(name for name in names if name.endswith(".py"))
-    assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == LIVE_PRODUCTION_MODULE_COUNT
-    for name in names:
-        assert "reference_corpus" not in name
-        assert "fault-instance" not in name
-        assert not name.startswith("tests/")
-        assert not name.startswith("docs/")
-
-
-def test_the_sdist_excludes_the_new_decision_and_keeps_twenty_five_modules(
-    offline_distributions: tuple[pathlib.Path, pathlib.Path],
-) -> None:
-    _, sdist = offline_distributions
-    with tarfile.open(sdist, "r:gz") as archive:
-        names = tuple(member.name for member in archive.getmembers() if member.isfile())
-
-    modules = sorted(
-        name.split("/src/", 1)[1] for name in names if name.endswith(".py")
-    )
-    assert modules == EXPECTED_PRODUCTION_MODULES
-    assert len(modules) == LIVE_PRODUCTION_MODULE_COUNT
-    for name in names:
-        parts = pathlib.PurePosixPath(name).parts
-        assert "reference_corpus" not in parts
-        assert "fault-instance" not in parts
-        assert "tests" not in parts
-        assert "docs" not in parts
 
 
 # --- the Markdown projection -------------------------------------------------

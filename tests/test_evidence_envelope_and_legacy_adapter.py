@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel, ValidationError
+from test_package import assert_current_inventory
 
 import faultatlas
 import faultatlas.domain as domain_package
@@ -209,38 +210,6 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "wrap_legacy_artifact_snapshot",
     "project_evidence_envelope_to_legacy_artifact_snapshot",
 )
-EXPECTED_PRODUCTION_FILES = {
-    "src/faultatlas/__init__.py",
-    "src/faultatlas/__main__.py",
-    "src/faultatlas/cli.py",
-    "src/faultatlas/domain/__init__.py",
-    "src/faultatlas/domain/compatibility.py",
-    "src/faultatlas/domain/evidence.py",
-    "src/faultatlas/domain/fault.py",
-    "src/faultatlas/domain/fault_evidence_link.py",
-    "src/faultatlas/domain/fault_instance.py",
-    "src/faultatlas/domain/fault_interpretation.py",
-    "src/faultatlas/domain/fault_repair.py",
-    "src/faultatlas/domain/fault_source_relationship.py",
-    "src/faultatlas/domain/fault_test.py",
-    "src/faultatlas/domain/history.py",
-    "src/faultatlas/domain/history_evidence_link.py",
-    "src/faultatlas/domain/identity.py",
-    # Added by `S1.P07.S03`, the independent invariant proposition.
-    "src/faultatlas/domain/invariant.py",
-    # Added by `S1.P07.S04`, the two explicit invariant associations.
-    "src/faultatlas/domain/invariant_relationship.py",
-    # Added by `S1.P07.S01`, the first `S1.P07` production module.
-    "src/faultatlas/domain/pattern.py",
-    # Added by `S1.P07.S05`, the bounded pattern composition.
-    "src/faultatlas/domain/pattern_composition.py",
-    # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
-    "src/faultatlas/domain/pattern_exemplar.py",
-    "src/faultatlas/domain/revision.py",
-    "src/faultatlas/domain/snapshot.py",
-    "src/faultatlas/domain/snapshot_evidence_link.py",
-    "src/faultatlas/domain/source.py",
-}
 EXPECTED_COMPATIBILITY_EXPORTS = (
     "CompatibilityStatus",
     "LegacyCompatibilityReason",
@@ -858,7 +827,7 @@ def test_exact_s07_fields_configs_exports_and_package_surface() -> None:
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
-    assert production_files == EXPECTED_PRODUCTION_FILES
+    assert_current_inventory(production_files)
 
 
 def test_envelope_and_adapter_results_require_exact_schema_and_are_frozen() -> None:
@@ -1997,7 +1966,7 @@ def test_s07_surface_has_no_io_dynamic_adapter_or_future_contract_capability() -
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
-    assert production_files == EXPECTED_PRODUCTION_FILES
+    assert_current_inventory(production_files)
 
 
 @pytest.mark.parametrize("missing", ENVELOPE_FIELDS[1:])

@@ -11,11 +11,8 @@ import copy
 import hashlib
 import json
 import re
-import subprocess
 import sys
-import tarfile
 import uuid
-import zipfile
 from collections import Counter
 from collections.abc import Iterator
 from enum import Enum
@@ -24,6 +21,7 @@ from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel, ValidationError
+from test_package import assert_current_inventory
 
 import faultatlas.domain.fault as fault_module
 import faultatlas.domain.fault_evidence_link as evidence_link_module
@@ -114,7 +112,6 @@ INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
 PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
-LIVE_PRODUCTION_MODULE_COUNT = 25
 ALLOWED_MARKERS = ("enum_value", "indexed_value", "tuple_value", "typed_value")
 MAX_INDEXED_COUNT = 4097
 ALLOWED_OPERATIONS = ("construct", "reject")
@@ -1689,36 +1686,9 @@ def test_the_corpus_is_source_only_and_adds_no_production_file() -> None:
     assert MANIFEST["scope"]["production_module_count"] == (
         SEALED_PRODUCTION_MODULE_COUNT
     )
-    assert len(observed) == LIVE_PRODUCTION_MODULE_COUNT
     for module in OWNED_MODULES:
         assert "src/" + module.replace(".", "/") + ".py" in observed, module
-    assert observed == {
-        "src/faultatlas/__init__.py",
-        "src/faultatlas/__main__.py",
-        "src/faultatlas/cli.py",
-        "src/faultatlas/domain/__init__.py",
-        "src/faultatlas/domain/compatibility.py",
-        "src/faultatlas/domain/evidence.py",
-        "src/faultatlas/domain/fault.py",
-        "src/faultatlas/domain/fault_evidence_link.py",
-        "src/faultatlas/domain/fault_instance.py",
-        "src/faultatlas/domain/fault_interpretation.py",
-        "src/faultatlas/domain/fault_repair.py",
-        "src/faultatlas/domain/fault_source_relationship.py",
-        "src/faultatlas/domain/fault_test.py",
-        "src/faultatlas/domain/history.py",
-        "src/faultatlas/domain/history_evidence_link.py",
-        "src/faultatlas/domain/identity.py",
-        INVARIANT_MODULE,
-        INVARIANT_RELATIONSHIP_MODULE,
-        PATTERN_MODULE,
-        PATTERN_COMPOSITION_MODULE,
-        PATTERN_EXEMPLAR_MODULE,
-        "src/faultatlas/domain/revision.py",
-        "src/faultatlas/domain/snapshot.py",
-        "src/faultatlas/domain/snapshot_evidence_link.py",
-        "src/faultatlas/domain/source.py",
-    }
+    assert_current_inventory(observed)
 
 
 def test_no_production_module_can_locate_or_read_the_corpus() -> None:
@@ -1770,61 +1740,6 @@ def test_the_seven_production_modules_match_their_sealed_source_locks() -> None:
         cast(str, lock["path"]): cast(str, lock["sha256"]) for lock in locks
     }
     assert MANIFEST["assurance"]["source_locks_verified_against_live_bytes"] is True
-
-
-def test_the_built_wheel_and_sdist_carry_twenty_one_sources_and_no_corpus(
-    tmp_path: Path,
-) -> None:
-    """The corpus must never arrive because `faultatlas` was installed."""
-    output = tmp_path / "dist"
-    output.mkdir()
-    result = subprocess.run(
-        [
-            "uv",
-            "build",
-            "--offline",
-            "--no-create-gitignore",
-            "--out-dir",
-            str(output),
-        ],
-        cwd=REPOSITORY_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-
-    wheels = sorted(output.glob("*.whl"))
-    sdists = sorted(output.glob("*.tar.gz"))
-    assert len(wheels) == 1 and len(sdists) == 1
-
-    with zipfile.ZipFile(wheels[0]) as archive:
-        wheel_names = [info.filename for info in archive.infolist()]
-    with tarfile.open(sdists[0], mode="r:gz") as tar:
-        sdist_names = [member.name for member in tar.getmembers() if member.isfile()]
-
-    # A distribution spells the module without the `src/` prefix.
-    packaged_pattern_module = PATTERN_MODULE.removeprefix("src/")
-    packaged_exemplar_module = PATTERN_EXEMPLAR_MODULE.removeprefix("src/")
-    packaged_invariant_module = INVARIANT_MODULE.removeprefix("src/")
-    packaged_relationship_module = INVARIANT_RELATIONSHIP_MODULE.removeprefix("src/")
-    for names, label in ((wheel_names, "wheel"), (sdist_names, "sdist")):
-        sources = [name for name in names if name.endswith(".py")]
-        assert len(sources) == LIVE_PRODUCTION_MODULE_COUNT, (label, sorted(sources))
-        # The twenty-first source is the module `S1.P07.S01` added, named
-        # here rather than absorbed into a bumped count.
-        assert any(name.endswith(packaged_pattern_module) for name in sources), label
-        assert any(name.endswith(packaged_exemplar_module) for name in sources), label
-        assert any(name.endswith(packaged_invariant_module) for name in sources), label
-        assert any(name.endswith(packaged_relationship_module) for name in sources), (
-            label
-        )
-        for excluded in ("reference_corpus", "tests/", "docs/"):
-            assert not any(excluded in name for name in names), (label, excluded)
-        assert not any("fault-instance" in name for name in names), label
-        assert not any(
-            name.endswith("test_fault_instance_contract_corpus.py") for name in names
-        ), label
 
 
 # --- 15: the derived Markdown agrees with the canonical JSON -----------------
@@ -2137,26 +2052,8 @@ def test_the_scope_matches_the_live_surface() -> None:
     assert scope["owned_modules"] == list(OWNED_MODULES)
     assert scope["owned_module_count"] == len(OWNED_MODULES)
     assert scope["owned_symbol_count"] == len(OWNED)
-    # Sealed against live: S01 through S04 added four named modules after this
-    # manifest was sealed; its historical count remains twenty.
-    live = _production_sources()
-    assert {
-        INVARIANT_MODULE,
-        INVARIANT_RELATIONSHIP_MODULE,
-        PATTERN_MODULE,
-        PATTERN_COMPOSITION_MODULE,
-        PATTERN_EXEMPLAR_MODULE,
-    } <= live
-    assert scope["production_module_count"] == len(
-        live
-        - {
-            INVARIANT_MODULE,
-            INVARIANT_RELATIONSHIP_MODULE,
-            PATTERN_MODULE,
-            PATTERN_COMPOSITION_MODULE,
-            PATTERN_EXEMPLAR_MODULE,
-        }
-    )
+    # This historical count belongs to the sealed manifest, independent of later modules.
+    assert scope["production_module_count"] == SEALED_PRODUCTION_MODULE_COUNT
     assert scope["source_only"] is True
     assert scope["package_exclusion_required"] is True
     assert cast(str, scope["note"]).strip() == scope["note"]
@@ -2253,8 +2150,6 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     # `S1.P07.S01` exercised the eligibility this Phase handed on, so the
     # gate moved: `S1.P07` is no longer the thing that has not started.
     assert "`S1.P07` is active and incomplete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
     assert "`S1.P06` is complete" in roadmap
     assert "`S1.P06.S07.C01` correction" in roadmap

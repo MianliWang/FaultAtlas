@@ -10,6 +10,7 @@ from typing import Any, NamedTuple, cast
 
 import pytest
 from pydantic import BaseModel, ValidationError
+from test_package import assert_current_inventory
 
 from faultatlas.domain.evidence import (
     ArtifactByteLength,
@@ -135,36 +136,6 @@ PREDECESSOR_DIGESTS = {
 # The live production inventory, not a sealed one. `S1.P07.S01` published
 # faultatlas.domain.pattern, the first `S1.P07` production module, taking the
 # tree from twenty sources to twenty-one.
-EXPECTED_PRODUCTION_FILES = {
-    "src/faultatlas/__init__.py",
-    "src/faultatlas/__main__.py",
-    "src/faultatlas/cli.py",
-    "src/faultatlas/domain/__init__.py",
-    "src/faultatlas/domain/compatibility.py",
-    "src/faultatlas/domain/evidence.py",
-    "src/faultatlas/domain/fault.py",
-    "src/faultatlas/domain/fault_evidence_link.py",
-    "src/faultatlas/domain/fault_instance.py",
-    "src/faultatlas/domain/fault_interpretation.py",
-    "src/faultatlas/domain/fault_repair.py",
-    "src/faultatlas/domain/fault_source_relationship.py",
-    "src/faultatlas/domain/fault_test.py",
-    "src/faultatlas/domain/history.py",
-    "src/faultatlas/domain/history_evidence_link.py",
-    "src/faultatlas/domain/identity.py",
-    # Added by `S1.P07.S03`, the independent invariant proposition.
-    "src/faultatlas/domain/invariant.py",
-    # Added by `S1.P07.S04`, the two explicit invariant associations.
-    "src/faultatlas/domain/invariant_relationship.py",
-    "src/faultatlas/domain/pattern.py",
-    "src/faultatlas/domain/pattern_composition.py",
-    # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
-    "src/faultatlas/domain/pattern_exemplar.py",
-    "src/faultatlas/domain/revision.py",
-    "src/faultatlas/domain/snapshot.py",
-    "src/faultatlas/domain/snapshot_evidence_link.py",
-    "src/faultatlas/domain/source.py",
-}
 
 OWNED_TARGETS: dict[str, type[BaseModel]] = {
     "RepositorySnapshotIdentity": RepositorySnapshotIdentity,
@@ -1243,8 +1214,7 @@ def test_corpus_is_excluded_from_the_packaged_source_root() -> None:
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
-    assert observed == EXPECTED_PRODUCTION_FILES
-    assert len(observed) == 25
+    assert_current_inventory(observed)
 
 
 @pytest.mark.parametrize("relative", tuple(sorted(PREDECESSOR_DIGESTS)))
@@ -1295,8 +1265,6 @@ def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     assert "`S1.P06.S12` is complete" in roadmap
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert CORPUS_RELATIVE in roadmap
     assert "`S1.P04` is complete" in roadmap
@@ -1316,8 +1284,6 @@ def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     assert "`S1.P06.S12` is complete" in roadmap
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     # P06 has since commenced, so the prohibition this closure recorded is
     # retired: what must not stand is a claim that P06 is COMPLETE.
     assert "`S1.P06` implementation has begun with `S1.P06.S01`" in roadmap

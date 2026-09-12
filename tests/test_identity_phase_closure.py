@@ -17,7 +17,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 import pytest
+from _repository_contract import PRODUCTION_FILES
 from pydantic import BaseModel, ValidationError
+from test_package import assert_complete_source_package, assert_current_inventory
 
 import faultatlas
 import faultatlas.domain.compatibility as compatibility_module
@@ -219,27 +221,7 @@ INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
 PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
-CURRENT_PRODUCTION_FILES = {
-    *EXPECTED_PRODUCTION,
-    "src/faultatlas/domain/evidence.py",
-    "src/faultatlas/domain/fault.py",
-    "src/faultatlas/domain/fault_evidence_link.py",
-    "src/faultatlas/domain/fault_instance.py",
-    "src/faultatlas/domain/fault_interpretation.py",
-    "src/faultatlas/domain/fault_repair.py",
-    "src/faultatlas/domain/fault_source_relationship.py",
-    "src/faultatlas/domain/fault_test.py",
-    "src/faultatlas/domain/history.py",
-    "src/faultatlas/domain/history_evidence_link.py",
-    INVARIANT_MODULE,
-    INVARIANT_RELATIONSHIP_MODULE,
-    PATTERN_MODULE,
-    PATTERN_COMPOSITION_MODULE,
-    PATTERN_EXEMPLAR_MODULE,
-    "src/faultatlas/domain/revision.py",
-    "src/faultatlas/domain/snapshot.py",
-    "src/faultatlas/domain/snapshot_evidence_link.py",
-}
+CURRENT_PRODUCTION_FILES = set(PRODUCTION_FILES)
 EVIDENCE_MODULE = "src/faultatlas/domain/evidence.py"
 SNAPSHOT_MODULE = "src/faultatlas/domain/snapshot.py"
 EXPECTED_EVIDENCE_EXPORTS = (
@@ -1280,7 +1262,7 @@ def _assert_no_production_reader(paths: list[Path]) -> None:
 
 
 def _validate_current_production_inventory(paths: set[str]) -> None:
-    assert paths == CURRENT_PRODUCTION_FILES
+    assert_current_inventory(paths)
 
 
 def _validate_current_evidence_inventory(source: bytes) -> None:
@@ -2035,8 +2017,6 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     # and `S1.P07.S02`, not `S1.P07`, is what is next and not started.
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
 
@@ -2068,56 +2048,12 @@ def test_group_o_payload_is_private() -> None:
     )
 
 
-def test_group_o_offline_archives_exclude_source_only_material(tmp_path: Path) -> None:
-    uv = shutil.which("uv")
-    assert uv is not None
-    output = tmp_path / "dist"
-    cache = tmp_path / "uv-cache"
-    output.mkdir()
-    cache.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "UV_CACHE_DIR": str(cache),
-            "UV_NO_SYNC": "1",
-            "UV_OFFLINE": "1",
-        }
-    )
-    status_before = subprocess.run(
-        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        cwd=REPOSITORY_ROOT,
-        check=True,
-        capture_output=True,
-    ).stdout
-    result = subprocess.run(
-        [
-            uv,
-            "build",
-            "--offline",
-            "--no-create-gitignore",
-            "--out-dir",
-            str(output),
-        ],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    status_after = subprocess.run(
-        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        cwd=REPOSITORY_ROOT,
-        check=True,
-        capture_output=True,
-    ).stdout
-    assert status_after == status_before
-    wheel = tuple(output.glob("*.whl"))
-    sdist = tuple(output.glob("*.tar.gz"))
-    assert len(wheel) == len(sdist) == 1
+def test_group_o_offline_archives_exclude_source_only_material(
+    offline_distributions: tuple[Path, Path],
+) -> None:
+    wheel, sdist = offline_distributions
     archives: list[list[tuple[str, bytes]]] = []
-    with zipfile.ZipFile(wheel[0]) as opened:
+    with zipfile.ZipFile(wheel) as opened:
         archives.append(
             [
                 (info.filename, opened.read(info))
@@ -2125,7 +2061,7 @@ def test_group_o_offline_archives_exclude_source_only_material(tmp_path: Path) -
                 if not info.is_dir()
             ]
         )
-    with tarfile.open(sdist[0], mode="r:gz") as opened:
+    with tarfile.open(sdist, mode="r:gz") as opened:
         files: list[tuple[str, bytes]] = []
         for member in opened.getmembers():
             assert not member.issym() and not member.islnk()
@@ -2145,7 +2081,7 @@ def test_group_o_offline_archives_exclude_source_only_material(tmp_path: Path) -
     )
     for members in archives:
         _archive_names_are_safe([name for name, _data in members])
-        assert _packaged_sources(members) == working
+        assert_complete_source_package(_packaged_sources(members), working)
         licenses = [
             data for name, data in members if PurePosixPath(name).name == "LICENSE"
         ]

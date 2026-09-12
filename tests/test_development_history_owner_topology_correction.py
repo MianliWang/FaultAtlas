@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from test_roadmap_lifecycle_consistency import assert_local_live_gate
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 NAMESPACE = REPOSITORY_ROOT / "reference_corpus/contracts/development-history"
@@ -43,7 +44,6 @@ VALID_OWNERS = ("S1.P06", "S2", "S5")
 # faultatlas.domain.fault_instance, and S1.P06.S09 published
 # faultatlas.domain.fault_evidence_link.
 PRODUCTION_SOURCE_COUNT_AT_CORRECTION = 13
-CURRENT_PRODUCTION_SOURCE_COUNT = 25
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
 FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 FAULT_REPAIR_MODULE = "src/faultatlas/domain/fault_repair.py"
@@ -694,7 +694,6 @@ def test_the_correction_introduces_no_product_semantics() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
 
-    assert len(observed) == CURRENT_PRODUCTION_SOURCE_COUNT
     assert FAULT_MODULE in observed
     assert FAULT_SOURCE_RELATIONSHIP_MODULE in observed
     assert FAULT_REPAIR_MODULE in observed
@@ -790,23 +789,7 @@ def test_every_phase_status_summary_records_the_correction() -> None:
         sentences = summary.split(". ")
         assert len(sentences) > 1, summary[:240]
         head = sentences[1]
-        assert "`S1.P06` is complete" in head, head
-        assert "`S1.P06.S02` is complete" in head, head
-        assert "`S1.P06.S03` is complete" in head, head
-        assert "`S1.P06.S04` is complete" in head, head
-        assert "`S1.P06.S05` is complete" in head, head
-        assert "`S1.P06.S06` is complete" in head, head
-        assert "`S1.P06.S07` is complete" in head, head
-        assert "`S1.P06.S08` is complete" in head, head
-        assert "`S1.P06.S09` is complete" in head, head
-        assert "`S1.P06.S10` is complete" in head, head
-        assert "`S1.P06.S11` is complete" in head, head
-        assert "`S1.P06.S12` is complete" in head, head
-        # `S1.P07` has begun, so each summary must carry the gate one level
-        # down rather than still naming the Phase.
-        assert "`S1.P07.S01` is complete" in head, head
-        assert "`S1.P07.S06` is next and not started" in head, head
-        assert "`S1.P07` is next and not started" not in head, head
+        assert_local_live_gate(head)
 
 
 def test_the_derived_summary_preserves_whole_rationale_sentences() -> None:
@@ -848,8 +831,6 @@ def test_the_roadmap_records_the_correction_and_holds_the_phase_state() -> None:
     assert "`S1.P06.S11` is complete" in text
     assert "`S1.P06.S12` is complete" in text
     assert "`S1.P07.S01` is complete" in text
-    current_status = text.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P07` is next and not started" not in text
     assert "`S1.P05.S09` — Development History Contract Corpus (complete)" in text
     assert "`S1.P05.S10` — Integration and Phase Closure (complete)" in text

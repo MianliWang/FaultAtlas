@@ -8,9 +8,7 @@ import json
 import os
 import subprocess
 import sys
-import tarfile
 import uuid
-import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -578,83 +576,10 @@ def test_roadmap_localizes_historical_absence_and_the_s03_proposition() -> None:
         "no relationships",
     ):
         assert phrase in s03, phrase
-    current = " ".join(text.split("## Current status", 1)[1].split("## ", 1)[0].split())
-    assert "`S1.P07.S03` is complete" in current
-    assert "`S1.P07.S06` is next and not started" in current
-    assert "`S1.P07` is active and incomplete" in current
-
-
-@pytest.fixture(scope="module")
-def distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    output = tmp_path_factory.mktemp("invariant-distributions")
-    env = os.environ | {
-        "UV_OFFLINE": "1",
-        "UV_NO_SYNC": "1",
-        "UV_CACHE_DIR": str(output / "cache"),
-        "PYTHONDONTWRITEBYTECODE": "1",
-    }
-    result = subprocess.run(
-        ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    return next(output.glob("*.whl")), next(output.glob("*.tar.gz"))
-
-
-def test_exact25_tracked_checkout_and_distribution_source_bytes(
-    distributions: tuple[Path, Path],
-) -> None:
-    expected = sorted(
-        [
-            *BASELINE_PRODUCTION,
-            MODULE,
-            INVARIANT_RELATIONSHIP_MODULE,
-            PATTERN_COMPOSITION_MODULE,
-        ]
-    )
-    assert len(expected) == 25
-    result = subprocess.run(
-        ["git", "ls-files", "src/"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert sorted(result.stdout.splitlines()) == expected
-    assert (
-        sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "src").rglob("*.py"))
-        == expected
-    )
-    with zipfile.ZipFile(distributions[0]) as z:
-        names = [n for n in z.namelist() if not n.endswith("/")]
-        assert sorted("src/" + n for n in names if n.endswith(".py")) == expected
-        for p in expected:
-            assert z.read(p.removeprefix("src/")) == (ROOT / p).read_bytes()
-    with tarfile.open(distributions[1]) as t:
-        members = [m for m in t.getmembers() if m.isfile()]
-        assert (
-            sorted(m.name.split("/", 1)[1] for m in members if m.name.endswith(".py"))
-            == expected
-        )
-        for m in members:
-            if m.name.endswith(".py"):
-                stream = t.extractfile(m)
-                assert stream is not None
-                assert stream.read() == (ROOT / m.name.split("/", 1)[1]).read_bytes()
-        names.extend(m.name for m in members)
-    for name in names:
-        assert not {"docs", "tests", "reference_corpus"}.intersection(
-            Path(name).parts
-        ), name
 
 
 def test_uv_installed_wheel_round_trip_and_import_provenance(
-    distributions: tuple[Path, Path], tmp_path: Path
+    offline_distributions: tuple[Path, Path], tmp_path: Path
 ) -> None:
     installed = tmp_path / "installed"
     env = os.environ | {
@@ -671,7 +596,7 @@ def test_uv_installed_wheel_round_trip_and_import_provenance(
             "--no-deps",
             "--target",
             str(installed),
-            str(distributions[0]),
+            str(offline_distributions[0]),
         ],
         cwd=tmp_path,
         env=env,

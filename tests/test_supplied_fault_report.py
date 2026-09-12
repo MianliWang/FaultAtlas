@@ -4,11 +4,8 @@ import ast
 import enum
 import json
 import os
-import re
-import shutil
 import subprocess
 import sys
-import tarfile
 import uuid
 import zipfile
 from pathlib import Path
@@ -1984,7 +1981,6 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     roadmap = _roadmap()
     mapping = roadmap.split("## Current-code mapping", 1)
     assert len(mapping) == 2, "roadmap must retain a current-code mapping section"
-    current = mapping[1]
 
     assert "## S1.P06 — Fault Instance Model" in roadmap
     assert "`S1.P06` is complete" in roadmap
@@ -2000,8 +1996,6 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P06.S01` — Fault Instance Identity and Repository Context (complete)"
@@ -2013,12 +2007,6 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     )
     assert "`S1.P06.S03` — Scenario and Occurrence Context (complete)" in roadmap
 
-    assert "faultatlas.domain.fault" in current
-    for symbol in EXPECTED_EXPORTS:
-        assert f"`{symbol}`" in current
-    assert "Production Python sources are 25." in current
-    assert "`report.context.fault`" in current
-
     # The superseded live gate and the provisional S02 title must be retired.
     assert "`S1.P06.S02` is next and not started" not in roadmap
     assert "Minimal supplied fault report" not in roadmap
@@ -2027,6 +2015,12 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     # read is itself superseded by the Slice gate above.
     assert "`S1.P07` is next and not started" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
+
+    current = mapping[1]
+    assert "faultatlas.domain.fault" in current
+    for symbol in EXPECTED_EXPORTS:
+        assert f"`{symbol}`" in current
+    assert "`report.context.fault`" in current
 
 
 def test_the_roadmap_states_the_s02_decisions_and_non_claims() -> None:
@@ -2077,25 +2071,6 @@ def test_the_roadmap_route_is_closed_at_the_final_slice() -> None:
         "subject is not resolved by `S1.P06.S01`, `S1.P06.S02`, or `S1.P06.S03`"
         in roadmap
     )
-
-
-def test_the_roadmap_carries_exactly_one_live_gate() -> None:
-    roadmap = _roadmap()
-
-    live_next = re.findall(
-        r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
-    )
-    assert live_next, "the roadmap names no next gate"
-    # `S1.P07.S01` moved the gate from the Phase to its first Slice: `S1.P07`
-    # has begun, so the single live gate is now `S1.P07.S06`.
-    assert set(live_next) == {"S1.P07.S06"}, sorted(set(live_next))
-    live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
-    # Exactly one Phase is now active, and it is the one that just began.
-    assert set(live_phases) == {"S1.P07"}, sorted(set(live_phases))
-    # Line-based readers pair the Slice with the phrase on one raw line.
-    for line in ROADMAP.read_text(encoding="utf-8").splitlines():
-        if "next and not started" in line:
-            assert "`S1.P07.S06`" in line, line
 
 
 # --- packaging and an isolated installed-wheel smoke -------------------------
@@ -2181,43 +2156,6 @@ print(json.dumps({"module": str(resolved), "report": report.model_dump_json()}))
 """
 
 
-@pytest.fixture(scope="session")
-def offline_distributions(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> tuple[Path, Path]:
-    uv = shutil.which("uv")
-    assert uv is not None, "uv must be available to build the supported distributions"
-
-    root = tmp_path_factory.mktemp("supplied-fault-report-package")
-    output = root / "distributions"
-    output.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "UV_CACHE_DIR": str(root / "uv-cache"),
-            "UV_NO_SYNC": "1",
-            "UV_OFFLINE": "1",
-        }
-    )
-    result = subprocess.run(
-        [uv, "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"offline build failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    wheels = tuple(output.glob("*.whl"))
-    sdists = tuple(output.glob("*.tar.gz"))
-    assert len(wheels) == 1, f"expected one wheel, found {wheels!r}"
-    assert len(sdists) == 1, f"expected one sdist, found {sdists!r}"
-    return wheels[0], sdists[0]
-
-
 # Added by `S1.P07.S01`, the first `S1.P07` production module.
 PATTERN_MODULE = "faultatlas/domain/pattern.py"
 # Added by `S1.P07.S02`, after the sealed predecessor inventories.
@@ -2227,70 +2165,6 @@ INVARIANT_MODULE = "faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "faultatlas/domain/invariant_relationship.py"
 PATTERN_COMPOSITION_MODULE = "faultatlas/domain/pattern_composition.py"
-
-EXPECTED_WHEEL_MODULES = [
-    "faultatlas/__init__.py",
-    "faultatlas/__main__.py",
-    "faultatlas/cli.py",
-    "faultatlas/domain/__init__.py",
-    "faultatlas/domain/compatibility.py",
-    "faultatlas/domain/evidence.py",
-    "faultatlas/domain/fault.py",
-    "faultatlas/domain/fault_evidence_link.py",
-    "faultatlas/domain/fault_instance.py",
-    "faultatlas/domain/fault_interpretation.py",
-    "faultatlas/domain/fault_repair.py",
-    "faultatlas/domain/fault_source_relationship.py",
-    "faultatlas/domain/fault_test.py",
-    "faultatlas/domain/history.py",
-    "faultatlas/domain/history_evidence_link.py",
-    "faultatlas/domain/identity.py",
-    INVARIANT_MODULE,
-    INVARIANT_RELATIONSHIP_MODULE,
-    PATTERN_MODULE,
-    PATTERN_COMPOSITION_MODULE,
-    PATTERN_EXEMPLAR_MODULE,
-    "faultatlas/domain/revision.py",
-    "faultatlas/domain/snapshot.py",
-    "faultatlas/domain/snapshot_evidence_link.py",
-    "faultatlas/domain/source.py",
-]
-
-
-def test_the_wheel_ships_twenty_five_modules_and_no_corpus_or_test_material(
-    offline_distributions: tuple[Path, Path],
-) -> None:
-    wheel, _ = offline_distributions
-    with zipfile.ZipFile(wheel) as archive:
-        names = tuple(info.filename for info in archive.infolist() if not info.is_dir())
-
-    modules = sorted(name for name in names if name.endswith(".py"))
-    assert modules == EXPECTED_WHEEL_MODULES
-    assert len(modules) == 25
-    assert "faultatlas/domain/fault.py" in modules
-    for name in names:
-        assert "reference_corpus" not in name
-        assert not name.startswith("tests/")
-        assert not name.startswith("docs/")
-
-
-def test_the_sdist_ships_twenty_five_modules_and_no_corpus_or_test_material(
-    offline_distributions: tuple[Path, Path],
-) -> None:
-    _, sdist = offline_distributions
-    with tarfile.open(sdist, "r:gz") as archive:
-        names = tuple(member.name for member in archive.getmembers() if member.isfile())
-
-    modules = sorted(
-        name.split("/src/", 1)[1] for name in names if name.endswith(".py")
-    )
-    assert modules == EXPECTED_WHEEL_MODULES
-    assert len(modules) == 25
-    for name in names:
-        parts = Path(name).parts
-        assert "reference_corpus" not in parts
-        assert "tests" not in parts
-        assert "docs" not in parts
 
 
 def test_the_installed_wheel_publishes_the_current_all_and_exercises_the_report(

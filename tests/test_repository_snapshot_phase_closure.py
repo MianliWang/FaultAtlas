@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, NamedTuple, cast
 
 import pytest
+from test_package import assert_current_inventory
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CLOSURE_ROOT = (
@@ -108,23 +109,6 @@ INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
 PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
-CURRENT_PRODUCTION_FILES = {
-    *EXPECTED_PRODUCTION_FILES,
-    HISTORY_MODULE,
-    HISTORY_EVIDENCE_LINK_MODULE,
-    FAULT_MODULE,
-    FAULT_SOURCE_RELATIONSHIP_MODULE,
-    FAULT_REPAIR_MODULE,
-    FAULT_TEST_MODULE,
-    FAULT_INTERPRETATION_MODULE,
-    FAULT_INSTANCE_MODULE,
-    FAULT_EVIDENCE_LINK_MODULE,
-    INVARIANT_MODULE,
-    INVARIANT_RELATIONSHIP_MODULE,
-    PATTERN_MODULE,
-    PATTERN_COMPOSITION_MODULE,
-    PATTERN_EXEMPLAR_MODULE,
-}
 
 EXPECTED_OWNED_SYMBOLS = (
     ("faultatlas.domain.snapshot", "S1.P04.S01", "RepositorySnapshotIdentity"),
@@ -916,24 +900,8 @@ def test_production_surface_adds_every_module_published_after_this_closure() -> 
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
-    assert observed == CURRENT_PRODUCTION_FILES
-    assert len(observed) == 25
-    assert observed - EXPECTED_PRODUCTION_FILES == {
-        HISTORY_MODULE,
-        HISTORY_EVIDENCE_LINK_MODULE,
-        FAULT_MODULE,
-        FAULT_SOURCE_RELATIONSHIP_MODULE,
-        FAULT_REPAIR_MODULE,
-        FAULT_TEST_MODULE,
-        FAULT_INTERPRETATION_MODULE,
-        FAULT_INSTANCE_MODULE,
-        FAULT_EVIDENCE_LINK_MODULE,
-        INVARIANT_MODULE,
-        INVARIANT_RELATIONSHIP_MODULE,
-        PATTERN_MODULE,
-        PATTERN_COMPOSITION_MODULE,
-        PATTERN_EXEMPLAR_MODULE,
-    }
+    assert_current_inventory(observed)
+    assert set(EXPECTED_PRODUCTION_FILES) <= set(observed)
     assert EXPECTED_PRODUCTION_FILES - observed == set()
     assert len(EXPECTED_PRODUCTION_FILES) == 11
 
@@ -1040,8 +1008,6 @@ def test_roadmap_records_phase_completion_and_p05_readiness() -> None:
     assert "`S1.P06.S12` is complete" in roadmap
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P04` is active and incomplete" not in roadmap

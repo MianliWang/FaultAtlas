@@ -5,9 +5,9 @@ describe already-published work as current or future work, anywhere in the
 document. Before this Slice that rule lived in product Slice oracles, where two
 same-named copies had diverged and neither was sentence-local, and a sentence
 that had been stale since `S1.P05.S08` survived both. Those two copies are
-gone. The document-wide gate and status checks here deliberately overlap with
-the product oracles rather than replacing them: those assert product-specific
-roadmap facts, and this asserts the narrative rule.
+gone. This module now also owns current active/next/completed expectations and
+route state. Domain tests retain bounded product-specific and historical claims;
+shared current lifecycle assertions are checked here.
 
 Everything here reads prose. It asserts nothing about product semantics, owns
 no production module, and pins no digest of a region the roadmap is designed to
@@ -114,6 +114,29 @@ def _flat(text: str) -> str:
     return " ".join(text.split())
 
 
+def assert_local_live_gate(text: str) -> None:
+    """A caller's bounded paragraph/sentence must carry its own current gate."""
+    assert "`S1.P06` is complete" in text, "missing local P06 phase completion"
+    assert f"`{NEXT_UNIT}` is next and not started" in text, text
+    assert f"`{ACTIVE_PHASE_UNIT}` is active and incomplete" in text, text
+    assert f"`{ACTIVE_PHASE_UNIT}` is next and not started" not in text, text
+
+
+def test_every_next_gate_line_names_the_current_unit() -> None:
+    lines = [line for line in _text().splitlines() if "next and not started" in line]
+    assert lines
+    for line in lines:
+        assert f"`{NEXT_UNIT}`" in line, line
+
+
+def test_a_summary_must_state_its_own_completed_phase() -> None:
+    _, sentence = _lifecycle_sentences()[0]
+    assert_local_live_gate(sentence)
+    altered = sentence.replace("`S1.P06` is complete", "phase omitted")
+    with pytest.raises(AssertionError, match="missing local P06 phase completion"):
+        assert_local_live_gate(altered)
+
+
 def _paragraphs() -> list[tuple[int, str]]:
     """Blank-line separated paragraphs, each flattened, with its start line."""
     paragraphs: list[tuple[int, str]] = []
@@ -167,7 +190,9 @@ def test_the_current_status_section_states_the_authoritative_lifecycle() -> None
     assert f"`{ACTIVE_PHASE_UNIT}` is active and incomplete" in section
     for slice_id in COMPLETE_SLICES:
         assert f"`{slice_id}` is complete" in section, slice_id
-    assert f"`{NEXT_UNIT}` is next and not started" in section
+    assert f"`{NEXT_UNIT}` is next and not started" in section, (
+        "missing current-status gate"
+    )
     assert "`S1.P08` through `S1.P10` remain not started" in section
     for unit in (
         ACTIVE_PHASE_UNIT,
@@ -175,7 +200,9 @@ def test_the_current_status_section_states_the_authoritative_lifecycle() -> None
         *NOT_STARTED_SLICES,
         *NOT_STARTED_PHASES,
     ):
-        assert f"`{unit}` is complete" not in section, unit
+        assert f"`{unit}` is complete" not in section, (
+            f"contradictory current-status completion: {unit}"
+        )
 
 
 def test_the_current_status_section_records_the_correction_as_complete() -> None:
@@ -642,7 +669,9 @@ def test_every_lifecycle_sentence_carries_its_own_live_gate() -> None:
     for start, sentence in lifecycle:
         for slice_id in COMPLETE_SLICES:
             assert f"`{slice_id}` is complete" in sentence, (start, slice_id)
-        assert f"`{NEXT_UNIT}` is next and not started" in sentence, start
+        assert f"`{NEXT_UNIT}` is next and not started" in sentence, (
+            f"missing local gate at line {start}"
+        )
         # The gate is a Slice again, so the Phase it sits inside has a state of
         # its own. A sentence naming the gate without it would leave that state
         # to be borrowed from somewhere else, which is what locality forbids.
@@ -1066,3 +1095,127 @@ def test_negation_detection_reaches_its_own_predicate_and_no_further(
     expected: bool,
 ) -> None:
     assert _is_negated(clause) is expected
+
+
+def _p07_route_entries() -> list[tuple[str, str, str, str]]:
+    """The numbered `S1.P07` route, parsed structurally rather than by phrase.
+
+    Each row is (list ordinal, slice id, the slice's numeric suffix,
+    parenthesised state). The ordinal is carried because a Slice sitting at the
+    wrong marker leaves the set of (slice, state) pairs unchanged. Every
+    numbered row is parsed and then validated: matching only rows whose state
+    is already one of the allowed words would make a row carrying any other
+    state invisible while the counts still looked right.
+    """
+    text = ROADMAP.read_text(encoding="utf-8")
+    start = text.index("The `S1.P07` route is provisional")
+    end = text.index("\n## ", start)
+    block = text[start:end]
+    rows: list[tuple[str, str, str, str]] = re.findall(
+        r"^(\d+)\.\s+`(S1\.P07\.S(\d\d))`[^\n]*(?:\n\s+)?[^\n]*?\(([^)]*)\)",
+        block,
+        re.M,
+    )
+    numbered = re.findall(r"^(\d+)\.\s", block, re.M)
+    assert len(rows) == len(numbered), (len(rows), len(numbered))
+    for _, slice_id, _, state in rows:
+        assert state in {"complete", "next, not started", "not started"}, (
+            slice_id,
+            state,
+        )
+    return rows
+
+
+def test_the_roadmap_route_is_provisional_beyond_the_published_slice() -> None:
+    roadmap = _flat(_text())
+
+    assert (
+        f"The `S1.P07` route is provisional beyond `{P07_COMPLETE_SLICES[-1]}`."
+        in roadmap
+    )
+    for index in range(1, 10):
+        assert f"`S1.P07.S{index:02d}`" in roadmap, index
+    assert "`S1.P07.S10`" not in roadmap
+    for unit in P07_COMPLETE_SLICES:
+        assert f"`{unit}` is complete" in roadmap
+    for unit in (NEXT_UNIT, *NOT_STARTED_SLICES):
+        assert f"`{unit}` is complete" not in roadmap, unit
+
+
+def test_the_route_numbers_every_p07_position_in_order() -> None:
+    """The list marker is part of the route, not decoration.
+
+    Swapping two markers leaves the same set of (Slice, state) pairs, so the
+    ordinal is captured and required to match the Slice it labels.
+    """
+    rows = _p07_route_entries()
+
+    assert [ordinal for ordinal, _, _, _ in rows] == [str(n) for n in range(1, 10)]
+    for ordinal, slice_id, suffix, _ in rows:
+        assert int(ordinal) == int(suffix), (ordinal, slice_id)
+
+
+def test_the_p07_route_states_the_authoritative_state_for_every_position() -> None:
+    """Five published positions, one gate, and three positions still ahead.
+
+    Building the lookup first would let a duplicated row collapse silently, so
+    the rows are counted before they become a mapping.
+    """
+    rows = _p07_route_entries()
+    assert len(rows) == 9, rows
+    assert len({slice_id for _, slice_id, _, _ in rows}) == 9, rows
+    entries = {slice_id: state for _, slice_id, _, state in rows}
+
+    for unit in P07_COMPLETE_SLICES:
+        assert entries[unit] == "complete", unit
+    assert entries[NEXT_UNIT] == "next, not started"
+    for unit in NOT_STARTED_SLICES:
+        assert entries[unit] == "not started", unit
+    states = [state for _, _, _, state in rows]
+    assert states.count("complete") == len(P07_COMPLETE_SLICES)
+    assert states.count("next, not started") == 1
+    assert states.count("not started") == len(NOT_STARTED_SLICES)
+
+
+@pytest.mark.parametrize("change", ("missing", "contradictory"))
+def test_an_appendix_cannot_repair_the_current_status_section(
+    monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    original = _text()
+    start = original.index("## Current status")
+    end = original.index("\n## ", start + 1)
+    section = original[start:end]
+    claim = f"`{NEXT_UNIT}` is next and not started"
+    assert claim in section
+    replacement = (
+        section.replace(claim, "gate omitted")
+        if change == "missing"
+        else section + f"\n`{NEXT_UNIT}` is complete.\n"
+    )
+    altered = (
+        original[:start]
+        + replacement
+        + original[end:]
+        + "\n\n## Valid appendix\n"
+        + section
+    )
+    monkeypatch.setattr(__name__ + "._text", lambda: altered)
+    message = (
+        "missing current-status gate"
+        if change == "missing"
+        else "contradictory current-status completion"
+    )
+    with pytest.raises(AssertionError, match=message):
+        test_the_current_status_section_states_the_authoritative_lifecycle()
+
+
+def test_a_later_sentence_cannot_rescue_a_missing_local_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = _text()
+    claim = f"`{NEXT_UNIT}` is next and not started"
+    assert claim in original
+    altered = original.replace(claim, "gate omitted", 1)
+    monkeypatch.setattr(__name__ + "._text", lambda: altered)
+    with pytest.raises(AssertionError, match="missing local gate at line"):
+        test_every_lifecycle_sentence_carries_its_own_live_gate()

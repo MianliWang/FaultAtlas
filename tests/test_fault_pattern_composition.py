@@ -7,14 +7,13 @@ import json
 import os
 import subprocess
 import sys
-import tarfile
 import uuid
-import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from _repository_contract import PRODUCTION_FILES
 from pydantic import BaseModel, ValidationError
 
 import faultatlas.domain.pattern_composition as module
@@ -575,22 +574,12 @@ def test_exact_dependencies_and_no_predecessor_imports() -> None:
         "model_construct",
         "model_copy",
     }.intersection(n.id for n in ast.walk(tree) if isinstance(n, ast.Name))
-    paths = sorted((ROOT / "src/faultatlas").rglob("*.py"))
-    assert len(paths) == 25
-    uuid_roots: list[str] = []
-    for path in paths:
-        source = path.read_text()
-        if path != ROOT / MODULE:
-            assert (
-                "pattern_composition" not in source
-                and "FaultPatternComposition" not in source
-            )
-        for n in ast.walk(ast.parse(source)):
-            if isinstance(n, ast.ClassDef) and any(
-                ast.unparse(b) == "RootModel[uuid.UUID]" for b in n.bases
-            ):
-                uuid_roots.append(n.name)
-    assert len(uuid_roots) == len(set(uuid_roots)) == 12
+    for relative in PRODUCTION_FILES - {MODULE}:
+        source = (ROOT / relative).read_text()
+        assert (
+            "pattern_composition" not in source
+            and "FaultPatternComposition" not in source
+        ), relative
 
 
 def test_no_io_during_value_operations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -644,91 +633,10 @@ def test_roadmap_states_bounded_s05_and_next_gate() -> None:
         "five named modules and eight exports",
     ):
         assert phrase in section
-    current = " ".join(text.split("## Current status", 1)[1].split("## ", 1)[0].split())
-    assert "`S1.P07.S05` is complete" in current
-    assert "`S1.P07.S06` is next and not started" in current
-    assert "`S1.P07` is active and incomplete" in current
-
-
-EXPECTED_MODULES = [
-    "faultatlas/__init__.py",
-    "faultatlas/__main__.py",
-    "faultatlas/cli.py",
-    "faultatlas/domain/__init__.py",
-    "faultatlas/domain/compatibility.py",
-    "faultatlas/domain/evidence.py",
-    "faultatlas/domain/fault.py",
-    "faultatlas/domain/fault_evidence_link.py",
-    "faultatlas/domain/fault_instance.py",
-    "faultatlas/domain/fault_interpretation.py",
-    "faultatlas/domain/fault_repair.py",
-    "faultatlas/domain/fault_source_relationship.py",
-    "faultatlas/domain/fault_test.py",
-    "faultatlas/domain/history.py",
-    "faultatlas/domain/history_evidence_link.py",
-    "faultatlas/domain/identity.py",
-    "faultatlas/domain/invariant.py",
-    "faultatlas/domain/invariant_relationship.py",
-    "faultatlas/domain/pattern.py",
-    "faultatlas/domain/pattern_composition.py",
-    "faultatlas/domain/pattern_exemplar.py",
-    "faultatlas/domain/revision.py",
-    "faultatlas/domain/snapshot.py",
-    "faultatlas/domain/snapshot_evidence_link.py",
-    "faultatlas/domain/source.py",
-]
-
-
-@pytest.fixture(scope="module")
-def distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    output = tmp_path_factory.mktemp("pattern-composition-distributions")
-    result = subprocess.run(
-        ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
-        cwd=ROOT,
-        env=os.environ | {"UV_CACHE_DIR": str(output / "cache"), "UV_OFFLINE": "1"},
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    return next(output.glob("*.whl")), next(output.glob("*.tar.gz"))
-
-
-def test_exact25_package_inventory_and_source_bytes(
-    distributions: tuple[Path, Path],
-) -> None:
-    assert len(EXPECTED_MODULES) == len(set(EXPECTED_MODULES)) == 25
-    assert (
-        sorted(
-            p.relative_to(ROOT / "src").as_posix() for p in (ROOT / "src").rglob("*.py")
-        )
-        == EXPECTED_MODULES
-    )
-    with zipfile.ZipFile(distributions[0]) as archive:
-        names = archive.namelist()
-        assert sorted(n for n in names if n.endswith(".py")) == EXPECTED_MODULES
-        for path in EXPECTED_MODULES:
-            assert archive.read(path) == (ROOT / "src" / path).read_bytes()
-    with tarfile.open(distributions[1]) as archive:
-        members = [m for m in archive.getmembers() if m.isfile()]
-        assert (
-            sorted(m.name.split("/", 2)[2] for m in members if m.name.endswith(".py"))
-            == EXPECTED_MODULES
-        )
-        for member in members:
-            if member.name.endswith(".py"):
-                stream = archive.extractfile(member)
-                assert stream is not None
-                assert (
-                    stream.read() == (ROOT / member.name.split("/", 1)[1]).read_bytes()
-                )
-        names += [m.name for m in members]
-    for name in names:
-        assert not {"docs", "tests", "reference_corpus"}.intersection(Path(name).parts)
 
 
 def test_installed_wheel_provenance_and_authored_json(
-    distributions: tuple[Path, Path], tmp_path: Path
+    offline_distributions: tuple[Path, Path], tmp_path: Path
 ) -> None:
     installed = tmp_path / "installed"
     env = os.environ | {"UV_CACHE_DIR": str(tmp_path / "cache"), "UV_OFFLINE": "1"}
@@ -741,7 +649,7 @@ def test_installed_wheel_provenance_and_authored_json(
             "--no-deps",
             "--target",
             str(installed),
-            str(distributions[0]),
+            str(offline_distributions[0]),
         ],
         cwd=tmp_path,
         env=env,

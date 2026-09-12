@@ -3,10 +3,8 @@ from __future__ import annotations
 import ast
 import json
 import os
-import shutil
 import subprocess
 import sys
-import tarfile
 import uuid
 import zipfile
 from pathlib import Path
@@ -1228,7 +1226,6 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     roadmap = " ".join(raw.split())
     mapping = roadmap.split("## Current-code mapping", 1)
     assert len(mapping) == 2, "roadmap must retain a current-code mapping section"
-    current = mapping[1]
 
     assert "## S1.P06 — Fault Instance Model" in roadmap
     assert "`S1.P06` is complete" in roadmap
@@ -1251,17 +1248,11 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     # has since exercised that eligibility, so the live gate moved on to
     # `S1.P07.S02` and the Phase itself is now active.
     assert "`S1.P07` is active and incomplete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
-    assert "faultatlas.domain.fault" in current
-    for symbol in EXPECTED_EXPORTS:
-        assert f"`{symbol}`" in current
     # `S1.P07.S01` published `faultatlas.domain.pattern`, so the live count
     # moved 20 -> 21. The sealed `S1.P06` records still say 20 and are not
     # read here.
-    assert "Production Python sources are 25." in current
 
     # The superseded entry-gate claims must be retired, not left standing.
     assert "`S1.P06` is next and not started" not in roadmap
@@ -1272,6 +1263,11 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     # `S1.P07` became an active section of its own exactly as `S1.P06` did,
     # so it too must have left the preserved-later-phases list.
     assert "- **S1.P07 — Pattern & Invariant Model**" not in raw
+
+    current = mapping[1]
+    assert "faultatlas.domain.fault" in current
+    for symbol in EXPECTED_EXPORTS:
+        assert f"`{symbol}`" in current
 
 
 def test_the_roadmap_route_is_closed_at_the_final_slice() -> None:
@@ -1340,130 +1336,6 @@ assert FaultInstanceIdentity.model_validate_json(identity.model_dump_json()) == 
 assert FaultRepositoryContext.model_validate_json(context.model_dump_json()) == context
 print(json.dumps({"module": str(resolved), "context": context.model_dump_json()}))
 """
-
-
-@pytest.fixture(scope="session")
-def offline_distributions(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> tuple[Path, Path]:
-    uv = shutil.which("uv")
-    assert uv is not None, "uv must be available to build the supported distributions"
-
-    root = tmp_path_factory.mktemp("fault-identity-package")
-    output = root / "distributions"
-    output.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "UV_CACHE_DIR": str(root / "uv-cache"),
-            "UV_NO_SYNC": "1",
-            "UV_OFFLINE": "1",
-        }
-    )
-    result = subprocess.run(
-        [uv, "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"offline build failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    wheels = tuple(output.glob("*.whl"))
-    sdists = tuple(output.glob("*.tar.gz"))
-    assert len(wheels) == 1, f"expected one wheel, found {wheels!r}"
-    assert len(sdists) == 1, f"expected one sdist, found {sdists!r}"
-    return wheels[0], sdists[0]
-
-
-def test_the_wheel_ships_the_new_module_and_no_corpus_or_test_material(
-    offline_distributions: tuple[Path, Path],
-) -> None:
-    wheel, _ = offline_distributions
-    with zipfile.ZipFile(wheel) as archive:
-        names = tuple(info.filename for info in archive.infolist() if not info.is_dir())
-
-    modules = sorted(name for name in names if name.endswith(".py"))
-    assert modules == [
-        "faultatlas/__init__.py",
-        "faultatlas/__main__.py",
-        "faultatlas/cli.py",
-        "faultatlas/domain/__init__.py",
-        "faultatlas/domain/compatibility.py",
-        "faultatlas/domain/evidence.py",
-        "faultatlas/domain/fault.py",
-        "faultatlas/domain/fault_evidence_link.py",
-        "faultatlas/domain/fault_instance.py",
-        "faultatlas/domain/fault_interpretation.py",
-        "faultatlas/domain/fault_repair.py",
-        "faultatlas/domain/fault_source_relationship.py",
-        "faultatlas/domain/fault_test.py",
-        "faultatlas/domain/history.py",
-        "faultatlas/domain/history_evidence_link.py",
-        "faultatlas/domain/identity.py",
-        INVARIANT_MODULE,
-        INVARIANT_RELATIONSHIP_MODULE,
-        PATTERN_MODULE,
-        PATTERN_COMPOSITION_MODULE,
-        PATTERN_EXEMPLAR_MODULE,
-        "faultatlas/domain/revision.py",
-        "faultatlas/domain/snapshot.py",
-        "faultatlas/domain/snapshot_evidence_link.py",
-        "faultatlas/domain/source.py",
-    ]
-    assert len(modules) == 25
-    for name in names:
-        assert "reference_corpus" not in name
-        assert not name.startswith("tests/")
-        assert not name.startswith("docs/")
-
-
-def test_the_sdist_ships_the_new_module_and_no_corpus_or_test_material(
-    offline_distributions: tuple[Path, Path],
-) -> None:
-    _, sdist = offline_distributions
-    with tarfile.open(sdist, "r:gz") as archive:
-        names = tuple(member.name for member in archive.getmembers() if member.isfile())
-
-    modules = sorted(
-        name.split("/src/", 1)[1] for name in names if name.endswith(".py")
-    )
-    assert modules == [
-        "faultatlas/__init__.py",
-        "faultatlas/__main__.py",
-        "faultatlas/cli.py",
-        "faultatlas/domain/__init__.py",
-        "faultatlas/domain/compatibility.py",
-        "faultatlas/domain/evidence.py",
-        "faultatlas/domain/fault.py",
-        "faultatlas/domain/fault_evidence_link.py",
-        "faultatlas/domain/fault_instance.py",
-        "faultatlas/domain/fault_interpretation.py",
-        "faultatlas/domain/fault_repair.py",
-        "faultatlas/domain/fault_source_relationship.py",
-        "faultatlas/domain/fault_test.py",
-        "faultatlas/domain/history.py",
-        "faultatlas/domain/history_evidence_link.py",
-        "faultatlas/domain/identity.py",
-        INVARIANT_MODULE,
-        INVARIANT_RELATIONSHIP_MODULE,
-        PATTERN_MODULE,
-        PATTERN_COMPOSITION_MODULE,
-        PATTERN_EXEMPLAR_MODULE,
-        "faultatlas/domain/revision.py",
-        "faultatlas/domain/snapshot.py",
-        "faultatlas/domain/snapshot_evidence_link.py",
-        "faultatlas/domain/source.py",
-    ]
-    assert len(modules) == 25
-    for name in names:
-        parts = Path(name).parts
-        assert "reference_corpus" not in parts
-        assert "tests" not in parts
-        assert "docs" not in parts
 
 
 def test_the_installed_wheel_exercises_the_same_new_types(
