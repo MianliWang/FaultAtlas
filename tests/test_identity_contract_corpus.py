@@ -299,6 +299,7 @@ PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
+PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
     "src/faultatlas/__main__.py",
@@ -319,6 +320,7 @@ EXPECTED_PRODUCTION_FILES = {
     INVARIANT_MODULE,
     INVARIANT_RELATIONSHIP_MODULE,
     PATTERN_MODULE,
+    PATTERN_COMPOSITION_MODULE,
     PATTERN_EXEMPLAR_MODULE,
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/snapshot.py",

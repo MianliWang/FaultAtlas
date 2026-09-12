@@ -62,8 +62,14 @@ ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 # they read the combined `COMPLETE_SLICES`. One shared tuple would make the
 # route lookups miscount.
 P06_ROUTE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 13))
-# S01 began P07; S02 through S04 add the next three published Slices.
-P07_COMPLETE_SLICES = ("S1.P07.S01", "S1.P07.S02", "S1.P07.S03", "S1.P07.S04")
+# S01 began P07; S02 through S05 add the next four published Slices.
+P07_COMPLETE_SLICES = (
+    "S1.P07.S01",
+    "S1.P07.S02",
+    "S1.P07.S03",
+    "S1.P07.S04",
+    "S1.P07.S05",
+)
 COMPLETE_SLICES = (*P06_ROUTE_SLICES, *P07_COMPLETE_SLICES)
 COMPLETE_PHASES = (
     "S1.P00",
@@ -75,16 +81,16 @@ COMPLETE_PHASES = (
     "S1.P06",
 )
 # The gate is a Slice rather than a Phase again: `S1.P07` itself is under way,
-# so the next unit is its fifth Slice.
-NEXT_UNIT = "S1.P07.S05"
+# so the next unit is its sixth Slice.
+NEXT_UNIT = "S1.P07.S06"
 # The Phase the live gate sits inside. It is neither complete nor not started,
 # so it is named separately from both groups below.
 ACTIVE_PHASE_UNIT = "S1.P07"
 # No longer empty. The `S1.P07` route names nine provisional positions, of which
-# S01 through S04 are complete and S05 is the gate; the remaining four are
+# S01 through S05 are complete and S06 is the gate; the remaining three are
 # not started.
 NOT_STARTED_SLICES: tuple[str, ...] = tuple(
-    f"S1.P07.S{index:02d}" for index in range(6, 10)
+    f"S1.P07.S{index:02d}" for index in range(7, 10)
 )
 NOT_STARTED_PHASES = ("S1.P08", "S1.P09", "S1.P10")
 CORRECTION = "S1.P06.S07.C01"

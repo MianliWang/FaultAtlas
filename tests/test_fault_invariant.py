@@ -49,6 +49,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULE = "src/faultatlas/domain/invariant.py"
 # S04 adds a separate consumer; the S02 baseline byte map stays historical.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
+PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
 FIELDS = ("invariant", "invariant_statement")
 SCALAR = uuid.UUID("00000000-0000-4000-8000-000000000001")
 # Authored illustrative prose, not evidence about the retained pytest case.
@@ -579,7 +580,7 @@ def test_roadmap_localizes_historical_absence_and_the_s03_proposition() -> None:
         assert phrase in s03, phrase
     current = " ".join(text.split("## Current status", 1)[1].split("## ", 1)[0].split())
     assert "`S1.P07.S03` is complete" in current
-    assert "`S1.P07.S05` is next and not started" in current
+    assert "`S1.P07.S06` is next and not started" in current
     assert "`S1.P07` is active and incomplete" in current
 
 
@@ -604,11 +605,18 @@ def distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]
     return next(output.glob("*.whl")), next(output.glob("*.tar.gz"))
 
 
-def test_exact24_tracked_checkout_and_distribution_source_bytes(
+def test_exact25_tracked_checkout_and_distribution_source_bytes(
     distributions: tuple[Path, Path],
 ) -> None:
-    expected = sorted([*BASELINE_PRODUCTION, MODULE, INVARIANT_RELATIONSHIP_MODULE])
-    assert len(expected) == 24
+    expected = sorted(
+        [
+            *BASELINE_PRODUCTION,
+            MODULE,
+            INVARIANT_RELATIONSHIP_MODULE,
+            PATTERN_COMPOSITION_MODULE,
+        ]
+    )
+    assert len(expected) == 25
     result = subprocess.run(
         ["git", "ls-files", "src/"],
         cwd=ROOT,

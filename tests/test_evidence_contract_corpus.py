@@ -312,6 +312,8 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/invariant_relationship.py",
     # Added by `S1.P07.S01`, the first `S1.P07` production module.
     "src/faultatlas/domain/pattern.py",
+    # Added by `S1.P07.S05`, the bounded pattern composition.
+    "src/faultatlas/domain/pattern_composition.py",
     # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
     "src/faultatlas/domain/pattern_exemplar.py",
     "src/faultatlas/domain/revision.py",
@@ -3791,7 +3793,7 @@ def test_roadmap_records_p03_complete_and_p04_s02_complete() -> None:
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S05` is next and not started" in current_status
+    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap
     reference_case = (

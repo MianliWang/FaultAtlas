@@ -96,6 +96,7 @@ PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
+PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
 
 EXPECTED_OWNED_SYMBOLS = (
     ("S1.P05.S01", "faultatlas.domain.history", "PullRequestRevisionRoleBinding"),
@@ -1864,10 +1865,11 @@ def test_this_closure_adds_no_production_source_and_names_what_followed() -> Non
         INVARIANT_MODULE,
         INVARIANT_RELATIONSHIP_MODULE,
         PATTERN_MODULE,
+        PATTERN_COMPOSITION_MODULE,
         PATTERN_EXEMPLAR_MODULE,
     }
     assert len(CURRENT_PRODUCTION_FILES) == 13
-    assert len(observed) == 24
+    assert len(observed) == 25
 
 
 def test_owned_symbols_match_the_live_published_modules() -> None:
@@ -1942,7 +1944,7 @@ def test_roadmap_records_phase_completion_and_p06_readiness() -> None:
     # first Slice complete and carries the gate one level down.
     assert "`S1.P07.S01` is complete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S05` is next and not started" in current_status
+    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P04` is complete" in roadmap
     assert CLOSURE_RELATIVE in roadmap
@@ -2007,9 +2009,9 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    # `S1.P07` has commenced, so the one live gate is the Slice `S1.P07.S05`
+    # `S1.P07` has commenced, so the one live gate is the Slice `S1.P07.S06`
     # rather than the Phase, and `S1.P07` is the one Phase now open.
-    assert set(live_next) == {"S1.P07.S05"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P07.S06"}, sorted(set(live_next))
 
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P07"}, sorted(set(live_phases))
