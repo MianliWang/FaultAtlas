@@ -84,6 +84,8 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/history_evidence_link.py",
     "src/faultatlas/domain/identity.py",
+    # Added by `S1.P07.S03`, the independent invariant proposition.
+    "src/faultatlas/domain/invariant.py",
     # Added by `S1.P07.S01`, the first `S1.P07` production module.
     "src/faultatlas/domain/pattern.py",
     # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.

@@ -295,6 +295,8 @@ EXPECTED_S07_EVIDENCE_EXPORTS = {
 PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 # Added by `S1.P07.S02`, after the sealed predecessor inventories.
 PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
+# Added by `S1.P07.S03`; sealed predecessor inventories remain unchanged.
+INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
     "src/faultatlas/__main__.py",
@@ -312,6 +314,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/history_evidence_link.py",
     "src/faultatlas/domain/identity.py",
+    INVARIANT_MODULE,
     PATTERN_MODULE,
     PATTERN_EXEMPLAR_MODULE,
     "src/faultatlas/domain/revision.py",

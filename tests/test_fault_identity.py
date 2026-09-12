@@ -36,6 +36,8 @@ CHECKOUT_SOURCE_ROOT = REPOSITORY_ROOT / "src"
 PATTERN_MODULE = "faultatlas/domain/pattern.py"
 # Added by `S1.P07.S02`, after the sealed predecessor inventories.
 PATTERN_EXEMPLAR_MODULE = "faultatlas/domain/pattern_exemplar.py"
+# Added by `S1.P07.S03`; sealed predecessor inventories remain unchanged.
+INVARIANT_MODULE = "faultatlas/domain/invariant.py"
 
 # The retained pytest #4412 case supplies a repository identity and no fault
 # instance identifier at all, so every UUID below is a fixed synthetic value
@@ -1247,7 +1249,7 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     # `S1.P07.S02` and the Phase itself is now active.
     assert "`S1.P07` is active and incomplete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S03` is next and not started" in current_status
+    assert "`S1.P07.S04` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
     assert "faultatlas.domain.fault" in current
@@ -1256,7 +1258,7 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     # `S1.P07.S01` published `faultatlas.domain.pattern`, so the live count
     # moved 20 -> 21. The sealed `S1.P06` records still say 20 and are not
     # read here.
-    assert "Production Python sources are 22." in current
+    assert "Production Python sources are 23." in current
 
     # The superseded entry-gate claims must be retired, not left standing.
     assert "`S1.P06` is next and not started" not in roadmap
@@ -1399,6 +1401,7 @@ def test_the_wheel_ships_the_new_module_and_no_corpus_or_test_material(
         "faultatlas/domain/history.py",
         "faultatlas/domain/history_evidence_link.py",
         "faultatlas/domain/identity.py",
+        INVARIANT_MODULE,
         PATTERN_MODULE,
         PATTERN_EXEMPLAR_MODULE,
         "faultatlas/domain/revision.py",
@@ -1406,7 +1409,7 @@ def test_the_wheel_ships_the_new_module_and_no_corpus_or_test_material(
         "faultatlas/domain/snapshot_evidence_link.py",
         "faultatlas/domain/source.py",
     ]
-    assert len(modules) == 22
+    assert len(modules) == 23
     for name in names:
         assert "reference_corpus" not in name
         assert not name.startswith("tests/")
@@ -1440,6 +1443,7 @@ def test_the_sdist_ships_the_new_module_and_no_corpus_or_test_material(
         "faultatlas/domain/history.py",
         "faultatlas/domain/history_evidence_link.py",
         "faultatlas/domain/identity.py",
+        INVARIANT_MODULE,
         PATTERN_MODULE,
         PATTERN_EXEMPLAR_MODULE,
         "faultatlas/domain/revision.py",
@@ -1447,7 +1451,7 @@ def test_the_sdist_ships_the_new_module_and_no_corpus_or_test_material(
         "faultatlas/domain/snapshot_evidence_link.py",
         "faultatlas/domain/source.py",
     ]
-    assert len(modules) == 22
+    assert len(modules) == 23
     for name in names:
         parts = Path(name).parts
         assert "reference_corpus" not in parts

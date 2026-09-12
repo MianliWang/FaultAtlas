@@ -54,6 +54,8 @@ from faultatlas.domain.pattern_exemplar import FaultPatternExemplarAssociation
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = "src/faultatlas/domain/pattern_exemplar.py"
+# Added by S03; BASELINE_PRODUCTION remains the immutable S01 observation.
+INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 FIELDS = ("pattern", "fault_instance")
 # Every UUID, repository identifier and statement in this file is synthetic.
 STATEMENT = "A supplied  重复 callback\nmay be observed."
@@ -547,9 +549,11 @@ def test_value_entry_points_perform_no_io(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_bounded_roadmap_section_states_designation_and_live_gate() -> None:
     text = (ROOT / "docs/roadmap.md").read_text()
-    section = text.split("### S1.P07.S02 — Supplied pattern-exemplar designation\n", 1)[
-        1
-    ].split("\nThe `S1.P07` route", 1)[0]
+    section = (
+        text.split("### S1.P07.S02 — Supplied pattern-exemplar designation\n", 1)[1]
+        .split("\n### ", 1)[0]
+        .split("\nThe `S1.P07` route", 1)[0]
+    )
     assert "FaultPatternExemplarAssociation" in section
     assert "SuppliedFaultPattern" in section and "FaultInstance" in section
     for phrase in (
@@ -569,7 +573,7 @@ def test_bounded_roadmap_section_states_designation_and_live_gate() -> None:
         "`S1.P07` is active and incomplete",
         "`S1.P07.S01` is complete",
         "`S1.P07.S02` is complete",
-        "`S1.P07.S03` is next and not started",
+        "`S1.P07.S04` is next and not started",
         "`S1.P08` through `S1.P10` remain not started",
     ):
         assert phrase in current, phrase
@@ -599,8 +603,8 @@ def distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]
 def test_tracked_checkout_wheel_and_sdist_are_exact(
     distributions: tuple[Path, Path],
 ) -> None:
-    expected = sorted([*BASELINE_PRODUCTION, MODULE])
-    assert len(expected) == 22
+    expected = sorted([*BASELINE_PRODUCTION, MODULE, INVARIANT_MODULE])
+    assert len(expected) == 23
     result = subprocess.run(
         ["git", "ls-files", "src/"],
         cwd=ROOT,
