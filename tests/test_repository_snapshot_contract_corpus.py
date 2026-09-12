@@ -154,6 +154,8 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/identity.py",
     # Added by `S1.P07.S03`, the independent invariant proposition.
     "src/faultatlas/domain/invariant.py",
+    # Added by `S1.P07.S04`, the two explicit invariant associations.
+    "src/faultatlas/domain/invariant_relationship.py",
     "src/faultatlas/domain/pattern.py",
     # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
     "src/faultatlas/domain/pattern_exemplar.py",
@@ -1241,7 +1243,7 @@ def test_corpus_is_excluded_from_the_packaged_source_root() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert observed == EXPECTED_PRODUCTION_FILES
-    assert len(observed) == 23
+    assert len(observed) == 24
 
 
 @pytest.mark.parametrize("relative", tuple(sorted(PREDECESSOR_DIGESTS)))
@@ -1293,7 +1295,7 @@ def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S04` is next and not started" in current_status
+    assert "`S1.P07.S05` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert CORPUS_RELATIVE in roadmap
     assert "`S1.P04` is complete" in roadmap
@@ -1314,7 +1316,7 @@ def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S04` is next and not started" in current_status
+    assert "`S1.P07.S05` is next and not started" in current_status
     # P06 has since commenced, so the prohibition this closure recorded is
     # retired: what must not stand is a claim that P06 is COMPLETE.
     assert "`S1.P06` implementation has begun with `S1.P06.S01`" in roadmap

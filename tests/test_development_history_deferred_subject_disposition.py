@@ -81,7 +81,7 @@ FORBIDDEN_OWNERS = ("S1.P05",)
 # faultatlas.domain.fault_instance, and S1.P06.S09 published
 # faultatlas.domain.fault_evidence_link.
 PRODUCTION_SOURCE_COUNT_AT_DECISION = 13
-CURRENT_PRODUCTION_SOURCE_COUNT = 23
+CURRENT_PRODUCTION_SOURCE_COUNT = 24
 FAULT_MODULE = "src/faultatlas/domain/fault.py"
 FAULT_SOURCE_RELATIONSHIP_MODULE = "src/faultatlas/domain/fault_source_relationship.py"
 FAULT_REPAIR_MODULE = "src/faultatlas/domain/fault_repair.py"
@@ -95,6 +95,8 @@ PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 # Added by `S1.P07.S03`; sealed predecessor inventories remain unchanged.
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
+# Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
+INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
 
 
 def _decision() -> dict[str, Any]:
@@ -567,6 +569,7 @@ def test_the_slice_changed_no_production_source_and_the_tree_moved_on() -> None:
     assert FAULT_EVIDENCE_LINK_MODULE in observed
     assert PATTERN_MODULE in observed
     assert INVARIANT_MODULE in observed
+    assert INVARIANT_RELATIONSHIP_MODULE in observed
     assert (
         governance["production_python_source_count"]
         == PRODUCTION_SOURCE_COUNT_AT_DECISION
@@ -644,7 +647,7 @@ def test_the_roadmap_records_the_s08_disposition_and_transition() -> None:
     # its own first undone Slice.
     assert "`S1.P07.S01` is complete" in text
     current_status = text.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S04` is next and not started" in current_status
+    assert "`S1.P07.S05` is next and not started" in current_status
     assert "`S1.P07` is next and not started" not in text
     assert "`self_owned_open == 0`" in text
     assert "reference_corpus/contracts/development-history/decisions" in text

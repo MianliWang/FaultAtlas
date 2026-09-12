@@ -314,6 +314,8 @@ PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 # Added by `S1.P07.S03`; sealed predecessor inventories remain unchanged.
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
+# Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
+INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
 EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/__init__.py",
     "src/faultatlas/__main__.py",
@@ -332,6 +334,7 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/history_evidence_link.py",
     "src/faultatlas/domain/identity.py",
     INVARIANT_MODULE,
+    INVARIANT_RELATIONSHIP_MODULE,
     PATTERN_MODULE,
     PATTERN_EXEMPLAR_MODULE,
     "src/faultatlas/domain/revision.py",

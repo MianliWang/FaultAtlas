@@ -51,7 +51,8 @@ aspirational Slice as scheduled work.
   `S1.P07` is active and incomplete; `S1.P07.S01` is complete and
   `S1.P07.S02` is complete and
   `S1.P07.S03` is complete and
-  `S1.P07.S04` is next and not started.
+  `S1.P07.S04` is complete and
+  `S1.P07.S05` is next and not started.
   `S1.P08` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -109,7 +110,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
-`S1.P07.S04` is next and not started.
+`S1.P07.S04` is complete and
+`S1.P07.S05` is next and not started.
 `S1.P08` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -718,7 +720,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
-`S1.P07.S04` is next and not started.
+`S1.P07.S04` is complete and
+`S1.P07.S05` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1173,7 +1176,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
-`S1.P07.S04` is next and not started.
+`S1.P07.S04` is complete and
+`S1.P07.S05` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -2273,7 +2277,8 @@ became `S1.P06.S10` work.
 `S1.P07` is active and incomplete. `S1.P07.S01` is complete and
 `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
-`S1.P07.S04` is next and not started.
+`S1.P07.S04` is complete and
+`S1.P07.S05` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2362,7 +2367,8 @@ order, bounds, uniqueness and whole-record reference integrity. Revalidation
 retains the predecessor's bounded costs; object identity is not promised.
 No rationale, selected subrecord, evidence field, status or score is added.
 The S02 module adds no invariant representation. S03 supplies an independent
-proposition; relationships remain later P07 work. Applicability/transfer remains
+proposition; S04 now supplies separate invariant associations without changing
+this S02 designation. Applicability/transfer remains
 P08, generic support/confidence/review P09, persistence P10 and extraction later
 runtime work. The module performs no I/O or automatic discovery. All predecessor
 production modules, including `pattern.py`, remain byte-identical.
@@ -2400,15 +2406,64 @@ separate: equal canonical base values compare equal, different identities may
 carry one text, and one identity may carry separate texts. No unequal-hash
 requirement or durable meaning for Python hash is introduced.
 
-There are no relationships and no pattern, case, exemplar, expected property,
-evidence, proof or observed violation is required or created. There is no
+The S03 module adds no relationships; S04 supplies separate associations. No
+pattern, case, exemplar, expected property, evidence, proof or observed violation
+is required or created by the S03 proposition. There is no
 promotion from a successful test or repair, and no applicability, transfer,
 support, confidence, review, causation or repair-correctness result. Those
 later-Phase boundaries remain unchanged. This module imports no `faultatlas`
-module and performs no I/O, discovery or extraction. P07 now owns exactly
-three named modules and five exports; its remaining route is provisional.
+module and performs no I/O, discovery or extraction. At S03 publication, P07
+owned three named modules and five exports; that is the historical S03 surface.
 
-The `S1.P07` route is provisional beyond `S1.P07.S03`. Later exact schemas are
+### S1.P07.S04 — Explicit invariant associations
+
+`S1.P07.S04` publishes `faultatlas.domain.invariant_relationship`, exporting
+exactly `FaultPatternInvariantAssociation` and
+`FaultInvariantExpectedPropertyAssociation`. P07 now owns four named modules
+and seven exports; its twelve UUID-root identity types are unchanged.
+
+The pattern-invariant record requires the full `SuppliedFaultPattern` followed
+by the full `SuppliedFaultInvariant`. It records only the caller's explicit
+association of these particular propositions, without a logical role such as
+violation, preservation, entailment, definition, proof or matching. It needs no
+case, expectation, exemplar or evidence, and no link is needed to construct
+either proposition independently.
+
+The invariant-expected-property record requires `invariant`, `fault_instance`
+and `expected_property`, in that order, using their existing full types. After
+owning-schema validation, its sole new rule requires the selected expectation
+to be a full-record-equal member of `fault_instance.expected_properties`.
+Independently constructed equal members qualify; object identity, matching
+UUIDs/text, or the report alone being present does not. Missing members are
+refused without insertion, replacement or mutation. The case owner retains its
+own full-report integrity rule, and any included report in a valid
+multi-repository case may carry the selected member.
+
+This proves structural placement, not semantic truth. False or disagreeing
+propositions may coexist, the expectation remains case-local, and the invariant
+remains a supplied proposition. Equality includes all endpoint content and case
+tuple order, even unrelated case fields. Separate links permit one-to-many and
+many-to-one relations across cases/repositories without global uniqueness,
+deduplication, replacement, ordering, completeness or independent-observation
+claims. Missing links imply no negative fact.
+
+There is no inferred exemplar, inverse/transitive relation, invariant support,
+satisfaction, violation, generalization or repair-correctness result. An
+existing case-property evidence link transfers nothing to an invariant or
+pattern. No relationship-kind vocabulary, direct pattern-to-expectation record,
+rationale, confidence/review/status or applicability/transfer field is added.
+P08/P09/P10 and later-runtime boundaries remain unchanged; S05 composition and
+S06 accumulated vertical assurance remain later work.
+
+Both frozen strict records require typed Python endpoints and revalidate their
+owners. Native JSON delegates only the case dictionary to its own validator,
+preserving tuple order, bounds, uniqueness and full-record integrity. No
+predecessor byte changes, extra text policy or transport framework is added.
+The bounded full-member search retains all predecessor revalidation costs; no
+constant-time or linear-total guarantee is made. The module performs no I/O,
+lookup outside the case, identifier allocation, execution or discovery.
+
+The `S1.P07` route is provisional beyond `S1.P07.S04`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -2418,9 +2473,9 @@ tests before the corpus Slice:
 3. `S1.P07.S03` — Invariant identity and supplied invariant proposition
    (complete)
 4. `S1.P07.S04` — Pattern, invariant, and case-local expected-property
-   relationships (next, not started)
+   relationships (complete)
 5. `S1.P07.S05` — Bounded pattern composition and reference integrity
-   (not started)
+   (next, not started)
 6. `S1.P07.S06` — Cross-instance canonical vertical and boundary assurance
    (not started)
 7. `S1.P07.S07` — Deferred disposition and corpus readiness (not started)
@@ -2801,7 +2856,13 @@ proposition without truth certification, promotion or relationships. Typed
 Python and native JSON keep the established supplied-text and UUID policy.
 All S01/S02 production bytes remain unchanged.
 
-Production Python sources are 23.
+The current live surface also includes `faultatlas.domain.invariant_relationship`,
+added by `S1.P07.S04` with exactly `FaultPatternInvariantAssociation` and
+`FaultInvariantExpectedPropertyAssociation`. These full-value associations add
+only the composition-qualified expected-property membership rule, without
+inference, promotion or changes to either endpoint owner.
+
+Production Python sources are 24.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the `S1.P05.S02.C01`
 correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, `S1.P05.S06`,
 `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01` correction,
@@ -2813,7 +2874,8 @@ complete, `S1.P06.S09` is complete, `S1.P06.S10` is complete, `S1.P06.S11` is
 complete, and `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
-`S1.P07.S04` is next and not started. `S1.P04.S10`
+`S1.P07.S04` is complete and
+`S1.P07.S05` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==

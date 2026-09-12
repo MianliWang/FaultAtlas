@@ -111,7 +111,9 @@ PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 # Added by `S1.P07.S03`; sealed predecessor inventories remain unchanged.
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
-LIVE_PRODUCTION_MODULE_COUNT = 23
+# Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
+INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
+LIVE_PRODUCTION_MODULE_COUNT = 24
 ALLOWED_MARKERS = ("enum_value", "indexed_value", "tuple_value", "typed_value")
 MAX_INDEXED_COUNT = 4097
 ALLOWED_OPERATIONS = ("construct", "reject")
@@ -1707,6 +1709,7 @@ def test_the_corpus_is_source_only_and_adds_no_production_file() -> None:
         "src/faultatlas/domain/history_evidence_link.py",
         "src/faultatlas/domain/identity.py",
         INVARIANT_MODULE,
+        INVARIANT_RELATIONSHIP_MODULE,
         PATTERN_MODULE,
         PATTERN_EXEMPLAR_MODULE,
         "src/faultatlas/domain/revision.py",
@@ -1802,6 +1805,7 @@ def test_the_built_wheel_and_sdist_carry_twenty_one_sources_and_no_corpus(
     packaged_pattern_module = PATTERN_MODULE.removeprefix("src/")
     packaged_exemplar_module = PATTERN_EXEMPLAR_MODULE.removeprefix("src/")
     packaged_invariant_module = INVARIANT_MODULE.removeprefix("src/")
+    packaged_relationship_module = INVARIANT_RELATIONSHIP_MODULE.removeprefix("src/")
     for names, label in ((wheel_names, "wheel"), (sdist_names, "sdist")):
         sources = [name for name in names if name.endswith(".py")]
         assert len(sources) == LIVE_PRODUCTION_MODULE_COUNT, (label, sorted(sources))
@@ -1810,6 +1814,9 @@ def test_the_built_wheel_and_sdist_carry_twenty_one_sources_and_no_corpus(
         assert any(name.endswith(packaged_pattern_module) for name in sources), label
         assert any(name.endswith(packaged_exemplar_module) for name in sources), label
         assert any(name.endswith(packaged_invariant_module) for name in sources), label
+        assert any(name.endswith(packaged_relationship_module) for name in sources), (
+            label
+        )
         for excluded in ("reference_corpus", "tests/", "docs/"):
             assert not any(excluded in name for name in names), (label, excluded)
         assert not any("fault-instance" in name for name in names), label
@@ -2128,12 +2135,23 @@ def test_the_scope_matches_the_live_surface() -> None:
     assert scope["owned_modules"] == list(OWNED_MODULES)
     assert scope["owned_module_count"] == len(OWNED_MODULES)
     assert scope["owned_symbol_count"] == len(OWNED)
-    # Sealed against live: S01 through S03 added three named modules after this
+    # Sealed against live: S01 through S04 added four named modules after this
     # manifest was sealed; its historical count remains twenty.
     live = _production_sources()
-    assert {INVARIANT_MODULE, PATTERN_MODULE, PATTERN_EXEMPLAR_MODULE} <= live
+    assert {
+        INVARIANT_MODULE,
+        INVARIANT_RELATIONSHIP_MODULE,
+        PATTERN_MODULE,
+        PATTERN_EXEMPLAR_MODULE,
+    } <= live
     assert scope["production_module_count"] == len(
-        live - {INVARIANT_MODULE, PATTERN_MODULE, PATTERN_EXEMPLAR_MODULE}
+        live
+        - {
+            INVARIANT_MODULE,
+            INVARIANT_RELATIONSHIP_MODULE,
+            PATTERN_MODULE,
+            PATTERN_EXEMPLAR_MODULE,
+        }
     )
     assert scope["source_only"] is True
     assert scope["package_exclusion_required"] is True
@@ -2232,7 +2250,7 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     # gate moved: `S1.P07` is no longer the thing that has not started.
     assert "`S1.P07` is active and incomplete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S04` is next and not started" in current_status
+    assert "`S1.P07.S05` is next and not started" in current_status
     assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
     assert "`S1.P06` is complete" in roadmap
     assert "`S1.P06.S07.C01` correction" in roadmap
