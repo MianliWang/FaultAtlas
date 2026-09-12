@@ -50,7 +50,8 @@ aspirational Slice as scheduled work.
   `S1.P06.S11` is complete, and `S1.P06.S12` is complete, so
   `S1.P07` is active and incomplete; `S1.P07.S01` is complete and
   `S1.P07.S02` is complete and
-  `S1.P07.S03` is next and not started.
+  `S1.P07.S03` is complete and
+  `S1.P07.S04` is next and not started.
   `S1.P08` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -107,7 +108,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
 `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
-`S1.P07.S03` is next and not started.
+`S1.P07.S03` is complete and
+`S1.P07.S04` is next and not started.
 `S1.P08` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -715,7 +717,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
 `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
-`S1.P07.S03` is next and not started.
+`S1.P07.S03` is complete and
+`S1.P07.S04` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1169,7 +1172,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
 `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
-`S1.P07.S03` is next and not started.
+`S1.P07.S03` is complete and
+`S1.P07.S04` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -2268,7 +2272,8 @@ became `S1.P06.S10` work.
 
 `S1.P07` is active and incomplete. `S1.P07.S01` is complete and
 `S1.P07.S02` is complete and
-`S1.P07.S03` is next and not started.
+`S1.P07.S03` is complete and
+`S1.P07.S04` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2311,9 +2316,10 @@ one identity while carrying different statements. No global registry,
 replacement, conflict resolution, winner selection, or supersession exists
 here, and conflicting pattern claims are deliberately not solved.
 
-No invariant exists yet. The case-local `SuppliedFaultExpectedProperty` that
+No invariant exists in the S01 module. The case-local `SuppliedFaultExpectedProperty` that
 `S1.P06.S07` published is unchanged and is not promoted into a reusable
-invariant, and invariant identity is later `S1.P07` work. Applicability and
+invariant. At S01 publication, invariant identity remained later `S1.P07`
+work; S03 now adds that independent proposition separately. Applicability and
 transfer remain `S1.P08` work, generic confidence and review remain `S1.P09`
 work, and durable serialization and persistence remain `S1.P10` work, so no
 scope, applies-to, applicability, transfer, similarity, confidence, support,
@@ -2355,12 +2361,54 @@ JSON reconstructs the case through its own JSON validator, preserving tuple
 order, bounds, uniqueness and whole-record reference integrity. Revalidation
 retains the predecessor's bounded costs; object identity is not promised.
 No rationale, selected subrecord, evidence field, status or score is added.
-Invariants remain later P07 work, applicability/transfer P08, generic
-support/confidence/review P09, persistence P10 and extraction later runtime
-work. The module performs no I/O or automatic discovery. All predecessor
+The S02 module adds no invariant representation. S03 supplies an independent
+proposition; relationships remain later P07 work. Applicability/transfer remains
+P08, generic support/confidence/review P09, persistence P10 and extraction later
+runtime work. The module performs no I/O or automatic discovery. All predecessor
 production modules, including `pattern.py`, remain byte-identical.
 
-The `S1.P07` route is provisional beyond `S1.P07.S02`. Later exact schemas are
+### S1.P07.S03 — Supplied invariant proposition
+
+`S1.P07.S03` publishes `faultatlas.domain.invariant`, whose exact exports are
+`FaultInvariantIdentity` and `SuppliedFaultInvariant`. The independent nominal
+UUID identity names the caller's subject; Nil and Max are ordinary values, no
+UUID generation version is required, and no allocator, derived key, namespace
+registry or collision resolver is added.
+
+The record requires `invariant: FaultInvariantIdentity` followed by
+`invariant_statement: str`. The caller supplies a reusable property asserted or
+required to remain satisfied throughout the situations or operations described
+by the proposition. This represents the proposition, not its truth. A property
+remaining satisfied does not require every variable or program value to remain
+constant. A pattern describes a proposed recurring fault abstraction; a
+case-local expected property remains attached to its report. There is no
+promotion between these types merely because their wording matches.
+
+Conditions, observation points and exceptions stay in opaque text. Missing or
+ambiguous conditions are not silently interpreted as universal applicability.
+No English template, logical evaluator, scope AST or truth criterion is added.
+False or competing propositions remain representable, without reconciliation,
+proof, verification, conformance, violation detection or winner selection. A
+missing counterexample is not proof, and a counterexample in prose is not a
+machine-checked refutation.
+
+The frozen strict record requires a typed Python identity and revalidates it;
+native JSON reconstructs it. Text is 1–4096 characters, rejecting empty,
+whitespace-only, padded and lone-surrogate input during validation, with
+admitted Unicode and interior whitespace preserved. Identity and text remain
+separate: equal canonical base values compare equal, different identities may
+carry one text, and one identity may carry separate texts. No unequal-hash
+requirement or durable meaning for Python hash is introduced.
+
+There are no relationships and no pattern, case, exemplar, expected property,
+evidence, proof or observed violation is required or created. There is no
+promotion from a successful test or repair, and no applicability, transfer,
+support, confidence, review, causation or repair-correctness result. Those
+later-Phase boundaries remain unchanged. This module imports no `faultatlas`
+module and performs no I/O, discovery or extraction. P07 now owns exactly
+three named modules and five exports; its remaining route is provisional.
+
+The `S1.P07` route is provisional beyond `S1.P07.S03`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -2368,9 +2416,9 @@ tests before the corpus Slice:
 2. `S1.P07.S02` — `FaultInstance` pattern-exemplar relationships
    (complete)
 3. `S1.P07.S03` — Invariant identity and supplied invariant proposition
-   (next, not started)
+   (complete)
 4. `S1.P07.S04` — Pattern, invariant, and case-local expected-property
-   relationships (not started)
+   relationships (next, not started)
 5. `S1.P07.S05` — Bounded pattern composition and reference integrity
    (not started)
 6. `S1.P07.S06` — Cross-instance canonical vertical and boundary assurance
@@ -2746,7 +2794,14 @@ It binds the full `SuppliedFaultPattern` and `FaultInstance` values as one
 caller-supplied designation, with typed Python children and owner-delegated JSON
 reconstruction, and adds no matching or inference.
 
-Production Python sources are 22.
+The current live surface also includes `faultatlas.domain.invariant`, added by
+`S1.P07.S03`, exporting `FaultInvariantIdentity` and `SuppliedFaultInvariant`.
+The independent two-field value records a caller-supplied reusable-property
+proposition without truth certification, promotion or relationships. Typed
+Python and native JSON keep the established supplied-text and UUID policy.
+All S01/S02 production bytes remain unchanged.
+
+Production Python sources are 23.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the `S1.P05.S02.C01`
 correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, `S1.P05.S06`,
 `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01` correction,
@@ -2757,7 +2812,8 @@ is complete including the `S1.P06.S07.C01` correction, `S1.P06.S08` is
 complete, `S1.P06.S09` is complete, `S1.P06.S10` is complete, `S1.P06.S11` is
 complete, and `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
-`S1.P07.S03` is next and not started. `S1.P04.S10`
+`S1.P07.S03` is complete and
+`S1.P07.S04` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==

@@ -1939,13 +1939,14 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
         }
     ]
 
-    # Eighteen: S02 stays screened. S01 added `faultatlas/domain/pattern.py` to the
+    # Nineteen: S02/S03 stay screened. S01 added pattern.py to the
     # inventory and it is excluded above as a successor: its published prose
     # names an `S1.P06` symbol in order to disclaim it, which the whole-file
     # symbol screen below cannot tell apart from a use. The claim that matters
     # for it is asserted directly afterwards, and more strongly: its executable
     # body names nothing from `faultatlas` at all.
-    assert len(predecessors) == 18
+    assert len(predecessors) == 19
+    assert "faultatlas/domain/invariant.py" in predecessors
     assert "faultatlas/domain/pattern_exemplar.py" in predecessors
     for name in predecessors:
         source = (CHECKOUT_SOURCE_ROOT / name).read_text(encoding="utf-8")
@@ -2009,7 +2010,7 @@ def test_pattern_exemplar_cannot_escape_the_interpretation_screen(
     assert str(failure.value).splitlines()[0] == "faultatlas/domain/pattern_exemplar.py"
 
 
-def test_the_tracked_production_inventory_is_twenty_two_modules() -> None:
+def test_the_tracked_production_inventory_is_twenty_three_modules() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -2020,8 +2021,8 @@ def test_the_tracked_production_inventory_is_twenty_two_modules() -> None:
     observed = sorted(tracked.stdout.decode("utf-8").split())
 
     assert observed == [f"src/{name}" for name in EXPECTED_PRODUCTION_MODULES]
-    # Twenty-two since `S1.P07.S02` added the pattern-exemplar module.
-    assert len(observed) == 22
+    # Twenty-three since `S1.P07.S03` added the independent invariant module.
+    assert len(observed) == 23
     assert "src/faultatlas/domain/fault_interpretation.py" in observed
     assert "src/faultatlas/domain/pattern.py" in observed
 
@@ -2043,6 +2044,8 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/history.py",
     "faultatlas/domain/history_evidence_link.py",
     "faultatlas/domain/identity.py",
+    # Added by `S1.P07.S03`, the independent invariant proposition.
+    "faultatlas/domain/invariant.py",
     # Added by `S1.P07.S01`, the first `S1.P07` production module.
     "faultatlas/domain/pattern.py",
     # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
@@ -2319,7 +2322,7 @@ def test_the_current_status_section_states_exactly_the_live_lifecycle() -> None:
     # its second Slice rather than the Phase itself.
     assert "`S1.P07` is active and incomplete" in section
     assert "`S1.P07.S01` is complete" in section
-    assert "`S1.P07.S03` is next and not started" in section
+    assert "`S1.P07.S04` is next and not started" in section
     assert "`S1.P08` through `S1.P10` remain not started" in section
 
     # Nothing beyond the Phase's twelve Slices may be claimed, and no Slice is
@@ -2338,14 +2341,14 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
         r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
     )
     assert live_next, "the roadmap names no next gate"
-    # `S1.P07.S01` is complete, so the one live gate is the Slice `S1.P07.S03`
+    # `S1.P07.S01` is complete, so the one live gate is the Slice `S1.P07.S04`
     # and `S1.P07` is now the one active Phase rather than an unstarted one.
-    assert set(live_next) == {"S1.P07.S03"}, sorted(set(live_next))
+    assert set(live_next) == {"S1.P07.S04"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     assert set(live_phases) == {"S1.P07"}, sorted(set(live_phases))
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P07.S03`" in line, line
+            assert "`S1.P07.S04`" in line, line
 
 
 def test_the_roadmap_records_the_p06_s07_transition() -> None:
@@ -2362,7 +2365,7 @@ def test_the_roadmap_records_the_p06_s07_transition() -> None:
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S03` is next and not started" in current_status
+    assert "`S1.P07.S04` is next and not started" in current_status
     assert (
         "`S1.P06.S07` — Case-Local Explanation, Hypothesis, and Expected "
         "Property (complete)" in roadmap
@@ -2372,8 +2375,8 @@ def test_the_roadmap_records_the_p06_s07_transition() -> None:
     assert "faultatlas.domain.fault_interpretation" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    # Twenty-two since `S1.P07.S02` added the pattern-exemplar module.
-    assert "Production Python sources are 22." in current
+    # Twenty-three since `S1.P07.S03` added the independent invariant module.
+    assert "Production Python sources are 23." in current
 
     # The superseded live gate and the provisional S07 title must be retired.
     assert "`S1.P06.S07` is next and not started" not in roadmap
@@ -2563,7 +2566,7 @@ def offline_distributions(
     return wheels[0], sdists[0]
 
 
-def test_the_wheel_ships_twenty_two_modules_and_no_corpus_or_test_material(
+def test_the_wheel_ships_twenty_three_modules_and_no_corpus_or_test_material(
     offline_distributions: tuple[Path, Path],
 ) -> None:
     wheel, _ = offline_distributions
@@ -2572,8 +2575,8 @@ def test_the_wheel_ships_twenty_two_modules_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_PRODUCTION_MODULES
-    # Twenty-two since `S1.P07.S02` added the pattern-exemplar module.
-    assert len(modules) == 22
+    # Twenty-three since `S1.P07.S03` added the independent invariant module.
+    assert len(modules) == 23
     for required in (
         "faultatlas/domain/fault.py",
         "faultatlas/domain/fault_instance.py",
@@ -2581,6 +2584,8 @@ def test_the_wheel_ships_twenty_two_modules_and_no_corpus_or_test_material(
         "faultatlas/domain/fault_repair.py",
         "faultatlas/domain/fault_source_relationship.py",
         "faultatlas/domain/fault_test.py",
+        # Added by `S1.P07.S03`, the independent invariant proposition.
+        "faultatlas/domain/invariant.py",
         "faultatlas/domain/pattern.py",
         # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
         "faultatlas/domain/pattern_exemplar.py",
@@ -2592,7 +2597,7 @@ def test_the_wheel_ships_twenty_two_modules_and_no_corpus_or_test_material(
         assert not name.startswith("docs/")
 
 
-def test_the_sdist_ships_twenty_two_modules_and_no_corpus_or_test_material(
+def test_the_sdist_ships_twenty_three_modules_and_no_corpus_or_test_material(
     offline_distributions: tuple[Path, Path],
 ) -> None:
     _, sdist = offline_distributions
@@ -2603,8 +2608,8 @@ def test_the_sdist_ships_twenty_two_modules_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_PRODUCTION_MODULES
-    # Twenty-two since `S1.P07.S02` added the pattern-exemplar module.
-    assert len(modules) == 22
+    # Twenty-three since `S1.P07.S03` added the independent invariant module.
+    assert len(modules) == 23
     for required in (
         "faultatlas/domain/fault.py",
         "faultatlas/domain/fault_instance.py",
@@ -2612,6 +2617,8 @@ def test_the_sdist_ships_twenty_two_modules_and_no_corpus_or_test_material(
         "faultatlas/domain/fault_repair.py",
         "faultatlas/domain/fault_source_relationship.py",
         "faultatlas/domain/fault_test.py",
+        # Added by `S1.P07.S03`, the independent invariant proposition.
+        "faultatlas/domain/invariant.py",
         "faultatlas/domain/pattern.py",
         # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
         "faultatlas/domain/pattern_exemplar.py",

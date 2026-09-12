@@ -428,6 +428,8 @@ FAULT_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/fault_evidence_link.py"
 PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 # Added by `S1.P07.S02`, after the sealed predecessor inventories.
 PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
+# Added by `S1.P07.S03`; sealed predecessor inventories remain unchanged.
+INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 P03_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, EVIDENCE_MODULE}
 CURRENT_PRODUCTION_FILES = {
     *P03_PRODUCTION_FILES,
@@ -442,6 +444,7 @@ CURRENT_PRODUCTION_FILES = {
     FAULT_INTERPRETATION_MODULE,
     FAULT_INSTANCE_MODULE,
     FAULT_EVIDENCE_LINK_MODULE,
+    INVARIANT_MODULE,
     PATTERN_MODULE,
     PATTERN_EXEMPLAR_MODULE,
 }
@@ -2121,7 +2124,7 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     current_status = normalized_roadmap.split("## Current status", 1)[1].split(
         "## ", 1
     )[0]
-    assert "`S1.P07.S03` is next and not started" in current_status
+    assert "`S1.P07.S04` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:

@@ -920,11 +920,11 @@ def test_the_roadmap_records_the_s05_transition() -> None:
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
     # `S1.P07` is no longer merely next: it has been entered, so the live
-    # gate is now the `S1.P07.S03` Slice.
+    # gate is now the `S1.P07.S04` Slice.
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S03` is next and not started" in current_status
+    assert "`S1.P07.S04` is next and not started" in current_status
     # The superseded provisional title and status must not survive.
     assert "Mutable Head-Ref Observation and Deletion" not in roadmap
     assert "`S1.P05.S05` is next and not started" not in roadmap
