@@ -1393,7 +1393,7 @@ def test_no_evidence_is_consumed() -> None:
         assert absent not in FaultInstance.model_fields, absent
 
 
-def test_the_tracked_production_inventory_is_twenty_one_modules() -> None:
+def test_the_tracked_production_inventory_is_twenty_two_modules() -> None:
     tracked = subprocess.run(  # noqa: S603 - literal argv, no shell
         ["git", "ls-files", "src/"],
         cwd=REPOSITORY_ROOT,
@@ -1404,8 +1404,8 @@ def test_the_tracked_production_inventory_is_twenty_one_modules() -> None:
     observed = sorted(tracked.stdout.decode("utf-8").split())
 
     assert observed == [f"src/{name}" for name in EXPECTED_PRODUCTION_MODULES]
-    # Twenty-one since `S1.P07.S01` published `src/faultatlas/domain/pattern.py`.
-    assert len(observed) == 21
+    # Twenty-two since `S1.P07.S02` added the pattern-exemplar module.
+    assert len(observed) == 22
     assert "src/faultatlas/domain/fault_instance.py" in observed
     assert "src/faultatlas/domain/pattern.py" in observed
 
@@ -1816,7 +1816,8 @@ def test_the_roadmap_records_the_p06_s08_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07.S02` is next and not started" in roadmap
+    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
+    assert "`S1.P07.S03` is next and not started" in current_status
     assert (
         "`S1.P06.S08` — Bounded `FaultInstance` Composition and Reference "
         "Integrity (complete)" in roadmap
@@ -1825,8 +1826,8 @@ def test_the_roadmap_records_the_p06_s08_transition() -> None:
 
     assert "faultatlas.domain.fault_instance" in current
     assert "`FaultInstance`" in current
-    # Twenty-one since `S1.P07.S01` published `faultatlas.domain.pattern`.
-    assert "Production Python sources are 21." in current
+    # Twenty-two since `S1.P07.S02` added the pattern-exemplar module.
+    assert "Production Python sources are 22." in current
 
     assert "`S1.P06.S08` is next and not started" not in roadmap
     assert "`S1.P06.S09` is next and not started" not in roadmap
@@ -1885,6 +1886,8 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/identity.py",
     # Added by `S1.P07.S01`, the first `S1.P07` production module.
     "faultatlas/domain/pattern.py",
+    # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
+    "faultatlas/domain/pattern_exemplar.py",
     "faultatlas/domain/revision.py",
     "faultatlas/domain/snapshot.py",
     "faultatlas/domain/snapshot_evidence_link.py",
@@ -2064,7 +2067,7 @@ def offline_distributions(
     return wheels[0], sdists[0]
 
 
-def test_the_wheel_ships_twenty_one_modules_and_no_corpus_or_test_material(
+def test_the_wheel_ships_twenty_two_modules_and_no_corpus_or_test_material(
     offline_distributions: tuple[Path, Path],
 ) -> None:
     wheel, _ = offline_distributions
@@ -2073,8 +2076,8 @@ def test_the_wheel_ships_twenty_one_modules_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_PRODUCTION_MODULES
-    # Twenty-one since `S1.P07.S01` published `faultatlas/domain/pattern.py`.
-    assert len(modules) == 21
+    # Twenty-two since `S1.P07.S02` added the pattern-exemplar module.
+    assert len(modules) == 22
     assert "faultatlas/domain/fault_instance.py" in modules
     assert "faultatlas/domain/pattern.py" in modules
     for name in names:
@@ -2083,7 +2086,7 @@ def test_the_wheel_ships_twenty_one_modules_and_no_corpus_or_test_material(
         assert not name.startswith("docs/")
 
 
-def test_the_sdist_ships_twenty_one_modules_and_no_corpus_or_test_material(
+def test_the_sdist_ships_twenty_two_modules_and_no_corpus_or_test_material(
     offline_distributions: tuple[Path, Path],
 ) -> None:
     _, sdist = offline_distributions
@@ -2094,8 +2097,8 @@ def test_the_sdist_ships_twenty_one_modules_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_PRODUCTION_MODULES
-    # Twenty-one since `S1.P07.S01` published `faultatlas/domain/pattern.py`.
-    assert len(modules) == 21
+    # Twenty-two since `S1.P07.S02` added the pattern-exemplar module.
+    assert len(modules) == 22
     assert "faultatlas/domain/fault_instance.py" in modules
     assert "faultatlas/domain/pattern.py" in modules
     for name in names:

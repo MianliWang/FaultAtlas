@@ -101,6 +101,8 @@ FAULT_EVIDENCE_LINK_MODULE = "src/faultatlas/domain/fault_evidence_link.py"
 # history record nor a fault record, so it is named here rather than folded
 # into the `S1.P06` group above.
 PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
+# Added by `S1.P07.S02`, after the sealed predecessor inventories.
+PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION_FILES,
     HISTORY_MODULE,
@@ -113,6 +115,7 @@ CURRENT_PRODUCTION_FILES = {
     FAULT_INSTANCE_MODULE,
     FAULT_EVIDENCE_LINK_MODULE,
     PATTERN_MODULE,
+    PATTERN_EXEMPLAR_MODULE,
 }
 
 EXPECTED_OWNED_SYMBOLS = (
@@ -906,7 +909,7 @@ def test_production_surface_adds_every_module_published_after_this_closure() -> 
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert observed == CURRENT_PRODUCTION_FILES
-    assert len(observed) == 21
+    assert len(observed) == 22
     assert observed - EXPECTED_PRODUCTION_FILES == {
         HISTORY_MODULE,
         HISTORY_EVIDENCE_LINK_MODULE,
@@ -918,6 +921,7 @@ def test_production_surface_adds_every_module_published_after_this_closure() -> 
         FAULT_INSTANCE_MODULE,
         FAULT_EVIDENCE_LINK_MODULE,
         PATTERN_MODULE,
+        PATTERN_EXEMPLAR_MODULE,
     }
     assert EXPECTED_PRODUCTION_FILES - observed == set()
     assert len(EXPECTED_PRODUCTION_FILES) == 11
@@ -1025,7 +1029,8 @@ def test_roadmap_records_phase_completion_and_p05_readiness() -> None:
     assert "`S1.P06.S12` is complete" in roadmap
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    assert "`S1.P07.S02` is next and not started" in roadmap
+    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
+    assert "`S1.P07.S03` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert CLOSURE_RELATIVE in roadmap
     assert "`S1.P04` is active and incomplete" not in roadmap

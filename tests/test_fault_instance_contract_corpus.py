@@ -107,7 +107,9 @@ SUPPORT_MODULES = (
 SEALED_PRODUCTION_MODULE_COUNT = 20
 # Added by `S1.P07.S01`, the first `S1.P07` production module.
 PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
-LIVE_PRODUCTION_MODULE_COUNT = 21
+# Added by `S1.P07.S02`, after the sealed predecessor inventories.
+PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
+LIVE_PRODUCTION_MODULE_COUNT = 22
 ALLOWED_MARKERS = ("enum_value", "indexed_value", "tuple_value", "typed_value")
 MAX_INDEXED_COUNT = 4097
 ALLOWED_OPERATIONS = ("construct", "reject")
@@ -1703,6 +1705,7 @@ def test_the_corpus_is_source_only_and_adds_no_production_file() -> None:
         "src/faultatlas/domain/history_evidence_link.py",
         "src/faultatlas/domain/identity.py",
         PATTERN_MODULE,
+        PATTERN_EXEMPLAR_MODULE,
         "src/faultatlas/domain/revision.py",
         "src/faultatlas/domain/snapshot.py",
         "src/faultatlas/domain/snapshot_evidence_link.py",
@@ -1794,12 +1797,14 @@ def test_the_built_wheel_and_sdist_carry_twenty_one_sources_and_no_corpus(
 
     # A distribution spells the module without the `src/` prefix.
     packaged_pattern_module = PATTERN_MODULE.removeprefix("src/")
+    packaged_exemplar_module = PATTERN_EXEMPLAR_MODULE.removeprefix("src/")
     for names, label in ((wheel_names, "wheel"), (sdist_names, "sdist")):
         sources = [name for name in names if name.endswith(".py")]
         assert len(sources) == LIVE_PRODUCTION_MODULE_COUNT, (label, sorted(sources))
         # The twenty-first source is the module `S1.P07.S01` added, named
         # here rather than absorbed into a bumped count.
         assert any(name.endswith(packaged_pattern_module) for name in sources), label
+        assert any(name.endswith(packaged_exemplar_module) for name in sources), label
         for excluded in ("reference_corpus", "tests/", "docs/"):
             assert not any(excluded in name for name in names), (label, excluded)
         assert not any("fault-instance" in name for name in names), label
@@ -2118,12 +2123,13 @@ def test_the_scope_matches_the_live_surface() -> None:
     assert scope["owned_modules"] == list(OWNED_MODULES)
     assert scope["owned_module_count"] == len(OWNED_MODULES)
     assert scope["owned_symbol_count"] == len(OWNED)
-    # Sealed against live: `S1.P07.S01` added one production module after this
-    # manifest was sealed, so the sealed count is the live surface less that
-    # one named module rather than the live surface itself.
+    # Sealed against live: S01 and S02 added two named modules after this
+    # manifest was sealed; its historical count remains twenty.
     live = _production_sources()
-    assert PATTERN_MODULE in live
-    assert scope["production_module_count"] == len(live - {PATTERN_MODULE})
+    assert {PATTERN_MODULE, PATTERN_EXEMPLAR_MODULE} <= live
+    assert scope["production_module_count"] == len(
+        live - {PATTERN_MODULE, PATTERN_EXEMPLAR_MODULE}
+    )
     assert scope["source_only"] is True
     assert scope["package_exclusion_required"] is True
     assert cast(str, scope["note"]).strip() == scope["note"]
@@ -2220,7 +2226,8 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
     # `S1.P07.S01` exercised the eligibility this Phase handed on, so the
     # gate moved: `S1.P07` is no longer the thing that has not started.
     assert "`S1.P07` is active and incomplete" in roadmap
-    assert "`S1.P07.S02` is next and not started" in roadmap
+    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
+    assert "`S1.P07.S03` is next and not started" in current_status
     assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
     assert "`S1.P06` is complete" in roadmap
     assert "`S1.P06.S07.C01` correction" in roadmap

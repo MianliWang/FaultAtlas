@@ -86,6 +86,8 @@ EXPECTED_PRODUCTION_FILES = {
     "src/faultatlas/domain/identity.py",
     # Added by `S1.P07.S01`, the first `S1.P07` production module.
     "src/faultatlas/domain/pattern.py",
+    # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
+    "src/faultatlas/domain/pattern_exemplar.py",
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/snapshot_evidence_link.py",
