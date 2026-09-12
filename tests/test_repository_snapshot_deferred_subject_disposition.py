@@ -91,6 +91,8 @@ PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
 PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 # Added by `S1.P07.S03`; sealed predecessor inventories remain unchanged.
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
+# Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
+INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION_FILES,
     HISTORY_MODULE,
@@ -103,6 +105,7 @@ CURRENT_PRODUCTION_FILES = {
     FAULT_INSTANCE_MODULE,
     FAULT_EVIDENCE_LINK_MODULE,
     INVARIANT_MODULE,
+    INVARIANT_RELATIONSHIP_MODULE,
     PATTERN_MODULE,
     PATTERN_EXEMPLAR_MODULE,
 }
@@ -746,7 +749,7 @@ def test_production_surface_adds_every_module_published_after_this_decision() ->
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
     assert observed == CURRENT_PRODUCTION_FILES
-    assert len(observed) == 23
+    assert len(observed) == 24
     assert observed - EXPECTED_PRODUCTION_FILES == {
         HISTORY_MODULE,
         HISTORY_EVIDENCE_LINK_MODULE,
@@ -758,6 +761,7 @@ def test_production_surface_adds_every_module_published_after_this_decision() ->
         FAULT_INSTANCE_MODULE,
         FAULT_EVIDENCE_LINK_MODULE,
         INVARIANT_MODULE,
+        INVARIANT_RELATIONSHIP_MODULE,
         PATTERN_MODULE,
         PATTERN_EXEMPLAR_MODULE,
     }
@@ -840,7 +844,7 @@ def test_roadmap_records_the_s08_disposition_and_transition() -> None:
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
     current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S04` is next and not started" in current_status
+    assert "`S1.P07.S05` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "inherited exactly seven such subjects" in roadmap
     assert "`self_owned_open == 0`" in roadmap

@@ -56,6 +56,8 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 # Added by S03; BASELINE_PRODUCTION remains the immutable S01 observation.
 INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
+# Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
+INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
 FIELDS = ("pattern", "fault_instance")
 # Every UUID, repository identifier and statement in this file is synthetic.
 STATEMENT = "A supplied  重复 callback\nmay be observed."
@@ -573,7 +575,7 @@ def test_bounded_roadmap_section_states_designation_and_live_gate() -> None:
         "`S1.P07` is active and incomplete",
         "`S1.P07.S01` is complete",
         "`S1.P07.S02` is complete",
-        "`S1.P07.S04` is next and not started",
+        "`S1.P07.S05` is next and not started",
         "`S1.P08` through `S1.P10` remain not started",
     ):
         assert phrase in current, phrase
@@ -603,8 +605,10 @@ def distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]
 def test_tracked_checkout_wheel_and_sdist_are_exact(
     distributions: tuple[Path, Path],
 ) -> None:
-    expected = sorted([*BASELINE_PRODUCTION, MODULE, INVARIANT_MODULE])
-    assert len(expected) == 23
+    expected = sorted(
+        [*BASELINE_PRODUCTION, MODULE, INVARIANT_MODULE, INVARIANT_RELATIONSHIP_MODULE]
+    )
+    assert len(expected) == 24
     result = subprocess.run(
         ["git", "ls-files", "src/"],
         cwd=ROOT,
