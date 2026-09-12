@@ -189,6 +189,8 @@ CURRENT_PRODUCTION_SOURCES = (
     "src/faultatlas/domain/history_evidence_link.py",
     # Added by `S1.P07.S01`, the first `S1.P07` production module.
     "src/faultatlas/domain/pattern.py",
+    # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
+    "src/faultatlas/domain/pattern_exemplar.py",
     "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/snapshot_evidence_link.py",
 )
@@ -1751,7 +1753,8 @@ def test_roadmap_advances_p04_while_case_preserves_p03_closure_state() -> None:
     # the live roadmap now opens the phase instead of queueing it.
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    assert "`S1.P07.S02` is next and not started" in roadmap
+    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
+    assert "`S1.P07.S03` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented" in roadmap
     assert CLOSURE_RELATIVE in case

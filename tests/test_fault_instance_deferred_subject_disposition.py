@@ -40,7 +40,9 @@ SEALED_PRODUCTION_MODULE_COUNT = 20
 # Added by `S1.P07.S01`, the first `S1.P07` production module. The checkout
 # and both distributions carry it; the sealed bytes predate it.
 PATTERN_MODULE = "faultatlas/domain/pattern.py"
-LIVE_PRODUCTION_MODULE_COUNT = 21
+# Added by `S1.P07.S02`, after the sealed predecessor inventories.
+PATTERN_EXEMPLAR_MODULE = "faultatlas/domain/pattern_exemplar.py"
+LIVE_PRODUCTION_MODULE_COUNT = 22
 
 SUBJECT_ID = "gap:s05-known:case-relationship-vocabulary-provisional"
 HISTORICAL_WORDING = "case relationship vocabulary provisional"
@@ -835,7 +837,7 @@ def test_no_p06_product_module_is_left_unaccounted() -> None:
     under a filename that prefix never matches, so the prefix had stopped
     meaning what it says: it exempted a fault-domain module by accident
     rather than on purpose. The screen now reads what a module publishes,
-    and the one module `S1.P07.S01` added is excluded by name, because
+    and the S01/S02 modules are excluded by exact name, because
     these sealed `S1.P06.S10` bytes predate it and could not record it.
     """
     recorded = {
@@ -846,7 +848,7 @@ def test_no_p06_product_module_is_left_unaccounted() -> None:
     }
     live_fault_modules: set[str] = set()
     for relative in _live_production_modules():
-        if relative == PATTERN_MODULE:
+        if relative in {PATTERN_MODULE, PATTERN_EXEMPLAR_MODULE}:
             continue
         module_name = relative.removesuffix(".py").replace("/", ".")
         module_name = module_name.removesuffix(".__init__")
@@ -863,23 +865,26 @@ def test_no_p06_product_module_is_left_unaccounted() -> None:
         PATTERN_MODULE.removesuffix(".py").replace("/", ".")
     )
     assert any("Fault" in symbol for symbol in getattr(pattern, "__all__", ()))
+    exemplar = importlib.import_module("faultatlas.domain.pattern_exemplar")
+    assert exemplar.__all__ == ["FaultPatternExemplarAssociation"]
 
 
-def test_the_package_now_carries_twenty_one_production_modules() -> None:
-    """The sealed twenty, and the one module `S1.P07.S01` added since.
+def test_the_package_now_carries_twenty_two_production_modules() -> None:
+    """The sealed twenty, and the S01/S02 modules added since.
 
     The decision's own two counts are sealed historical figures and stay at
-    twenty. The checkout is one module longer, and the difference is exactly
-    the named `S1.P07.S01` module rather than an unexplained bump.
+    twenty. The checkout has exactly the two named P07 additions.
     """
     inventory = cast(dict[str, Any], _document()["product_inventory"])
     live = _live_production_modules()
 
     assert len(live) == LIVE_PRODUCTION_MODULE_COUNT
-    assert PATTERN_MODULE in live
+    assert {PATTERN_MODULE, PATTERN_EXEMPLAR_MODULE} <= set(live)
     assert inventory["production_module_count"] == SEALED_PRODUCTION_MODULE_COUNT
     assert cast(list[str], inventory["production_modules"]) == [
-        relative for relative in live if relative != PATTERN_MODULE
+        relative
+        for relative in live
+        if relative not in {PATTERN_MODULE, PATTERN_EXEMPLAR_MODULE}
     ]
     assert (
         _document()["assurance"]["governance_only"]["production_python_source_count"]
@@ -1189,13 +1194,14 @@ def test_the_roadmap_records_the_p06_s10_transition() -> None:
     # `S1.P07.S01` has since begun the Phase this Slice pointed at, so the
     # gate moved on from `S1.P07` to `S1.P07.S02`.
     assert "`S1.P07` is active and incomplete" in roadmap
-    assert "`S1.P07.S02` is next and not started" in roadmap
+    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
+    assert "`S1.P07.S03` is next and not started" in current_status
     assert "`S1.P06.S10` — Deferred disposition and readiness (complete)" in roadmap
     assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
     # The current-code mapping reports the live tree, which `S1.P07.S01`
     # moved from twenty sources to twenty-one. The sealed decision read
     # elsewhere in this file still says twenty, and stays right.
-    assert "Production Python sources are 21." in current
+    assert "Production Python sources are 22." in current
 
     assert "`S1.P06.S10` is next and not started" not in roadmap
     assert "`S1.P07` is next and not started" not in roadmap
@@ -1271,6 +1277,7 @@ EXPECTED_PRODUCTION_MODULES = [
     "faultatlas/domain/history_evidence_link.py",
     "faultatlas/domain/identity.py",
     PATTERN_MODULE,
+    PATTERN_EXEMPLAR_MODULE,
     "faultatlas/domain/revision.py",
     "faultatlas/domain/snapshot.py",
     "faultatlas/domain/snapshot_evidence_link.py",
@@ -1278,7 +1285,7 @@ EXPECTED_PRODUCTION_MODULES = [
 ]
 
 
-def test_the_checkout_carries_exactly_twenty_one_production_modules() -> None:
+def test_the_checkout_carries_exactly_twenty_two_production_modules() -> None:
     assert _live_production_modules() == EXPECTED_PRODUCTION_MODULES
     assert len(EXPECTED_PRODUCTION_MODULES) == LIVE_PRODUCTION_MODULE_COUNT
 
@@ -1324,7 +1331,7 @@ def offline_distributions(
     return wheels[0], sdists[0]
 
 
-def test_the_wheel_excludes_the_new_decision_and_keeps_twenty_one_modules(
+def test_the_wheel_excludes_the_new_decision_and_keeps_twenty_two_modules(
     offline_distributions: tuple[pathlib.Path, pathlib.Path],
 ) -> None:
     wheel, _ = offline_distributions
@@ -1341,7 +1348,7 @@ def test_the_wheel_excludes_the_new_decision_and_keeps_twenty_one_modules(
         assert not name.startswith("docs/")
 
 
-def test_the_sdist_excludes_the_new_decision_and_keeps_twenty_one_modules(
+def test_the_sdist_excludes_the_new_decision_and_keeps_twenty_two_modules(
     offline_distributions: tuple[pathlib.Path, pathlib.Path],
 ) -> None:
     _, sdist = offline_distributions

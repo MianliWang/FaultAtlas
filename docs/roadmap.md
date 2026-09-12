@@ -49,7 +49,8 @@ aspirational Slice as scheduled work.
   `S1.P06.S09` is complete, `S1.P06.S10` is complete,
   `S1.P06.S11` is complete, and `S1.P06.S12` is complete, so
   `S1.P07` is active and incomplete; `S1.P07.S01` is complete and
-  `S1.P07.S02` is next and not started.
+  `S1.P07.S02` is complete and
+  `S1.P07.S03` is next and not started.
   `S1.P08` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -105,7 +106,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S09` is complete,
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
 `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
-`S1.P07.S01` is complete and `S1.P07.S02` is next and not started.
+`S1.P07.S01` is complete and `S1.P07.S02` is complete and
+`S1.P07.S03` is next and not started.
 `S1.P08` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -712,7 +714,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S09` is complete,
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
 `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
-`S1.P07.S01` is complete and `S1.P07.S02` is next and not started.
+`S1.P07.S01` is complete and `S1.P07.S02` is complete and
+`S1.P07.S03` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1165,7 +1168,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P06.S09` is complete,
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
 `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
-`S1.P07.S01` is complete and `S1.P07.S02` is next and not started.
+`S1.P07.S01` is complete and `S1.P07.S02` is complete and
+`S1.P07.S03` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -2263,7 +2267,8 @@ became `S1.P06.S10` work.
 ## S1.P07 — Pattern & Invariant Model
 
 `S1.P07` is active and incomplete. `S1.P07.S01` is complete and
-`S1.P07.S02` is next and not started.
+`S1.P07.S02` is complete and
+`S1.P07.S03` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2320,15 +2325,50 @@ pattern extraction runs, and the module reads no clock, environment,
 filesystem, network, or process. Dependency direction is downstream only, so no
 `S1.P06` production module changed and none references the new module.
 
-The `S1.P07` route is provisional beyond `S1.P07.S01`. Later exact schemas are
+### S1.P07.S02 — Supplied pattern-exemplar designation
+
+`S1.P07.S02` publishes `faultatlas.domain.pattern_exemplar`, exporting exactly
+`FaultPatternExemplarAssociation`. Its required fields, in order, are
+`pattern: SuppliedFaultPattern` and `fault_instance: FaultInstance`: the caller
+designates this complete supplied case as an exemplar for this particular
+supplied proposition. The designation makes no claim that every nested report,
+occurrence or interpretation instantiates the pattern or is true.
+
+Equality follows full endpoint values, including supplied prose and tuple
+order. Identical identifiers with different valid contents remain different
+links; no canonical record is selected. Separate links permit one pattern with
+several cases and one case with several patterns, including same-repository,
+cross-repository and already-valid multi-repository compositions. Neither a
+second case nor a second repository is required. A pattern without links stays
+valid; absent links do not establish known absence, failed search or disproof.
+
+There is no automatic recurrence, matching, similarity, case equivalence,
+causation, applicability, transfer, support, confidence, review, invariant truth
+or repair correctness, and no nested claim is promoted. Repeated designations
+are not independent observations. Sharing either endpoint creates no inverse,
+transitive or case-to-case relation, merges no patterns and sets no global
+uniqueness, ordering or completeness rule.
+
+Both Python endpoints must already be instances of their declared types,
+including ordinary no-new-field subclasses, and their owners revalidate them.
+JSON reconstructs the case through its own JSON validator, preserving tuple
+order, bounds, uniqueness and whole-record reference integrity. Revalidation
+retains the predecessor's bounded costs; object identity is not promised.
+No rationale, selected subrecord, evidence field, status or score is added.
+Invariants remain later P07 work, applicability/transfer P08, generic
+support/confidence/review P09, persistence P10 and extraction later runtime
+work. The module performs no I/O or automatic discovery. All predecessor
+production modules, including `pattern.py`, remain byte-identical.
+
+The `S1.P07` route is provisional beyond `S1.P07.S02`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
 1. `S1.P07.S01` — Pattern Identity and Supplied Pattern Proposition (complete)
 2. `S1.P07.S02` — `FaultInstance` pattern-exemplar relationships
-   (next, not started)
+   (complete)
 3. `S1.P07.S03` — Invariant identity and supplied invariant proposition
-   (not started)
+   (next, not started)
 4. `S1.P07.S04` — Pattern, invariant, and case-local expected-property
    relationships (not started)
 5. `S1.P07.S05` — Bounded pattern composition and reference integrity
@@ -2698,7 +2738,15 @@ registry, replacement, or conflict resolution exists. Both models are frozen
 and strict, both revalidate always, the record forbids extra keys and guards
 its identity position against untyped Python input, and neither performs I/O,
 allocates an identifier, embeds, clusters, or extracts a pattern. No `S1.P06`
-module changed and none references it. Production Python sources are 21.
+module changed and none references it.
+
+The current live surface also includes `faultatlas.domain.pattern_exemplar`,
+published by `S1.P07.S02`, exporting only `FaultPatternExemplarAssociation`.
+It binds the full `SuppliedFaultPattern` and `FaultInstance` values as one
+caller-supplied designation, with typed Python children and owner-delegated JSON
+reconstruction, and adds no matching or inference.
+
+Production Python sources are 22.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the `S1.P05.S02.C01`
 correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, `S1.P05.S06`,
 `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01` correction,
@@ -2708,7 +2756,8 @@ is complete, `S1.P06.S05` is complete, `S1.P06.S06` is complete, `S1.P06.S07`
 is complete including the `S1.P06.S07.C01` correction, `S1.P06.S08` is
 complete, `S1.P06.S09` is complete, `S1.P06.S10` is complete, `S1.P06.S11` is
 complete, and `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
-`S1.P07.S01` is complete and `S1.P07.S02` is next and not started. `S1.P04.S10`
+`S1.P07.S01` is complete and `S1.P07.S02` is complete and
+`S1.P07.S03` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==

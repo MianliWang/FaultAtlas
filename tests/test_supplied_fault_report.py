@@ -2000,7 +2000,8 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07.S02` is next and not started" in roadmap
+    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
+    assert "`S1.P07.S03` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert (
         "`S1.P06.S01` — Fault Instance Identity and Repository Context (complete)"
@@ -2015,7 +2016,7 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     assert "faultatlas.domain.fault" in current
     for symbol in EXPECTED_EXPORTS:
         assert f"`{symbol}`" in current
-    assert "Production Python sources are 21." in current
+    assert "Production Python sources are 22." in current
     assert "`report.context.fault`" in current
 
     # The superseded live gate and the provisional S02 title must be retired.
@@ -2086,15 +2087,15 @@ def test_the_roadmap_carries_exactly_one_live_gate() -> None:
     )
     assert live_next, "the roadmap names no next gate"
     # `S1.P07.S01` moved the gate from the Phase to its first Slice: `S1.P07`
-    # has begun, so the single live gate is now `S1.P07.S02`.
-    assert set(live_next) == {"S1.P07.S02"}, sorted(set(live_next))
+    # has begun, so the single live gate is now `S1.P07.S03`.
+    assert set(live_next) == {"S1.P07.S03"}, sorted(set(live_next))
     live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
     # Exactly one Phase is now active, and it is the one that just began.
     assert set(live_phases) == {"S1.P07"}, sorted(set(live_phases))
     # Line-based readers pair the Slice with the phrase on one raw line.
     for line in ROADMAP.read_text(encoding="utf-8").splitlines():
         if "next and not started" in line:
-            assert "`S1.P07.S02`" in line, line
+            assert "`S1.P07.S03`" in line, line
 
 
 # --- packaging and an isolated installed-wheel smoke -------------------------
@@ -2219,6 +2220,8 @@ def offline_distributions(
 
 # Added by `S1.P07.S01`, the first `S1.P07` production module.
 PATTERN_MODULE = "faultatlas/domain/pattern.py"
+# Added by `S1.P07.S02`, after the sealed predecessor inventories.
+PATTERN_EXEMPLAR_MODULE = "faultatlas/domain/pattern_exemplar.py"
 
 EXPECTED_WHEEL_MODULES = [
     "faultatlas/__init__.py",
@@ -2238,6 +2241,7 @@ EXPECTED_WHEEL_MODULES = [
     "faultatlas/domain/history_evidence_link.py",
     "faultatlas/domain/identity.py",
     PATTERN_MODULE,
+    PATTERN_EXEMPLAR_MODULE,
     "faultatlas/domain/revision.py",
     "faultatlas/domain/snapshot.py",
     "faultatlas/domain/snapshot_evidence_link.py",
@@ -2245,7 +2249,7 @@ EXPECTED_WHEEL_MODULES = [
 ]
 
 
-def test_the_wheel_ships_twenty_one_modules_and_no_corpus_or_test_material(
+def test_the_wheel_ships_twenty_two_modules_and_no_corpus_or_test_material(
     offline_distributions: tuple[Path, Path],
 ) -> None:
     wheel, _ = offline_distributions
@@ -2254,7 +2258,7 @@ def test_the_wheel_ships_twenty_one_modules_and_no_corpus_or_test_material(
 
     modules = sorted(name for name in names if name.endswith(".py"))
     assert modules == EXPECTED_WHEEL_MODULES
-    assert len(modules) == 21
+    assert len(modules) == 22
     assert "faultatlas/domain/fault.py" in modules
     for name in names:
         assert "reference_corpus" not in name
@@ -2262,7 +2266,7 @@ def test_the_wheel_ships_twenty_one_modules_and_no_corpus_or_test_material(
         assert not name.startswith("docs/")
 
 
-def test_the_sdist_ships_twenty_one_modules_and_no_corpus_or_test_material(
+def test_the_sdist_ships_twenty_two_modules_and_no_corpus_or_test_material(
     offline_distributions: tuple[Path, Path],
 ) -> None:
     _, sdist = offline_distributions
@@ -2273,7 +2277,7 @@ def test_the_sdist_ships_twenty_one_modules_and_no_corpus_or_test_material(
         name.split("/src/", 1)[1] for name in names if name.endswith(".py")
     )
     assert modules == EXPECTED_WHEEL_MODULES
-    assert len(modules) == 21
+    assert len(modules) == 22
     for name in names:
         parts = Path(name).parts
         assert "reference_corpus" not in parts

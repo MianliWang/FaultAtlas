@@ -121,7 +121,7 @@ OWNED_SYMBOL_COUNT = 30
 # built distribution carry now, and it moves when a later Phase publishes a
 # module.
 SEALED_PRODUCTION_MODULE_COUNT = 20
-LIVE_PRODUCTION_MODULE_COUNT = 21
+LIVE_PRODUCTION_MODULE_COUNT = 22
 
 # Added by `S1.P07.S01`, the first `S1.P07` production module. It is named in
 # both spellings this module already uses: the closure's own inventory is
@@ -129,7 +129,10 @@ LIVE_PRODUCTION_MODULE_COUNT = 21
 # repository-relative. A wheel or sdist member ends with the `src`-relative
 # form, so that spelling serves the distribution check too.
 PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
+# Added by `S1.P07.S02`, after the sealed predecessor inventories.
+PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 PATTERN_MODULE_UNDER_SRC = "faultatlas/domain/pattern.py"
+PATTERN_EXEMPLAR_MODULE_UNDER_SRC = "faultatlas/domain/pattern_exemplar.py"
 VECTOR_TOTAL = 254
 FIXTURE_COUNT = 29
 SYMBOL_COVERAGE = "30/30"
@@ -293,14 +296,15 @@ EXPECTED_SECTIONS = (
 )
 
 # The P07 product surface, as it stands. At this closure none of it existed;
-# `S1.P07.S01` has since published exactly one module and exactly two symbols,
+# S01/S02 have since published two modules and three symbols,
 # so the guard is now an equality on that surface rather than a blanket
 # refusal. Everything `S1.P07` has not published yet is still refused by name.
-P07_PUBLISHED_MODULES = (PATTERN_MODULE,)
-P07_PUBLISHED_SYMBOLS = (
+P07_PUBLISHED_MODULES = (PATTERN_MODULE, PATTERN_EXEMPLAR_MODULE)
+S01_PUBLISHED_SYMBOLS = (
     "FaultPatternIdentity",
     "SuppliedFaultPattern",
 )
+P07_PUBLISHED_SYMBOLS = (*S01_PUBLISHED_SYMBOLS, "FaultPatternExemplarAssociation")
 ABSENT_P07_MODULES = (
     "src/faultatlas/domain/invariant.py",
     "src/faultatlas/domain/fault_pattern.py",
@@ -946,7 +950,7 @@ def test_no_supporting_authority_symbol_was_counted_as_owned() -> None:
             assert symbol not in owned, (dotted, symbol)
 
 
-def test_the_sealed_twenty_modules_stand_and_the_tree_added_only_pattern() -> None:
+def test_the_sealed_twenty_modules_stand_with_exact_named_p07_additions() -> None:
     """Two claims, only one of which a later Phase may change.
 
     The sealed claim is permanent: `S1.P06` closed with exactly these twenty
@@ -973,11 +977,12 @@ def test_the_sealed_twenty_modules_stand_and_the_tree_added_only_pattern() -> No
         assert (REPOSITORY_ROOT / "src" / relative).is_file(), relative
 
     # The closed-Phase snapshot against the tree as it now stands: intact, and
-    # grown by exactly the named `S1.P07.S01` module.
+    # grown by exactly the named S01 and S02 modules.
     assert set(recorded) - set(live) == set(), sorted(set(recorded) - set(live))
-    assert set(live) - set(recorded) == {PATTERN_MODULE_UNDER_SRC}, sorted(
-        set(live) - set(recorded)
-    )
+    assert set(live) - set(recorded) == {
+        PATTERN_MODULE_UNDER_SRC,
+        PATTERN_EXEMPLAR_MODULE_UNDER_SRC,
+    }, sorted(set(live) - set(recorded))
     assert len(live) == LIVE_PRODUCTION_MODULE_COUNT, live
 
 
@@ -1254,6 +1259,9 @@ def test_the_built_wheel_and_sdist_carry_twenty_one_sources_and_no_governance(
         # which is named here rather than absorbed into a bumped integer.
         assert len(sources) == LIVE_PRODUCTION_MODULE_COUNT, (label, sorted(sources))
         assert any(name.endswith(PATTERN_MODULE_UNDER_SRC) for name in sources), label
+        assert any(
+            name.endswith(PATTERN_EXEMPLAR_MODULE_UNDER_SRC) for name in sources
+        ), label
         for excluded in ("reference_corpus", "tests/", "docs/"):
             assert not any(excluded in name for name in names), (label, excluded)
         assert not any("phase-closure" in name for name in names), label
@@ -1895,7 +1903,8 @@ def test_the_roadmap_records_the_closed_phase_and_the_begun_next_one() -> None:
     # the roadmap's projection of it did.
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    assert "`S1.P07.S02` is next and not started" in roadmap
+    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
+    assert "`S1.P07.S03` is next and not started" in current_status
     assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P06` is active and incomplete" not in roadmap
     assert "`S1.P06.S12` is next and not started" not in roadmap
@@ -2055,15 +2064,11 @@ def test_the_p07_boundary_is_carried_forward_unweakened() -> None:
     assert "not factual truth" in statements
 
 
-def test_the_live_p07_surface_is_exactly_what_s01_published() -> None:
-    """Readiness was a claim about absence; now it bounds what exists.
+def test_the_live_p07_surface_is_exactly_what_s01_and_s02_published() -> None:
+    """The sealed P06 absence stays historical; live P07 is bounded by S01/S02.
 
-    At this closure `S1.P07` had published nothing and every one of these
-    names was refused outright. `S1.P07.S01` has since published exactly one
-    module exporting exactly two symbols, so the guard is migrated rather than
-    dropped: that module and those two symbols are pinned as the whole
-    published `S1.P07` surface, and every name the Phase has not published is
-    still refused. A third, unexplained `Pattern` symbol fails here.
+    S01 retains its exact two exports; S02 adds its one named association.
+    Every other Pattern symbol and the whole Invariant surface remain refused.
     """
     import importlib
 
@@ -2073,9 +2078,12 @@ def test_the_live_p07_surface_is_exactly_what_s01_published() -> None:
         assert not (REPOSITORY_ROOT / relative).exists(), relative
 
     published = importlib.import_module("faultatlas.domain.pattern")
-    assert tuple(cast(tuple[str, ...], published.__all__)) == P07_PUBLISHED_SYMBOLS, (
+    assert tuple(cast(tuple[str, ...], published.__all__)) == S01_PUBLISHED_SYMBOLS, (
         published.__all__
     )
+
+    exemplar = importlib.import_module("faultatlas.domain.pattern_exemplar")
+    assert exemplar.__all__ == ["FaultPatternExemplarAssociation"]
 
     exported: set[str] = set()
     for path in (REPOSITORY_ROOT / "src").rglob("*.py"):
@@ -2094,8 +2102,7 @@ def test_the_live_p07_surface_is_exactly_what_s01_published() -> None:
         assert symbol not in exported, symbol
     # The `Invariant` half of the screen still holds in full: `S1.P07` has
     # published no invariant surface at all. The `Pattern` half is now bounded
-    # by the two symbols `S1.P07.S01` published rather than by their absence,
-    # so an unexplained third still fails.
+    # by the three symbols S01/S02 published; an unexplained fourth fails.
     assert not any("Invariant" in symbol for symbol in exported), sorted(exported)
     assert {symbol for symbol in exported if "Pattern" in symbol} == set(
         P07_PUBLISHED_SYMBOLS
@@ -2192,9 +2199,11 @@ def test_s12_adds_no_production_module_symbol_or_semantic() -> None:
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     )
     # The sealed baseline is intact, and the live tree exceeds it by exactly
-    # the one module `S1.P07.S01` published.
+    # the two modules S01 and S02 published.
     assert set(sealed) - set(live) == set(), sorted(set(sealed) - set(live))
-    assert set(live) - set(sealed) == {PATTERN_MODULE}, sorted(set(live) - set(sealed))
+    assert set(live) - set(sealed) == {PATTERN_MODULE, PATTERN_EXEMPLAR_MODULE}, sorted(
+        set(live) - set(sealed)
+    )
     assert len(live) == LIVE_PRODUCTION_MODULE_COUNT, live
     for path, digest in sorted(sealed.items()):
         assert _sha256((REPOSITORY_ROOT / path).read_bytes()) == digest, path

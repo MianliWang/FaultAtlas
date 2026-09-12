@@ -212,6 +212,8 @@ EXPECTED_PRODUCTION = {
 }
 # Added by `S1.P07.S01`, the first `S1.P07` production module.
 PATTERN_MODULE = "src/faultatlas/domain/pattern.py"
+# Added by `S1.P07.S02`, after the sealed predecessor inventories.
+PATTERN_EXEMPLAR_MODULE = "src/faultatlas/domain/pattern_exemplar.py"
 CURRENT_PRODUCTION_FILES = {
     *EXPECTED_PRODUCTION,
     "src/faultatlas/domain/evidence.py",
@@ -225,6 +227,7 @@ CURRENT_PRODUCTION_FILES = {
     "src/faultatlas/domain/history.py",
     "src/faultatlas/domain/history_evidence_link.py",
     PATTERN_MODULE,
+    PATTERN_EXEMPLAR_MODULE,
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/snapshot.py",
     "src/faultatlas/domain/snapshot_evidence_link.py",
@@ -2024,7 +2027,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     # and `S1.P07.S02`, not `S1.P07`, is what is next and not started.
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    assert "`S1.P07.S02` is next and not started" in roadmap
+    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
+    assert "`S1.P07.S03` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
 
