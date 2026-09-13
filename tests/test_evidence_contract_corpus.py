@@ -33,6 +33,7 @@ from typing import (
 import pytest
 from pydantic import BaseModel, RootModel, TypeAdapter, ValidationError
 from test_package import assert_complete_source_package, assert_current_inventory
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas
 import faultatlas.domain as domain_package
@@ -3729,9 +3730,8 @@ def test_roadmap_records_p03_complete_and_p04_s02_complete() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    # `S1.P07.S01` exercised the eligibility this sealed closure recorded, so
-    # the live roadmap now opens the phase instead of queueing it.
-    assert "`S1.P07` is active and incomplete" in roadmap
+    # Historical transition claims remain; the lifecycle owner checks current state.
+    assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap

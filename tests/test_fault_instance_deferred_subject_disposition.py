@@ -11,6 +11,7 @@ import pytest
 from _repository_contract import (
     P07_PUBLISHED_MODULES,
 )
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
 CHECKOUT_SOURCE_ROOT = REPOSITORY_ROOT / "src"
@@ -1200,9 +1201,8 @@ def test_the_roadmap_records_the_p06_s10_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    # `S1.P07.S01` has since begun the Phase this Slice pointed at, so the
-    # gate moved on from `S1.P07` to `S1.P07.S02`.
-    assert "`S1.P07` is active and incomplete" in roadmap
+    # Historical transition claims remain; the lifecycle owner checks current state.
+    assert_current_phase_lifecycle()
     assert "`S1.P06.S10` — Deferred disposition and readiness (complete)" in roadmap
     assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
     # The current-code mapping reports the live tree, which `S1.P07.S01`
@@ -1211,7 +1211,6 @@ def test_the_roadmap_records_the_p06_s10_transition() -> None:
 
     assert "`S1.P06.S10` is next and not started" not in roadmap
     assert "`S1.P07` is next and not started" not in roadmap
-    assert "`S1.P07` is complete" not in roadmap
 
 
 def test_the_roadmap_states_the_s10_decisions() -> None:

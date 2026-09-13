@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas.domain.history as history_module
 from faultatlas.domain.history import (
@@ -917,8 +918,8 @@ def test_the_roadmap_records_the_s05_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    # `S1.P07` is no longer merely next: it has been entered, so the live
-    assert "`S1.P07` is active and incomplete" in roadmap
+    # Historical transition claims remain; the lifecycle owner checks current state.
+    assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
     # The superseded provisional title and status must not survive.
     assert "Mutable Head-Ref Observation and Deletion" not in roadmap

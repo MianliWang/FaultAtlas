@@ -48,7 +48,7 @@ aspirational Slice as scheduled work.
   `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
   `S1.P06.S09` is complete, `S1.P06.S10` is complete,
   `S1.P06.S11` is complete, and `S1.P06.S12` is complete, so
-  `S1.P07` is active and incomplete; `S1.P07.S01` is complete and
+  `S1.P07` is complete; `S1.P07.S01` is complete and
   `S1.P07.S02` is complete and
   `S1.P07.S03` is complete and
   `S1.P07.S04` is complete and
@@ -56,7 +56,8 @@ aspirational Slice as scheduled work.
   `S1.P07.S06` is complete and
   `S1.P07.S07` is complete and
   `S1.P07.S08` is complete and
-  `S1.P07.S09` is next and not started.
+  `S1.P07.S09` is complete and
+  `S1.P08` is next and not started.
   `S1.P08` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -114,7 +115,7 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
-`S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
+`S1.P06.S12` is complete, and `S1.P07` is complete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
@@ -122,7 +123,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S06` is complete and
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
-`S1.P07.S09` is next and not started.
+`S1.P07.S09` is complete and
+`S1.P08` is next and not started.
 `S1.P08` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -728,7 +730,7 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
-`S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
+`S1.P06.S12` is complete, and `S1.P07` is complete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
@@ -736,7 +738,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S06` is complete and
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
-`S1.P07.S09` is next and not started.
+`S1.P07.S09` is complete and
+`S1.P08` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1188,7 +1191,7 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P06.S07.C01` correction, `S1.P06.S08` is complete,
 `S1.P06.S09` is complete,
 `S1.P06.S10` is complete, `S1.P06.S11` is complete, and
-`S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
+`S1.P06.S12` is complete, and `S1.P07` is complete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
@@ -1196,7 +1199,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P07.S06` is complete and
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
-`S1.P07.S09` is next and not started.
+`S1.P07.S09` is complete and
+`S1.P08` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1300,8 +1304,10 @@ evidence support. `S1.P06.S02` publishes no run, outcome, expected-property,
 root-cause, confidence, review, repair-candidate, source-relationship,
 evidence-link, scenario, or environment model, no reusable pattern or
 invariant, and no complete `FaultInstance`; those were taken up by
-`S1.P06.S03` through `S1.P06.S09` and the rest remain owned by `S1.P07`,
-`S1.P09`, and `S1.P10`. The two model-valued child positions are
+`S1.P06.S03` through `S1.P06.S09` and the supplied pattern/invariant models
+in `S1.P07.S01` through `S1.P07.S05`. Confidence and review remain `S1.P09`
+work, and durable persistence remains `S1.P10` work. The two model-valued child
+positions are
 guarded against untyped Python input exactly as the context's are, the raw
 text fields carry no nominal guard, and a report round-trips through JSON
 while refusing its own `model_dump` as Python input.
@@ -1397,8 +1403,10 @@ source relationship, evidence link, root cause, repair, confidence, review,
 reusable pattern or invariant, and no complete `FaultInstance`. The bounded
 source and history relationships came next, in `S1.P06.S04`, and the repair
 candidates in `S1.P06.S05`; the evidence link became `S1.P06.S09` work, and
-the rest remain owned by `S1.P07`, `S1.P08`, `S1.P09`, and `S1.P10`. The
-module still performs no I/O.
+the supplied pattern/invariant models were added by `S1.P07.S01` through
+`S1.P07.S05`. Transfer and applicability remain `S1.P08` work, confidence and
+review remain `S1.P09` work, and durable persistence remains `S1.P10` work.
+The module still performs no I/O.
 
 `S1.P06.S04` adds one new production module,
 `faultatlas.domain.fault_source_relationship`, whose `__all__` is exactly
@@ -1792,8 +1800,10 @@ proposition there too, never a historical fact promoted by appearing in a test.
 An expected property is case-local. Its carrier scopes it to exactly one
 supplied fault report, so it is not a passing test, a verified invariant, a
 universal program law, a cross-instance pattern, a repair acceptance criterion,
-or proof that the current behavior is wrong. Cross-instance generalization into
-patterns and invariants is `S1.P07` work and is not begun here. No prose is
+or proof that the current behavior is wrong. At S07 publication, the reservation
+was that generalization is `S1.P07` work and is not begun here. Its supplied
+pattern/invariant models are now published, while empirical generality remains
+unestablished. No prose is
 parsed, scope-checked, or classified anywhere in the module, so breadth of
 phrasing is not breadth of claim.
 
@@ -2293,7 +2303,7 @@ became `S1.P06.S10` work.
 
 ## S1.P07 — Pattern & Invariant Model
 
-`S1.P07` is active and incomplete. `S1.P07.S01` is complete and
+`S1.P07` is complete. `S1.P07.S01` is complete and
 `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
@@ -2301,7 +2311,8 @@ became `S1.P06.S10` work.
 `S1.P07.S06` is complete and
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
-`S1.P07.S09` is next and not started.
+`S1.P07.S09` is complete and
+`S1.P08` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2577,7 +2588,8 @@ to the already named long-term owner P08, before transfer/applicability claims
 and only after additional reviewed cross-repository cases. S06 synthetic cases
 provide no such empirical evidence. A further P01 source-qualified
 `deferred:p01:p07-pattern-generality` entry remains `evidence_insufficient`,
-owned by P07 and due for explicit review before P07 operational completion.
+owned by P07. S07 recorded the required review before P07 operational completion;
+S09 performs that review while retaining the empirical unknown and original owner.
 Its broad source-register references establish no exact alias to the P00 root;
 retaining both records asserts no two independent empirical questions. A P00
 reference that actually selects cross-provider identity mapping is recorded as
@@ -2591,7 +2603,8 @@ valid, invalid and composed authored expectations, explicit provenance,
 unknown-target/operation rejection, safe non-execution, source-only package
 exclusion and the distinction from P10 durable product interchange. At S07 publication, exact S08
 vectors and executor design were not implemented; S08 supplies them separately.
-S09 closure remains later work. The missing whole-Phase planning audit is not retrospectively established.
+S09 was the later closure task at that boundary. The missing whole-Phase
+planning audit is not retrospectively established.
 
 Only the decision JSON, its deterministic Markdown view and focused decision
 assurance are added. Published product and all earlier corpus bytes remain
@@ -2641,16 +2654,77 @@ The pinned S07 decision and its exact subject selectors remain unchanged. P03's
 model reservation stays `bounded_model_implemented`; P00's empirical root stays
 `unknown_pending_additional_evidence`, owned by P08 under its additional-reviewed-
 cases/revisit condition. `deferred:p01:p07-pattern-generality` stays
-`evidence_insufficient`, owned by P07 and explicitly retained for review before
-P07 operational completion. These records are not merged by prose similarity or
+`evidence_insufficient`, owned by P07. S08 retained the pre-completion review
+requirement; S09 now records the review without empirical resolution. These
+records are not merged by prose similarity or
 counted as independent observations. No empirical remainder is discharged, no
 P08 eligibility or Phase closure is established, and the missing whole-Phase
 planning audit is not retrospectively claimed. Production and all prior corpus
-bytes remain unchanged; S09 integration and closure are not implemented here.
+bytes remained unchanged at S08 publication. S09 records bounded integration
+and closure separately below.
 
-The `S1.P07` route is provisional beyond `S1.P07.S08`. Later exact schemas are
-not authorized by appearing here, and every product Slice owns its focused
-tests before the corpus Slice:
+### S1.P07.S09 — Integration and bounded Phase closure
+
+`S1.P07.S09` closes the bounded supplied representation, explicit relationship,
+composition and contract-assurance scope. The [primary closure](../reference_corpus/contracts/pattern-invariant/closures/s1-p07-phase-closure/closure.json),
+its sha256sum-style sidecar and deterministic [derived view](../reference_corpus/contracts/pattern-invariant/closures/s1-p07-phase-closure/closure.md)
+record eight finite exit obligations. The existing five P07 modules and eight
+symbols, including two identities and six record models, remain unchanged;
+so do all 25 package modules, previous corpus bytes and dependency contracts.
+
+The closure verifies the eight S01–S08 publications (PRs 87–91 and 93–95), with
+E01 PR 92 separately retained between S05 and S06. Actual PR and natural-main
+checkout logs, parents and reviewed/tested/squash trees support the lineage.
+The S08 nine-file corpus remains 16 valid, 23 invalid and 9 composition vectors:
+48 rows with 25 accepted and 23 rejected examples. A current execution of the
+existing owner records 48 primary, 23 prerequisite and three companion target
+calls; these are not 74 vectors or independent observations. No second corpus
+executor, package inventory owner, runtime model or new empirical case is added.
+
+The required P01 review was performed before sealing this closure candidate.
+Its complete source-qualified record at
+`reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/37`,
+`deferred:p01:p07-pattern-generality`, retains the original consequence:
+
+> S1.P07 cannot publish a complete contract for p07 pattern generality until this item is resolved.
+
+Empirical pattern generality remains unestablished. The review keeps
+`evidence_insufficient`, semantic owner P07, the original reason and deadline
+`before_S1_P07_operational_completion`. Under the explicit S09 task policy,
+`reviewed_unknown_retained_nonblocking_for_bounded_model_closure` applies only
+to this supplied-model scope; any claim requiring established generality remains
+blocked. Review completion is not empirical resolution. Additional prospective
+triggers are new relevant reviewed evidence, or any future widening/publication
+that claims empirical pattern generality. The question stays visible here and
+in the closure, without automatically reopening the Phase or authorizing
+acquisition. Needed evidence includes a specifically scoped proposition,
+distinct relevant cases with exact source/revision and relationship attribution,
+examined conditions and counterexamples, and conclusions no broader than those
+cases; no fixed case quota or confidence threshold is asserted.
+
+P00's distinct stable root
+`gap:s05-known:cross-repository-pattern-and-transfer-not-established` remains
+`unknown_pending_additional_evidence`, owned by P08 with its exact condition
+`before_S1.P08_makes_transfer_or_applicability_claims_and_only_after_additional_cross_repository_cases`.
+The P03 model reservation remains `bounded_model_implemented`. One P07-owned
+and one P08-owned empirical entry remain; source-qualified rows are not counted
+as independent observations. Zero unresolved product blockers is limited to the
+evidenced bounded closure obligations, never all unknown questions.
+
+P08 is eligible only for its separate Phase-start discussion and planning after
+successful protected S09 publication and natural-main verification. Within S1
+there is no active Phase until P08 actually starts; S1 itself remains active.
+No P08 schema, implementation or empirically validated transfer is authorized.
+S01 takeover attribution and the resolved S07 STOP/SCOPE-01 history are retained,
+as are P06's nonblocking debt and E01's optional opportunities. The absent full
+three-ledger and route-comparison planning exercise is not retrospectively
+claimed. Current lifecycle readers delegate to the existing owner with bounded
+section/sentence checks; historical S07/S08 states and empirical snapshots remain
+unchanged. S09's own publication facts live in Git/GitHub and its final execution
+receipt, outside the sealed candidate bytes.
+
+The `S1.P07` route is closed at `S1.P07.S09`. P08 Phase-start discussion and
+planning require a separate task; no later schema is authorized by this route:
 
 1. `S1.P07.S01` — Pattern Identity and Supplied Pattern Proposition (complete)
 2. `S1.P07.S02` — `FaultInstance` pattern-exemplar relationships
@@ -2665,7 +2739,7 @@ tests before the corpus Slice:
    (complete)
 7. `S1.P07.S07` — Deferred disposition and corpus readiness (complete)
 8. `S1.P07.S08` — Accumulated pattern/invariant contract corpus (complete)
-9. `S1.P07.S09` — Integration and Phase closure (next, not started)
+9. `S1.P07.S09` — Integration and Phase closure (complete)
 
 ## Preserved later Stage 1 phases
 
@@ -2923,8 +2997,9 @@ review, support, or verification. `SuppliedFaultHypothesis` carries a
 own confirmation, rejection, probability, or supporting evidence.
 `SuppliedFaultExpectedProperty` carries an `expected_property_statement` scoped
 to one report, which is not a passing test, a verified invariant, a universal
-law, a cross-instance pattern, or a repair acceptance criterion; generalization
-is `S1.P07` work. No promotion, lifecycle, precedence, or conflict resolution
+law, a cross-instance pattern, or a repair acceptance criterion. The supplied
+cross-instance representation was subsequently added in `S1.P07`; empirical
+generality remains unestablished. No promotion, lifecycle, precedence, or conflict resolution
 relates the three, identical prose in two kinds stays two records, and nothing
 is inferred from repair candidates, test material, runs, outcomes, or
 comparisons, to which the module publishes no relation at all. All three
@@ -3060,7 +3135,7 @@ is complete, `S1.P06.S02` is complete, `S1.P06.S03` is complete, `S1.P06.S04`
 is complete, `S1.P06.S05` is complete, `S1.P06.S06` is complete, `S1.P06.S07`
 is complete including the `S1.P06.S07.C01` correction, `S1.P06.S08` is
 complete, `S1.P06.S09` is complete, `S1.P06.S10` is complete, `S1.P06.S11` is
-complete, and `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
+complete, and `S1.P06.S12` is complete, and `S1.P07` is complete;
 `S1.P07.S01` is complete and `S1.P07.S02` is complete and
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
@@ -3068,7 +3143,8 @@ complete, and `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S06` is complete and
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
-`S1.P07.S09` is next and not started. `S1.P04.S10`
+`S1.P07.S09` is complete and
+`S1.P08` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==

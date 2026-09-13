@@ -15,6 +15,7 @@ from typing import Any, cast
 import pytest
 from _repository_contract import PRODUCTION_FILES
 from test_package import assert_current_inventory
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CLOSURE_DIRECTORY = (
@@ -2106,7 +2107,7 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P06.S10` is complete" in normalized_roadmap
     assert "`S1.P06.S11` is complete" in normalized_roadmap
     assert "`S1.P06.S12` is complete" in normalized_roadmap
-    assert "`S1.P07` is active and incomplete" in normalized_roadmap
+    assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in normalized_roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap

@@ -14,6 +14,7 @@ from typing import Any, cast
 import pytest
 from _repository_contract import PRODUCTION_MODULES
 from pydantic import BaseModel, ConfigDict, RootModel, ValidationError
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas
 import faultatlas.domain
@@ -2708,7 +2709,7 @@ def test_the_roadmap_records_the_p06_s06_transition() -> None:
     )
     assert "`S1.P06.S10` is next and not started" not in roadmap
     assert "The `S1.P06` route is closed at `S1.P06.S09`." not in roadmap
-    assert "`S1.P07` is complete" not in roadmap
+    assert_current_phase_lifecycle()
     assert "- **S1.P06 — Fault Instance Model**" not in raw
 
     current = mapping[1]

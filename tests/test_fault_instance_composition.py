@@ -12,6 +12,7 @@ from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel, ValidationError
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas
 import faultatlas.domain
@@ -1807,7 +1808,7 @@ def test_the_roadmap_records_the_p06_s08_transition() -> None:
     assert "`S1.P06.S08` is next and not started" not in roadmap
     assert "`S1.P06.S09` is next and not started" not in roadmap
     assert "`S1.P06.S10` is next and not started" not in roadmap
-    assert "`S1.P07` is complete" not in roadmap
+    assert_current_phase_lifecycle()
     assert "Production Python sources are 19." not in roadmap
 
     current = mapping[1]

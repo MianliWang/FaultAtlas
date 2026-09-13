@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CLOSURE_RELATIVE = (
@@ -1840,16 +1841,12 @@ def test_the_roadmap_records_the_closed_phase_and_the_begun_next_one() -> None:
 
     assert "`S1.P06` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    # `S1.P07` was next and not started when this closure was sealed. That
-    # eligibility has since been exercised, so the live roadmap names the Phase
-    # as active and its own next Slice as the gate. Nothing sealed moved; only
-    # the roadmap's projection of it did.
-    assert "`S1.P07` is active and incomplete" in roadmap
+    # Historical transition claims remain; the lifecycle owner checks current state.
+    assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
     assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P06` is active and incomplete" not in roadmap
     assert "`S1.P06.S12` is next and not started" not in roadmap
-    assert "`S1.P07` is complete" not in roadmap
 
     # A `## S1.P07 — Pattern & Invariant Model` section now sits between the
     # `S1.P06` narrative and the preserved-phase list, so the bound ends at
