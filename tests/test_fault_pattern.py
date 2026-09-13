@@ -21,6 +21,7 @@ from pydantic import (
     StringConstraints,
     ValidationError,
 )
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas.domain.pattern as pattern_module
 from faultatlas.domain.fault import (
@@ -2156,7 +2157,7 @@ def test_the_roadmap_records_the_p07_s01_transition() -> None:
     assert len(mapping) == 2, "roadmap must retain a current-code mapping section"
 
     assert "## S1.P07 — Pattern & Invariant Model" in roadmap
-    assert "`S1.P07` is active and incomplete" in roadmap
+    assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert (
@@ -2173,7 +2174,6 @@ def test_the_roadmap_records_the_p07_s01_transition() -> None:
     assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P07` is `eligible_to_begin`" not in roadmap
     assert "`S1.P07` is eligible to begin" not in roadmap
-    assert "`S1.P07` is complete" not in roadmap
     assert "Production Python sources are 20." not in roadmap
     assert "- **S1.P07 — Pattern & Invariant Model**" not in raw
 

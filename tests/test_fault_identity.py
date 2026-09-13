@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 import pytest
 from pydantic import BaseModel, ConfigDict, RootModel, ValidationError
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas.domain.fault as fault_module
 from faultatlas.domain.fault import FaultInstanceIdentity, FaultRepositoryContext
@@ -1244,10 +1245,8 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    # `S1.P07` was the next-and-not-started gate at `S1.P06.S12`; `S1.P07.S01`
-    # has since exercised that eligibility, so the live gate moved on to
-    # `S1.P07.S02` and the Phase itself is now active.
-    assert "`S1.P07` is active and incomplete" in roadmap
+    # Historical transition claims remain; the lifecycle owner checks current state.
+    assert_current_phase_lifecycle()
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
     # `S1.P07.S01` published `faultatlas.domain.pattern`, so the live count
@@ -1258,7 +1257,6 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     assert "`S1.P06` is next and not started" not in roadmap
     assert "`S1.P06` is `eligible_to_begin`" not in roadmap
     assert "`S1.P07` is next and not started" not in roadmap
-    assert "`S1.P07` is complete" not in roadmap
     assert "- **S1.P06 — Fault Instance Model**" not in raw
     # `S1.P07` became an active section of its own exactly as `S1.P06` did,
     # so it too must have left the preserved-later-phases list.

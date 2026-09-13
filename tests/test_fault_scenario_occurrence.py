@@ -20,6 +20,7 @@ from pydantic import (
     StringConstraints,
     ValidationError,
 )
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas.domain.fault as fault_module
 from faultatlas.domain.fault import (
@@ -2749,7 +2750,7 @@ def test_the_roadmap_records_the_p06_s03_transition() -> None:
     assert "`S1.P06.S03` — Scenario and occurrence context (next, not started)" not in (
         roadmap
     )
-    assert "`S1.P07` is complete" not in roadmap
+    assert_current_phase_lifecycle()
     assert "`S1.P06.S10` is next and not started" not in roadmap
     # `S1.P07.S01` began the Phase, so the phase-level gate this file used to
     # read is itself superseded by the Slice gate above.

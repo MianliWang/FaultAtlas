@@ -19,6 +19,7 @@ import pytest
 from _repository_contract import PRODUCTION_FILES
 from pydantic import BaseModel
 from test_package import assert_complete_source_package
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas
 from faultatlas.domain.evidence import (
@@ -1736,9 +1737,8 @@ def test_roadmap_advances_p04_while_case_preserves_p03_closure_state() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    # `S1.P07.S01` exercised the eligibility this sealed closure recorded, so
-    # the live roadmap now opens the phase instead of queueing it.
-    assert "`S1.P07` is active and incomplete" in roadmap
+    # Historical transition claims remain; the lifecycle owner checks current state.
+    assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented" in roadmap

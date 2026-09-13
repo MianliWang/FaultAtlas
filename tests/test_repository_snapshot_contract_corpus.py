@@ -11,6 +11,7 @@ from typing import Any, NamedTuple, cast
 import pytest
 from pydantic import BaseModel, ValidationError
 from test_package import assert_current_inventory
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 from faultatlas.domain.evidence import (
     ArtifactByteLength,
@@ -1263,7 +1264,7 @@ def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is active and incomplete" in roadmap
+    assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert CORPUS_RELATIVE in roadmap
@@ -1282,9 +1283,8 @@ def test_roadmap_records_the_s09_corpus_and_current_phase_state() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P07` is active and incomplete" in roadmap
+    assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
     # P06 has since commenced, so the prohibition this closure recorded is
     # retired: what must not stand is a claim that P06 is COMPLETE.
     assert "`S1.P06` implementation has begun with `S1.P06.S01`" in roadmap
-    assert "`S1.P07` is complete" not in roadmap

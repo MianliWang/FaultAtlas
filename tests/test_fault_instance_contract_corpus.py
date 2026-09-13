@@ -22,6 +22,7 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel, ValidationError
 from test_package import assert_current_inventory
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas.domain.fault as fault_module
 import faultatlas.domain.fault_evidence_link as evidence_link_module
@@ -2147,17 +2148,14 @@ def test_the_roadmap_records_the_corpus_and_holds_the_phase_state() -> None:
 
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    # `S1.P07.S01` exercised the eligibility this Phase handed on, so the
-    # gate moved: `S1.P07` is no longer the thing that has not started.
-    assert "`S1.P07` is active and incomplete" in roadmap
+    # Historical transition claims remain; the lifecycle owner checks current state.
+    assert_current_phase_lifecycle()
     assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
     assert "`S1.P06` is complete" in roadmap
     assert "`S1.P06.S07.C01` correction" in roadmap
 
     assert "`S1.P06.S11` is next and not started" not in roadmap
     assert "`S1.P07` is next and not started" not in roadmap
-    assert "`S1.P07` is complete" not in roadmap
-    assert "`S1.P07` is complete" not in roadmap
 
     for claim in (
         "reference_corpus/contracts/fault-instance/v1",

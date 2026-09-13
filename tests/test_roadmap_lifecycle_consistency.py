@@ -50,10 +50,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
-# `S1.P06.S12` published the Phase closure, so every `S1.P06` Slice is complete
-# and `S1.P06` joins the completed Phases. `S1.P07.S01` has since exercised the
-# eligibility that closure established: `S1.P07` is active and incomplete, its
-# first Slice is published, and the live gate is a Slice again.
+# P06 and bounded P07 are complete. S1 is between Phases: P08 is the
+# next planning gate, with no active Phase until it actually starts.
 #
 # The completed Slices carry two roles and are therefore two tuples. The route
 # block `_route_entries` parses is the `S1.P06` route alone, which holds exactly
@@ -62,7 +60,7 @@ ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 # they read the combined `COMPLETE_SLICES`. One shared tuple would make the
 # route lookups miscount.
 P06_ROUTE_SLICES = tuple(f"S1.P06.S{index:02d}" for index in range(1, 13))
-# S01 began P07; S02 through S08 add the next seven published Slices.
+# All nine published P07 positions are complete in the bounded supplied-model scope.
 P07_COMPLETE_SLICES = (
     "S1.P07.S01",
     "S1.P07.S02",
@@ -72,6 +70,7 @@ P07_COMPLETE_SLICES = (
     "S1.P07.S06",
     "S1.P07.S07",
     "S1.P07.S08",
+    "S1.P07.S09",
 )
 COMPLETE_SLICES = (*P06_ROUTE_SLICES, *P07_COMPLETE_SLICES)
 COMPLETE_PHASES = (
@@ -82,15 +81,11 @@ COMPLETE_PHASES = (
     "S1.P04",
     "S1.P05",
     "S1.P06",
+    "S1.P07",
 )
-# The gate is a Slice rather than a Phase again: `S1.P07` itself is under way,
-# so the next unit is its ninth Slice.
-NEXT_UNIT = "S1.P07.S09"
-# The Phase the live gate sits inside. It is neither complete nor not started,
-# so it is named separately from both groups below.
-ACTIVE_PHASE_UNIT = "S1.P07"
-# No longer empty. The `S1.P07` route names nine provisional positions, of which
-# S01 through S08 are complete and S09 is the gate; no later P07 position is listed.
+# The next gate is a Phase-start discussion, not an already active Phase.
+NEXT_UNIT = "S1.P08"
+# No unstarted P07 Slice remains in its closed nine-position route.
 NOT_STARTED_SLICES: tuple[str, ...] = ()
 NOT_STARTED_PHASES = ("S1.P08", "S1.P09", "S1.P10")
 CORRECTION = "S1.P06.S07.C01"
@@ -100,10 +95,8 @@ CORRECTION = "S1.P06.S07.C01"
 SLICE_TOKEN = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)`")
 GATE_CLAIM = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started")
 ACTIVE_PHASE = re.compile(r"`(S1\.P\d\d)` is active and incomplete")
-# `S1.P07.S01` began the Phase, so the document now does name an active Phase --
-# and exactly one. A second one would be a stale narrative rather than a second
-# gate, so the set is compared whole rather than for membership.
-ACTIVE_PHASES_EXPECTED: frozenset[str] = frozenset({ACTIVE_PHASE_UNIT})
+# S1 remains active, but no S1 Phase is active between P07 closure and P08 start.
+ACTIVE_PHASES_EXPECTED: frozenset[str] = frozenset()
 
 
 def _text() -> str:
@@ -118,8 +111,30 @@ def assert_local_live_gate(text: str) -> None:
     """A caller's bounded paragraph/sentence must carry its own current gate."""
     assert "`S1.P06` is complete" in text, "missing local P06 phase completion"
     assert f"`{NEXT_UNIT}` is next and not started" in text, text
-    assert f"`{ACTIVE_PHASE_UNIT}` is active and incomplete" in text, text
-    assert f"`{ACTIVE_PHASE_UNIT}` is next and not started" not in text, text
+    assert f"`{COMPLETE_PHASES[-1]}` is complete" in text, (
+        "missing local completed Phase"
+    )
+    assert set(ACTIVE_PHASE.findall(text)) == ACTIVE_PHASES_EXPECTED, (
+        "local active Phase set"
+    )
+
+
+def assert_current_phase_lifecycle() -> None:
+    """Delegate current Phase/gate checks to the bounded Current status owner."""
+    section = _section("Current status")
+    assert f"`{COMPLETE_PHASES[-1]}` is complete" in section, (
+        "missing current completed Phase"
+    )
+    assert f"`{NEXT_UNIT}` is next and not started" in section, (
+        "missing current-status gate"
+    )
+    assert set(ACTIVE_PHASE.findall(section)) == ACTIVE_PHASES_EXPECTED, (
+        "current active Phase set"
+    )
+    for unit in NOT_STARTED_PHASES:
+        assert f"`{unit}` is complete" not in section, (
+            f"contradictory current-status completion: {unit}"
+        )
 
 
 def test_every_next_gate_line_names_the_current_unit() -> None:
@@ -185,9 +200,7 @@ def test_the_current_status_section_states_the_authoritative_lifecycle() -> None
 
     assert "`S1.P06` is complete" in section
     assert "`S1.P06` is active and incomplete" not in section
-    # The closed Phase is stated as complete and the Phase the gate sits inside
-    # is stated as active; neither may be stated as the other.
-    assert f"`{ACTIVE_PHASE_UNIT}` is active and incomplete" in section
+    assert_current_phase_lifecycle()
     for slice_id in COMPLETE_SLICES:
         assert f"`{slice_id}` is complete" in section, slice_id
     assert f"`{NEXT_UNIT}` is next and not started" in section, (
@@ -195,7 +208,7 @@ def test_the_current_status_section_states_the_authoritative_lifecycle() -> None
     )
     assert "`S1.P08` through `S1.P10` remain not started" in section
     for unit in (
-        ACTIVE_PHASE_UNIT,
+        *ACTIVE_PHASES_EXPECTED,
         NEXT_UNIT,
         *NOT_STARTED_SLICES,
         *NOT_STARTED_PHASES,
@@ -226,13 +239,8 @@ def test_the_correction_is_not_a_gate_and_not_a_phase(  # noqa: D401
     assert f"`{CORRECTION}` is not started" not in flat
 
 
-def test_the_document_names_one_live_gate_and_one_active_phase() -> None:
-    """One live gate, and -- unlike at the `S1.P06` closure -- one active Phase.
-
-    Renamed with the state it asserts: `S1.P07.S01` started a Phase, so the
-    document does name an active Phase again. Both sets are still compared
-    whole, so a stale second gate or a second active Phase fails here.
-    """
+def test_the_document_names_one_live_gate_and_no_active_phase() -> None:
+    """The closed Phase supplies no active token, and P08 has not begun."""
     flat = _flat(_text())
     gates = set(GATE_CLAIM.findall(flat))
 
@@ -466,12 +474,12 @@ def _allowed_states(unit: str) -> set[str] | None:  # noqa: PLR0911
         return {"complete"}
     if unit in NOT_STARTED_PHASES or phase in NOT_STARTED_PHASES:
         return {"not_started"}
-    if unit == ACTIVE_PHASE_UNIT:
+    if unit in ACTIVE_PHASES_EXPECTED:
         # The Phase the gate sits inside is under way, so it is neither
         # complete nor not started. It is not a gate either: the gate is the
         # Slice returned above, and the Phase inherits no state from it.
         return {"active"}
-    if phase == ACTIVE_PHASE_UNIT:
+    if phase in ACTIVE_PHASES_EXPECTED:
         # A Slice of the active Phase is complete if it has been published and
         # not started otherwise. The gate was already returned above, so the
         # active state does not reach any Slice.
@@ -672,14 +680,10 @@ def test_every_lifecycle_sentence_carries_its_own_live_gate() -> None:
         assert f"`{NEXT_UNIT}` is next and not started" in sentence, (
             f"missing local gate at line {start}"
         )
-        # The gate is a Slice again, so the Phase it sits inside has a state of
-        # its own. A sentence naming the gate without it would leave that state
-        # to be borrowed from somewhere else, which is what locality forbids.
-        assert f"`{ACTIVE_PHASE_UNIT}` is active and incomplete" in sentence, start
-        # The live gate is neither complete nor absent from this check: a
-        # sentence asserting both states at once is self-contradictory. The
-        # active Phase is checked the same way, for the same reason.
-        for unit in (ACTIVE_PHASE_UNIT, NEXT_UNIT, *NOT_STARTED_SLICES):
+        assert f"`{COMPLETE_PHASES[-1]}` is complete" in sentence, start
+        assert set(ACTIVE_PHASE.findall(sentence)) == ACTIVE_PHASES_EXPECTED, start
+        # The next gate is not complete; no active Phase is fabricated.
+        for unit in (*ACTIVE_PHASES_EXPECTED, NEXT_UNIT, *NOT_STARTED_SLICES):
             assert f"`{unit}` is complete" not in sentence, (start, unit)
 
 
@@ -924,10 +928,14 @@ def test_the_predecessor_corrections_from_s06_and_s07_still_stand() -> None:
         "Test material, reported outcomes and comparability became `S1.P06.S06` "
         "work, case-local explanation and hypothesis became `S1.P06.S07` work" in flat
     )
-    assert "the rest remain owned by `S1.P07`, `S1.P09`, and `S1.P10`" in flat
     assert (
-        "those were taken up by `S1.P06.S03` through `S1.P06.S09` and the rest "
-        "remain owned by `S1.P07`, `S1.P09`, and `S1.P10`" in flat
+        "those were taken up by `S1.P06.S03` through `S1.P06.S09` and the "
+        "supplied pattern/invariant models in `S1.P07.S01` through `S1.P07.S05`" in flat
+    )
+    assert (
+        "the evidence link became `S1.P06.S09` work, and the supplied "
+        "pattern/invariant models were added by `S1.P07.S01` through `S1.P07.S05`"
+        in flat
     )
 
 
@@ -1108,7 +1116,7 @@ def _p07_route_entries() -> list[tuple[str, str, str, str]]:
     state invisible while the counts still looked right.
     """
     text = ROADMAP.read_text(encoding="utf-8")
-    start = text.index("The `S1.P07` route is provisional")
+    start = text.index("The `S1.P07` route is closed")
     end = text.index("\n## ", start)
     block = text[start:end]
     rows: list[tuple[str, str, str, str]] = re.findall(
@@ -1126,13 +1134,10 @@ def _p07_route_entries() -> list[tuple[str, str, str, str]]:
     return rows
 
 
-def test_the_roadmap_route_is_provisional_beyond_the_published_slice() -> None:
+def test_the_roadmap_route_is_closed_at_the_published_slice() -> None:
     roadmap = _flat(_text())
 
-    assert (
-        f"The `S1.P07` route is provisional beyond `{P07_COMPLETE_SLICES[-1]}`."
-        in roadmap
-    )
+    assert f"The `S1.P07` route is closed at `{P07_COMPLETE_SLICES[-1]}`." in roadmap
     for index in range(1, 10):
         assert f"`S1.P07.S{index:02d}`" in roadmap, index
     assert "`S1.P07.S10`" not in roadmap
@@ -1156,7 +1161,7 @@ def test_the_route_numbers_every_p07_position_in_order() -> None:
 
 
 def test_the_p07_route_states_the_authoritative_state_for_every_position() -> None:
-    """Eight published positions and one gate.
+    """Nine completed positions; the next gate belongs to another Phase.
 
     Building the lookup first would let a duplicated row collapse silently, so
     the rows are counted before they become a mapping.
@@ -1168,16 +1173,18 @@ def test_the_p07_route_states_the_authoritative_state_for_every_position() -> No
 
     for unit in P07_COMPLETE_SLICES:
         assert entries[unit] == "complete", unit
-    assert entries[NEXT_UNIT] == "next, not started"
+    assert NEXT_UNIT not in entries
     for unit in NOT_STARTED_SLICES:
         assert entries[unit] == "not started", unit
     states = [state for _, _, _, state in rows]
     assert states.count("complete") == len(P07_COMPLETE_SLICES)
-    assert states.count("next, not started") == 1
+    assert states.count("next, not started") == 0
     assert states.count("not started") == len(NOT_STARTED_SLICES)
 
 
-@pytest.mark.parametrize("change", ("missing", "contradictory"))
+@pytest.mark.parametrize(
+    "change", ("missing", "wrong_gate", "missing_phase", "contradictory")
+)
 def test_an_appendix_cannot_repair_the_current_status_section(
     monkeypatch: pytest.MonkeyPatch, change: str
 ) -> None:
@@ -1187,11 +1194,22 @@ def test_an_appendix_cannot_repair_the_current_status_section(
     section = original[start:end]
     claim = f"`{NEXT_UNIT}` is next and not started"
     assert claim in section
-    replacement = (
-        section.replace(claim, "gate omitted")
-        if change == "missing"
-        else section + f"\n`{NEXT_UNIT}` is complete.\n"
-    )
+    if change == "missing":
+        replacement = section.replace(claim, "gate omitted")
+        message = "missing current-status gate"
+    elif change == "wrong_gate":
+        replacement = section.replace(
+            claim, claim.replace(NEXT_UNIT, COMPLETE_PHASES[-1])
+        )
+        message = "missing current-status gate"
+    elif change == "missing_phase":
+        completion = f"`{COMPLETE_PHASES[-1]}` is complete"
+        assert completion in section
+        replacement = section.replace(completion, "phase omitted")
+        message = "missing current completed Phase"
+    else:
+        replacement = section + f"\n`{NEXT_UNIT}` is complete.\n"
+        message = "contradictory current-status completion"
     altered = (
         original[:start]
         + replacement
@@ -1200,11 +1218,8 @@ def test_an_appendix_cannot_repair_the_current_status_section(
         + section
     )
     monkeypatch.setattr(__name__ + "._text", lambda: altered)
-    message = (
-        "missing current-status gate"
-        if change == "missing"
-        else "contradictory current-status completion"
-    )
+    with pytest.raises(AssertionError, match=message):
+        assert_current_phase_lifecycle()
     with pytest.raises(AssertionError, match=message):
         test_the_current_status_section_states_the_authoritative_lifecycle()
 
@@ -1219,3 +1234,38 @@ def test_a_later_sentence_cannot_rescue_a_missing_local_gate(
     monkeypatch.setattr(__name__ + "._text", lambda: altered)
     with pytest.raises(AssertionError, match="missing local gate at line"):
         test_every_lifecycle_sentence_carries_its_own_live_gate()
+
+
+def test_between_phases_has_a_positive_gate_and_no_active_phase() -> None:
+    assert ACTIVE_PHASES_EXPECTED == frozenset()
+    assert NEXT_UNIT == "S1.P08"
+    assert_current_phase_lifecycle()
+    assert_local_live_gate(_lifecycle_sentences()[0][1])
+
+
+@pytest.mark.parametrize("phase", ("S1.P07", "S1.P08"))
+def test_an_active_phase_cannot_be_hidden_by_a_valid_appendix(
+    monkeypatch: pytest.MonkeyPatch, phase: str
+) -> None:
+    original = _text()
+    start = original.index("## Current status")
+    end = original.index("\n## ", start + 1)
+    section = original[start:end]
+    altered = (
+        original[:end]
+        + f"\n`{phase}` is active and incomplete.\n"
+        + original[end:]
+        + "\n\n## Valid appendix\n"
+        + section
+    )
+    monkeypatch.setattr(__name__ + "._text", lambda: altered)
+    with pytest.raises(AssertionError, match="current active Phase set"):
+        assert_current_phase_lifecycle()
+
+
+def test_local_completed_phase_cannot_be_borrowed_from_elsewhere() -> None:
+    _, sentence = _lifecycle_sentences()[0]
+    assert_local_live_gate(sentence)
+    altered = sentence.replace(f"`{COMPLETE_PHASES[-1]}` is complete", "phase omitted")
+    with pytest.raises(AssertionError, match="missing local completed Phase"):
+        assert_local_live_gate(altered)

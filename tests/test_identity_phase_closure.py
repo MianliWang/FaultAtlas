@@ -20,6 +20,7 @@ import pytest
 from _repository_contract import PRODUCTION_FILES
 from pydantic import BaseModel, ValidationError
 from test_package import assert_complete_source_package, assert_current_inventory
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas
 import faultatlas.domain.compatibility as compatibility_module
@@ -2013,10 +2014,8 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    # The sealed closure still records `S1.P07` as eligible and not started; the
-    # live roadmap has since exercised that eligibility, so `S1.P07` is active
-    # and `S1.P07.S02`, not `S1.P07`, is what is next and not started.
-    assert "`S1.P07` is active and incomplete" in roadmap
+    # Historical transition claims remain; the lifecycle owner checks current state.
+    assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 

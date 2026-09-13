@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 import faultatlas.domain.fault_evidence_link as link_module
 from faultatlas.domain.evidence import (
@@ -1979,7 +1980,7 @@ def test_the_roadmap_records_the_p06_s09_transition() -> None:
     # Twenty-five since `S1.P07.S05` added pattern_composition.py.
 
     assert "`S1.P06.S09` is next and not started" not in roadmap
-    assert "`S1.P07` is complete" not in roadmap
+    assert_current_phase_lifecycle()
     assert "Production Python sources are 19." not in roadmap
 
     current = mapping[1]
