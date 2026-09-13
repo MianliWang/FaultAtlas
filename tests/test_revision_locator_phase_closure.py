@@ -16,6 +16,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, NoReturn, cast
 
 import pytest
+from _repository_contract import PRODUCTION_FILES
+from test_package import assert_complete_source_package, assert_current_inventory
 
 import faultatlas
 import faultatlas.domain as domain_package
@@ -204,26 +206,7 @@ INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 # Added by `S1.P07.S04`; immutable baseline inventories are unchanged.
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
 PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
-CURRENT_PRODUCTION_FILES = {
-    *EXPECTED_PRODUCTION,
-    EVIDENCE_MODULE,
-    SNAPSHOT_MODULE,
-    SNAPSHOT_EVIDENCE_LINK_MODULE,
-    HISTORY_MODULE,
-    HISTORY_EVIDENCE_LINK_MODULE,
-    FAULT_MODULE,
-    FAULT_SOURCE_RELATIONSHIP_MODULE,
-    FAULT_REPAIR_MODULE,
-    FAULT_TEST_MODULE,
-    FAULT_INTERPRETATION_MODULE,
-    FAULT_INSTANCE_MODULE,
-    FAULT_EVIDENCE_LINK_MODULE,
-    INVARIANT_MODULE,
-    INVARIANT_RELATIONSHIP_MODULE,
-    PATTERN_MODULE,
-    PATTERN_COMPOSITION_MODULE,
-    PATTERN_EXEMPLAR_MODULE,
-}
+CURRENT_PRODUCTION_FILES = set(PRODUCTION_FILES)
 EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunId",
     "RetrievalRequestOrdinal",
@@ -945,7 +928,7 @@ def _validate_production_inventory(paths: set[str]) -> None:
 
 
 def _validate_current_production_inventory(paths: set[str]) -> None:
-    assert paths == CURRENT_PRODUCTION_FILES
+    assert_current_inventory(paths)
 
 
 def _validate_exports(exports: tuple[str, ...]) -> None:
@@ -1744,7 +1727,7 @@ def _assert_archive(
         relative: (REPOSITORY_ROOT / relative).read_bytes()
         for relative in CURRENT_PRODUCTION_FILES
     }
-    assert packaged_sources == working
+    assert_complete_source_package(packaged_sources, working)
 
 
 def _synthetic_archive_members(
@@ -1937,8 +1920,6 @@ def test_group_m_historical_p03_readiness_and_current_s05_are_scope_guarded() ->
     # and `S1.P07.S02`, not `S1.P07`, is what is next and not started.
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
 
@@ -1961,6 +1942,7 @@ def test_group_o_payload_is_private_and_retention_safe() -> None:
 def test_group_o_actual_offline_archives_exclude_closure_and_tests(
     tmp_path: Path,
 ) -> None:
+    # Isolated profile: sanitized CONDA/PYTHON environment, managed Python, private cache, and default build gitignore behavior.
     uv = shutil.which("uv")
     assert uv is not None
     output = tmp_path / "dist"

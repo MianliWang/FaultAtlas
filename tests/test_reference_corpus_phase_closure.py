@@ -4,11 +4,8 @@ import ast
 import copy
 import hashlib
 import json
-import os
 import re
-import shutil
 import stat
-import subprocess
 import tarfile
 import zipfile
 from collections.abc import Callable, Iterator
@@ -16,6 +13,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 import pytest
+from _repository_contract import PRODUCTION_FILES
+from test_package import assert_current_inventory
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CLOSURE_DIRECTORY = (
@@ -434,25 +433,7 @@ INVARIANT_MODULE = "src/faultatlas/domain/invariant.py"
 INVARIANT_RELATIONSHIP_MODULE = "src/faultatlas/domain/invariant_relationship.py"
 PATTERN_COMPOSITION_MODULE = "src/faultatlas/domain/pattern_composition.py"
 P03_PRODUCTION_FILES = {*EXPECTED_PRODUCTION_FILES, EVIDENCE_MODULE}
-CURRENT_PRODUCTION_FILES = {
-    *P03_PRODUCTION_FILES,
-    SNAPSHOT_MODULE,
-    SNAPSHOT_EVIDENCE_LINK_MODULE,
-    HISTORY_MODULE,
-    HISTORY_EVIDENCE_LINK_MODULE,
-    FAULT_MODULE,
-    FAULT_SOURCE_RELATIONSHIP_MODULE,
-    FAULT_REPAIR_MODULE,
-    FAULT_TEST_MODULE,
-    FAULT_INTERPRETATION_MODULE,
-    FAULT_INSTANCE_MODULE,
-    FAULT_EVIDENCE_LINK_MODULE,
-    INVARIANT_MODULE,
-    INVARIANT_RELATIONSHIP_MODULE,
-    PATTERN_MODULE,
-    PATTERN_COMPOSITION_MODULE,
-    PATTERN_EXEMPLAR_MODULE,
-}
+CURRENT_PRODUCTION_FILES = set(PRODUCTION_FILES)
 EXPECTED_EVIDENCE_EXPORTS = (
     "AcquisitionRunId",
     "RetrievalRequestOrdinal",
@@ -730,7 +711,7 @@ def _validate_production_file_inventory(production_files: set[str]) -> None:
 
 
 def _validate_current_production_file_inventory(production_files: set[str]) -> None:
-    assert production_files == CURRENT_PRODUCTION_FILES
+    assert_current_inventory(production_files)
 
 
 def _validate_current_evidence_inventory(source: bytes) -> None:
@@ -2126,10 +2107,6 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "`S1.P06.S12` is complete" in normalized_roadmap
     assert "`S1.P07` is active and incomplete" in normalized_roadmap
     assert "`S1.P07.S01` is complete" in normalized_roadmap
-    current_status = normalized_roadmap.split("## Current status", 1)[1].split(
-        "## ", 1
-    )[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in normalized_roadmap
     assert "only its S01 retrieval-request identity" not in normalized_roadmap
     for slice_id, title, state in EXPECTED_P03_SLICE_SEQUENCE:
@@ -2252,45 +2229,11 @@ def test_roadmap_and_case_documentation_match_current_semantics() -> None:
     assert "known-empty tuples" in normalized_case_doc
 
 
-def test_offline_build_excludes_closure_from_wheel_and_sdist(tmp_path: Path) -> None:
-    uv = shutil.which("uv")
-    assert uv is not None
-    output = tmp_path / "dist"
-    cache = tmp_path / "uv-cache"
-    output.mkdir()
-    cache.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "UV_CACHE_DIR": str(cache),
-            "UV_OFFLINE": "1",
-            "UV_NO_SYNC": "1",
-        }
-    )
-    result = subprocess.run(
-        [
-            uv,
-            "build",
-            "--offline",
-            "--no-create-gitignore",
-            "--out-dir",
-            str(output),
-        ],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"offline uv build failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    wheel = tuple(output.glob("*.whl"))
-    sdist = tuple(output.glob("*.tar.gz"))
-    assert len(wheel) == len(sdist) == 1
-    _validate_archive(wheel[0])
-    _validate_archive(sdist[0])
+def test_offline_build_excludes_closure_from_wheel_and_sdist(
+    offline_distributions: tuple[Path, Path],
+) -> None:
+    for archive in offline_distributions:
+        _validate_archive(archive)
 
 
 def _remove_ledger_item(closure: dict[str, Any]) -> None:

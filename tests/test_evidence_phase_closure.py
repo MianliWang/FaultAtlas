@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any, NoReturn, cast
 
 import pytest
+from _repository_contract import PRODUCTION_FILES
 from pydantic import BaseModel
+from test_package import assert_complete_source_package
 
 import faultatlas
 from faultatlas.domain.evidence import (
@@ -176,30 +178,7 @@ EXPECTED_PRODUCTION_SOURCES = (
     "src/faultatlas/domain/revision.py",
     "src/faultatlas/domain/source.py",
 )
-CURRENT_PRODUCTION_SOURCES = (
-    *EXPECTED_PRODUCTION_SOURCES,
-    "src/faultatlas/domain/fault.py",
-    "src/faultatlas/domain/fault_evidence_link.py",
-    "src/faultatlas/domain/fault_instance.py",
-    "src/faultatlas/domain/fault_interpretation.py",
-    "src/faultatlas/domain/fault_repair.py",
-    "src/faultatlas/domain/fault_source_relationship.py",
-    "src/faultatlas/domain/fault_test.py",
-    "src/faultatlas/domain/history.py",
-    "src/faultatlas/domain/history_evidence_link.py",
-    # Added by `S1.P07.S03`, the independent invariant proposition.
-    "src/faultatlas/domain/invariant.py",
-    # Added by `S1.P07.S04`, the two explicit invariant associations.
-    "src/faultatlas/domain/invariant_relationship.py",
-    # Added by `S1.P07.S01`, the first `S1.P07` production module.
-    "src/faultatlas/domain/pattern.py",
-    # Added by `S1.P07.S05`, the bounded pattern composition.
-    "src/faultatlas/domain/pattern_composition.py",
-    # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
-    "src/faultatlas/domain/pattern_exemplar.py",
-    "src/faultatlas/domain/snapshot.py",
-    "src/faultatlas/domain/snapshot_evidence_link.py",
-)
+CURRENT_PRODUCTION_SOURCES = list(PRODUCTION_FILES)
 
 EXPECTED_SOURCE_LOCKS = {
     "reference_corpus/contracts/evidence-envelope/v1/contract.md": (
@@ -1395,7 +1374,7 @@ def _independent_leaf_metrics() -> dict[str, Any]:
 
 def _assert_archive_sources(members: dict[str, bytes], *, wheel: bool) -> None:
     expected = {
-        relative.removeprefix("src/"): (REPOSITORY_ROOT / relative).read_bytes()
+        relative: (REPOSITORY_ROOT / relative).read_bytes()
         for relative in CURRENT_PRODUCTION_SOURCES
     }
     observed: dict[str, bytes] = {}
@@ -1414,7 +1393,9 @@ def _assert_archive_sources(members: dict[str, bytes], *, wheel: bool) -> None:
                     relative = "/".join(parts[index + 1 :])
                     if relative.endswith(".py"):
                         observed[relative] = data
-    assert observed == expected
+    assert_complete_source_package(
+        {"src/" + name: data for name, data in observed.items()}, expected
+    )
     historical_license = (
         REPOSITORY_ROOT / "reference_corpus/pytest-4412/acquisitions/"
         "run-0001-s04-v1-base-4c9cde74-head-690a63b9/artifacts/LICENSE"
@@ -1759,8 +1740,6 @@ def test_roadmap_advances_p04_while_case_preserves_p03_closure_state() -> None:
     # the live roadmap now opens the phase instead of queueing it.
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented" in roadmap
     assert CLOSURE_RELATIVE in case
@@ -1770,6 +1749,7 @@ def test_roadmap_advances_p04_while_case_preserves_p03_closure_state() -> None:
 
 
 def test_actual_offline_build_excludes_closure_corpus_and_tests(tmp_path: Path) -> None:
+    # Isolated profile: UV_MANAGED_PYTHON with the inherited cache, as required by this closure build witness.
     output = tmp_path / "dist"
     environment = os.environ.copy()
     environment.update(

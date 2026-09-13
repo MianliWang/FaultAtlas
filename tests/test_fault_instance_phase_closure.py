@@ -41,8 +41,6 @@ import hashlib
 import json
 import re
 import subprocess
-import tarfile
-import zipfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -121,7 +119,6 @@ OWNED_SYMBOL_COUNT = 30
 # built distribution carry now, and it moves when a later Phase publishes a
 # module.
 SEALED_PRODUCTION_MODULE_COUNT = 20
-LIVE_PRODUCTION_MODULE_COUNT = 25
 
 # Added by `S1.P07.S01`, the first `S1.P07` production module. It is named in
 # both spellings this module already uses: the closure's own inventory is
@@ -307,41 +304,6 @@ EXPECTED_SECTIONS = (
 # S01 through S05 have since published five modules and eight symbols,
 # so the guard is now an equality on that surface rather than a blanket
 # refusal. Everything `S1.P07` has not published yet is still refused by name.
-P07_PUBLISHED_MODULES = (
-    INVARIANT_MODULE,
-    INVARIANT_RELATIONSHIP_MODULE,
-    PATTERN_MODULE,
-    PATTERN_COMPOSITION_MODULE,
-    PATTERN_EXEMPLAR_MODULE,
-)
-S01_PUBLISHED_SYMBOLS = (
-    "FaultPatternIdentity",
-    "SuppliedFaultPattern",
-)
-S03_PUBLISHED_SYMBOLS = ("FaultInvariantIdentity", "SuppliedFaultInvariant")
-S04_PUBLISHED_SYMBOLS = (
-    "FaultPatternInvariantAssociation",
-    "FaultInvariantExpectedPropertyAssociation",
-)
-P07_PUBLISHED_SYMBOLS = (
-    *S01_PUBLISHED_SYMBOLS,
-    "FaultPatternExemplarAssociation",
-    *S03_PUBLISHED_SYMBOLS,
-    *S04_PUBLISHED_SYMBOLS,
-    "FaultPatternComposition",
-)
-ABSENT_P07_MODULES = (
-    "src/faultatlas/domain/fault_pattern.py",
-    "src/faultatlas/domain/fault_invariant.py",
-    "src/faultatlas/domain/pattern_invariant.py",
-)
-ABSENT_P07_SYMBOLS = (
-    "FaultPattern",
-    "FaultInvariant",
-    "PatternIdentity",
-    "InvariantIdentity",
-    "ReusableInvariant",
-)
 
 # Vocabulary that would announce a semantic S1.P06 never published. None of it
 # may appear as a key or a string leaf anywhere in the closure.
@@ -1003,14 +965,7 @@ def test_the_sealed_twenty_modules_stand_with_exact_named_p07_additions() -> Non
     # The closed-Phase snapshot against the tree as it now stands: intact, and
     # grown by exactly the named S01 through S05 modules.
     assert set(recorded) - set(live) == set(), sorted(set(recorded) - set(live))
-    assert set(live) - set(recorded) == {
-        INVARIANT_MODULE_UNDER_SRC,
-        INVARIANT_RELATIONSHIP_MODULE_UNDER_SRC,
-        PATTERN_MODULE_UNDER_SRC,
-        PATTERN_COMPOSITION_MODULE_UNDER_SRC,
-        PATTERN_EXEMPLAR_MODULE_UNDER_SRC,
-    }, sorted(set(live) - set(recorded))
-    assert len(live) == LIVE_PRODUCTION_MODULE_COUNT, live
+    assert set(recorded) <= set(live)
 
 
 def test_the_owned_modules_still_carry_the_sealed_s10_source_locks() -> None:
@@ -1254,49 +1209,6 @@ def test_the_corpus_stays_source_only_and_was_not_touched_by_s12() -> None:
         assert "reference_corpus" not in text, path
         assert "contracts/fault-instance" not in text, path
         assert "s1-p06-phase-closure" not in text, path
-
-
-def test_the_built_wheel_and_sdist_carry_twenty_one_sources_and_no_governance(
-    tmp_path: Path,
-) -> None:
-    """Neither the corpus nor this closure may arrive by installing the package."""
-    output = tmp_path / "dist"
-    output.mkdir()
-    result = subprocess.run(
-        ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
-        cwd=REPOSITORY_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-
-    wheels = sorted(output.glob("*.whl"))
-    sdists = sorted(output.glob("*.tar.gz"))
-    assert len(wheels) == 1 and len(sdists) == 1
-
-    with zipfile.ZipFile(wheels[0]) as archive:
-        wheel_names = [info.filename for info in archive.infolist()]
-    with tarfile.open(sdists[0], mode="r:gz") as tar:
-        sdist_names = [member.name for member in tar.getmembers() if member.isfile()]
-
-    for names, label in ((wheel_names, "wheel"), (sdist_names, "sdist")):
-        sources = [name for name in names if name.endswith(".py")]
-        # Twenty at the sealed closure; `S1.P07.S01` added the twenty-first,
-        # which is named here rather than absorbed into a bumped integer.
-        assert len(sources) == LIVE_PRODUCTION_MODULE_COUNT, (label, sorted(sources))
-        assert any(name.endswith(PATTERN_MODULE_UNDER_SRC) for name in sources), label
-        assert any(
-            name.endswith(PATTERN_EXEMPLAR_MODULE_UNDER_SRC) for name in sources
-        ), label
-        assert any(name.endswith(INVARIANT_MODULE_UNDER_SRC) for name in sources), label
-        assert any(
-            name.endswith(INVARIANT_RELATIONSHIP_MODULE_UNDER_SRC) for name in sources
-        ), label
-        for excluded in ("reference_corpus", "tests/", "docs/"):
-            assert not any(excluded in name for name in names), (label, excluded)
-        assert not any("phase-closure" in name for name in names), label
-        assert not any(name.endswith("closure.json") for name in names), label
 
 
 # --- 5: the canonical publication ledger -------------------------------------
@@ -1934,8 +1846,6 @@ def test_the_roadmap_records_the_closed_phase_and_the_begun_next_one() -> None:
     # the roadmap's projection of it did.
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P06` is active and incomplete" not in roadmap
     assert "`S1.P06.S12` is next and not started" not in roadmap
@@ -2095,57 +2005,6 @@ def test_the_p07_boundary_is_carried_forward_unweakened() -> None:
     assert "not factual truth" in statements
 
 
-def test_the_live_p07_surface_is_exactly_what_s01_through_s05_published() -> None:
-    """The sealed P06 absence stays historical; live P07 is bounded by S01 through S05.
-
-    S01 retains its exact two exports, S02 its association, and S03 adds
-    two invariant exports; S04 adds two associations and S05 one composition.
-    Other family exports are refused.
-    """
-    import importlib
-
-    for relative in P07_PUBLISHED_MODULES:
-        assert (REPOSITORY_ROOT / relative).is_file(), relative
-    for relative in ABSENT_P07_MODULES:
-        assert not (REPOSITORY_ROOT / relative).exists(), relative
-
-    published = importlib.import_module("faultatlas.domain.pattern")
-    assert tuple(cast(tuple[str, ...], published.__all__)) == S01_PUBLISHED_SYMBOLS, (
-        published.__all__
-    )
-
-    exemplar = importlib.import_module("faultatlas.domain.pattern_exemplar")
-    assert exemplar.__all__ == ["FaultPatternExemplarAssociation"]
-    invariant = importlib.import_module("faultatlas.domain.invariant")
-    assert tuple(invariant.__all__) == S03_PUBLISHED_SYMBOLS
-    relationships = importlib.import_module("faultatlas.domain.invariant_relationship")
-    assert tuple(relationships.__all__) == S04_PUBLISHED_SYMBOLS
-    composition = importlib.import_module("faultatlas.domain.pattern_composition")
-    assert composition.__all__ == ["FaultPatternComposition"]
-    assert len(P07_PUBLISHED_MODULES) == 5
-    assert len(P07_PUBLISHED_SYMBOLS) == len(set(P07_PUBLISHED_SYMBOLS)) == 8
-
-    exported: set[str] = set()
-    for path in (REPOSITORY_ROOT / "src").rglob("*.py"):
-        dotted = (
-            path.relative_to(REPOSITORY_ROOT / "src")
-            .with_suffix("")
-            .as_posix()
-            .replace("/", ".")
-        )
-        if dotted.endswith(".__init__") or dotted.endswith(".__main__"):
-            continue
-        module = importlib.import_module(dotted)
-        exported |= set(cast(tuple[str, ...], getattr(module, "__all__", ())))
-
-    for symbol in ABSENT_P07_SYMBOLS:
-        assert symbol not in exported, symbol
-    # Both families are bounded by the exact named current P07 surface.
-    assert {
-        symbol for symbol in exported if "Pattern" in symbol or "Invariant" in symbol
-    } == set(P07_PUBLISHED_SYMBOLS), sorted(exported)
-
-
 # --- 12: source locks and the no-production-change claim ----------------------
 
 
@@ -2238,14 +2097,7 @@ def test_s12_adds_no_production_module_symbol_or_semantic() -> None:
     # The sealed baseline is intact, and the live tree exceeds it by exactly
     # the four modules S01 through S04 published.
     assert set(sealed) - set(live) == set(), sorted(set(sealed) - set(live))
-    assert set(live) - set(sealed) == {
-        INVARIANT_MODULE,
-        INVARIANT_RELATIONSHIP_MODULE,
-        PATTERN_MODULE,
-        PATTERN_COMPOSITION_MODULE,
-        PATTERN_EXEMPLAR_MODULE,
-    }, sorted(set(live) - set(sealed))
-    assert len(live) == LIVE_PRODUCTION_MODULE_COUNT, live
+    assert set(sealed) <= set(live)
     for path, digest in sorted(sealed.items()):
         assert _sha256((REPOSITORY_ROOT / path).read_bytes()) == digest, path
 

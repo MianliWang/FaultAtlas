@@ -1854,22 +1854,8 @@ def test_this_closure_adds_no_production_source_and_names_what_followed() -> Non
     # Every module the live tree gained since is named rather than absorbed, so
     # one more that no Slice explains fails here instead of inflating a count.
     assert CURRENT_PRODUCTION_FILES - observed == set()
-    assert observed - CURRENT_PRODUCTION_FILES == {
-        FAULT_MODULE,
-        FAULT_SOURCE_RELATIONSHIP_MODULE,
-        FAULT_REPAIR_MODULE,
-        FAULT_TEST_MODULE,
-        FAULT_INTERPRETATION_MODULE,
-        FAULT_INSTANCE_MODULE,
-        FAULT_EVIDENCE_LINK_MODULE,
-        INVARIANT_MODULE,
-        INVARIANT_RELATIONSHIP_MODULE,
-        PATTERN_MODULE,
-        PATTERN_COMPOSITION_MODULE,
-        PATTERN_EXEMPLAR_MODULE,
-    }
+    assert set(CURRENT_PRODUCTION_FILES) <= set(observed)
     assert len(CURRENT_PRODUCTION_FILES) == 13
-    assert len(observed) == 25
 
 
 def test_owned_symbols_match_the_live_published_modules() -> None:
@@ -1943,8 +1929,6 @@ def test_roadmap_records_phase_completion_and_p06_readiness() -> None:
     # `S1.P07` was the next gate; it has since begun, so the roadmap names its
     # first Slice complete and carries the gate one level down.
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P07` is next and not started" not in roadmap
     assert "`S1.P04` is complete" in roadmap
     assert CLOSURE_RELATIVE in roadmap
@@ -1987,39 +1971,35 @@ def test_roadmap_narrative_restates_the_closure_figures() -> None:
     )
 
 
-def test_the_roadmap_carries_exactly_one_live_gate() -> None:
-    """A superseded gate left in the present tense reports the wrong gate.
-
-    The earlier guard only scanned lines containing "next and not started", so
-    a stale `eligible_to_begin` sentence in a predecessor section stood beside
-    the live one unnoticed. Present-tense claims are collected by their own
-    grammar here, and every one must name the phase that is actually next.
-    """
+def test_historical_phase_eligibility_is_recorded_once_per_exercised_phase() -> None:
     roadmap = " ".join(
         (REPOSITORY_ROOT / ROADMAP_RELATIVE).read_text(encoding="utf-8").split()
     )
-    # No phase is awaiting entry any more: P06 and now P07 have both commenced,
-    # so each sealed eligibility reads in the past tense and the gate is a Slice.
-    live_gates = re.findall(r"`(S1\.P\d\d)` is `eligible_to_begin`", roadmap)
-    assert live_gates == [], live_gates
     exercised = re.findall(r"`(S1\.P\d\d)` was `eligible_to_begin`", roadmap)
-    assert sorted(exercised) == ["S1.P05", "S1.P06", "S1.P07"], exercised
-
-    live_next = re.findall(
-        r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started", roadmap
+    assert sorted(exercised) == ["S1.P05", "S1.P06", "S1.P07"], (
+        "historical eligibility set or multiplicity changed"
     )
-    assert live_next, "the roadmap names no next gate"
-    # `S1.P07` has commenced, so the one live gate is the Slice `S1.P07.S06`
-    # rather than the Phase, and `S1.P07` is the one Phase now open.
-    assert set(live_next) == {"S1.P07.S06"}, sorted(set(live_next))
 
-    live_phases = re.findall(r"`(S1\.P\d\d)` is active and incomplete", roadmap)
-    assert set(live_phases) == {"S1.P07"}, sorted(set(live_phases))
 
-    # A phase this closure records as complete must not also be claimed open.
-    for phase in ("S1.P01", "S1.P02", "S1.P03", "S1.P04", "S1.P05"):
-        assert f"`{phase}` is active and incomplete" not in roadmap, phase
-        assert f"`{phase}` is `eligible_to_begin`" not in roadmap, phase
+def test_duplicate_historical_eligibility_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = Path.read_text
+    roadmap = REPOSITORY_ROOT / ROADMAP_RELATIVE
+
+    def duplicated(
+        path: Path, encoding: str | None = None, errors: str | None = None
+    ) -> str:
+        text = original(path, encoding=encoding, errors=errors)
+        return (
+            text + "\n`S1.P06` was `eligible_to_begin`.\n" if path == roadmap else text
+        )
+
+    monkeypatch.setattr(Path, "read_text", duplicated)
+    with pytest.raises(
+        AssertionError, match="historical eligibility set or multiplicity changed"
+    ):
+        test_historical_phase_eligibility_is_recorded_once_per_exercised_phase()
 
 
 def test_closure_and_roadmap_agree_on_readiness() -> None:

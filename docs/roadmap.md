@@ -57,6 +57,9 @@ aspirational Slice as scheduled work.
   `S1.P08` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
+Engineering maintenance `E01` consolidates validation ownership and build preparation;
+see [Validation procedure](validation.md). It does not advance a product Slice.
+
 ## Program stages
 
 - **S0 — Governed Foundation**

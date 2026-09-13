@@ -1,20 +1,29 @@
 from __future__ import annotations
 
+import ast
 import hashlib
+import importlib
 import io
-import os
 import re
-import shutil
 import stat
 import subprocess
 import tarfile
 import zipfile
+from collections.abc import Collection
 from dataclasses import dataclass
 from importlib.metadata import metadata, version
 from pathlib import Path
 from typing import Literal
 
 import pytest
+from _repository_contract import (
+    ABSENT_P07_MODULES,
+    ABSENT_P07_SYMBOLS,
+    P07_PUBLISHED_SYMBOLS,
+    P07_SURFACE,
+    PRODUCTION_FILES,
+    UUID_IDENTITIES,
+)
 
 import faultatlas
 
@@ -71,44 +80,22 @@ CORPUS_ARTIFACT_NAMES = frozenset(
     }
 )
 WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
-EXPECTED_PRODUCTION_FILES = {
-    "src/faultatlas/__init__.py",
-    "src/faultatlas/__main__.py",
-    "src/faultatlas/cli.py",
-    "src/faultatlas/domain/__init__.py",
-    "src/faultatlas/domain/compatibility.py",
-    "src/faultatlas/domain/evidence.py",
-    "src/faultatlas/domain/fault.py",
-    "src/faultatlas/domain/fault_evidence_link.py",
-    "src/faultatlas/domain/fault_instance.py",
-    "src/faultatlas/domain/fault_interpretation.py",
-    "src/faultatlas/domain/fault_repair.py",
-    "src/faultatlas/domain/fault_source_relationship.py",
-    "src/faultatlas/domain/fault_test.py",
-    "src/faultatlas/domain/history.py",
-    "src/faultatlas/domain/history_evidence_link.py",
-    "src/faultatlas/domain/identity.py",
-    # Added by `S1.P07.S03`, the independent invariant proposition.
-    "src/faultatlas/domain/invariant.py",
-    # Added by `S1.P07.S04`, the two explicit invariant associations.
-    "src/faultatlas/domain/invariant_relationship.py",
-    # Added by `S1.P07.S01`, the first `S1.P07` production module.
-    "src/faultatlas/domain/pattern.py",
-    # Added by `S1.P07.S05`, the bounded pattern composition.
-    "src/faultatlas/domain/pattern_composition.py",
-    # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
-    "src/faultatlas/domain/pattern_exemplar.py",
-    "src/faultatlas/domain/revision.py",
-    "src/faultatlas/domain/snapshot.py",
-    "src/faultatlas/domain/snapshot_evidence_link.py",
-    "src/faultatlas/domain/source.py",
-}
+EXPECTED_PRODUCTION_FILES = set(PRODUCTION_FILES)
 EVIDENCE_MODULE_PATH = "src/faultatlas/domain/evidence.py"
 SNAPSHOT_MODULE_PATH = "src/faultatlas/domain/snapshot.py"
 PATTERN_MODULE_PATH = "src/faultatlas/domain/pattern.py"
 
 type ArchiveKind = Literal["wheel", "sdist"]
 type MemberKind = Literal["file", "directory", "link", "special"]
+
+
+def assert_current_inventory(observed: Collection[str]) -> None:
+    assert set(observed) == EXPECTED_PRODUCTION_FILES, (
+        "current production inventory mismatch"
+    )
+    assert len(observed) == len(EXPECTED_PRODUCTION_FILES), (
+        "duplicate production source"
+    )
 
 
 @dataclass(frozen=True)
@@ -216,14 +203,14 @@ def _archive_source_bytes(
     return observed
 
 
-def _assert_complete_source_package(
+def assert_complete_source_package(
     packaged: dict[str, bytes], working: dict[str, bytes]
 ) -> None:
     assert set(working) == EXPECTED_PRODUCTION_FILES
     assert set(packaged) == EXPECTED_PRODUCTION_FILES
     assert len(working) == len(packaged) == len(EXPECTED_PRODUCTION_FILES)
     assert packaged[EVIDENCE_MODULE_PATH] == working[EVIDENCE_MODULE_PATH]
-    assert packaged == working
+    assert packaged == working, "package source byte mismatch"
 
 
 def _assert_safe_package_archive(
@@ -235,10 +222,16 @@ def _assert_safe_package_archive(
 ) -> None:
     packaged_project_licenses: list[bytes] = []
     assert members, "package archive is empty"
+    seen: set[tuple[str, ...]] = set()
 
     for member in members:
         parts = _archive_path_parts(member)
+        assert parts not in seen, f"duplicate archive member: {member.name!r}"
+        seen.add(parts)
         lowered_parts = {part.casefold() for part in parts}
+        assert not {"docs", "tests"} & lowered_parts, (
+            f"development material packaged in {member.name!r}"
+        )
         forbidden = lowered_parts & FORBIDDEN_CORPUS_PATH_COMPONENTS
         corpus_signature = parts[-1].casefold() in CORPUS_ARTIFACT_NAMES and bool(
             lowered_parts & CORPUS_DIRECTORY_NAMES
@@ -263,41 +256,99 @@ def _assert_safe_package_archive(
         "archive must contain exactly one byte-identical FaultAtlas project LICENSE"
     )
     if expect_sources:
-        _assert_complete_source_package(
+        assert_complete_source_package(
             _archive_source_bytes(members),
             _working_source_bytes(),
         )
 
 
-def _git_status_snapshot() -> bytes | None:
-    git = shutil.which("git")
-    if git is None:
-        return None
-    result = subprocess.run(
-        [git, "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        cwd=REPOSITORY_ROOT,
-        check=True,
-        capture_output=True,
+def _assert_complete_archive_inventory(
+    members: tuple[ArchiveMember, ...], kind: ArchiveKind
+) -> None:
+    if kind == "wheel":
+        files = {
+            relative.removeprefix("src/") for relative in EXPECTED_PRODUCTION_FILES
+        }
+        files |= {
+            f"faultatlas-0.1.0.dist-info/{name}"
+            for name in (
+                "WHEEL",
+                "METADATA",
+                "RECORD",
+                "entry_points.txt",
+                "licenses/LICENSE",
+            )
+        }
+    else:
+        files = {
+            f"faultatlas-0.1.0/{relative}" for relative in EXPECTED_PRODUCTION_FILES
+        }
+        files |= {
+            f"faultatlas-0.1.0/{name}"
+            for name in ("PKG-INFO", "LICENSE", "README.md", "pyproject.toml")
+        }
+    directories = {
+        parent.as_posix()
+        for name in files
+        for parent in Path(name).parents
+        if parent != Path(".")
+    }
+    assert {
+        "/".join(_archive_path_parts(member))
+        for member in members
+        if member.kind == "file"
+    } == files
+    assert {
+        "/".join(_archive_path_parts(member))
+        for member in members
+        if member.kind == "directory"
+    } == directories
+
+
+def test_tracked_and_working_production_inventory_are_exact() -> None:
+    tracked = subprocess.check_output(
+        ["git", "ls-files", "src/"], cwd=REPOSITORY_ROOT, text=True
     )
-    return result.stdout
+    assert set(tracked.splitlines()) == EXPECTED_PRODUCTION_FILES
+    assert set(_working_source_bytes()) == EXPECTED_PRODUCTION_FILES
 
 
-def _repository_file_snapshot() -> tuple[tuple[str, int, str], ...]:
-    snapshot: list[tuple[str, int, str]] = []
-    for path in REPOSITORY_ROOT.rglob("*"):
-        relative = path.relative_to(REPOSITORY_ROOT)
-        if relative.parts[0] in {".git", ".venv"}:
-            continue
-        if path.is_symlink():
-            payload = os.readlink(path).encode("utf-8")
-        elif path.is_file():
-            payload = path.read_bytes()
-        else:
-            continue
-        snapshot.append(
-            (relative.as_posix(), stat.S_IMODE(path.lstat().st_mode), _sha256(payload))
+def test_current_code_mapping_reports_the_explicit_production_count() -> None:
+    roadmap = (REPOSITORY_ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
+    mapping = roadmap.split("## Current-code mapping", 1)
+    assert len(mapping) == 2
+    section = " ".join(mapping[1].split("\n## ", 1)[0].split())
+    counts = re.findall(r"Production Python sources are (\d+)\.", section)
+    assert counts == [str(len(EXPECTED_PRODUCTION_FILES))], (
+        "current-code production count mismatch"
+    )
+
+
+def test_current_named_surfaces_match_the_explicit_contract() -> None:
+    for name, symbols in P07_SURFACE:
+        module = importlib.import_module(f"faultatlas.domain.{name}")
+        assert tuple(module.__all__) == symbols, name
+    identities: list[str] = []
+    exported: set[str] = set()
+    for relative in EXPECTED_PRODUCTION_FILES:
+        tree = ast.parse((REPOSITORY_ROOT / relative).read_bytes())
+        identities.extend(
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef)
+            and any(ast.unparse(base) == "RootModel[uuid.UUID]" for base in node.bases)
         )
-    return tuple(sorted(snapshot))
+        if Path(relative).name not in {"__init__.py", "__main__.py"}:
+            dotted = relative.removeprefix("src/").removesuffix(".py").replace("/", ".")
+            exported.update(getattr(importlib.import_module(dotted), "__all__", ()))
+    assert len(identities) == len(set(identities))
+    assert set(identities) == UUID_IDENTITIES
+    assert {
+        symbol for symbol in exported if "Pattern" in symbol or "Invariant" in symbol
+    } == set(P07_PUBLISHED_SYMBOLS)
+    assert not set(ABSENT_P07_SYMBOLS) & exported
+    for relative in ABSENT_P07_MODULES:
+        assert not (REPOSITORY_ROOT / relative).exists(), relative
 
 
 def _write_synthetic_archive(
@@ -338,64 +389,22 @@ def test_distribution_name_is_faultatlas() -> None:
 
 
 def test_offline_build_excludes_reference_corpus_and_historical_license(
-    tmp_path: Path,
+    offline_distributions: tuple[Path, Path],
 ) -> None:
-    uv = shutil.which("uv")
-    assert uv is not None, "uv must be available to run the supported package build"
-
     project_license, historical_license = _locked_license_bytes()
-    cache_dir = tmp_path / "uv-cache"
-    output_dir = tmp_path / "distributions"
-    cache_dir.mkdir()
-    output_dir.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "UV_CACHE_DIR": str(cache_dir),
-            "UV_OFFLINE": "1",
-        }
-    )
-    status_before = _git_status_snapshot()
-    files_before = _repository_file_snapshot()
-    result = subprocess.run(
-        [
-            uv,
-            "build",
-            "--offline",
-            "--no-create-gitignore",
-            "--out-dir",
-            str(output_dir),
-        ],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    status_after = _git_status_snapshot()
-    files_after = _repository_file_snapshot()
-    assert status_after == status_before, "offline build changed repository status"
-    assert files_after == files_before, "offline build changed repository files"
-    assert result.returncode == 0, (
-        f"offline uv build failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-
-    wheels = tuple(output_dir.glob("*.whl"))
-    sdists = tuple(output_dir.glob("*.tar.gz"))
-    assert len(wheels) == 1, f"expected one wheel, found {wheels!r}"
-    assert len(sdists) == 1, f"expected one sdist, found {sdists!r}"
     archives: tuple[tuple[Path, ArchiveKind], ...] = (
-        (wheels[0], "wheel"),
-        (sdists[0], "sdist"),
+        (offline_distributions[0], "wheel"),
+        (offline_distributions[1], "sdist"),
     )
     for path, kind in archives:
+        members = _read_archive(path, kind)
         _assert_safe_package_archive(
-            _read_archive(path, kind),
+            members,
             project_license=project_license,
             historical_license=historical_license,
             expect_sources=True,
         )
+        _assert_complete_archive_inventory(members, kind)
 
 
 @pytest.mark.parametrize(
@@ -423,7 +432,7 @@ def test_package_source_inventory_mutation_is_rejected(mutation: str) -> None:
         assert mutation == "evidence-byte-mismatch"
         packaged[EVIDENCE_MODULE_PATH] += b"\n"
     with pytest.raises(AssertionError):
-        _assert_complete_source_package(packaged, working)
+        assert_complete_source_package(packaged, working)
 
 
 def test_archive_source_inventory_rejects_rogue_python_member() -> None:
@@ -435,7 +444,7 @@ def test_archive_source_inventory_rejects_rogue_python_member() -> None:
     packaged = _archive_source_bytes(members)
     assert "__unexpected_archive_python__/unexpected.py" in packaged
     with pytest.raises(AssertionError):
-        _assert_complete_source_package(packaged, working)
+        assert_complete_source_package(packaged, working)
 
 
 @pytest.mark.parametrize("kind", ("wheel", "sdist"))
@@ -519,4 +528,47 @@ def test_package_archive_rejects_unsafe_member_path(
             _read_archive(path, kind),
             project_license=project_license,
             historical_license=historical_license,
+        )
+
+
+def test_mutating_a_private_wheel_cannot_poison_an_independent_consumer(
+    offline_distributions: tuple[Path, Path], tmp_path: Path
+) -> None:
+    wheel = offline_distributions[0]
+    altered = tmp_path / "altered.whl"
+    with zipfile.ZipFile(wheel) as source, zipfile.ZipFile(altered, "w") as target:
+        for member in source.infolist():
+            content = source.read(member)
+            if member.filename == "faultatlas/__init__.py":
+                content += b"\n"
+            target.writestr(member, content)
+    working = _working_source_bytes()
+    with pytest.raises(AssertionError, match="package source byte mismatch"):
+        assert_complete_source_package(
+            _archive_source_bytes(_read_wheel(altered)), working
+        )
+    assert_complete_source_package(_archive_source_bytes(_read_wheel(wheel)), working)
+
+
+@pytest.mark.parametrize(
+    "name", ("docs/validation.md", "tests/_repository_contract.py")
+)
+def test_new_development_files_cannot_leak_into_archives(name: str) -> None:
+    project, historical = _locked_license_bytes()
+    members = (
+        ArchiveMember("dist-info/licenses/LICENSE", "file", project),
+        ArchiveMember(name, "file", b"test only"),
+    )
+    with pytest.raises(AssertionError, match="development material packaged"):
+        _assert_safe_package_archive(
+            members, project_license=project, historical_license=historical
+        )
+
+
+def test_duplicate_non_python_members_are_rejected() -> None:
+    project, historical = _locked_license_bytes()
+    member = ArchiveMember("dist-info/licenses/LICENSE", "file", project)
+    with pytest.raises(AssertionError, match="duplicate archive member"):
+        _assert_safe_package_archive(
+            (member, member), project_license=project, historical_license=historical
         )

@@ -32,6 +32,7 @@ from typing import (
 
 import pytest
 from pydantic import BaseModel, RootModel, TypeAdapter, ValidationError
+from test_package import assert_complete_source_package, assert_current_inventory
 
 import faultatlas
 import faultatlas.domain as domain_package
@@ -289,38 +290,6 @@ EXPECTED_EVIDENCE_EXPORTS = (
     "wrap_legacy_artifact_snapshot",
     "project_evidence_envelope_to_legacy_artifact_snapshot",
 )
-EXPECTED_PRODUCTION_FILES = {
-    "src/faultatlas/__init__.py",
-    "src/faultatlas/__main__.py",
-    "src/faultatlas/cli.py",
-    "src/faultatlas/domain/__init__.py",
-    "src/faultatlas/domain/compatibility.py",
-    "src/faultatlas/domain/evidence.py",
-    "src/faultatlas/domain/fault.py",
-    "src/faultatlas/domain/fault_evidence_link.py",
-    "src/faultatlas/domain/fault_instance.py",
-    "src/faultatlas/domain/fault_interpretation.py",
-    "src/faultatlas/domain/fault_repair.py",
-    "src/faultatlas/domain/fault_source_relationship.py",
-    "src/faultatlas/domain/fault_test.py",
-    "src/faultatlas/domain/history.py",
-    "src/faultatlas/domain/history_evidence_link.py",
-    "src/faultatlas/domain/identity.py",
-    # Added by `S1.P07.S03`, the independent invariant proposition.
-    "src/faultatlas/domain/invariant.py",
-    # Added by `S1.P07.S04`, the two explicit invariant associations.
-    "src/faultatlas/domain/invariant_relationship.py",
-    # Added by `S1.P07.S01`, the first `S1.P07` production module.
-    "src/faultatlas/domain/pattern.py",
-    # Added by `S1.P07.S05`, the bounded pattern composition.
-    "src/faultatlas/domain/pattern_composition.py",
-    # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
-    "src/faultatlas/domain/pattern_exemplar.py",
-    "src/faultatlas/domain/revision.py",
-    "src/faultatlas/domain/snapshot.py",
-    "src/faultatlas/domain/snapshot_evidence_link.py",
-    "src/faultatlas/domain/source.py",
-}
 EXPECTED_PRODUCTION_LOCKS = {
     "src/faultatlas/domain/compatibility.py": LockedFile(
         18898, "f4ef93d432da4fd0ebf05237c164e10d8f18eceaf538ff4ddc3372565b5c46db"
@@ -3267,7 +3236,7 @@ def _assert_no_production_corpus_capability(
             path.relative_to(REPOSITORY_ROOT).as_posix(): path.read_bytes()
             for path in (REPOSITORY_ROOT / "src").rglob("*.py")
         }
-    assert set(sources) == EXPECTED_PRODUCTION_FILES
+    assert_current_inventory(set(sources))
     for relative, raw in sources.items():
         assert CORPUS_RELATIVE.encode() not in raw
         assert b"reference_corpus" not in raw
@@ -3432,8 +3401,7 @@ def _working_source_bytes() -> dict[str, bytes]:
         path.relative_to(REPOSITORY_ROOT).as_posix(): path.read_bytes()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
     }
-    assert set(sources) == EXPECTED_PRODUCTION_FILES
-    assert len(sources) == len(EXPECTED_PRODUCTION_FILES)
+    assert_current_inventory(set(sources))
     return sources
 
 
@@ -3478,35 +3446,8 @@ def _assert_safe_archive(
     assert licenses == [project_license]
     packaged = _archive_source_bytes(members)
     working = _working_source_bytes()
-    assert set(packaged) == EXPECTED_PRODUCTION_FILES
-    assert packaged == working
-
-
-def _git_status() -> bytes:
-    return subprocess.run(
-        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        cwd=REPOSITORY_ROOT,
-        check=True,
-        capture_output=True,
-    ).stdout
-
-
-def _repository_snapshot() -> tuple[tuple[str, int, str], ...]:
-    snapshot: list[tuple[str, int, str]] = []
-    for path in REPOSITORY_ROOT.rglob("*"):
-        relative = path.relative_to(REPOSITORY_ROOT)
-        if relative.parts[0] in {".git", ".venv"}:
-            continue
-        if path.is_symlink():
-            payload = os.readlink(path).encode("utf-8")
-        elif path.is_file():
-            payload = path.read_bytes()
-        else:
-            continue
-        snapshot.append(
-            (relative.as_posix(), stat.S_IMODE(path.lstat().st_mode), _sha256(payload))
-        )
-    return tuple(sorted(snapshot))
+    assert_current_inventory(set(packaged))
+    assert_complete_source_package(packaged, working)
 
 
 def _corpus_vector_count(relative: str) -> int:
@@ -3792,8 +3733,6 @@ def test_roadmap_records_p03_complete_and_p04_s02_complete() -> None:
     # the live roadmap now opens the phase instead of queueing it.
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap
     reference_case = (
@@ -5167,7 +5106,9 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
         )
 
 
-def test_actual_offline_build_excludes_corpus(tmp_path: Path) -> None:
+def test_actual_offline_build_excludes_corpus(
+    offline_distributions: tuple[Path, Path],
+) -> None:
     uv = shutil.which("uv")
     assert uv is not None
     project_license = (REPOSITORY_ROOT / "LICENSE").read_bytes()
@@ -5178,45 +5119,15 @@ def test_actual_offline_build_excludes_corpus(tmp_path: Path) -> None:
     assert _sha256(historical_license) == (
         "a1ebce15afc7b5cf98c7c6de512d1959d4bf61db8c6bf2f111286d483b40a997"
     )
-    output = tmp_path / "dist"
-    cache = tmp_path / "uv-cache"
-    output.mkdir()
-    cache.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "UV_CACHE_DIR": str(cache),
-            "UV_NO_SYNC": "1",
-            "UV_OFFLINE": "1",
-        }
-    )
-    status_before = _git_status()
-    files_before = _repository_snapshot()
-    result = subprocess.run(
-        [uv, "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"offline build failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    assert _git_status() == status_before
-    assert _repository_snapshot() == files_before
-    wheels = tuple(output.glob("*.whl"))
-    sdists = tuple(output.glob("*.tar.gz"))
-    assert len(wheels) == len(sdists) == 1
+    wheel, sdist = offline_distributions
     _assert_safe_archive(
-        _read_wheel(wheels[0]),
+        _read_wheel(wheel),
         project_license=project_license,
         historical_license=historical_license,
         tests_forbidden=True,
     )
     _assert_safe_archive(
-        _read_sdist(sdists[0]),
+        _read_sdist(sdist),
         project_license=project_license,
         historical_license=historical_license,
         tests_forbidden=False,

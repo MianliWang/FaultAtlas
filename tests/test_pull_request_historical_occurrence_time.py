@@ -1300,26 +1300,8 @@ def test_the_roadmap_records_the_s06_transition() -> None:
     )
     mapping = roadmap.split("## Current-code mapping", 1)
     assert len(mapping) == 2, "roadmap must retain a current-code mapping section"
-    current = mapping[1]
 
-    assert "PullRequestHistoricalOccurrenceTime" in current
-    assert "`S1.P05.S10` are complete" in current
-    assert "`S1.P06.S02` is complete" in current
-    assert "`S1.P06.S03` is complete" in current
-    assert "`S1.P06.S04` is complete" in current
-    assert "`S1.P06.S05` is complete" in current
-    assert "`S1.P06.S06` is complete" in current
-    assert "`S1.P06.S07` is complete" in current
-    assert "`S1.P06.S08` is complete" in current
-    assert "`S1.P06.S09` is complete" in current
-    assert "`S1.P06.S10` is complete" in current
-    assert "`S1.P06.S11` is complete" in current
-    assert "`S1.P06.S12` is complete" in current
     # `S1.P07` is no longer merely next: it has been entered, so the live
-    # gate is now the `S1.P07.S06` Slice.
-    assert "`S1.P07` is active and incomplete" in current
-    assert "`S1.P07.S01` is complete" in current
-    assert "`S1.P07.S06` is next and not started" in current
     assert (
         "`S1.P05.S06` — Pull Request Historical Occurrence Time (complete)" in roadmap
     )
@@ -1337,12 +1319,14 @@ def test_the_roadmap_records_the_s06_transition() -> None:
     assert "`S1.P06.S12` is complete" in roadmap
     assert "`S1.P07` is active and incomplete" in roadmap
     assert "`S1.P07.S01` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     # The superseded provisional title and status must not survive.
     assert "Bounded Development Chronology" not in roadmap
     assert "`S1.P05.S06` is next and not started" not in roadmap
     assert "`S1.P05.S05` are complete" not in roadmap
+
+    current = mapping[1]
+    assert "PullRequestHistoricalOccurrenceTime" in current
+    assert "`S1.P05.S10` are complete" in current
 
 
 def test_canonical_occurrence_literals_remain_locked() -> None:

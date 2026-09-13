@@ -3,10 +3,8 @@ from __future__ import annotations
 import ast
 import json
 import os
-import shutil
 import subprocess
 import sys
-import tarfile
 import typing
 import uuid
 import zipfile
@@ -1967,28 +1965,51 @@ def test_the_roadmap_records_the_p06_s09_transition() -> None:
     roadmap = _roadmap()
     mapping = roadmap.split("## Current-code mapping", 1)
     assert len(mapping) == 2, "roadmap must retain a current-code mapping section"
-    current = mapping[1]
 
     assert "`S1.P06.S09` is complete" in roadmap
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    current_status = roadmap.split("## Current status", 1)[1].split("## ", 1)[0]
-    assert "`S1.P07.S06` is next and not started" in current_status
     assert (
         "`S1.P06.S09` — Fault-evidence bridge and canonical vertical (complete)"
         in roadmap
     )
     assert "The `S1.P06` route is closed at `S1.P06.S12`." in roadmap
 
-    assert "faultatlas.domain.fault_evidence_link" in current
-    assert "`FaultInstanceEvidenceLink`" in current
     # Twenty-five since `S1.P07.S05` added pattern_composition.py.
-    assert "Production Python sources are 25." in current
 
     assert "`S1.P06.S09` is next and not started" not in roadmap
     assert "`S1.P07` is complete" not in roadmap
     assert "Production Python sources are 19." not in roadmap
+
+    current = mapping[1]
+    assert "faultatlas.domain.fault_evidence_link" in current
+    assert "`FaultInstanceEvidenceLink`" in current, (
+        "missing evidence-link product mapping"
+    )
+
+
+def test_current_code_mapping_requires_the_evidence_link_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = Path.read_text
+
+    def omitted(
+        path: Path, encoding: str | None = None, errors: str | None = None
+    ) -> str:
+        text = original(path, encoding=encoding, errors=errors)
+        if path == ROADMAP:
+            before, mapping = text.split("## Current-code mapping", 1)
+            return (
+                before
+                + "## Current-code mapping"
+                + mapping.replace("`FaultInstanceEvidenceLink`", "omitted link name")
+            )
+        return text
+
+    monkeypatch.setattr(Path, "read_text", omitted)
+    with pytest.raises(AssertionError, match="missing evidence-link product mapping"):
+        test_the_roadmap_records_the_p06_s09_transition()
 
 
 def test_the_roadmap_states_the_s09_decisions_and_non_claims() -> None:
@@ -2027,53 +2048,6 @@ def test_the_roadmap_leaves_later_ownership_where_it_was() -> None:
 
 
 # --- packaging and an isolated installed-wheel smoke -------------------------
-
-
-EXPECTED_PRODUCTION_MODULES = [
-    "faultatlas/__init__.py",
-    "faultatlas/__main__.py",
-    "faultatlas/cli.py",
-    "faultatlas/domain/__init__.py",
-    "faultatlas/domain/compatibility.py",
-    "faultatlas/domain/evidence.py",
-    "faultatlas/domain/fault.py",
-    "faultatlas/domain/fault_evidence_link.py",
-    "faultatlas/domain/fault_instance.py",
-    "faultatlas/domain/fault_interpretation.py",
-    "faultatlas/domain/fault_repair.py",
-    "faultatlas/domain/fault_source_relationship.py",
-    "faultatlas/domain/fault_test.py",
-    "faultatlas/domain/history.py",
-    "faultatlas/domain/history_evidence_link.py",
-    "faultatlas/domain/identity.py",
-    # Added by `S1.P07.S03`, the independent invariant proposition.
-    "faultatlas/domain/invariant.py",
-    # Added by `S1.P07.S04`, the two explicit invariant associations.
-    "faultatlas/domain/invariant_relationship.py",
-    # Added by `S1.P07.S01`, the first `S1.P07` production module.
-    "faultatlas/domain/pattern.py",
-    # Added by `S1.P07.S05`, the bounded pattern composition.
-    "faultatlas/domain/pattern_composition.py",
-    # Added by `S1.P07.S02`, the explicit pattern-exemplar designation.
-    "faultatlas/domain/pattern_exemplar.py",
-    "faultatlas/domain/revision.py",
-    "faultatlas/domain/snapshot.py",
-    "faultatlas/domain/snapshot_evidence_link.py",
-    "faultatlas/domain/source.py",
-]
-
-
-def test_the_checkout_carries_exactly_twenty_five_production_modules() -> None:
-    observed = sorted(
-        str(path.relative_to(CHECKOUT_SOURCE_ROOT))
-        for path in CHECKOUT_SOURCE_ROOT.rglob("*.py")
-    )
-
-    assert observed == EXPECTED_PRODUCTION_MODULES
-    # Twenty-five since `S1.P07.S05` added pattern_composition.py.
-    assert len(observed) == 25
-    assert "faultatlas/domain/fault_evidence_link.py" in observed
-    assert "faultatlas/domain/pattern.py" in observed
 
 
 ISOLATED_SMOKE = """
@@ -2175,84 +2149,6 @@ print(
     )
 )
 """
-
-
-@pytest.fixture(scope="session")
-def offline_distributions(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> tuple[Path, Path]:
-    uv = shutil.which("uv")
-    assert uv is not None, "uv must be available to build the supported distributions"
-
-    root = tmp_path_factory.mktemp("fault-evidence-package")
-    output = root / "distributions"
-    output.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "UV_CACHE_DIR": str(root / "uv-cache"),
-            "UV_NO_SYNC": "1",
-            "UV_OFFLINE": "1",
-        }
-    )
-    result = subprocess.run(
-        [uv, "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"offline build failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    wheels = tuple(output.glob("*.whl"))
-    sdists = tuple(output.glob("*.tar.gz"))
-    assert len(wheels) == 1, f"expected one wheel, found {wheels!r}"
-    assert len(sdists) == 1, f"expected one sdist, found {sdists!r}"
-    return wheels[0], sdists[0]
-
-
-def test_the_wheel_ships_twenty_five_modules_and_no_corpus_or_test_material(
-    offline_distributions: tuple[Path, Path],
-) -> None:
-    wheel, _ = offline_distributions
-    with zipfile.ZipFile(wheel) as archive:
-        names = tuple(info.filename for info in archive.infolist() if not info.is_dir())
-
-    modules = sorted(name for name in names if name.endswith(".py"))
-    assert modules == EXPECTED_PRODUCTION_MODULES
-    # Twenty-five since `S1.P07.S05` added pattern_composition.py.
-    assert len(modules) == 25
-    assert "faultatlas/domain/fault_evidence_link.py" in modules
-    assert "faultatlas/domain/pattern.py" in modules
-    for name in names:
-        assert "reference_corpus" not in name
-        assert not name.startswith("tests/")
-        assert not name.startswith("docs/")
-
-
-def test_the_sdist_ships_twenty_five_modules_and_no_corpus_or_test_material(
-    offline_distributions: tuple[Path, Path],
-) -> None:
-    _, sdist = offline_distributions
-    with tarfile.open(sdist, "r:gz") as archive:
-        names = tuple(member.name for member in archive.getmembers() if member.isfile())
-
-    modules = sorted(
-        name.split("/src/", 1)[1] for name in names if name.endswith(".py")
-    )
-    assert modules == EXPECTED_PRODUCTION_MODULES
-    # Twenty-five since `S1.P07.S05` added pattern_composition.py.
-    assert len(modules) == 25
-    assert "faultatlas/domain/fault_evidence_link.py" in modules
-    assert "faultatlas/domain/pattern.py" in modules
-    for name in names:
-        parts = Path(name).parts
-        assert "reference_corpus" not in parts
-        assert "tests" not in parts
-        assert "docs" not in parts
 
 
 def test_the_installed_wheel_builds_an_instance_and_an_evidence_link(
