@@ -55,7 +55,8 @@ aspirational Slice as scheduled work.
   `S1.P07.S05` is complete and
   `S1.P07.S06` is complete and
   `S1.P07.S07` is complete and
-  `S1.P07.S08` is next and not started.
+  `S1.P07.S08` is complete and
+  `S1.P07.S09` is next and not started.
   `S1.P08` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -120,7 +121,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S05` is complete and
 `S1.P07.S06` is complete and
 `S1.P07.S07` is complete and
-`S1.P07.S08` is next and not started.
+`S1.P07.S08` is complete and
+`S1.P07.S09` is next and not started.
 `S1.P08` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -733,7 +735,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S05` is complete and
 `S1.P07.S06` is complete and
 `S1.P07.S07` is complete and
-`S1.P07.S08` is next and not started.
+`S1.P07.S08` is complete and
+`S1.P07.S09` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1192,7 +1195,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P07.S05` is complete and
 `S1.P07.S06` is complete and
 `S1.P07.S07` is complete and
-`S1.P07.S08` is next and not started.
+`S1.P07.S08` is complete and
+`S1.P07.S09` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -2296,7 +2300,8 @@ became `S1.P06.S10` work.
 `S1.P07.S05` is complete and
 `S1.P07.S06` is complete and
 `S1.P07.S07` is complete and
-`S1.P07.S08` is next and not started.
+`S1.P07.S08` is complete and
+`S1.P07.S09` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2584,9 +2589,9 @@ finite audited product/readiness obligations have no unresolved product blocker;
 this does not resolve the empirical entries or close the Phase. S08 must retain
 valid, invalid and composed authored expectations, explicit provenance,
 unknown-target/operation rejection, safe non-execution, source-only package
-exclusion and the distinction from P10 durable product interchange. Exact S08
-vectors and executor design are not implemented here; S09 closure remains later
-work. The missing whole-Phase planning audit is not retrospectively established.
+exclusion and the distinction from P10 durable product interchange. At S07 publication, exact S08
+vectors and executor design were not implemented; S08 supplies them separately.
+S09 closure remains later work. The missing whole-Phase planning audit is not retrospectively established.
 
 Only the decision JSON, its deterministic Markdown view and focused decision
 assurance are added. Published product and all earlier corpus bytes remain
@@ -2594,7 +2599,56 @@ unchanged; package, surface and lifecycle checks retain E01's existing owners.
 P06's corrected bounded relationship handoff stays addressed, PR #82 remains
 noncanonical, and recorded heuristic/performance limitations are not new work.
 
-The `S1.P07` route is provisional beyond `S1.P07.S07`. Later exact schemas are
+### S1.P07.S08 — Accumulated Pattern/Invariant contract corpus
+
+`S1.P07.S08` publishes a source-only corpus under
+[`reference_corpus/contracts/pattern-invariant/v1`](../reference_corpus/contracts/pattern-invariant/v1/contract.md).
+Its exact nine files are `manifest.json`, `valid-vectors.json`,
+`invalid-vectors.json`, `composition-vectors.json`, their four sha256sum-style
+sidecars, and a deterministic derived `contract.md`. Four independent test pins
+protect canonical UTF-8 JSON with sorted keys, compact separators and one LF;
+no floating-point constants, self-digest or hash cycle is introduced. These are
+test-artifact bytes, not a P10 durable product interchange or database schema.
+
+The corpus carries 48 executable vectors: 16 valid, 23 invalid and 9 synthetic
+composition examples. All eight S01–S05 targets execute directly with both
+accepted and rejected examples: two identity types and six record models.
+The normal complete run matches 48 primary dispatches, 23 legal prerequisite
+controls and three comparison companions; nested supporting-model validation
+is not counted as additional P07 target coverage. Expected primitive fields,
+default collections and supplied order are authored independently of returned
+models; production dumps are observations to compare, never golden generation.
+
+A single test-only runner permits three fixed operations and six named recipes.
+Strict Python uses explicit typed UUID/child/tuple builders. Native JSON enters
+`model_validate_json`; the escaped `json_wire` case tests a lone-surrogate refusal
+at that owning JSON entry point while the artifact itself remains valid UTF-8.
+Unknown target, operation, mode, recipe or format metadata fails before model
+dispatch, including when a row expects invalid product input. Every rejection
+first verifies its legal prerequisite and then matches the intended owner error.
+There are no fixture-supplied imports, executable paths or commands.
+
+The composition cases preserve two-repository values, non-exemplar expectations,
+exemplars without an expectation chain, repeated/order-sensitive relationships,
+competing reported outcomes, independent roots and differing case values under
+one case identity without a global registry. A synthetic case-level evidence
+link remains separate. All examples are caller-supplied synthetic values, not
+retained-real replay, independently observed failures, recurrence or truth.
+Detailed UUID/Unicode/4096-member matrices and S06 vertical tests retain their
+existing owners, as do package inventory/exclusion and installed-wheel checks.
+
+The pinned S07 decision and its exact subject selectors remain unchanged. P03's
+model reservation stays `bounded_model_implemented`; P00's empirical root stays
+`unknown_pending_additional_evidence`, owned by P08 under its additional-reviewed-
+cases/revisit condition. `deferred:p01:p07-pattern-generality` stays
+`evidence_insufficient`, owned by P07 and explicitly retained for review before
+P07 operational completion. These records are not merged by prose similarity or
+counted as independent observations. No empirical remainder is discharged, no
+P08 eligibility or Phase closure is established, and the missing whole-Phase
+planning audit is not retrospectively claimed. Production and all prior corpus
+bytes remain unchanged; S09 integration and closure are not implemented here.
+
+The `S1.P07` route is provisional beyond `S1.P07.S08`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -2610,8 +2664,8 @@ tests before the corpus Slice:
 6. `S1.P07.S06` — Cross-instance canonical vertical and boundary assurance
    (complete)
 7. `S1.P07.S07` — Deferred disposition and corpus readiness (complete)
-8. `S1.P07.S08` — Accumulated pattern/invariant contract corpus (next, not started)
-9. `S1.P07.S09` — Integration and Phase closure (not started)
+8. `S1.P07.S08` — Accumulated pattern/invariant contract corpus (complete)
+9. `S1.P07.S09` — Integration and Phase closure (next, not started)
 
 ## Preserved later Stage 1 phases
 
@@ -3013,7 +3067,8 @@ complete, and `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S05` is complete and
 `S1.P07.S06` is complete and
 `S1.P07.S07` is complete and
-`S1.P07.S08` is next and not started. `S1.P04.S10`
+`S1.P07.S08` is complete and
+`S1.P07.S09` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==
