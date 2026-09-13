@@ -2102,8 +2102,8 @@ def test_the_module_starts_no_process_and_touches_no_file() -> None:
 def test_no_predecessor_production_module_imports_this_one() -> None:
     """Dependency direction is downstream only, over every tracked module.
 
-    All twenty baseline predecessors and independent S03 module remain screened.
-    The three S02/S04/S05 downstream consumers have their owner imports checked separately.
+    All predecessors, independent S03 and the pure inspector remain screened.
+    The S02/S04/S05 and P08 assessment downstream consumers have their owner imports checked separately.
     """
     predecessors = [
         name
@@ -2114,16 +2114,18 @@ def test_no_predecessor_production_module_imports_this_one() -> None:
             "faultatlas/domain/pattern_exemplar.py",
             "faultatlas/domain/invariant_relationship.py",
             "faultatlas/domain/pattern_composition.py",
+            "faultatlas/domain/assessment.py",
         }
     ]
 
-    assert len(predecessors) == PRODUCTION_MODULE_COUNT - 4
+    assert len(predecessors) == PRODUCTION_MODULE_COUNT - 5
     assert "faultatlas/domain/invariant.py" in predecessors
-    # S02, S04 and S05 each consume exactly this published proposition type.
+    # Only these explicit downstream consumers may import this proposition.
     for consumer in (
         "faultatlas/domain/pattern_exemplar.py",
         "faultatlas/domain/invariant_relationship.py",
         "faultatlas/domain/pattern_composition.py",
+        "faultatlas/domain/assessment.py",
     ):
         assert consumer in EXPECTED_PRODUCTION_MODULES
         imports = [
@@ -2159,7 +2161,7 @@ def test_the_roadmap_records_the_p07_s01_transition() -> None:
     assert "## S1.P07 — Pattern & Invariant Model" in roadmap
     assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
-    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
+
     assert (
         "`S1.P07.S01` — Pattern Identity and Supplied Pattern Proposition (complete)"
         in roadmap

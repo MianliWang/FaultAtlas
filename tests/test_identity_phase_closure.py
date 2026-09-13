@@ -2017,7 +2017,6 @@ def test_group_m_p02_is_eligible_not_started_and_scope_guarded() -> None:
     # Historical transition claims remain; the lifecycle owner checks current state.
     assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
-    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
 
 def test_group_n_candidate_publication_semantics_are_exact() -> None:

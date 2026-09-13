@@ -1997,7 +1997,7 @@ def test_the_roadmap_records_the_p06_s02_transition() -> None:
     assert "`S1.P06.S10` is complete" in roadmap
     assert "`S1.P06.S11` is complete" in roadmap
     assert "`S1.P06.S12` is complete" in roadmap
-    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
+
     assert (
         "`S1.P06.S01` — Fault Instance Identity and Repository Context (complete)"
         in roadmap

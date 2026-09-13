@@ -1247,7 +1247,6 @@ def test_the_roadmap_records_the_p06_s01_transition() -> None:
     assert "`S1.P06.S12` is complete" in roadmap
     # Historical transition claims remain; the lifecycle owner checks current state.
     assert_current_phase_lifecycle()
-    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
 
     # `S1.P07.S01` published `faultatlas.domain.pattern`, so the live count
     # moved 20 -> 21. The sealed `S1.P06` records still say 20 and are not

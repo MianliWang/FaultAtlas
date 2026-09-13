@@ -815,7 +815,7 @@ def test_roadmap_records_the_s08_disposition_and_transition() -> None:
     assert "`S1.P06.S12` is complete" in roadmap
     assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
-    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
+
     assert "inherited exactly seven such subjects" in roadmap
     assert "`self_owned_open == 0`" in roadmap
     assert "S08 is governance-only" in roadmap
