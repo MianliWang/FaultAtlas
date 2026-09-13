@@ -54,7 +54,8 @@ aspirational Slice as scheduled work.
   `S1.P07.S04` is complete and
   `S1.P07.S05` is complete and
   `S1.P07.S06` is complete and
-  `S1.P07.S07` is next and not started.
+  `S1.P07.S07` is complete and
+  `S1.P07.S08` is next and not started.
   `S1.P08` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -118,7 +119,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S04` is complete and
 `S1.P07.S05` is complete and
 `S1.P07.S06` is complete and
-`S1.P07.S07` is next and not started.
+`S1.P07.S07` is complete and
+`S1.P07.S08` is next and not started.
 `S1.P08` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -730,7 +732,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S04` is complete and
 `S1.P07.S05` is complete and
 `S1.P07.S06` is complete and
-`S1.P07.S07` is next and not started.
+`S1.P07.S07` is complete and
+`S1.P07.S08` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1188,7 +1191,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P07.S04` is complete and
 `S1.P07.S05` is complete and
 `S1.P07.S06` is complete and
-`S1.P07.S07` is next and not started.
+`S1.P07.S07` is complete and
+`S1.P07.S08` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -2291,7 +2295,8 @@ became `S1.P06.S10` work.
 `S1.P07.S04` is complete and
 `S1.P07.S05` is complete and
 `S1.P07.S06` is complete and
-`S1.P07.S07` is next and not started.
+`S1.P07.S07` is complete and
+`S1.P07.S08` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2552,7 +2557,44 @@ installed-wheel checks retain their inventory, source-byte and provenance roles.
 E01's ownership and build-reuse maintenance procedure remains in place. No new
 schema, export, identity, dependency, corpus executor or durable corpus is added.
 
-The `S1.P07` route is provisional beyond `S1.P07.S06`. Later exact schemas are
+### S1.P07.S07 — Deferred disposition and corpus readiness
+
+`S1.P07.S07` records a bounded source-qualified disposition in the
+[primary decision](../reference_corpus/contracts/pattern-invariant/decisions/s07-deferred-subject-disposition-readiness/decision.json)
+and its [derived view](../reference_corpus/contracts/pattern-invariant/decisions/s07-deferred-subject-disposition-readiness/decision.md).
+The P03 `deferred:04` model reservation is implemented by the eight published
+S01–S05 symbols with S06 integration assurance. That result concerns supplied
+representation and composition, not factual pattern or invariant truth.
+
+The P00 stable cross-repository pattern/transfer root remains
+`unknown_pending_additional_evidence`. Its remaining responsibility is handed
+to the already named long-term owner P08, before transfer/applicability claims
+and only after additional reviewed cross-repository cases. S06 synthetic cases
+provide no such empirical evidence. A further P01 source-qualified
+`deferred:p01:p07-pattern-generality` entry remains `evidence_insufficient`,
+owned by P07 and due for explicit review before P07 operational completion.
+Its broad source-register references establish no exact alias to the P00 root;
+retaining both records asserts no two independent empirical questions. A P00
+reference that actually selects cross-provider identity mapping is recorded as
+an excluded wrong-root reference, with all historical bytes preserved.
+
+Readiness is limited to authoring S08's source-only contract corpus after this
+Slice's successful protected publication and natural-main verification. The
+finite audited product/readiness obligations have no unresolved product blocker;
+this does not resolve the empirical entries or close the Phase. S08 must retain
+valid, invalid and composed authored expectations, explicit provenance,
+unknown-target/operation rejection, safe non-execution, source-only package
+exclusion and the distinction from P10 durable product interchange. Exact S08
+vectors and executor design are not implemented here; S09 closure remains later
+work. The missing whole-Phase planning audit is not retrospectively established.
+
+Only the decision JSON, its deterministic Markdown view and focused decision
+assurance are added. Published product and all earlier corpus bytes remain
+unchanged; package, surface and lifecycle checks retain E01's existing owners.
+P06's corrected bounded relationship handoff stays addressed, PR #82 remains
+noncanonical, and recorded heuristic/performance limitations are not new work.
+
+The `S1.P07` route is provisional beyond `S1.P07.S07`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -2567,8 +2609,8 @@ tests before the corpus Slice:
    (complete)
 6. `S1.P07.S06` — Cross-instance canonical vertical and boundary assurance
    (complete)
-7. `S1.P07.S07` — Deferred disposition and corpus readiness (next, not started)
-8. `S1.P07.S08` — Accumulated pattern/invariant contract corpus (not started)
+7. `S1.P07.S07` — Deferred disposition and corpus readiness (complete)
+8. `S1.P07.S08` — Accumulated pattern/invariant contract corpus (next, not started)
 9. `S1.P07.S09` — Integration and Phase closure (not started)
 
 ## Preserved later Stage 1 phases
@@ -2970,7 +3012,8 @@ complete, and `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S04` is complete and
 `S1.P07.S05` is complete and
 `S1.P07.S06` is complete and
-`S1.P07.S07` is next and not started. `S1.P04.S10`
+`S1.P07.S07` is complete and
+`S1.P07.S08` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==

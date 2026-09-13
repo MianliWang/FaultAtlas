@@ -2074,6 +2074,7 @@ def test_revision_locator_corpus_is_an_independent_contract_sibling() -> None:
         "evidence-envelope",
         "fault-instance",
         "identity",
+        "pattern-invariant",
         "repository-snapshot",
         "revision-locator",
     }

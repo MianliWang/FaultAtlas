@@ -1750,6 +1750,7 @@ def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
         "evidence-envelope",
         "fault-instance",
         "identity",
+        "pattern-invariant",
         "repository-snapshot",
         "revision-locator",
     }
