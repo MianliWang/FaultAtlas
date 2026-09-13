@@ -1,8 +1,8 @@
 # Validation ownership and build reuse
 
-E01 is engineering maintenance. P06 remains complete; P07 remains active, with
-S01–S05 complete and S06 next/not_started. It changes neither product semantics
-nor the retained reference corpus. Publication remains subject to the protected
+At E01 publication, P06 was complete; P07 was active, with S01–S05 complete
+and S06 next/not_started. That engineering maintenance changed neither product
+semantics nor the retained reference corpus. Publication remains subject to the protected
 pull-request and natural-main checks below.
 
 ## Owners
@@ -58,15 +58,17 @@ invocation; no interpreter or package configuration changes are required.
    environment, inputs and Git/lifecycle context match. Unchanged production
    bytes alone do not validate a new harness. Revalidate affected evidence after
    a change; the candidate full run also supplies its measurement.
-5. Independently review the candidate within the E01 limit of three substantive
-   rounds and two review-driven repair cycles. Bind the final reviewed head to
-   the PR. Required PR CI and natural-main CI are separate evidence: verify event,
+5. Independently review the candidate within the active task's authorized budget.
+   E01's task-specific limit was three substantive rounds and two review-driven
+   repair cycles. Bind the final reviewed head to the PR. Required PR CI and
+   natural-main CI are separate evidence: verify event,
    attempt, actual checkout SHA, merge parents when applicable, and reviewed /
    tested / squash tree equality. Then synchronize ff-only and clean only proven
    disposable task resources.
 
-Development execution stays offline, with the unchanged locked toolchain and
-credential-free subprocess environments. E01's temporary measurement copies use
+Development execution requires the active task's separate authorization and
+stays offline, with the unchanged locked toolchain and credential-free subprocess
+environments. E01's historical temporary measurement copies used
 a read-only host filesystem plus a writable task root and a separate network
 namespace. A clone alone is workspace isolation, not OS containment. Historical
 external repository material remains data and is never executed.
