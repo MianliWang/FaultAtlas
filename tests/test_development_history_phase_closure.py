@@ -463,7 +463,10 @@ EXPECTED_S10_MENTIONS = 3
 # the corpus as it stood when it was written, so a later Phase's own root lies
 # outside its lock set by construction rather than by omission. Dropping a
 # predecessor artifact is still a failure below.
-SUCCESSOR_CONTRACT_ROOTS = ("reference_corpus/contracts/fault-instance/",)
+SUCCESSOR_CONTRACT_ROOTS = (
+    "reference_corpus/contracts/fault-instance/",
+    "reference_corpus/contracts/pattern-invariant/",
+)
 
 UNLOCKED_WORKING_ARTIFACTS = frozenset(
     {

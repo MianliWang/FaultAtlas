@@ -1536,6 +1536,7 @@ def _assert_exact_s06_locator_contract_corpus() -> None:
         "evidence-envelope",
         "fault-instance",
         "identity",
+        "pattern-invariant",
         "repository-snapshot",
         "revision-locator",
     }
