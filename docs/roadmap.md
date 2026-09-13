@@ -53,7 +53,8 @@ aspirational Slice as scheduled work.
   `S1.P07.S03` is complete and
   `S1.P07.S04` is complete and
   `S1.P07.S05` is complete and
-  `S1.P07.S06` is next and not started.
+  `S1.P07.S06` is complete and
+  `S1.P07.S07` is next and not started.
   `S1.P08` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -116,7 +117,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
 `S1.P07.S05` is complete and
-`S1.P07.S06` is next and not started.
+`S1.P07.S06` is complete and
+`S1.P07.S07` is next and not started.
 `S1.P08` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -727,7 +729,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
 `S1.P07.S05` is complete and
-`S1.P07.S06` is next and not started.
+`S1.P07.S06` is complete and
+`S1.P07.S07` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1184,7 +1187,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
 `S1.P07.S05` is complete and
-`S1.P07.S06` is next and not started.
+`S1.P07.S06` is complete and
+`S1.P07.S07` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -2286,7 +2290,8 @@ became `S1.P06.S10` work.
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
 `S1.P07.S05` is complete and
-`S1.P07.S06` is next and not started.
+`S1.P07.S06` is complete and
+`S1.P07.S07` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2461,8 +2466,8 @@ satisfaction, violation, generalization or repair-correctness result. An
 existing case-property evidence link transfers nothing to an invariant or
 pattern. No relationship-kind vocabulary, direct pattern-to-expectation record,
 rationale, confidence/review/status or applicability/transfer field is added.
-P08/P09/P10 and later-runtime boundaries remain unchanged; S05 now composes these values separately;
-S06 accumulated vertical assurance remains later work.
+P08/P09/P10 and later-runtime boundaries remain unchanged. S05 composes these
+values separately; S06 supplies the cross-instance vertical assurance.
 
 Both frozen strict records require typed Python endpoints and revalidate their
 owners. Native JSON delegates only the case dictionary to its own validator,
@@ -2508,7 +2513,46 @@ chronology, confidence, causality or support strength. Durable canonicalization
 remains P10 work. No I/O, discovery or identifier allocation occurs; all
 predecessor production modules and sealed corpus bytes remain unchanged.
 
-The `S1.P07` route is provisional beyond `S1.P07.S05`. Later exact schemas are
+### S1.P07.S06 — Cross-instance canonical vertical and boundary assurance
+
+`S1.P07.S06` adds integration tests over the published S01–S05 constructors.
+Two distinct synthetic cases in two synthetic repository contexts carry reports
+and case-local expectations through explicit exemplars, a supplied invariant,
+and both invariant association types into `FaultPatternComposition`. A third
+case with an expectation chain remains a non-exemplar; an exemplar remains valid
+without such a chain. Independently reconstructed equal endpoints qualify,
+while same-identity changed propositions, a changed expectation and a property
+from the wrong case fail at their owning root/member boundary.
+
+The scenarios retain local attachment closure, repeated associations, supplied
+order and separately valid roots sharing an invariant or case. Separate
+associations may carry different valid case values under one case identity;
+there is no global case registry. Conflicting reported outcomes for one valid
+reported run and competing expectation/invariant prose survive unchanged.
+An explicitly supplied case-evidence link stays separate and propagates no
+pattern/invariant evidence association or support verdict. Typed Python children,
+strict tuples, nested owner revalidation and native JSON reconstruction are
+checked against independently authored primitive payloads.
+
+All identifiers, repository contexts, statements and durable references in these
+examples are synthetic. No second historical failure was acquired, no retained
+case is counted twice as independent observation, and no external code is run.
+Canonical here means a representative deterministic base-value scenario, not
+historical truth, universal applicability or a canonical byte/order format.
+A supplied durable reference establishes neither retained bytes nor retrieval,
+support or an observed event. These examples establish no automatic discovery,
+real-world recurrence, invariant truth, winner selection, repair correctness or
+fault-transfer validity.
+
+Production and retained corpus bytes are unchanged. The existing inventory owner
+still covers 25 production modules, five P07 modules, eight P07 exports and twelve
+UUID-root identities. Focused owners retain pattern-only legality, detailed
+UUID/text/collection limits and duplicate-invariant tests; existing package and
+installed-wheel checks retain their inventory, source-byte and provenance roles.
+E01's ownership and build-reuse maintenance procedure remains in place. No new
+schema, export, identity, dependency, corpus executor or durable corpus is added.
+
+The `S1.P07` route is provisional beyond `S1.P07.S06`. Later exact schemas are
 not authorized by appearing here, and every product Slice owns its focused
 tests before the corpus Slice:
 
@@ -2522,8 +2566,8 @@ tests before the corpus Slice:
 5. `S1.P07.S05` — Bounded pattern composition and reference integrity
    (complete)
 6. `S1.P07.S06` — Cross-instance canonical vertical and boundary assurance
-   (next, not started)
-7. `S1.P07.S07` — Deferred disposition and corpus readiness (not started)
+   (complete)
+7. `S1.P07.S07` — Deferred disposition and corpus readiness (next, not started)
 8. `S1.P07.S08` — Accumulated pattern/invariant contract corpus (not started)
 9. `S1.P07.S09` — Integration and Phase closure (not started)
 
@@ -2925,7 +2969,8 @@ complete, and `S1.P06.S12` is complete, so `S1.P07` is active and incomplete;
 `S1.P07.S03` is complete and
 `S1.P07.S04` is complete and
 `S1.P07.S05` is complete and
-`S1.P07.S06` is next and not started. `S1.P04.S10`
+`S1.P07.S06` is complete and
+`S1.P07.S07` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==
