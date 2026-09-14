@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from test_cli import assert_current_cli_source
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CLOSURE_RELATIVE = (
@@ -1031,8 +1032,12 @@ def _assert_source_locks(document: dict[str, Any], *, verify_files: bool) -> Non
         for entry in immutable + observations:
             path = REPOSITORY_ROOT / cast(str, entry["path"])
             assert path.is_file(), entry["path"]
-            assert _digest(path) == entry["sha256"], entry["path"]
-            assert path.stat().st_size == entry["byte_length"], entry["path"]
+            if entry["path"] == "src/faultatlas/cli.py":
+                # Historical seed observation stays sealed; S03 owns current CLI.
+                assert_current_cli_source(path.read_bytes())
+            else:
+                assert _digest(path) == entry["sha256"], entry["path"]
+                assert path.stat().st_size == entry["byte_length"], entry["path"]
 
 
 def _assert_deferred(document: dict[str, Any]) -> None:
@@ -2020,3 +2025,39 @@ def test_closure_and_roadmap_agree_on_readiness() -> None:
         f"implementation state `{readiness['implementation_state']}`" in roadmap
     )
     assert f"`{readiness['next_phase']}` is `{readiness['readiness']}`" not in roadmap
+
+
+@pytest.mark.parametrize("changed", ["valid", "comment", "invalid_cli", "other"])
+def test_s03_cli_successor_preserves_other_byte_guards(
+    monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    selected = REPOSITORY_ROOT / (
+        "src/faultatlas/__main__.py" if changed == "other" else "src/faultatlas/cli.py"
+    )
+    original = Path.read_bytes
+
+    def reading(path: Path) -> bytes:
+        raw = original(path)
+        if path != selected or changed == "valid":
+            return raw
+        if changed == "invalid_cli":
+            before, after = b'command("save-as"', b'command("overwrite"'
+            assert raw.count(before) == 1
+            return raw.replace(before, after)
+        return raw + b"\n# S03 current-source witness\n"
+
+    monkeypatch.setattr(Path, "read_bytes", reading)
+
+    def validator() -> None:
+        _assert_source_locks(_closure(), verify_files=True)
+
+    if changed in {"valid", "comment"}:
+        validator()
+    else:
+        message = (
+            "current CLI assessment routes"
+            if changed == "invalid_cli"
+            else "__main__.py"
+        )
+        with pytest.raises(AssertionError, match=message):
+            validator()

@@ -18,6 +18,7 @@ from typing import Any, NoReturn, cast
 import pytest
 from _repository_contract import PRODUCTION_FILES
 from pydantic import BaseModel
+from test_cli import assert_current_cli_source
 from test_package import assert_complete_source_package
 from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
@@ -614,8 +615,12 @@ def _assert_source_locks(document: dict[str, Any], *, verify_files: bool) -> Non
             path = REPOSITORY_ROOT / relative
             _assert_regular_0644(path)
             raw = path.read_bytes()
-            assert len(raw) == length
-            assert _sha256(raw) == expected_digest
+            # All recorded locks remain exact; S03 supplies the live CLI successor.
+            if relative == "src/faultatlas/cli.py":
+                assert_current_cli_source(raw)
+            else:
+                assert len(raw) == length, relative
+                assert _sha256(raw) == expected_digest, relative
 
 
 def _replay_git_commit(snapshot: dict[str, Any]) -> tuple[str, str]:
@@ -1881,3 +1886,24 @@ def test_each_required_closure_mutation_is_rejected(mutation: str) -> None:
 
 def test_complete_closure_document_passes_every_independent_validator() -> None:
     _validate_document(_load_closure())
+
+
+@pytest.mark.parametrize("changed", ["cli", "other"])
+def test_s03_cli_successor_preserves_other_byte_guards(
+    monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    target = REPOSITORY_ROOT / (
+        "src/faultatlas/cli.py" if changed == "cli" else "src/faultatlas/__main__.py"
+    )
+    original = Path.read_bytes
+
+    def read(path: Path) -> bytes:
+        raw = original(path)
+        return raw + b"\n# S03 current-source witness\n" if path == target else raw
+
+    monkeypatch.setattr(Path, "read_bytes", read)
+    if changed == "cli":
+        _assert_source_locks(_load_closure(), verify_files=True)
+    else:
+        with pytest.raises(AssertionError, match="__main__.py"):
+            _assert_source_locks(_load_closure(), verify_files=True)

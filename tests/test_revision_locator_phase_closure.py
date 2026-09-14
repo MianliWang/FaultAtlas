@@ -17,6 +17,7 @@ from typing import Any, NoReturn, cast
 
 import pytest
 from _repository_contract import PRODUCTION_FILES
+from test_cli import assert_current_cli_source
 from test_package import assert_complete_source_package, assert_current_inventory
 from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
@@ -1094,8 +1095,12 @@ def _assert_inventory(document: dict[str, Any], verify_files: bool = False) -> N
         }
         _assert_no_production_reader_or_p03(sources)
         for relative, expected in EXPECTED_PRODUCTION.items():
-            assert len(sources[relative]) == expected.byte_length
-            assert _sha256(sources[relative]) == expected.sha256
+            # Keep historical observations; only current CLI byte equality retires.
+            if relative == "src/faultatlas/cli.py":
+                assert_current_cli_source(sources[relative])
+            else:
+                assert len(sources[relative]) == expected.byte_length, relative
+                assert _sha256(sources[relative]) == expected.sha256, relative
         _validate_exports(
             _parse_module_exports(sources["src/faultatlas/domain/revision.py"])
         )
@@ -2317,3 +2322,24 @@ def test_required_mutation_is_rejected(mutation: str, tmp_path: Path) -> None:
             )
         return
     raise AssertionError(f"unhandled mutation: {mutation}")
+
+
+@pytest.mark.parametrize("changed", ["cli", "other"])
+def test_s03_cli_successor_preserves_other_byte_guards(
+    monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    target = REPOSITORY_ROOT / (
+        "src/faultatlas/cli.py" if changed == "cli" else "src/faultatlas/__main__.py"
+    )
+    original = Path.read_bytes
+
+    def read(path: Path) -> bytes:
+        raw = original(path)
+        return raw + b"\n# S03 current-source witness\n" if path == target else raw
+
+    monkeypatch.setattr(Path, "read_bytes", read)
+    if changed == "cli":
+        _assert_inventory(_load_closure(), verify_files=True)
+    else:
+        with pytest.raises(AssertionError, match="__main__.py"):
+            _assert_inventory(_load_closure(), verify_files=True)

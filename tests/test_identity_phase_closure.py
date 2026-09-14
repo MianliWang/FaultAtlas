@@ -19,6 +19,7 @@ from typing import Any, cast
 import pytest
 from _repository_contract import PRODUCTION_FILES
 from pydantic import BaseModel, ValidationError
+from test_cli import assert_current_cli_source
 from test_package import assert_complete_source_package, assert_current_inventory
 from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
@@ -1701,8 +1702,12 @@ def test_group_g_production_inventory_exports_and_legacy_boundary_are_exact() ->
     assert faultatlas.__version__ == "0.1.0"
     for relative, expected in EXPECTED_PRODUCTION.items():
         raw = (REPOSITORY_ROOT / relative).read_bytes()
-        assert len(raw) == expected.byte_length
-        assert _sha256(raw) == expected.sha256
+        # Historical CLI observation stays recorded; S03 owns its current successor.
+        if relative == "src/faultatlas/cli.py":
+            assert_current_cli_source(raw)
+        else:
+            assert len(raw) == expected.byte_length, relative
+            assert _sha256(raw) == expected.sha256, relative
     current = {
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in (REPOSITORY_ROOT / "src").rglob("*.py")
@@ -2280,3 +2285,24 @@ def test_required_mutation_is_rejected(mutation_id: str, tmp_path: Path) -> None
         return
     with pytest.raises(AssertionError):
         check(document)
+
+
+@pytest.mark.parametrize("changed", ["cli", "other"])
+def test_s03_cli_successor_preserves_other_byte_guards(
+    monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    target = REPOSITORY_ROOT / (
+        "src/faultatlas/cli.py" if changed == "cli" else "src/faultatlas/__main__.py"
+    )
+    original = Path.read_bytes
+
+    def read(path: Path) -> bytes:
+        raw = original(path)
+        return raw + b"\n# S03 current-source witness\n" if path == target else raw
+
+    monkeypatch.setattr(Path, "read_bytes", read)
+    if changed == "cli":
+        test_group_g_production_inventory_exports_and_legacy_boundary_are_exact()
+    else:
+        with pytest.raises(AssertionError, match="__main__.py"):
+            test_group_g_production_inventory_exports_and_legacy_boundary_are_exact()
