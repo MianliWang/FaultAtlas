@@ -54,7 +54,7 @@ def _emit(stream: TextIO | None, text: str) -> None:
         elif stream.write(text) != len(text):
             raise OSError("short output write")
         stream.flush()
-    except (OSError, ValueError):
+    except (OSError, ValueError, KeyboardInterrupt):
         raise _DeliveryFailed(stream) from None
 
 

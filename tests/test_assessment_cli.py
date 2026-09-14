@@ -341,6 +341,8 @@ class FailedStream(io.StringIO):
 
     def write(self, value: str) -> int:
         self.writes += 1
+        if self.point == "interrupt_write":
+            raise KeyboardInterrupt()
         if self.point == "write":
             raise BrokenPipeError()
         if self.point == "short":
@@ -349,6 +351,8 @@ class FailedStream(io.StringIO):
 
     def flush(self) -> None:
         self.flushes += 1
+        if self.point == "interrupt_flush":
+            raise KeyboardInterrupt()
         if self.point == "flush":
             raise OSError("flush failed")
 
@@ -921,3 +925,205 @@ except SystemExit:
         if child is not None and child.poll() is None:
             child.kill()
             child.communicate(timeout=10)
+
+
+@pytest.mark.parametrize("point", ["write", "flush"])
+def test_installed_post_cutoff_sigint_keeps_saved_effects(
+    installed_cli: Installed, documented: Path, point: str
+) -> None:
+    executable, env = installed_cli
+    target = documented.parent / "delivery-interrupted.json"
+    before = documented.read_bytes(), _stable(documented)
+    ready_read, ready_write = os.pipe()
+    # Instrumented real save: the proxy only observes/delegates output. Its pause
+    # is disarmed before the handshake, including for interpreter shutdown flush.
+    probe = r"""
+import os,pathlib,signal,sys
+import faultatlas.cli as cli
+ready,point,installed=int(sys.argv[1]),sys.argv[2],pathlib.Path(sys.argv[3])
+sys.argv=["faultatlas",*sys.argv[4:]]
+assert pathlib.Path(cli.__file__).is_relative_to(installed)
+prior={s:signal.getsignal(s) for s in (signal.SIGINT,signal.SIGTERM)}
+save=cli.save_assessment_as_new
+calls=0
+def saving(*args,**kwargs):
+    global calls
+    calls+=1
+    assert calls==1
+    return save(*args,**kwargs)
+cli.save_assessment_as_new=saving
+original=sys.stdout
+class OneShotOutput:
+    paused=False
+    def pause(self,where):
+        if point==where and not self.paused:
+            self.paused=True
+            assert calls==1
+            assert signal.getsignal(signal.SIGINT)==signal.default_int_handler
+            os.write(ready,b"ready")
+            signal.pause()
+            raise AssertionError("expected default SIGINT interrupt")
+    def write(self,text):
+        if point=="write":
+            original.write(text[:8]);original.flush()
+            self.pause("write")
+        return original.write(text)
+    def flush(self):
+        original.flush()
+        self.pause("flush")
+output=OneShotOutput()
+sys.stdout=output
+try: cli.app()
+except SystemExit:
+    assert calls==1 and output.paused
+    assert {s:signal.getsignal(s) for s in prior}==prior
+    for name,module in sys.modules.copy().items():
+        if name=="faultatlas" or name.startswith("faultatlas."):
+            assert pathlib.Path(module.__file__).is_relative_to(installed)
+    raise
+"""
+    child: subprocess.Popen[bytes] | None = None
+    try:
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                probe,
+                str(ready_write),
+                point,
+                str(executable.parent.parent),
+                "assessment",
+                "save-as",
+                str(documented),
+                str(target),
+            ],
+            cwd=documented.parent,
+            env=env,
+            pass_fds=(ready_write,),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        os.close(ready_write)
+        ready_write = -1
+        with selectors.DefaultSelector() as selector:
+            selector.register(ready_read, selectors.EVENT_READ)
+            assert selector.select(timeout=15), "delivery child did not reach handshake"
+        assert os.read(ready_read, 5) == b"ready"
+        assert target.read_bytes() == CANONICAL
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+        assert (documented.read_bytes(), _stable(documented)) == before
+        child.send_signal(signal.SIGINT)
+        stdout, stderr = child.communicate(timeout=15)
+        quoted = json.dumps(str(target), ensure_ascii=True).replace("\x7f", "\\u007f")
+        receipt = f"Saved new assessment file: {quoted}\noutput_visibility=published; sync_completed=true\n".encode()
+        assert child.returncode == 1
+        assert stdout == (b"Saved ne" if point == "write" else receipt)
+        assert (
+            stderr
+            == b"CLI_OUTPUT: output_visibility=published; sync_completed=true; cancel_requested=false\n"
+        )
+        assert target.read_bytes() == CANONICAL
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+        assert (documented.read_bytes(), _stable(documented)) == before
+        assert sorted(documented.parent.iterdir()) == sorted([documented, target])
+    finally:
+        os.close(ready_read)
+        if ready_write >= 0:
+            os.close(ready_write)
+        if child is not None and child.poll() is None:
+            child.kill()
+            child.communicate(timeout=10)
+
+
+def test_native_write_interrupt_retains_inspect_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Controlled exception injection exercises the native descriptor branch.
+    native = sys.__stdout__
+    assert native is not None
+    error = io.StringIO()
+    writes: list[tuple[int, bytes]] = []
+    calls: list[str] = []
+
+    def inspected(*args: Any, **kwargs: Any) -> str:
+        calls.append("inspect")
+        return "End of complete view\n"
+
+    def interrupted(fd: int, data: bytes) -> int:
+        writes.append((fd, data))
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(cli, "inspect_assessment_file", inspected)
+    monkeypatch.setattr(sys, "stdout", native)
+    monkeypatch.setattr(sys, "stderr", error)
+    monkeypatch.setattr(os, "write", interrupted)
+    assert cli.app(args=["assessment", "inspect", "/in"], standalone_mode=False) == 1
+    assert calls == ["inspect"] and writes == [
+        (native.fileno(), b"End of complete view\n")
+    ]
+    assert (
+        error.getvalue()
+        == "CLI_OUTPUT: output_visibility=not_published; sync_completed=false; cancel_requested=false\n"
+    )
+    assert sys.stdout is native and sys.stderr is error
+
+
+def test_interrupted_service_stderr_preserves_structured_cancelled_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Mapping only: this structured error does not prove a real publication.
+    error = AssessmentFileError(
+        "IO_ERROR",
+        "sync",
+        output_visibility="published",
+        sync_completed=False,
+        cancel_requested=True,
+    )
+    output, diagnostic = io.StringIO(), FailedStream("interrupt_flush")
+    calls: list[str] = []
+
+    def failed(*args: Any, **kwargs: Any) -> str:
+        calls.append("save")
+        raise error
+
+    monkeypatch.setattr(cli, "save_assessment_as_new", failed)
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(sys, "stderr", diagnostic)
+    assert (
+        cli.app(args=["assessment", "save-as", "/in", "/out"], standalone_mode=False)
+        == 1
+    )
+    assert calls == ["save"] and output.getvalue() == ""
+    assert diagnostic.getvalue() == str(error) + "\n"
+    assert diagnostic.writes == diagnostic.flushes == 1
+    assert sys.stdout is output and sys.stderr is diagnostic
+
+
+def test_secondary_stderr_interrupt_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Mapping only: interrupt the receipt write and its one secondary flush.
+    output, diagnostic = (
+        FailedStream("interrupt_write"),
+        FailedStream("interrupt_flush"),
+    )
+    calls: list[str] = []
+
+    def saved(*args: Any, **kwargs: Any) -> str:
+        calls.append("save")
+        return "/out"
+
+    monkeypatch.setattr(cli, "save_assessment_as_new", saved)
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(sys, "stderr", diagnostic)
+    assert (
+        cli.app(args=["assessment", "save-as", "/in", "/out"], standalone_mode=False)
+        == 1
+    )
+    assert calls == ["save"] and output.writes == 1
+    assert diagnostic.writes == diagnostic.flushes == 1
+    assert (
+        diagnostic.getvalue()
+        == "CLI_OUTPUT: output_visibility=published; sync_completed=true; cancel_requested=false\n"
+    )
+    assert sys.stdout is output and sys.stderr is diagnostic
