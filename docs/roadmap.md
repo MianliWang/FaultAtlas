@@ -58,7 +58,8 @@ aspirational Slice as scheduled work.
   `S1.P07.S08` is complete and
   `S1.P07.S09` is complete and
   `S1.P08` is active and incomplete; `S1.P08.S01` is complete and
-  `S1.P08.S02` is next and not started.
+  `S1.P08.S02` is complete and
+  `S1.P08.S03` is next and not started.
   `S1.P09` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -126,7 +127,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
 `S1.P08` is active and incomplete; `S1.P08.S01` is complete and
-  `S1.P08.S02` is next and not started.
+  `S1.P08.S02` is complete and
+  `S1.P08.S03` is next and not started.
 `S1.P09` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -742,7 +744,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
 `S1.P08` is active and incomplete; `S1.P08.S01` is complete and
-  `S1.P08.S02` is next and not started.
+  `S1.P08.S02` is complete and
+  `S1.P08.S03` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1204,7 +1207,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
 `S1.P08` is active and incomplete; `S1.P08.S01` is complete and
-  `S1.P08.S02` is next and not started.
+  `S1.P08.S02` is complete and
+  `S1.P08.S03` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -2317,7 +2321,8 @@ became `S1.P06.S10` work.
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
 `S1.P08` is active and incomplete; `S1.P08.S01` is complete and
-  `S1.P08.S02` is next and not started.
+  `S1.P08.S02` is complete and
+  `S1.P08.S03` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2751,8 +2756,8 @@ No later schema is authorized by this closed P07 route:
 ## S1.P08 — Transfer & Applicability Model
 
 `S1.P08` is active and incomplete. `S1.P08.S01` is complete and
-`S1.P08.S02` is next and not started. `S1.P08.S03` is not started and
-`S1.P08.S04` is not started. `S1.P09` through `S1.P10` remain not started.
+`S1.P08.S02` is complete and
+  `S1.P08.S03` is next and not started. `S1.P08.S04` is not started. `S1.P09` through `S1.P10` remain not started.
 
 S01 publishes nine supplied assessment records in `faultatlas.domain.assessment`
 and the pure `faultatlas.assessment.inspect_assessment` consumer. The caller
@@ -2762,8 +2767,8 @@ context, ordered conditions, material content and attribution, and omission.
 Condition and material references are local; key equality alone cannot replace
 full condition equality. Explicit opinions, conflicts and overall statements
 remain attributed claims, never automatic applicability or repair certification.
-No target `FaultInstance`, predicate language, file gateway, draft lifecycle,
-cross-file lookup or new UUID identity is introduced.
+S01 introduced no target `FaultInstance`, predicate language, file gateway, draft
+lifecycle, cross-file lookup or new UUID identity.
 
 Root attribution records who assembles the assessment, basis/context and condition
 inventory; it neither authenticates anyone nor attributes authorship of a referenced
@@ -2792,13 +2797,19 @@ The `S1.P08` route has four release units, including adopted limited cross-owner
 responsibilities; later units need their own contracts:
 
 1. `S1.P08.S01` — Complete supplied assessment and pure inspection (complete)
-2. `S1.P08.S02` — Selected-file codec/API and save-as-new/reopen (next, not started)
-3. `S1.P08.S03` — Existing CLI integration and selected-file acceptance (not started)
+2. `S1.P08.S02` — Selected-file codec/API and save-as-new/reopen (complete)
+3. `S1.P08.S03` — Existing CLI integration and selected-file acceptance (next, not started)
 4. `S1.P08.S04` — Bounded integration and Phase closure (not started)
 
-The S02 envelope budget and Linux/ext4 backend are forward requirements only.
-No codec, file access, mount detection, cancellation handler or CLI command is
-implemented by S01. P09/P10 are not thereby completed or begun as separate Phases.
+The S02 envelope budget and Linux/ext4 backend were forward requirements at
+S01 publication. S02 implements the [selected-file API](contracts/s1-p08-s02-assessment-file.md)
+for inspect/save-as-new/reopen, with strict bounded UTF-8 JSON, owning default
+normalization and real descriptor/mount checks. An unnamed complete file is linked
+once without overwrite, then file/directory synchronization and selected-name
+binding are checked. Structured errors distinguish publication history, sync
+acknowledgment and cooperative cancellation; published files are never rolled back.
+The S01 modules remain pure. No CLI command or signal handler is introduced here;
+S03 owns that integration. P09/P10 are not thereby completed or begun as separate Phases.
 
 ## Preserved later Stage 1 phases
 
@@ -3184,7 +3195,7 @@ inference, promotion or changes to either endpoint owner.
 bounded supplied Pattern composition with explicit full-record reference
 integrity and root attachment closure, without inferred edges.
 
-Production Python sources are 27.
+Production Python sources are 28.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the `S1.P05.S02.C01`
 correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, `S1.P05.S06`,
 `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01` correction,
@@ -3203,7 +3214,8 @@ complete, and `S1.P06.S12` is complete, and `S1.P07` is complete;
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
 `S1.P08` is active and incomplete; `S1.P08.S01` is complete and
-  `S1.P08.S02` is next and not started. `S1.P04.S10`
+  `S1.P08.S02` is complete and
+  `S1.P08.S03` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==
@@ -3235,8 +3247,15 @@ The nine frozen strict records consume the existing P07 propositions, P04 snapsh
 and scope, and P03 durable-record reference. The pure view checks the complete
 requested basis and preserves all attribution, missing material and unopined
 conditions without performing file I/O or certifying a supplied opinion. Production
-Python sources are 27; the P07 eight exports and twelve UUID-root identities stay
-unchanged. The existing CLI still provides only help/version behavior.
+Python sources are 28; the P07 eight exports and twelve UUID-root identities stay
+unchanged. `faultatlas.assessment_file` exports exactly `AssessmentFileError`,
+`inspect_assessment_file`, and `save_assessment_as_new`. It consumes the public S01
+owner and inspector, reads one explicitly selected local v1 file, and publishes
+canonical bytes only under a selected new name on observed supported ext4.
+The file envelope limits are 8198 nodes, 513 objects, 131125 string code points and
+33 container levels; bytes are capped at 1 MiB and the complete prefixed view at
+8 MiB. Domain limits remain unchanged. The existing CLI still provides only
+help/version behavior.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and

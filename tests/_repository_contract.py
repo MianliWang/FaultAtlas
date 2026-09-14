@@ -6,6 +6,7 @@ PRODUCTION_FILES = frozenset(
         "src/faultatlas/__main__.py",
         "src/faultatlas/cli.py",
         "src/faultatlas/assessment.py",
+        "src/faultatlas/assessment_file.py",
         "src/faultatlas/domain/assessment.py",
         "src/faultatlas/domain/__init__.py",
         "src/faultatlas/domain/compatibility.py",
