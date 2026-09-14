@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -108,3 +109,28 @@ def test_mutated_shared_archive_is_rejected_and_restored(
         == archives
     )
     assert wheel.read_bytes() == before
+
+
+def test_runtime_bytecode_does_not_change_source_build_profile(tmp_path: Path) -> None:
+    build_profile: Callable[[Path, Path], preparation.BuildProfile] = getattr(
+        preparation, "_build_profile"
+    )
+    source = tmp_path / "src" / "faultatlas"
+    source.mkdir(parents=True)
+    module = source / "example.py"
+    module.write_text("value = 1\n")
+    output_cache = tmp_path / "build-cache"
+    before = build_profile(tmp_path, output_cache)
+    bytecode = source / "__pycache__" / "example.cpython-313.pyc"
+    bytecode.parent.mkdir()
+    bytecode.write_bytes(b"synthetic bytecode, never executed")
+    assert build_profile(tmp_path, output_cache) == before
+    bytecode.write_bytes(b"changed synthetic bytecode")
+    assert build_profile(tmp_path, output_cache) == before
+    bytecode.unlink()
+    assert build_profile(tmp_path, output_cache) == before
+    module.write_text("value = 2\n")
+    assert build_profile(tmp_path, output_cache) != before
+    module.write_text("value = 1\n")
+    (bytecode.parent / "unexpected.py").write_text("unexpected = True\n")
+    assert build_profile(tmp_path, output_cache) != before
