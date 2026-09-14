@@ -145,6 +145,11 @@ Unknown internal failure reports uncertain visibility and unestablished sync
 unless a returned result or structured error already established the effects.
 No traceback, exception payload or locals are printed.
 
+A `KeyboardInterrupt` reaching the top-level runner before scoped signal handling
+also uses `CLI_INTERNAL`, exit 1, with unestablished effects. It is not reported
+as cooperative cancellation: no supported signal was latched by this command.
+This bounded fallback does not promise arbitrary asynchronous-exception recovery.
+
 | Exit | Result |
 | ---: | --- |
 | 0 | Successful command/help/version, including write and flush |

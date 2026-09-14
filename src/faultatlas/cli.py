@@ -134,7 +134,8 @@ class _CLIGroup(TyperGroup):
                 status = _deliver(
                     _cli("OUTPUT", _Effects()) + "\n", 1, _Effects(), error=True
                 )
-        except Exception:
+        except (Exception, KeyboardInterrupt):
+            # Default pre-dispatch interrupts have no cooperative signal sample.
             effects = _Effects("uncertain", "unestablished")
             status = _deliver(_cli("INTERNAL", effects) + "\n", 1, effects, error=True)
         if standalone_mode:

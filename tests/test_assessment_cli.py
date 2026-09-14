@@ -819,7 +819,7 @@ def test_real_closed_reader_after_successful_save(
         target.read_bytes() == CANONICAL
         and stat.S_IMODE(target.stat().st_mode) == 0o600
     )
-    assert list(documented.parent.iterdir()) == [documented, target]
+    assert sorted(documented.parent.iterdir()) == sorted([documented, target])
 
 
 @pytest.mark.parametrize("closed", ["1", "1,2"])
@@ -857,3 +857,67 @@ def test_installed_startup_without_stdout_keeps_published_effects(
     )
     assert target.read_bytes() == CANONICAL
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_installed_predispatch_sigint_has_controlled_diagnostic(
+    installed_cli: Installed, tmp_path: Path
+) -> None:
+    _, env = installed_cli
+    ready_read, ready_write = os.pipe()
+    # Test-only launch seam interrupts the real installed command before parsing.
+    probe = r"""
+import os,signal,sys
+import faultatlas.cli as cli
+from typer.main import get_command
+ready=int(sys.argv[1])
+sys.argv=["faultatlas","--help"]
+prior={s:signal.getsignal(s) for s in (signal.SIGINT,signal.SIGTERM)}
+called=[]
+def unexpected(*args,**kwargs):
+    called.append(True)
+    raise AssertionError("pre-dispatch must not call S02")
+cli.inspect_assessment_file=unexpected
+cli.save_assessment_as_new=unexpected
+def pause(*args,**kwargs):
+    os.write(ready,b"ready")
+    signal.pause()
+    raise AssertionError("SIGINT should interrupt the default handler")
+get_command(cli.app).__class__.make_context=pause
+try: cli.app()
+except SystemExit:
+    assert not called
+    assert {s:signal.getsignal(s) for s in prior}==prior
+    raise
+"""
+    child: subprocess.Popen[bytes] | None = None
+    try:
+        child = subprocess.Popen(
+            [sys.executable, "-c", probe, str(ready_write)],
+            cwd=tmp_path,
+            env=env,
+            pass_fds=(ready_write,),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        os.close(ready_write)
+        ready_write = -1
+        with selectors.DefaultSelector() as selector:
+            selector.register(ready_read, selectors.EVENT_READ)
+            assert selector.select(timeout=15), (
+                "pre-dispatch child did not reach handshake"
+            )
+        assert os.read(ready_read, 5) == b"ready"
+        child.send_signal(signal.SIGINT)
+        stdout, stderr = child.communicate(timeout=15)
+        assert child.returncode == 1 and stdout == b""
+        assert (
+            stderr
+            == b"CLI_INTERNAL: output_visibility=uncertain; sync_completed=unestablished; cancel_requested=false\n"
+        )
+    finally:
+        os.close(ready_read)
+        if ready_write >= 0:
+            os.close(ready_write)
+        if child is not None and child.poll() is None:
+            child.kill()
+            child.communicate(timeout=10)
