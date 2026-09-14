@@ -41,10 +41,12 @@ import hashlib
 import json
 import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from test_cli import assert_current_cli_source
 from test_roadmap_lifecycle_consistency import assert_current_phase_lifecycle
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -2018,8 +2020,12 @@ def test_every_source_lock_matches_the_bytes_it_names() -> None:
     for record in immutable + observations:
         path = REPOSITORY_ROOT / cast(str, record["path"])
         raw = path.read_bytes()
-        assert _sha256(raw) == record["sha256"], record["path"]
-        assert len(raw) == record["byte_length"], record["path"]
+        if record["path"] == "src/faultatlas/cli.py":
+            # Historical seed observation stays sealed; S03 owns current CLI.
+            assert_current_cli_source(raw)
+        else:
+            assert _sha256(raw) == record["sha256"], record["path"]
+            assert len(raw) == record["byte_length"], record["path"]
 
     ids = [cast(str, record["lock_id"]) for record in immutable]
     assert len(ids) == len(set(ids))
@@ -2049,11 +2055,13 @@ def test_s12_adds_no_production_module_symbol_or_semantic() -> None:
 
     `git diff origin/main` is not available in a shallow CI checkout, and a
     check that quietly skips there proves nothing. Every one of the twenty
-    production modules this Phase closed with is instead compared to a digest
+    production modules this Phase closed with was originally compared to a digest
     some earlier Slice sealed: the thirteen pre-`S1.P06` modules to the
     `S1.P05` Phase closure, and the seven owned modules to the `S1.P06.S10`
     decision. Neither baseline was written by this Slice, so the argument is
-    not circular. The live tree has since gained the `S1.P07.S01` module; it is
+    not circular. S03 delegates only current CLI bytes to its source owner;
+    the historical observation stays sealed and every other byte lock remains.
+    The live tree has since gained the `S1.P07.S01` module; it is
     named below rather than absorbed, so a further module no Slice explains
     still fails here.
     """
@@ -2096,7 +2104,11 @@ def test_s12_adds_no_production_module_symbol_or_semantic() -> None:
     assert set(sealed) - set(live) == set(), sorted(set(sealed) - set(live))
     assert set(sealed) <= set(live)
     for path, digest in sorted(sealed.items()):
-        assert _sha256((REPOSITORY_ROOT / path).read_bytes()) == digest, path
+        raw = (REPOSITORY_ROOT / path).read_bytes()
+        if path == "src/faultatlas/cli.py":
+            assert_current_cli_source(raw)
+        else:
+            assert _sha256(raw) == digest, path
 
     # The other bytes this Slice may not touch, against their sealed digests.
     assert _sha256((DECISION / "decision.json").read_bytes()) == S10_DECISION_DIGEST
@@ -2340,3 +2352,44 @@ def test_the_unmutated_closure_is_accepted() -> None:
     """The refusal harness must not refuse the real document."""
     with pytest.raises(AssertionError):
         _assert_mutated_document_is_refused(_closure())
+
+
+@pytest.mark.parametrize(
+    "validator",
+    [
+        test_every_source_lock_matches_the_bytes_it_names,
+        test_s12_adds_no_production_module_symbol_or_semantic,
+    ],
+    ids=["source_locks", "no_production_change"],
+)
+@pytest.mark.parametrize("changed", ["valid", "comment", "invalid_cli", "other"])
+def test_s03_cli_successor_preserves_other_byte_guards(
+    monkeypatch: pytest.MonkeyPatch, changed: str, validator: Callable[[], None]
+) -> None:
+    selected = REPOSITORY_ROOT / (
+        "src/faultatlas/__main__.py" if changed == "other" else "src/faultatlas/cli.py"
+    )
+    original = Path.read_bytes
+
+    def reading(path: Path) -> bytes:
+        raw = original(path)
+        if path != selected or changed == "valid":
+            return raw
+        if changed == "invalid_cli":
+            before, after = b'command("save-as"', b'command("overwrite"'
+            assert raw.count(before) == 1
+            return raw.replace(before, after)
+        return raw + b"\n# S03 current-source witness\n"
+
+    monkeypatch.setattr(Path, "read_bytes", reading)
+
+    if changed in {"valid", "comment"}:
+        validator()
+    else:
+        message = (
+            "current CLI assessment routes"
+            if changed == "invalid_cli"
+            else "__main__.py"
+        )
+        with pytest.raises(AssertionError, match=message):
+            validator()

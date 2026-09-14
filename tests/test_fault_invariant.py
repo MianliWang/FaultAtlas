@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel, RootModel, ValidationError
+from test_cli import assert_current_cli_source
 
 import faultatlas.domain.invariant as invariant_module
 from faultatlas.domain.fault import (
@@ -540,7 +541,11 @@ def test_module_is_independent_and_baseline_production_bytes_are_preserved() -> 
     assert all(n.level == 0 for n in ast.walk(tree) if isinstance(n, ast.ImportFrom))
     for path, digest in BASELINE_PRODUCTION.items():
         data = (ROOT / path).read_bytes()
-        assert hashlib.sha256(data).hexdigest() == digest, path
+        # S03 retires only the live seed-CLI byte equality, not its historical record.
+        if path == "src/faultatlas/cli.py":
+            assert_current_cli_source(data)
+        else:
+            assert hashlib.sha256(data).hexdigest() == digest, path
         assert (
             b"FaultInvariantIdentity" not in data
             and b"SuppliedFaultInvariant" not in data
@@ -661,3 +666,24 @@ BASELINE_PRODUCTION = {
     "src/faultatlas/domain/snapshot_evidence_link.py": "a87b7ed338a74127bd490803a958316bbc2598989cbbf3b0534174bc2b9cd59d",
     "src/faultatlas/domain/source.py": "034e53fd58212f0e34376bbc790fc3e74057031aaed4d7d89fb67904bdd380bf",
 }
+
+
+@pytest.mark.parametrize("changed", ["cli", "other"])
+def test_s03_cli_successor_preserves_other_byte_guards(
+    monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    target = ROOT / (
+        "src/faultatlas/cli.py" if changed == "cli" else "src/faultatlas/__main__.py"
+    )
+    original = Path.read_bytes
+
+    def read(path: Path) -> bytes:
+        raw = original(path)
+        return raw + b"\n# S03 current-source witness\n" if path == target else raw
+
+    monkeypatch.setattr(Path, "read_bytes", read)
+    if changed == "cli":
+        test_module_is_independent_and_baseline_production_bytes_are_preserved()
+    else:
+        with pytest.raises(AssertionError, match="__main__.py"):
+            test_module_is_independent_and_baseline_production_bytes_are_preserved()

@@ -1,14 +1,16 @@
 # FaultAtlas
 
-FaultAtlas is an early governed contract prototype for reliable fault-analysis
-evidence. Its current product-domain capability is limited to the provisional
-internal `SourceLocator` and `ArtifactSnapshot` models. The command-line
-interface currently provides only help and version behavior.
+FaultAtlas is a governed contract prototype for fault-analysis evidence. It models
+supplied evidence, reusable patterns/invariants and attributed assessments. The CLI
+inspects a selected assessment file and saves canonical JSON under a selected new
+name. Supplied opinions remain claims, not applicability or repair certification.
 
-FaultAtlas does not yet implement source ingestion, persistence, retrieval,
-graphs, RAG, model routing, or artifact generation. See the
-[project roadmap](docs/roadmap.md) for the authoritative current status and
-Stage numbering.
+See the [complete CLI example and limits](docs/contracts/s1-p08-s03-assessment-cli.md),
+[S01 supplied model](docs/contracts/s1-p08-s01-supplied-assessment.md),
+[S02 selected-file API](docs/contracts/s1-p08-s02-assessment-file.md), and
+[project roadmap](docs/roadmap.md). Selected file operations require the supported
+Linux/ext4 backend and private caller-owned paths. General persistence, ingestion,
+retrieval, model routing and automated applicability are not implemented.
 
 ## Requirements
 
@@ -35,6 +37,7 @@ uv creates and maintains the repository-local `.venv` from `uv.lock`.
 uv run --frozen faultatlas --help
 uv run --frozen faultatlas --version
 uv run --frozen python -m faultatlas
+uv run --frozen faultatlas assessment --help
 ```
 
 ## Validation

@@ -51,7 +51,7 @@ ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
 # P06 and bounded P07 are complete. P08 has supplied assessments and the
-# selected-file vertical; the next gate is its separately authorized CLI Slice.
+# selected-file CLI; the next gate is bounded integration and Phase closure.
 #
 # The completed Slices carry two roles and are therefore two tuples. The route
 # block `_route_entries` parses is the `S1.P06` route alone, which holds exactly
@@ -72,7 +72,7 @@ P07_COMPLETE_SLICES = (
     "S1.P07.S08",
     "S1.P07.S09",
 )
-P08_COMPLETE_SLICES = ("S1.P08.S01", "S1.P08.S02")
+P08_COMPLETE_SLICES = ("S1.P08.S01", "S1.P08.S02", "S1.P08.S03")
 COMPLETE_SLICES = (*P06_ROUTE_SLICES, *P07_COMPLETE_SLICES, *P08_COMPLETE_SLICES)
 COMPLETE_PHASES = (
     "S1.P00",
@@ -84,9 +84,9 @@ COMPLETE_PHASES = (
     "S1.P06",
     "S1.P07",
 )
-# The four-unit P08 route has two published verticals.
-NEXT_UNIT = "S1.P08.S03"
-NOT_STARTED_SLICES = ("S1.P08.S04",)
+# The four-unit P08 route has three published Slices.
+NEXT_UNIT = "S1.P08.S04"
+NOT_STARTED_SLICES: tuple[str, ...] = ()
 NOT_STARTED_PHASES = ("S1.P09", "S1.P10")
 CORRECTION = "S1.P06.S07.C01"
 
@@ -1264,11 +1264,11 @@ def test_a_later_sentence_cannot_rescue_a_missing_local_gate(
 
 def test_p08_file_vertical_has_one_active_phase_and_a_live_gate() -> None:
     assert ACTIVE_PHASES_EXPECTED == frozenset({"S1.P08"})
-    assert NEXT_UNIT == "S1.P08.S03"
+    assert NEXT_UNIT == "S1.P08.S04"
     assert _allowed_states("S1.P08.S01") == {"complete"}
     assert _allowed_states("S1.P08.S02") == {"complete"}
-    assert _allowed_states("S1.P08.S03") == {"next", "not_started"}
-    assert _allowed_states("S1.P08.S04") == {"not_started"}
+    assert _allowed_states("S1.P08.S03") == {"complete"}
+    assert _allowed_states("S1.P08.S04") == {"next", "not_started"}
     assert_current_phase_lifecycle()
     assert_local_live_gate(_lifecycle_sentences()[0][1])
 
@@ -1308,8 +1308,8 @@ def test_p08_route_has_four_exact_ordered_positions() -> None:
     assert rows == [
         ("1", "S1.P08.S01", "complete"),
         ("2", "S1.P08.S02", "complete"),
-        ("3", "S1.P08.S03", "next, not started"),
-        ("4", "S1.P08.S04", "not started"),
+        ("3", "S1.P08.S03", "complete"),
+        ("4", "S1.P08.S04", "next, not started"),
     ]
     assert len(re.findall(r"^\d+\. ", section, re.M)) == 4
     assert "S1.P08.S05" not in section
