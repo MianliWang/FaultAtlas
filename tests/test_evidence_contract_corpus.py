@@ -3733,7 +3733,6 @@ def test_roadmap_records_p03_complete_and_p04_s02_complete() -> None:
     # Historical transition claims remain; the lifecycle owner checks current state.
     assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
-    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented." in roadmap
     reference_case = (
         REPOSITORY_ROOT / "docs/reference_cases/pytest-4412.md"

@@ -1740,7 +1740,6 @@ def test_roadmap_advances_p04_while_case_preserves_p03_closure_state() -> None:
     # Historical transition claims remain; the lifecycle owner checks current state.
     assert_current_phase_lifecycle()
     assert "`S1.P07.S01` is complete" in roadmap
-    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
     assert "**S2-S9** are not implemented" in roadmap
     assert CLOSURE_RELATIVE in case
     assert "S1.P04" in case and "eligible to begin" in case

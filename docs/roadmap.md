@@ -57,8 +57,9 @@ aspirational Slice as scheduled work.
   `S1.P07.S07` is complete and
   `S1.P07.S08` is complete and
   `S1.P07.S09` is complete and
-  `S1.P08` is next and not started.
-  `S1.P08` through `S1.P10` remain not started.
+  `S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+  `S1.P08.S02` is next and not started.
+  `S1.P09` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
 Engineering maintenance `E01` consolidates validation ownership and build preparation;
@@ -124,8 +125,9 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
-`S1.P08` is next and not started.
-`S1.P08` through `S1.P10` remain not started, and `S2-S9`
+`S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+  `S1.P08.S02` is next and not started.
+`S1.P09` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
 Non-goals include source ingestion, persistence, retrieval implementation,
@@ -739,7 +741,8 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
-`S1.P08` is next and not started.
+`S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+  `S1.P08.S02` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1200,7 +1203,8 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
-`S1.P08` is next and not started.
+`S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+  `S1.P08.S02` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -2312,7 +2316,8 @@ became `S1.P06.S10` work.
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
-`S1.P08` is next and not started.
+`S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+  `S1.P08.S02` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2711,10 +2716,11 @@ and one P08-owned empirical entry remain; source-qualified rows are not counted
 as independent observations. Zero unresolved product blockers is limited to the
 evidenced bounded closure obligations, never all unknown questions.
 
-P08 is eligible only for its separate Phase-start discussion and planning after
-successful protected S09 publication and natural-main verification. Within S1
-there is no active Phase until P08 actually starts; S1 itself remains active.
-No P08 schema, implementation or empirically validated transfer is authorized.
+At S09 publication, P08 became eligible for its separate Phase-start discussion
+and planning after protected publication and natural-main verification. S1 then
+had no active Phase. The separately dispatched P08.S01 contract now begins P08
+below; the S09 closure itself authorized no P08 schema or empirically validated
+transfer.
 S01 takeover attribution and the resolved S07 STOP/SCOPE-01 history are retained,
 as are P06's nonblocking debt and E01's optional opportunities. The absent full
 three-ledger and route-comparison planning exercise is not retrospectively
@@ -2723,8 +2729,9 @@ section/sentence checks; historical S07/S08 states and empirical snapshots remai
 unchanged. S09's own publication facts live in Git/GitHub and its final execution
 receipt, outside the sealed candidate bytes.
 
-The `S1.P07` route is closed at `S1.P07.S09`. P08 Phase-start discussion and
-planning require a separate task; no later schema is authorized by this route:
+The `S1.P07` route is closed at `S1.P07.S09`. Its P08 eligibility required a
+separate task; the dispatched P08.S01 contract below exercises that eligibility.
+No later schema is authorized by this closed P07 route:
 
 1. `S1.P07.S01` — Pattern Identity and Supplied Pattern Proposition (complete)
 2. `S1.P07.S02` — `FaultInstance` pattern-exemplar relationships
@@ -2741,9 +2748,60 @@ planning require a separate task; no later schema is authorized by this route:
 8. `S1.P07.S08` — Accumulated pattern/invariant contract corpus (complete)
 9. `S1.P07.S09` — Integration and Phase closure (complete)
 
+## S1.P08 — Transfer & Applicability Model
+
+`S1.P08` is active and incomplete. `S1.P08.S01` is complete and
+`S1.P08.S02` is next and not started. `S1.P08.S03` is not started and
+`S1.P08.S04` is not started. `S1.P09` through `S1.P10` remain not started.
+
+S01 publishes nine supplied assessment records in `faultatlas.domain.assessment`
+and the pure `faultatlas.assessment.inspect_assessment` consumer. The caller
+supplies an exact basis and a complete assessment of that basis. Full-value
+comparison includes the source proposition, fixed Git target and declarations,
+context, ordered conditions, material content and attribution, and omission.
+Condition and material references are local; key equality alone cannot replace
+full condition equality. Explicit opinions, conflicts and overall statements
+remain attributed claims, never automatic applicability or repair certification.
+No target `FaultInstance`, predicate language, file gateway, draft lifecycle,
+cross-file lookup or new UUID identity is introduced.
+
+Root attribution records who assembles the assessment, basis/context and condition
+inventory; it neither authenticates anyone nor attributes authorship of a referenced
+P07 proposition. Each material, opinion, conflict and overall statement keeps its
+own attribution. A condition with no referring opinion displays `No opinion supplied`
+without adding a stored opinion or interpreting it as a supplied unknown.
+
+Both basis and assessment enforce normalized domain limits of 8192 nodes, 512
+object records, 131072 string code points including keys, and 32 container levels.
+Defaults and nulls count, as does each repeated full-value occurrence. Local tuple
+bounds and distinct missing/omitted/empty material states remain explicit. The
+complete recoverably escaped text view has an 8 MiB output limit and does no I/O.
+
+The [S01 contract](contracts/s1-p08-s01-supplied-assessment.md) binds the accepted
+P08-specific supplied-workflow direction and original empirical constraints.
+P00's cross-repository remainder remains unknown under P08; the provider-generality
+root receives a prospective P08 responsibility at S01 publication while its original
+P01 immediate-owner fact stays historical. The five P01 and four P02 P08 evidence
+limitations remain unresolved, and P01's separate pattern-generality question keeps
+P07 semantic ownership and its S09 triggers. S01 does not complete the whole P03
+transfer/applicability reservation. Generic review/support remains P09; broader
+persistence and ingestion remain P10/S2; services and scale remain S9. S3 lookup
+is outside the selected first release. Earlier sealed records remain unchanged.
+
+The `S1.P08` route has four release units, including adopted limited cross-owner
+responsibilities; later units need their own contracts:
+
+1. `S1.P08.S01` — Complete supplied assessment and pure inspection (complete)
+2. `S1.P08.S02` — Selected-file codec/API and save-as-new/reopen (next, not started)
+3. `S1.P08.S03` — Existing CLI integration and selected-file acceptance (not started)
+4. `S1.P08.S04` — Bounded integration and Phase closure (not started)
+
+The S02 envelope budget and Linux/ext4 backend are forward requirements only.
+No codec, file access, mount detection, cancellation handler or CLI command is
+implemented by S01. P09/P10 are not thereby completed or begun as separate Phases.
+
 ## Preserved later Stage 1 phases
 
-- **S1.P08 — Transfer & Applicability Model**
 - **S1.P09 — Provenance, Confidence & Review**
 - **S1.P10 — Persistence, Serialization & Contract Corpus**
 
@@ -3126,7 +3184,7 @@ inference, promotion or changes to either endpoint owner.
 bounded supplied Pattern composition with explicit full-record reference
 integrity and root attachment closure, without inferred edges.
 
-Production Python sources are 25.
+Production Python sources are 27.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the `S1.P05.S02.C01`
 correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, `S1.P05.S06`,
 `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01` correction,
@@ -3144,7 +3202,8 @@ complete, and `S1.P06.S12` is complete, and `S1.P07` is complete;
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
-`S1.P08` is next and not started. `S1.P04.S10`
+`S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+  `S1.P08.S02` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==
@@ -3167,6 +3226,17 @@ record-level association: no fact locator, support role, strength, confidence,
 review, verification, membership, completeness, or absence.
 `faultatlas.domain.snapshot` and `faultatlas.domain.evidence` are unchanged by
 `S1.P04.S07` and neither imports the bridge.
+
+`faultatlas.domain.assessment` exports exactly `AssessmentAttribution`,
+`AssessmentTarget`, `AssessmentCondition`, `AssessmentMaterial`, `AssessmentBasis`,
+`SuppliedConditionOpinion`, `SuppliedAssessmentConflict`, `SuppliedOverallOpinion`,
+and `SuppliedAssessment`. `faultatlas.assessment` exports only `inspect_assessment`.
+The nine frozen strict records consume the existing P07 propositions, P04 snapshot
+and scope, and P03 durable-record reference. The pure view checks the complete
+requested basis and preserves all attribution, missing material and unopined
+conditions without performing file I/O or certifying a supplied opinion. Production
+Python sources are 27; the P07 eight exports and twelve UUID-root identities stay
+unchanged. The existing CLI still provides only help/version behavior.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and

@@ -50,8 +50,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
-# P06 and bounded P07 are complete. S1 is between Phases: P08 is the
-# next planning gate, with no active Phase until it actually starts.
+# P06 and bounded P07 are complete. P08 has its first supplied-assessment
+# vertical; the next gate is its separately authorized second Slice.
 #
 # The completed Slices carry two roles and are therefore two tuples. The route
 # block `_route_entries` parses is the `S1.P06` route alone, which holds exactly
@@ -72,7 +72,8 @@ P07_COMPLETE_SLICES = (
     "S1.P07.S08",
     "S1.P07.S09",
 )
-COMPLETE_SLICES = (*P06_ROUTE_SLICES, *P07_COMPLETE_SLICES)
+P08_COMPLETE_SLICES = ("S1.P08.S01",)
+COMPLETE_SLICES = (*P06_ROUTE_SLICES, *P07_COMPLETE_SLICES, *P08_COMPLETE_SLICES)
 COMPLETE_PHASES = (
     "S1.P00",
     "S1.P01",
@@ -83,11 +84,10 @@ COMPLETE_PHASES = (
     "S1.P06",
     "S1.P07",
 )
-# The next gate is a Phase-start discussion, not an already active Phase.
-NEXT_UNIT = "S1.P08"
-# No unstarted P07 Slice remains in its closed nine-position route.
-NOT_STARTED_SLICES: tuple[str, ...] = ()
-NOT_STARTED_PHASES = ("S1.P08", "S1.P09", "S1.P10")
+# The four-unit P08 route starts with one published vertical.
+NEXT_UNIT = "S1.P08.S02"
+NOT_STARTED_SLICES = ("S1.P08.S03", "S1.P08.S04")
+NOT_STARTED_PHASES = ("S1.P09", "S1.P10")
 CORRECTION = "S1.P06.S07.C01"
 
 # A Slice token, deliberately excluding a `.C01` correction suffix: a
@@ -95,8 +95,8 @@ CORRECTION = "S1.P06.S07.C01"
 SLICE_TOKEN = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)`")
 GATE_CLAIM = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started")
 ACTIVE_PHASE = re.compile(r"`(S1\.P\d\d)` is active and incomplete")
-# S1 remains active, but no S1 Phase is active between P07 closure and P08 start.
-ACTIVE_PHASES_EXPECTED: frozenset[str] = frozenset()
+# S1 remains active, with exactly P08 as the active Phase.
+ACTIVE_PHASES_EXPECTED: frozenset[str] = frozenset({"S1.P08"})
 
 
 def _text() -> str:
@@ -131,7 +131,15 @@ def assert_current_phase_lifecycle() -> None:
     assert set(ACTIVE_PHASE.findall(section)) == ACTIVE_PHASES_EXPECTED, (
         "current active Phase set"
     )
-    for unit in NOT_STARTED_PHASES:
+    assert "`S1.P09` through `S1.P10` remain not started" in section, (
+        "missing current not-started Phase range"
+    )
+    for unit in (
+        *ACTIVE_PHASES_EXPECTED,
+        NEXT_UNIT,
+        *NOT_STARTED_SLICES,
+        *NOT_STARTED_PHASES,
+    ):
         assert f"`{unit}` is complete" not in section, (
             f"contradictory current-status completion: {unit}"
         )
@@ -206,7 +214,7 @@ def test_the_current_status_section_states_the_authoritative_lifecycle() -> None
     assert f"`{NEXT_UNIT}` is next and not started" in section, (
         "missing current-status gate"
     )
-    assert "`S1.P08` through `S1.P10` remain not started" in section
+    assert "`S1.P09` through `S1.P10` remain not started" in section
     for unit in (
         *ACTIVE_PHASES_EXPECTED,
         NEXT_UNIT,
@@ -239,8 +247,8 @@ def test_the_correction_is_not_a_gate_and_not_a_phase(  # noqa: D401
     assert f"`{CORRECTION}` is not started" not in flat
 
 
-def test_the_document_names_one_live_gate_and_no_active_phase() -> None:
-    """The closed Phase supplies no active token, and P08 has not begun."""
+def test_the_document_names_one_live_gate_and_one_active_phase() -> None:
+    """Exactly P08 is active, and its next Slice is the unique live gate."""
     flat = _flat(_text())
     gates = set(GATE_CLAIM.findall(flat))
 
@@ -278,6 +286,7 @@ PHASE_SLICE_COUNT = {
     # The `S1.P07` route is provisional beyond `S1.P07.S01`, but the document
     # numbers nine positions, so a claim about `S1.P07.S10` is still refused.
     "S1.P07": 9,
+    "S1.P08": 4,
 }
 KNOWN_CORRECTIONS = frozenset(
     {
@@ -483,7 +492,7 @@ def _allowed_states(unit: str) -> set[str] | None:  # noqa: PLR0911
         # A Slice of the active Phase is complete if it has been published and
         # not started otherwise. The gate was already returned above, so the
         # active state does not reach any Slice.
-        return {"complete"} if unit in P07_COMPLETE_SLICES else {"not_started"}
+        return {"complete"} if unit in COMPLETE_SLICES else {"not_started"}
     return None
 
 
@@ -954,7 +963,7 @@ def test_correct_later_ownership_is_preserved() -> None:
         "which became `S1.P06.S10` work",
         "the historical default branch remains unknown and owned by `S2`",
         "which remains `S5` ownership",
-        "`S1.P08` through `S1.P10` remain not started",
+        "`S1.P09` through `S1.P10` remain not started",
     ):
         assert statement in flat, statement
 
@@ -1174,16 +1183,23 @@ def test_the_p07_route_states_the_authoritative_state_for_every_position() -> No
     for unit in P07_COMPLETE_SLICES:
         assert entries[unit] == "complete", unit
     assert NEXT_UNIT not in entries
-    for unit in NOT_STARTED_SLICES:
-        assert entries[unit] == "not started", unit
+    assert set(entries) == set(P07_COMPLETE_SLICES)
     states = [state for _, _, _, state in rows]
     assert states.count("complete") == len(P07_COMPLETE_SLICES)
     assert states.count("next, not started") == 0
-    assert states.count("not started") == len(NOT_STARTED_SLICES)
+    assert states.count("not started") == 0
 
 
 @pytest.mark.parametrize(
-    "change", ("missing", "wrong_gate", "missing_phase", "contradictory")
+    "change",
+    (
+        "missing",
+        "wrong_gate",
+        "missing_phase",
+        "missing_active",
+        "missing_later",
+        "contradictory",
+    ),
 )
 def test_an_appendix_cannot_repair_the_current_status_section(
     monkeypatch: pytest.MonkeyPatch, change: str
@@ -1207,6 +1223,16 @@ def test_an_appendix_cannot_repair_the_current_status_section(
         assert completion in section
         replacement = section.replace(completion, "phase omitted")
         message = "missing current completed Phase"
+    elif change == "missing_active":
+        replacement = section.replace(
+            "`S1.P08` is active and incomplete", "active Phase omitted"
+        )
+        message = "current active Phase set"
+    elif change == "missing_later":
+        replacement = section.replace(
+            "`S1.P09` through `S1.P10` remain not started", "later Phase range omitted"
+        )
+        message = "missing current not-started Phase range"
     else:
         replacement = section + f"\n`{NEXT_UNIT}` is complete.\n"
         message = "contradictory current-status completion"
@@ -1236,14 +1262,16 @@ def test_a_later_sentence_cannot_rescue_a_missing_local_gate(
         test_every_lifecycle_sentence_carries_its_own_live_gate()
 
 
-def test_between_phases_has_a_positive_gate_and_no_active_phase() -> None:
-    assert ACTIVE_PHASES_EXPECTED == frozenset()
-    assert NEXT_UNIT == "S1.P08"
+def test_p08_first_vertical_has_one_active_phase_and_a_live_gate() -> None:
+    assert ACTIVE_PHASES_EXPECTED == frozenset({"S1.P08"})
+    assert NEXT_UNIT == "S1.P08.S02"
+    assert _allowed_states("S1.P08.S01") == {"complete"}
+    assert _allowed_states("S1.P08.S03") == {"not_started"}
     assert_current_phase_lifecycle()
     assert_local_live_gate(_lifecycle_sentences()[0][1])
 
 
-@pytest.mark.parametrize("phase", ("S1.P07", "S1.P08"))
+@pytest.mark.parametrize("phase", ("S1.P07", "S1.P09"))
 def test_an_active_phase_cannot_be_hidden_by_a_valid_appendix(
     monkeypatch: pytest.MonkeyPatch, phase: str
 ) -> None:
@@ -1269,3 +1297,29 @@ def test_local_completed_phase_cannot_be_borrowed_from_elsewhere() -> None:
     altered = sentence.replace(f"`{COMPLETE_PHASES[-1]}` is complete", "phase omitted")
     with pytest.raises(AssertionError, match="missing local completed Phase"):
         assert_local_live_gate(altered)
+
+
+def test_p08_route_has_four_exact_ordered_positions() -> None:
+    section = _text().split("## S1.P08 — Transfer & Applicability Model\n", 1)[1]
+    section = section.split("\n## ", 1)[0]
+    rows = re.findall(r"^(\d+)\. `(S1\.P08\.S\d\d)`[^\n]*\(([^)]+)\)$", section, re.M)
+    assert rows == [
+        ("1", "S1.P08.S01", "complete"),
+        ("2", "S1.P08.S02", "next, not started"),
+        ("3", "S1.P08.S03", "not started"),
+        ("4", "S1.P08.S04", "not started"),
+    ]
+    assert len(re.findall(r"^\d+\. ", section, re.M)) == 4
+    assert "S1.P08.S05" not in section
+
+
+@pytest.mark.parametrize("phase", ("S1.P08", "S1.P09"))
+def test_active_or_unstarted_phase_cannot_be_completed_in_current_status(
+    monkeypatch: pytest.MonkeyPatch, phase: str
+) -> None:
+    original = _text()
+    end = original.index("\n## ", original.index("## Current status") + 1)
+    altered = original[:end] + f"\n`{phase}` is complete.\n" + original[end:]
+    monkeypatch.setattr(__name__ + "._text", lambda: altered)
+    with pytest.raises(AssertionError, match="contradictory current-status completion"):
+        assert_current_phase_lifecycle()

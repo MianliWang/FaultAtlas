@@ -69,7 +69,14 @@ def _build_profile(root: Path, cache: Path) -> BuildProfile:
             if key != "PYTEST_CURRENT_TEST"
         )
     )
-    return root.resolve(), _file_snapshot(root, iter(inputs)), relevant
+    # Runtime bytecode is not a source/configuration input. Keep the complete
+    # repository snapshot and symlink guard above unchanged.
+    source_inputs = (
+        path
+        for path in inputs
+        if not (path.parent.name == "__pycache__" and path.suffix == ".pyc")
+    )
+    return root.resolve(), _file_snapshot(root, source_inputs), relevant
 
 
 def _repository_snapshot(root: Path) -> FileSnapshot:

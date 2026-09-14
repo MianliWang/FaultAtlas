@@ -1239,7 +1239,7 @@ def test_the_roadmap_leaves_later_ownership_where_it_was() -> None:
     roadmap = _roadmap()
 
     assert "`S1.P06.S12` — Integration and Phase closure (complete)" in roadmap
-    assert "`S1.P08` through `S1.P10` remain not started" in roadmap
+    assert_current_phase_lifecycle()
     assert "`S1.P06` is complete" in roadmap
 
 
