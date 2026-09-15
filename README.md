@@ -16,8 +16,38 @@ The [bounded P08 closure entry](docs/roadmap.md#s1p08-bounded-dispositions)
 links the primary JSON and readable view, records the delivered supplied-model,
 file and CLI integration, and retains the
 original empirical/provider limitations. Structural success is not authenticated
-authorship, evidence support, verified transfer or repair correctness. P09 requires
-a separate product/architecture planning discussion.
+authorship, evidence support, verified transfer or repair correctness. P09 provides
+the bounded library review below; its remaining scope requires separate planning.
+
+## Supplied assessment reviews
+
+Given an existing typed `SuppliedAssessment`, supply a review and inspect the
+complete target and all review declarations:
+
+```python
+from faultatlas.assessment_review import inspect_assessment_reviews
+from faultatlas.domain.assessment import AssessmentAttribution, SuppliedAssessment
+from faultatlas.domain.assessment_review import SuppliedAssessmentReview
+
+
+def review_view(assessment: SuppliedAssessment) -> str:
+    review = SuppliedAssessmentReview(
+        assessment=assessment,
+        scope="Only the supplied condition inventory was examined.",
+        judgment="Unknown: no independent material access is claimed.",
+        attribution=AssessmentAttribution(
+            supplier="Record supplier",
+            rationale="The attributed reviewer identity is not established.",
+        ),
+    )
+    return inspect_assessment_reviews(assessment, (review,))
+```
+
+The [review contract](docs/contracts/s1-p09-s01-supplied-review.md) defines full
+target matching, declared scope and supplied attribution. Up to 32 records retain
+their order and duplicates. Inspection does not verify coverage, referenced
+material access, reviewer identity, freshness or approval. These library values
+do not add reviews to the selected assessment file format or CLI.
 
 ## Requirements
 
