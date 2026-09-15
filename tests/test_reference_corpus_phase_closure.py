@@ -1754,7 +1754,8 @@ def test_identity_correction_is_append_only_with_external_s06_closure() -> None:
         "pattern-invariant",
         "repository-snapshot",
         "revision-locator",
-    }
+        "transfer-applicability",
+    }, "current contract-root siblings"
     assert {path.name for path in identity_root.iterdir()} == {
         "closures",
         "corrections",
@@ -2348,3 +2349,23 @@ def test_semantic_mutation_is_rejected(
     mutate(closure)
     with pytest.raises((AssertionError, KeyError)):
         validator(closure)
+
+
+@pytest.mark.parametrize("extra", [False, True])
+def test_s04_current_sibling_keeps_unknown_roots_rejected(
+    monkeypatch: pytest.MonkeyPatch, extra: bool
+) -> None:
+    root = REPOSITORY_ROOT / "reference_corpus/contracts"
+    original = Path.iterdir
+
+    def entries(path: Path) -> Iterator[Path]:
+        yield from original(path)
+        if path == root and extra:
+            yield root / "unapproved-family"
+
+    monkeypatch.setattr(Path, "iterdir", entries)
+    if extra:
+        with pytest.raises(AssertionError, match="current contract-root siblings"):
+            test_identity_correction_is_append_only_with_external_s06_closure()
+    else:
+        test_identity_correction_is_append_only_with_external_s06_closure()

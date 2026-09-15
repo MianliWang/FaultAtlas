@@ -12,6 +12,13 @@ See the [complete CLI example and limits](docs/contracts/s1-p08-s03-assessment-c
 Linux/ext4 backend and private caller-owned paths. General persistence, ingestion,
 retrieval, model routing and automated applicability are not implemented.
 
+The [bounded P08 closure entry](docs/roadmap.md#s1p08-bounded-dispositions)
+links the primary JSON and readable view, records the delivered supplied-model,
+file and CLI integration, and retains the
+original empirical/provider limitations. Structural success is not authenticated
+authorship, evidence support, verified transfer or repair correctness. P09 requires
+a separate product/architecture planning discussion.
+
 ## Requirements
 
 - WSL or Linux (the canonical development workflow is VS Code/Codex in WSL)

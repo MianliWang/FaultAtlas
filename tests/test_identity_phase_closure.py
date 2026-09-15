@@ -11,6 +11,7 @@ import subprocess
 import tarfile
 import zipfile
 from collections import Counter
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -1541,7 +1542,8 @@ def _assert_exact_s06_locator_contract_corpus() -> None:
         "pattern-invariant",
         "repository-snapshot",
         "revision-locator",
-    }
+        "transfer-applicability",
+    }, "current contract-root siblings"
     identity_root = contracts_root / "identity"
     assert {path.name for path in identity_root.iterdir()} == {
         "closures",
@@ -2306,3 +2308,23 @@ def test_s03_cli_successor_preserves_other_byte_guards(
     else:
         with pytest.raises(AssertionError, match="__main__.py"):
             test_group_g_production_inventory_exports_and_legacy_boundary_are_exact()
+
+
+@pytest.mark.parametrize("extra", [False, True])
+def test_s04_current_sibling_keeps_unknown_roots_rejected(
+    monkeypatch: pytest.MonkeyPatch, extra: bool
+) -> None:
+    root = REPOSITORY_ROOT / "reference_corpus/contracts"
+    original = Path.iterdir
+
+    def entries(path: Path) -> Iterator[Path]:
+        yield from original(path)
+        if path == root and extra:
+            yield root / "unapproved-family"
+
+    monkeypatch.setattr(Path, "iterdir", entries)
+    if extra:
+        with pytest.raises(AssertionError, match="current contract-root siblings"):
+            _assert_exact_s06_locator_contract_corpus()
+    else:
+        _assert_exact_s06_locator_contract_corpus()

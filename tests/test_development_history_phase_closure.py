@@ -467,6 +467,7 @@ EXPECTED_S10_MENTIONS = 3
 SUCCESSOR_CONTRACT_ROOTS = (
     "reference_corpus/contracts/fault-instance/",
     "reference_corpus/contracts/pattern-invariant/",
+    "reference_corpus/contracts/transfer-applicability/",
 )
 
 UNLOCKED_WORKING_ARTIFACTS = frozenset(
@@ -2061,3 +2062,36 @@ def test_s03_cli_successor_preserves_other_byte_guards(
         )
         with pytest.raises(AssertionError, match=message):
             validator()
+
+
+@pytest.mark.parametrize("change", ["valid", "unknown_root", "missing_predecessor"])
+def test_s04_successor_does_not_relax_historical_coverage(
+    monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    document = _closure()
+    removed = document["source_locks"]["immutable_inputs"][0]["path"]
+    original = subprocess.run
+
+    def listing(args: Any, **kwargs: Any) -> Any:
+        result = cast(subprocess.CompletedProcess[bytes], original(args, **kwargs))
+        if args == ["git", "ls-files", "reference_corpus/"]:
+            rows = result.stdout.decode().splitlines()
+            if change == "unknown_root":
+                rows.append("reference_corpus/contracts/unapproved-family/record.json")
+            elif change == "missing_predecessor":
+                assert removed in rows
+                rows.remove(removed)
+            return subprocess.CompletedProcess(
+                args,
+                result.returncode,
+                stdout=("\n".join(rows) + "\n").encode(),
+                stderr=result.stderr,
+            )
+        return result
+
+    monkeypatch.setattr(subprocess, "run", listing)
+    if change == "valid":
+        _assert_source_locks(document, verify_files=True)
+    else:
+        with pytest.raises(AssertionError, match="unlocked|unexpected"):
+            _assert_source_locks(document, verify_files=True)
