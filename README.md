@@ -49,6 +49,39 @@ their order and duplicates. Inspection does not verify coverage, referenced
 material access, reviewer identity, freshness or approval. These library values
 do not add reviews to the selected assessment file format or CLI.
 
+## Supplied review attribution
+
+For an existing review, supply a separate attribution declaration:
+
+```python
+from faultatlas.assessment_review_attribution import inspect_assessment_review_attributions
+from faultatlas.domain.assessment import AssessmentAttribution
+from faultatlas.domain.assessment_review import SuppliedAssessmentReview
+from faultatlas.domain.assessment_review_attribution import SuppliedAssessmentReviewAttribution
+
+
+def attribution_view(review: SuppliedAssessmentReview) -> str:
+    declaration = SuppliedAssessmentReviewAttribution(
+        review=review,
+        reviewer=None,
+        source=None,
+        attribution=AssessmentAttribution(
+            supplier="Attribution supplier",
+            rationale="The reviewer is unknown; no source record is supplied.",
+        ),
+    )
+    return inspect_assessment_review_attributions(review, (declaration,))
+```
+
+The [attribution contract](docs/contracts/s1-p09-s02-review-attribution.md)
+separates the existing review supplier, new assertion supplier and attributed
+reviewer label. It accepts up to eight declarations, preserves competing and
+duplicate records, and matches the complete review value. An optional source is
+a complete supplied evidence-record reference; it is not loaded or verified as
+support. Unknown reviewer, missing source association and unavailable source
+bytes are distinct concepts. No account identity, source-availability verdict,
+authentication, confidence or lifecycle is inferred.
+
 ## Requirements
 
 - WSL or Linux (the canonical development workflow is VS Code/Codex in WSL)
