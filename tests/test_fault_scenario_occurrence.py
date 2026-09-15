@@ -2764,14 +2764,44 @@ def test_the_roadmap_records_the_p06_s03_transition() -> None:
     assert "`scenario.report.context.fault`" in current
 
 
+S03_APPLICABILITY_BOUNDARY = (
+    "At S03 publication, structured reusable applicability was assigned to `S1.P08`; "
+    "scenario and occurrence records supplied only case-local context."
+)
+
+
+def _assert_s03_applicability_boundary(roadmap: str) -> None:
+    passage = roadmap.split(
+        "`S1.P06.S03` extends `faultatlas.domain.fault` in place", 1
+    )[1].split("`S1.P06.S04` adds one new production module,", 1)[0]
+    assert S03_APPLICABILITY_BOUNDARY in passage, (
+        "P06.S03 historical applicability boundary"
+    )
+
+
+def test_the_s03_applicability_boundary_refuses_an_outside_decoy() -> None:
+    roadmap = _roadmap()
+    _assert_s03_applicability_boundary(roadmap)
+    changed = roadmap.replace(
+        S03_APPLICABILITY_BOUNDARY,
+        S03_APPLICABILITY_BOUNDARY.replace("`S1.P08`", "`S1.P09`"),
+        1,
+    )
+    changed += " ## Outside historical passage " + S03_APPLICABILITY_BOUNDARY
+    with pytest.raises(
+        AssertionError, match="P06.S03 historical applicability boundary"
+    ):
+        _assert_s03_applicability_boundary(changed)
+
+
 def test_the_roadmap_states_the_s03_decisions_and_non_claims() -> None:
     roadmap = _roadmap()
+    _assert_s03_applicability_boundary(roadmap)
 
     assert "production Python sources remain 14" in roadmap
     assert "eight exports" in roadmap
     assert "The `S1.P06.S01` and `S1.P06.S02` models are unchanged." in roadmap
     assert "consuming the published `SuppliedFaultReport` whole" in roadmap
-    assert "is `S1.P08` work" in roadmap
     assert "An occurrence context is not an execution run" in roadmap
     assert "never has to invent an occurrence" in roadmap
     assert "no boolean says whether the fault occurred" in roadmap

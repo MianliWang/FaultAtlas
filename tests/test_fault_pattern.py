@@ -2197,19 +2197,48 @@ def test_the_roadmap_records_the_sealed_p06_eligibility_in_the_past_tense() -> N
     assert "`S1.P06` is `eligible_to_begin`" not in roadmap
 
 
-def test_the_roadmap_states_the_s01_boundaries_and_non_claims() -> None:
-    roadmap = (
-        _roadmap()
-        .split("## S1.P07 — Pattern & Invariant Model", 1)[1]
-        .split("### S1.P07.S02", 1)[0]
+S01_APPLICABILITY_BOUNDARY = (
+    "At S01 publication, applicability and transfer were assigned to `S1.P08`; "
+    "the supplied Pattern proposition implemented neither."
+)
+
+
+def _assert_s01_applicability_boundary(roadmap: str) -> None:
+    passage = roadmap.split("`S1.P07.S01` publishes one new production module,", 1)[
+        1
+    ].split("### S1.P07.S02", 1)[0]
+    assert S01_APPLICABILITY_BOUNDARY in passage, (
+        "P07.S01 historical applicability boundary"
     )
+
+
+def test_the_s01_applicability_boundary_refuses_an_outside_decoy() -> None:
+    roadmap = _roadmap()
+    _assert_s01_applicability_boundary(roadmap)
+    changed = roadmap.replace(
+        S01_APPLICABILITY_BOUNDARY,
+        S01_APPLICABILITY_BOUNDARY.replace("`S1.P08`", "`S1.P09`"),
+        1,
+    )
+    changed += " ## Outside historical passage " + S01_APPLICABILITY_BOUNDARY
+    with pytest.raises(
+        AssertionError, match="P07.S01 historical applicability boundary"
+    ):
+        _assert_s01_applicability_boundary(changed)
+
+
+def test_the_roadmap_states_the_s01_boundaries_and_non_claims() -> None:
+    roadmap = _roadmap()
+    _assert_s01_applicability_boundary(roadmap)
+    roadmap = roadmap.split("## S1.P07 — Pattern & Invariant Model", 1)[1].split(
+        "### S1.P07.S02", 1
+    )[0]
 
     assert "no exemplar is required yet" in roadmap.lower()
     assert "No invariant exists in the S01 module." in roadmap
     assert "At S01 publication, invariant identity remained later" in roadmap
     assert "a proposed pattern with no exemplars supplied yet" in roadmap
-    assert "Applicability and transfer remain `S1.P08` work" in roadmap
-    assert "generic confidence and review remain `S1.P09` work" in roadmap
+    assert "Generic confidence and review remain `S1.P09` work" in roadmap
     assert "durable serialization and persistence remain `S1.P10` work" in roadmap
     assert "nominally distinct from every `S1.P06` identity" in roadmap
     assert "Dependency direction is downstream only" in roadmap

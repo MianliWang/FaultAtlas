@@ -57,10 +57,10 @@ aspirational Slice as scheduled work.
   `S1.P07.S07` is complete and
   `S1.P07.S08` is complete and
   `S1.P07.S09` is complete and
-  `S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+  `S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and no Phase is currently active; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is next and not started.
+  `S1.P08.S04` is complete; `S1.P09` is next and not started.
   `S1.P09` through `S1.P10` remain not started.
 - **S2-S9** are not implemented.
 
@@ -127,10 +127,10 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
-`S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+`S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and no Phase is currently active; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is next and not started.
+  `S1.P08.S04` is complete; `S1.P09` is next and not started.
 `S1.P09` through `S1.P10` remain not started, and `S2-S9`
 remain unimplemented.
 
@@ -745,10 +745,10 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
-`S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+`S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and no Phase is currently active; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is next and not started.
+  `S1.P08.S04` is complete; `S1.P09` is next and not started.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1209,10 +1209,10 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
-`S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+`S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and no Phase is currently active; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is next and not started.
+  `S1.P08.S04` is complete; `S1.P09` is next and not started.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -1353,9 +1353,12 @@ is restated at scenario level. The statement is case-local supplied prose
 about triggering conditions, inputs, operation, runtime setting,
 repository-local conditions, environment, configuration, or preconditions. It
 is not parsed into platform, language, operating-system, version,
-architecture, trigger, input, or environment fields: structured reusable
-applicability is `S1.P08` work, and a scenario here is case-local context, not
-a cross-instance applicability rule.
+architecture, trigger, input, or environment fields. At S03 publication,
+structured reusable applicability was assigned to `S1.P08`; scenario and
+occurrence records supplied only case-local context. The bounded
+supplied-assessment workflow is implemented by `S1.P08`, while
+a scenario here remains case-local context rather than a cross-instance applicability rule.
+Retained empirical applicability limits are source-qualified in the P08 closure.
 
 `SuppliedFaultOccurrenceContext` carries exactly `occurrence`, `scenario`, and
 `occurrence_context`, consuming the scenario whole. It is a caller-supplied
@@ -1416,7 +1419,8 @@ reusable pattern or invariant, and no complete `FaultInstance`. The bounded
 source and history relationships came next, in `S1.P06.S04`, and the repair
 candidates in `S1.P06.S05`; the evidence link became `S1.P06.S09` work, and
 the supplied pattern/invariant models were added by `S1.P07.S01` through
-`S1.P07.S05`. Transfer and applicability remain `S1.P08` work, confidence and
+`S1.P07.S05`. The bounded transfer/applicability workflow is implemented by `S1.P08`; its
+source-qualified empirical limitations remain in the P08 closure. Confidence and
 review remain `S1.P09` work, and durable persistence remains `S1.P10` work.
 The module still performs no I/O.
 
@@ -2270,8 +2274,9 @@ not commencement, and the sealed bytes still record the state they recorded.
 That eligibility has since been exercised: `S1.P07` implementation has begun
 with `S1.P07.S01`. The `S1.P07 — Pattern & Invariant Model` boundary is
 carried forward unweakened: a case-local `SuppliedFaultExpectedProperty` is not
-already a reusable invariant, applicability and transfer remain `S1.P08` work,
-generic confidence and review remain `S1.P09` work, durable serialization
+already a reusable invariant; the bounded supplied transfer/applicability workflow
+is implemented by `S1.P08` with empirical restrictions preserved in its closure.
+Generic confidence and review remain `S1.P09` work, durable serialization
 remains `S1.P10` work, and Pattern similarity is not factual truth merely
 because `S1.P06` records look alike. No exact `S1.P07` schema was authorized by
 that closure, and `S1.P07.S01` is the first Slice authorized on its own gate.
@@ -2324,10 +2329,10 @@ became `S1.P06.S10` work.
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
-`S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+`S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and no Phase is currently active; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is next and not started.
+  `S1.P08.S04` is complete; `S1.P09` is next and not started.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2373,9 +2378,12 @@ here, and conflicting pattern claims are deliberately not solved.
 No invariant exists in the S01 module. The case-local `SuppliedFaultExpectedProperty` that
 `S1.P06.S07` published is unchanged and is not promoted into a reusable
 invariant. At S01 publication, invariant identity remained later `S1.P07`
-work; S03 now adds that independent proposition separately. Applicability and
-transfer remain `S1.P08` work, generic confidence and review remain `S1.P09`
-work, and durable serialization and persistence remain `S1.P10` work, so no
+work; S03 now adds that independent proposition separately. At S01 publication,
+applicability and transfer were assigned to `S1.P08`; the supplied Pattern
+proposition implemented neither. The bounded
+supplied transfer/applicability workflow is implemented by `S1.P08`; its empirical
+limits remain source-qualified in the P08 closure. Generic confidence and review
+remain `S1.P09` work, and durable serialization and persistence remain `S1.P10` work, so no
 scope, applies-to, applicability, transfer, similarity, confidence, support,
 proof, verification, review, status, probability, canonical, or universal field
 exists, and no `PatternKind`, `RelationshipKind`, `PatternStatus`,
@@ -2760,10 +2768,10 @@ No later schema is authorized by this closed P07 route:
 
 ## S1.P08 — Transfer & Applicability Model
 
-`S1.P08` is active and incomplete. `S1.P08.S01` is complete and
+`S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and no Phase is currently active. `S1.P08.S01` is complete and
 `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is next and not started. `S1.P09` through `S1.P10` remain not started.
+  `S1.P08.S04` is complete; `S1.P09` is next and not started. `S1.P09` through `S1.P10` remain not started.
 
 S01 publishes nine supplied assessment records in `faultatlas.domain.assessment`
 and the pure `faultatlas.assessment.inspect_assessment` consumer. The caller
@@ -2794,18 +2802,19 @@ P00's cross-repository remainder remains unknown under P08; the provider-general
 root receives a prospective P08 responsibility at S01 publication while its original
 P01 immediate-owner fact stays historical. The five P01 and four P02 P08 evidence
 limitations remain unresolved, and P01's separate pattern-generality question keeps
-P07 semantic ownership and its S09 triggers. S01 does not complete the whole P03
-transfer/applicability reservation. Generic review/support remains P09; broader
+P07 semantic ownership and its S09 triggers. S01 alone did not complete the whole P03
+transfer/applicability reservation; S01-S04 now close the chosen bounded workflow
+while retaining that original row and all empirical restrictions. Generic review/support remains P09; broader
 persistence and ingestion remain P10/S2; services and scale remain S9. S3 lookup
 is outside the selected first release. Earlier sealed records remain unchanged.
 
 The `S1.P08` route has four release units, including adopted limited cross-owner
-responsibilities; later units need their own contracts:
+responsibilities, now closed in the bounded supplied-workflow scope:
 
 1. `S1.P08.S01` — Complete supplied assessment and pure inspection (complete)
 2. `S1.P08.S02` — Selected-file codec/API and save-as-new/reopen (complete)
 3. `S1.P08.S03` — Existing CLI integration and selected-file acceptance (complete)
-4. `S1.P08.S04` — Bounded integration and Phase closure (next, not started)
+4. `S1.P08.S04` — Bounded integration and Phase closure (complete)
 
 The S02 envelope budget and Linux/ext4 backend were forward requirements at
 S01 publication. S02 implements the [selected-file API](contracts/s1-p08-s02-assessment-file.md)
@@ -2818,6 +2827,58 @@ The S01 modules remain pure. S02 introduced no CLI command or signal handler.
 S03 adds the [selected-file CLI](contracts/s1-p08-s03-assessment-cli.md), with
 plain complete inspection, truthful save receipts, safe UTF-8 argv transport,
 scoped cooperative signals and explicit response-delivery failures. P09/P10 are not thereby completed or begun as separate Phases.
+
+## S1.P08 bounded dispositions
+
+The [primary S04 closure](../reference_corpus/contracts/transfer-applicability/closures/s1-p08-phase-closure/closure.json)
+and [deterministic readable view](../reference_corpus/contracts/transfer-applicability/closures/s1-p08-phase-closure/closure.md)
+close the supplied model, pure inspection, selected-file API and installed CLI only.
+The finite pre-completion review retains O01–O11 with disposition
+`reviewed_unknown_retained_nonblocking_for_bounded_supplied_workflow_closure`.
+Published workflow and synthetic integration evidence do not satisfy the original
+empirical/support questions or waive their consequences and deadlines. Revisit
+before widened support, generality or verified-transfer claims, or upon new
+relevant reviewed evidence; no fixed case quota or confidence threshold is set.
+
+Retained empirical row `O01` (`reference_corpus/pytest-4412/closures/s1-p00-phase-closure/closure.json#/deferred_register/items/23`) remains owned by `S1.P08` with state `unknown_pending_additional_evidence`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O02` (`reference_corpus/pytest-4412/closures/s1-p00-phase-closure/closure.json#/deferred_register/items/10`) remains owned by `S1.P08` with state `unknown_pending_additional_evidence`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O03` (`reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/29`) remains owned by `S1.P08` with state `evidence_insufficient`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O04` (`reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/30`) remains owned by `S1.P08` with state `evidence_insufficient`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O05` (`reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/31`) remains owned by `S1.P08` with state `evidence_insufficient`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O06` (`reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/32`) remains owned by `S1.P08` with state `evidence_insufficient`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O07` (`reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/38`) remains owned by `S1.P08` with state `evidence_insufficient`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O08` (`reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure/closure.json#/deferred_register/items/35`) remains owned by `S1.P08` with state `evidence_insufficient`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O09` (`reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure/closure.json#/deferred_register/items/36`) remains owned by `S1.P08` with state `evidence_insufficient`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O10` (`reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure/closure.json#/deferred_register/items/37`) remains owned by `S1.P08` with state `evidence_insufficient`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O11` (`reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure/closure.json#/deferred_register/items/38`) remains owned by `S1.P08` with state `evidence_insufficient`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+Retained empirical row `O14` (`reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/37`) remains owned by `S1.P07` with state `evidence_insufficient`; original consequences and deadlines remain unchanged; this is retained empirical responsibility, not unfinished selected-workflow implementation.
+
+O01 retains its additive P08 handoff; O02 keeps its original P01 immediate-owner
+fact separately from S01's prospective P08 responsibility. O12 retains its original
+`not_implemented` historical record without inventing a consequence or deadline;
+its bounded model and selected workflow are now implemented and integrated.
+O13 keeps provisional generic review responsibility under `S1.P09`; supplied
+attribution/rationale are only the approved subset. O14 keeps the existing P07
+S09 disposition and triggers, without transferring its exception to P08. O15's
+bounded Pattern/Invariant reservation was already implemented under P07.
+These fifteen source-qualified rows are not fifteen independent empirical observations.
+D11, provider/private/GHE/non-Git, alternate-ID and arbitrary-history limits remain;
+O01's wrong-root cross-provider reference stays a discrepancy, not an inferred alias.
+
+`S1.P09` is next and not started: a separate product/architecture Phase-start
+conversation is required. This closure authorizes no P09 implementation, new
+schema or confidence evaluator. `S1.P10` is not started.
 
 ## Preserved later Stage 1 phases
 
@@ -3221,10 +3282,10 @@ complete, and `S1.P06.S12` is complete, and `S1.P07` is complete;
 `S1.P07.S07` is complete and
 `S1.P07.S08` is complete and
 `S1.P07.S09` is complete and
-`S1.P08` is active and incomplete; `S1.P08.S01` is complete and
+`S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and no Phase is currently active; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is next and not started. `S1.P04.S10`
+  `S1.P08.S04` is complete; `S1.P09` is next and not started. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==
@@ -3265,6 +3326,9 @@ The file envelope limits are 8198 nodes, 513 objects, 131125 string code points 
 33 container levels; bytes are capped at 1 MiB and the complete prefixed view at
 8 MiB. Domain limits remain unchanged. The existing CLI provides help/version and selected assessment inspect/save-as
 commands over that public API, without automatic applicability or file lookup.
+S04 adds only source-only closure artifacts and integration checks; all 28 production
+files retain their S03 bytes. The closure links and retained empirical dispositions
+above qualify P08 completion; no active Phase or P09 implementation is implied.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and

@@ -13,6 +13,7 @@ import subprocess
 import tarfile
 import zipfile
 from collections import Counter
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
@@ -2077,7 +2078,8 @@ def test_revision_locator_corpus_is_an_independent_contract_sibling() -> None:
         "pattern-invariant",
         "repository-snapshot",
         "revision-locator",
-    }
+        "transfer-applicability",
+    }, "current contract-root siblings"
     assert CORPUS_ROOT.parent.name == "identity"
     assert REVISION_LOCATOR_CORPUS_ROOT.parent.name == "revision-locator"
     assert {path.name for path in REVISION_LOCATOR_CORPUS_ROOT.iterdir()} == (
@@ -2418,3 +2420,23 @@ def test_required_mutation_is_detected(mutation: str, tmp_path: Path) -> None:
     )
     with pytest.raises(AssertionError):
         _assert_safe_archive(members, expect_modules=False)
+
+
+@pytest.mark.parametrize("extra", [False, True])
+def test_s04_current_sibling_keeps_unknown_roots_rejected(
+    monkeypatch: pytest.MonkeyPatch, extra: bool
+) -> None:
+    root = CORPUS_ROOT.parents[1]
+    original = Path.iterdir
+
+    def entries(path: Path) -> Iterator[Path]:
+        yield from original(path)
+        if path == root and extra:
+            yield root / "unapproved-family"
+
+    monkeypatch.setattr(Path, "iterdir", entries)
+    if extra:
+        with pytest.raises(AssertionError, match="current contract-root siblings"):
+            test_revision_locator_corpus_is_an_independent_contract_sibling()
+    else:
+        test_revision_locator_corpus_is_an_independent_contract_sibling()

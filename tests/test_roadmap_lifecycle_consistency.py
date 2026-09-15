@@ -50,8 +50,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
-# P06 and bounded P07 are complete. P08 has supplied assessments and the
-# selected-file CLI; the next gate is bounded integration and Phase closure.
+# P06, bounded P07 and bounded P08 are complete. P09 requires a separate
+# Phase-start discussion; no Phase is active.
 #
 # The completed Slices carry two roles and are therefore two tuples. The route
 # block `_route_entries` parses is the `S1.P06` route alone, which holds exactly
@@ -72,7 +72,7 @@ P07_COMPLETE_SLICES = (
     "S1.P07.S08",
     "S1.P07.S09",
 )
-P08_COMPLETE_SLICES = ("S1.P08.S01", "S1.P08.S02", "S1.P08.S03")
+P08_COMPLETE_SLICES = ("S1.P08.S01", "S1.P08.S02", "S1.P08.S03", "S1.P08.S04")
 COMPLETE_SLICES = (*P06_ROUTE_SLICES, *P07_COMPLETE_SLICES, *P08_COMPLETE_SLICES)
 COMPLETE_PHASES = (
     "S1.P00",
@@ -83,9 +83,10 @@ COMPLETE_PHASES = (
     "S1.P05",
     "S1.P06",
     "S1.P07",
+    "S1.P08",
 )
-# The four-unit P08 route has three published Slices.
-NEXT_UNIT = "S1.P08.S04"
+# The four-unit P08 route is complete in its bounded supplied-workflow scope.
+NEXT_UNIT = "S1.P09"
 NOT_STARTED_SLICES: tuple[str, ...] = ()
 NOT_STARTED_PHASES = ("S1.P09", "S1.P10")
 CORRECTION = "S1.P06.S07.C01"
@@ -95,8 +96,9 @@ CORRECTION = "S1.P06.S07.C01"
 SLICE_TOKEN = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)`")
 GATE_CLAIM = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started")
 ACTIVE_PHASE = re.compile(r"`(S1\.P\d\d)` is active and incomplete")
-# S1 remains active, with exactly P08 as the active Phase.
-ACTIVE_PHASES_EXPECTED: frozenset[str] = frozenset({"S1.P08"})
+# S1 remains active between bounded P08 closure and separate P09 planning.
+ACTIVE_PHASES_EXPECTED: frozenset[str] = frozenset()
+NO_ACTIVE_CLAIM = "S1 remains active and no Phase is currently active"
 
 
 def _text() -> str:
@@ -117,6 +119,7 @@ def assert_local_live_gate(text: str) -> None:
     assert set(ACTIVE_PHASE.findall(text)) == ACTIVE_PHASES_EXPECTED, (
         "local active Phase set"
     )
+    assert NO_ACTIVE_CLAIM in text, "missing explicit no-active-Phase claim"
 
 
 def assert_current_phase_lifecycle() -> None:
@@ -131,6 +134,7 @@ def assert_current_phase_lifecycle() -> None:
     assert set(ACTIVE_PHASE.findall(section)) == ACTIVE_PHASES_EXPECTED, (
         "current active Phase set"
     )
+    assert NO_ACTIVE_CLAIM in section, "missing explicit no-active-Phase claim"
     assert "`S1.P09` through `S1.P10` remain not started" in section, (
         "missing current not-started Phase range"
     )
@@ -648,6 +652,8 @@ def test_no_open_work_is_presently_attributed_to_a_completed_unit() -> None:
                     # rather than passing because it has no allowed states.
                     allowed = _allowed_states(unit)
                     assert allowed is not None, (start, unit, sentence[:200])
+                    if _retained_empirical_owner(start, sentence, unit):
+                        continue
                     assert allowed != {"complete"}, (start, unit, sentence[:200])
 
 
@@ -691,6 +697,9 @@ def test_every_lifecycle_sentence_carries_its_own_live_gate() -> None:
         )
         assert f"`{COMPLETE_PHASES[-1]}` is complete" in sentence, start
         assert set(ACTIVE_PHASE.findall(sentence)) == ACTIVE_PHASES_EXPECTED, start
+        assert NO_ACTIVE_CLAIM in sentence, (
+            "missing explicit local no-active-Phase claim"
+        )
         # The next gate is not complete; no active Phase is fabricated.
         for unit in (*ACTIVE_PHASES_EXPECTED, NEXT_UNIT, *NOT_STARTED_SLICES):
             assert f"`{unit}` is complete" not in sentence, (start, unit)
@@ -895,6 +904,8 @@ def test_no_completed_phase_is_named_as_a_present_owner_of_open_work() -> None:
                 if index == -1:
                     continue
                 before = sentence[:index]
+                if _retained_empirical_owner(start, sentence, phase):
+                    continue
                 assert _is_negated(before) or _is_past_tense(before), (
                     start,
                     phase,
@@ -1224,10 +1235,8 @@ def test_an_appendix_cannot_repair_the_current_status_section(
         replacement = section.replace(completion, "phase omitted")
         message = "missing current completed Phase"
     elif change == "missing_active":
-        replacement = section.replace(
-            "`S1.P08` is active and incomplete", "active Phase omitted"
-        )
-        message = "current active Phase set"
+        replacement = section.replace(NO_ACTIVE_CLAIM, "active Phase omitted")
+        message = "missing explicit no-active-Phase claim"
     elif change == "missing_later":
         replacement = section.replace(
             "`S1.P09` through `S1.P10` remain not started", "later Phase range omitted"
@@ -1262,13 +1271,16 @@ def test_a_later_sentence_cannot_rescue_a_missing_local_gate(
         test_every_lifecycle_sentence_carries_its_own_live_gate()
 
 
-def test_p08_file_vertical_has_one_active_phase_and_a_live_gate() -> None:
-    assert ACTIVE_PHASES_EXPECTED == frozenset({"S1.P08"})
-    assert NEXT_UNIT == "S1.P08.S04"
+def test_p08_closed_workflow_has_no_active_phase_and_p09_planning_gate() -> None:
+    assert ACTIVE_PHASES_EXPECTED == frozenset()
+    assert NO_ACTIVE_CLAIM in _section("Current status")
+    assert NEXT_UNIT == "S1.P09"
     assert _allowed_states("S1.P08.S01") == {"complete"}
     assert _allowed_states("S1.P08.S02") == {"complete"}
     assert _allowed_states("S1.P08.S03") == {"complete"}
-    assert _allowed_states("S1.P08.S04") == {"next", "not_started"}
+    assert _allowed_states("S1.P08.S04") == {"complete"}
+    assert _allowed_states("S1.P09") == {"next", "not_started"}
+    assert _allowed_states("S1.P09.S01") is None
     assert_current_phase_lifecycle()
     assert_local_live_gate(_lifecycle_sentences()[0][1])
 
@@ -1309,13 +1321,13 @@ def test_p08_route_has_four_exact_ordered_positions() -> None:
         ("1", "S1.P08.S01", "complete"),
         ("2", "S1.P08.S02", "complete"),
         ("3", "S1.P08.S03", "complete"),
-        ("4", "S1.P08.S04", "next, not started"),
+        ("4", "S1.P08.S04", "complete"),
     ]
     assert len(re.findall(r"^\d+\. ", section, re.M)) == 4
     assert "S1.P08.S05" not in section
 
 
-@pytest.mark.parametrize("phase", ("S1.P08", "S1.P09"))
+@pytest.mark.parametrize("phase", ("S1.P09", "S1.P10"))
 def test_active_or_unstarted_phase_cannot_be_completed_in_current_status(
     monkeypatch: pytest.MonkeyPatch, phase: str
 ) -> None:
@@ -1325,3 +1337,148 @@ def test_active_or_unstarted_phase_cannot_be_completed_in_current_status(
     monkeypatch.setattr(__name__ + "._text", lambda: altered)
     with pytest.raises(AssertionError, match="contradictory current-status completion"):
         assert_current_phase_lifecycle()
+
+
+EMPIRICAL_SECTION = "S1.P08 bounded dispositions"
+EMPIRICAL_ROWS = {
+    "O01": (
+        "reference_corpus/pytest-4412/closures/s1-p00-phase-closure/closure.json#/deferred_register/items/23",
+        "S1.P08",
+        "unknown_pending_additional_evidence",
+    ),
+    "O02": (
+        "reference_corpus/pytest-4412/closures/s1-p00-phase-closure/closure.json#/deferred_register/items/10",
+        "S1.P08",
+        "unknown_pending_additional_evidence",
+    ),
+    "O03": (
+        "reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/29",
+        "S1.P08",
+        "evidence_insufficient",
+    ),
+    "O04": (
+        "reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/30",
+        "S1.P08",
+        "evidence_insufficient",
+    ),
+    "O05": (
+        "reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/31",
+        "S1.P08",
+        "evidence_insufficient",
+    ),
+    "O06": (
+        "reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/32",
+        "S1.P08",
+        "evidence_insufficient",
+    ),
+    "O07": (
+        "reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/38",
+        "S1.P08",
+        "evidence_insufficient",
+    ),
+    "O08": (
+        "reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure/closure.json#/deferred_register/items/35",
+        "S1.P08",
+        "evidence_insufficient",
+    ),
+    "O09": (
+        "reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure/closure.json#/deferred_register/items/36",
+        "S1.P08",
+        "evidence_insufficient",
+    ),
+    "O10": (
+        "reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure/closure.json#/deferred_register/items/37",
+        "S1.P08",
+        "evidence_insufficient",
+    ),
+    "O11": (
+        "reference_corpus/contracts/revision-locator/closures/s1-p02-phase-closure/closure.json#/deferred_register/items/38",
+        "S1.P08",
+        "evidence_insufficient",
+    ),
+    "O14": (
+        "reference_corpus/contracts/identity/closures/s1-p01-phase-closure/closure.json#/deferred_register/items/37",
+        "S1.P07",
+        "evidence_insufficient",
+    ),
+}
+
+
+def _empirical_sentence(row: str) -> str:
+    source, owner, state = EMPIRICAL_ROWS[row]
+    return (
+        f"Retained empirical row `{row}` (`{source}`) remains owned by `{owner}` "
+        f"with state `{state}`; original consequences and deadlines remain unchanged; "
+        "this is retained empirical responsibility, not unfinished selected-workflow implementation"
+    )
+
+
+def _retained_empirical_owner(start: int, sentence: str, unit: str) -> bool:
+    lines = _text().splitlines()
+    heading = "## " + EMPIRICAL_SECTION
+    if heading not in lines:
+        return False
+    first = lines.index(heading) + 1
+    last = next(
+        (i + 1 for i in range(first, len(lines)) if lines[i].startswith("## ")),
+        len(lines) + 1,
+    )
+    return first < start < last and any(
+        unit == data[1] and sentence.rstrip(".") == _empirical_sentence(row)
+        for row, data in EMPIRICAL_ROWS.items()
+    )
+
+
+def test_retained_empirical_ownership_is_explicit_and_source_qualified() -> None:
+    section = _section(EMPIRICAL_SECTION)
+    assert set(EMPIRICAL_ROWS) == {
+        "O01",
+        "O02",
+        "O03",
+        "O04",
+        "O05",
+        "O06",
+        "O07",
+        "O08",
+        "O09",
+        "O10",
+        "O11",
+        "O14",
+    }
+    for row in EMPIRICAL_ROWS:
+        assert _empirical_sentence(row) in section
+    test_no_open_work_is_presently_attributed_to_a_completed_unit()
+    test_no_completed_phase_is_named_as_a_present_owner_of_open_work()
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["wrong_source", "wrong_state", "unfinished_selected_work", "outside_section"],
+)
+def test_empirical_exception_cannot_launder_unfinished_selected_work(
+    monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    original = _text()
+    sentence = _empirical_sentence("O03")
+    assert sentence in original
+    if change == "wrong_source":
+        changed = sentence.replace("/items/29", "/items/30")
+    elif change == "wrong_state":
+        changed = sentence.replace("evidence_insufficient", "resolved")
+    elif change == "unfinished_selected_work":
+        changed = sentence.replace(
+            "retained empirical responsibility, not unfinished selected-workflow implementation",
+            "actually unimplemented selected-workflow implementation",
+        )
+    else:
+        changed = sentence
+    text = (
+        original.replace(sentence, changed)
+        if change != "outside_section"
+        else original + "\n\n## Unqualified appendix\n" + sentence + ".\n"
+    )
+    monkeypatch.setattr(__name__ + "._text", lambda: text)
+    with pytest.raises(AssertionError):
+        test_no_open_work_is_presently_attributed_to_a_completed_unit()
+    with pytest.raises(AssertionError):
+        test_no_completed_phase_is_named_as_a_present_owner_of_open_work()
