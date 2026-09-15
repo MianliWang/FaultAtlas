@@ -2835,6 +2835,11 @@ and [deterministic readable view](../reference_corpus/contracts/transfer-applica
 close the supplied model, pure inspection, selected-file API and installed CLI only.
 The finite pre-completion review retains O01–O11 with disposition
 `reviewed_unknown_retained_nonblocking_for_bounded_supplied_workflow_closure`.
+The before-completion decision is made here: retain each empirical unknown and
+its complete-contract prohibition while closing only the selected supplied
+workflow. The corresponding complete empirical/support contracts remain
+incomplete. The prospective trigger adds a later revisit; it neither postpones
+this decision nor replaces the original decision point.
 Published workflow and synthetic integration evidence do not satisfy the original
 empirical/support questions or waive their consequences and deadlines. Revisit
 before widened support, generality or verified-transfer claims, or upon new

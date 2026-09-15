@@ -18,7 +18,6 @@ Sealed publication candidate: effective only after its own protected publication
 
 ```json
 {
-  "authority_sha256": "7e5aefa1ab9f8e8fcccf9f4e91177954da0d68202bb37092e06208cfd3132411",
   "effective_only_after": "own protected publication and natural-main verification recorded externally",
   "id": "s1-p08-phase-closure",
   "kind": "sealed_publication_candidate",
@@ -780,6 +779,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "The bounded invariant remains useful without claiming universal transfer.",
@@ -854,6 +854,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "One public github.com case cannot justify a universal provider, private-source, or GitHub Enterprise contract.",
@@ -965,6 +966,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "S1.P08 cannot publish a complete contract for evidence private github until this item is resolved.",
@@ -1022,6 +1024,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "S1.P08 cannot publish a complete contract for evidence github enterprise until this item is resolved.",
@@ -1079,6 +1082,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "S1.P08 cannot publish a complete contract for evidence other source providers until this item is resolved.",
@@ -1136,6 +1140,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "S1.P08 cannot publish a complete contract for evidence non git vcs until this item is resolved.",
@@ -1193,6 +1198,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "S1.P08 cannot publish a complete contract for p08 transfer applicability until this item is resolved.",
@@ -1250,6 +1256,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "no_generality_or_support_claim_may_be_made",
@@ -1302,6 +1309,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "no_generality_or_support_claim_may_be_made",
@@ -1354,6 +1362,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "no_generality_or_support_claim_may_be_made",
@@ -1406,6 +1415,7 @@ Rows are source-qualified records, not fifteen independent empirical observation
   "disposition": {
     "bounded_scope": "complete supplied-assessment model, pure inspection, selected-file canonical save/reopen and CLI only",
     "conclusion": "Original unresolved state and empirical/support prohibition remain; no missing selected workflow obligation was identified in the published owners.",
+    "decision_point_review": "Performed before this bounded supplied-workflow completion: retain the empirical unknown and its complete-contract prohibition. The prospective trigger is an additional revisit condition, not a postponed decision or a replacement deadline.",
     "not_empirical_evidence": "Supplied values and structural/codec/CLI tests do not inspect or establish the source question, authenticate authorship, or add reviewed target cases.",
     "original_constraints": {
       "consequence_if_unresolved": "no_generality_or_support_claim_may_be_made",

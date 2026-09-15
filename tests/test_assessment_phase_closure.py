@@ -25,10 +25,10 @@ CLOSURE_REL = (
     "reference_corpus/contracts/transfer-applicability/closures/s1-p08-phase-closure"
 )
 CLOSURE = ROOT / CLOSURE_REL
-CLOSURE_SHA = "8d67767915bf8649560afd52e2c191f249071cdeee8aff5a2c173c7aeeadbf1b"
-CLOSURE_BYTES = 57889
-MARKDOWN_SHA = "5a0a0d6af4e93684d2ad3e10606e6bac83609177f5245bcff0dd6c5c5e50625f"
-MARKDOWN_BYTES = 68746
+CLOSURE_SHA = "6858e527465d3f60bc812d1788d729a8167c54ceea7a2dd6fa6d0e4447e579f3"
+CLOSURE_BYTES = 60729
+MARKDOWN_SHA = "45ff17117a2978f81ed8f08fbfb0700a06712ffbca54c6c7fbb362aef91f9e5b"
+MARKDOWN_BYTES = 71648
 DISPOSITION = (
     "reviewed_unknown_retained_nonblocking_for_bounded_supplied_workflow_closure"
 )
@@ -36,6 +36,11 @@ TRIGGERS = [
     "before_any_widened_support_generality_or_verified_transfer_claim",
     "upon_new_relevant_reviewed_evidence",
 ]
+DECISION_POINT_REVIEW = (
+    "Performed before this bounded supplied-workflow completion: retain the empirical "
+    "unknown and its complete-contract prohibition. The prospective trigger is an "
+    "additional revisit condition, not a postponed decision or a replacement deadline."
+)
 
 # Historical source and publication observations captured from actual bytes and
 # immutable Git/CI logs. Offline tests do not fetch old Git objects or providers.
@@ -526,6 +531,9 @@ def _validate_rows(d: dict[str, Any]) -> None:
             "prospective trigger does not replace deadline"
         )
         if int(oid[1:]) <= 11:
+            assert decision["decision_point_review"] == DECISION_POINT_REVIEW, (
+                "pre-completion decision is not postponed"
+            )
             assert decision["status"] == DISPOSITION, (
                 "bounded pre-completion disposition"
             )
@@ -572,6 +580,7 @@ def _validate_rows(d: dict[str, Any]) -> None:
         }
         if int(oid[1:]) <= 11:
             expected_fields.add("performed")
+            expected_fields.add("decision_point_review")
         assert set(decision) == expected_fields, "bounded disposition fields"
 
 
@@ -602,7 +611,6 @@ def _validate(d: dict[str, Any]) -> None:
         "slice": "S1.P08.S04",
         "kind": "sealed_publication_candidate",
         "effective_only_after": "own protected publication and natural-main verification recorded externally",
-        "authority_sha256": "7e5aefa1ab9f8e8fcccf9f4e91177954da0d68202bb37092e06208cfd3132411",
     }, "noncircular sealed candidate"
     assert d["scope"] == {
         "selected_workflow": "supplied-assessment/model/pure-inspection/selected-file/CLI",
@@ -784,6 +792,7 @@ def test_complete_closure_and_projection() -> None:
         ("selector", "exact source selector"),
         ("ID", "full original record"),
         ("empirical", "empirical uncertainty"),
+        ("postponed_decision", "pre-completion decision is not postponed"),
         ("P09", "P09 planning-only"),
         ("own_result", "noncircular"),
         ("absent_deadline", "original consequence"),
@@ -818,6 +827,10 @@ def test_semantic_counterexamples_reach_their_own_guards(
     elif mutation == "empirical":
         changed["inherited_rows"][0]["disposition"]["conclusion"] = (
             "empirical transfer established"
+        )
+    elif mutation == "postponed_decision":
+        changed["inherited_rows"][2]["disposition"]["decision_point_review"] = (
+            "Decision postponed until widened support is proposed."
         )
     elif mutation == "P09":
         changed["handoff"]["active_phases"] = ["S1.P09"]
