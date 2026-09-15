@@ -51,7 +51,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
-# P06 and bounded P07/P08 are complete. P09 has delivered S01 only;
+# P06 and bounded P07/P08 are complete. P09 has delivered S01 and S02;
 # follow-up scope planning authorizes no successor Slice.
 #
 # The completed Slices carry two roles and are therefore two tuples. The route
@@ -74,7 +74,7 @@ P07_COMPLETE_SLICES = (
     "S1.P07.S09",
 )
 P08_COMPLETE_SLICES = ("S1.P08.S01", "S1.P08.S02", "S1.P08.S03", "S1.P08.S04")
-P09_COMPLETE_SLICES = ("S1.P09.S01",)
+P09_COMPLETE_SLICES = ("S1.P09.S01", "S1.P09.S02")
 COMPLETE_SLICES = (
     *P06_ROUTE_SLICES,
     *P07_COMPLETE_SLICES,
@@ -120,7 +120,10 @@ def assert_local_live_gate(text: str) -> None:
     """A caller's bounded paragraph/sentence must carry its own current gate."""
     assert "`S1.P06` is complete" in text, "missing local P06 phase completion"
     assert LIVE_GATE in text, "missing local scope-planning gate"
-    assert "`S1.P09.S01` is complete" in text, "missing local S01 completion"
+    for unit in P09_COMPLETE_SLICES:
+        assert f"`{unit}` is complete" in text, (
+            f"missing local {unit.rsplit('.', 1)[-1]} completion"
+        )
     assert "no Phase is currently active" not in text, "stale no-active-Phase claim"
     assert f"`{COMPLETE_PHASES[-1]}` is complete" in text, (
         "missing local completed Phase"
@@ -134,7 +137,10 @@ def assert_local_live_gate(text: str) -> None:
 def assert_current_phase_lifecycle() -> None:
     """Delegate current Phase/gate checks to the bounded Current status owner."""
     section = _section("Current status")
-    assert "`S1.P09.S01` is complete" in section, "missing current S01 completion"
+    for unit in P09_COMPLETE_SLICES:
+        assert f"`{unit}` is complete" in section, (
+            f"missing current {unit.rsplit('.', 1)[-1]} completion"
+        )
     assert "no Phase is currently active" not in section, "stale no-active-Phase claim"
     assert f"`{COMPLETE_PHASES[-1]}` is complete" in section, (
         "missing current completed Phase"
@@ -294,7 +300,7 @@ PHASE_SLICE_COUNT = {
     # numbers nine positions, so a claim about `S1.P07.S10` is still refused.
     "S1.P07": 9,
     "S1.P08": 4,
-    "S1.P09": 1,
+    "S1.P09": 2,
 }
 KNOWN_CORRECTIONS = frozenset(
     {
@@ -1312,10 +1318,11 @@ def test_historical_p08_handoff_rejects_changed_facts(field: str, bad: object) -
         _assert_historical_p08_handoff(handoff)
 
 
-def test_p09_s01_is_complete_with_no_successor_authorization() -> None:
+def test_p09_completed_slices_have_no_successor_authorization() -> None:
     assert _allowed_states("S1.P09") == {"active"}
     assert _allowed_states("S1.P09.S01") == {"complete"}
-    assert _allowed_states("S1.P09.S02") is None
+    assert _allowed_states("S1.P09.S02") == {"complete"}
+    assert _allowed_states("S1.P09.S03") is None
     assert _allowed_states("S1.P10") == {"not_started"}
     assert_current_phase_lifecycle()
     assert_local_live_gate(_lifecycle_sentences()[0][1])
@@ -1333,7 +1340,10 @@ def _assert_current_review_summary(heading: str) -> None:
     sentence = _flat(body.split("\n\n", 1)[0]).split(". ", 1)[0]
     for clause, label in (
         (ACTIVE_CLAIM, "P09 active state"),
-        ("`S1.P09.S01` is complete", "S01 completion"),
+        *(
+            (f"`{unit}` is complete", f"{unit.rsplit('.', 1)[-1]} completion")
+            for unit in P09_COMPLETE_SLICES
+        ),
         (LIVE_GATE, "scope-planning gate"),
     ):
         assert clause in sentence, f"review summary missing {label}: {heading}"
@@ -1345,7 +1355,7 @@ def test_current_p08_and_p09_review_summaries_are_sentence_local(heading: str) -
 
 
 @pytest.mark.parametrize("heading", REVIEW_SUMMARY_HEADINGS)
-@pytest.mark.parametrize("change", ("active", "slice", "gate", "split"))
+@pytest.mark.parametrize("change", ("active", "slice", "second_slice", "gate", "split"))
 def test_later_valid_prose_cannot_rescue_a_review_summary(
     monkeypatch: pytest.MonkeyPatch, heading: str, change: str
 ) -> None:
@@ -1363,6 +1373,7 @@ def test_later_valid_prose_cannot_rescue_a_review_summary(
         clause, label = {
             "active": (ACTIVE_CLAIM, "P09 active state"),
             "slice": ("`S1.P09.S01` is complete", "S01 completion"),
+            "second_slice": ("`S1.P09.S02` is complete", "S02 completion"),
             "gate": (LIVE_GATE, "scope-planning gate"),
         }[change]
         assert clause in summary
@@ -1378,6 +1389,7 @@ def test_later_valid_prose_cannot_rescue_a_review_summary(
     "old,new,message",
     (
         ("`S1.P09.S01` is complete", "S01 omitted", "missing current S01 completion"),
+        ("`S1.P09.S02` is complete", "S02 omitted", "missing current S02 completion"),
         (LIVE_GATE, "scope gate omitted", "missing current-status gate"),
         (ACTIVE_CLAIM, "`S1.P09` is next and not started", "current active Phase set"),
         (
@@ -1408,9 +1420,10 @@ def test_p09_current_clauses_cannot_be_borrowed_from_an_appendix(
 @pytest.mark.parametrize(
     "claim",
     (
-        "`S1.P09.S02` is next",
-        "`S1.P09.S02` is complete",
+        "`S1.P09.S03` is next",
+        "`S1.P09.S03` is complete",
         "`S1.P09.S01` is active and incomplete",
+        "`S1.P09.S02` is active and incomplete",
     ),
 )
 def test_no_successor_or_wrong_slice_state_is_authorized(

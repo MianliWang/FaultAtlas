@@ -60,7 +60,7 @@ aspirational Slice as scheduled work.
   `S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and `S1.P09` is active and incomplete; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is complete; `S1.P09.S01` is complete; The next step is P09 scope planning; no successor Slice is authorized.
+  `S1.P08.S04` is complete; `S1.P09.S01` is complete; `S1.P09.S02` is complete; The next step is P09 scope planning; no successor Slice is authorized.
   `S1.P10` is not started.
 - **S2-S9** are not implemented.
 
@@ -130,7 +130,7 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and `S1.P09` is active and incomplete; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is complete; `S1.P09.S01` is complete; The next step is P09 scope planning; no successor Slice is authorized.
+  `S1.P08.S04` is complete; `S1.P09.S01` is complete; `S1.P09.S02` is complete; The next step is P09 scope planning; no successor Slice is authorized.
 `S1.P10` is not started, and `S2-S9`
 remain unimplemented.
 
@@ -748,7 +748,7 @@ correction, `S1.P05.S09`, and `S1.P05.S10` are complete.
 `S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and `S1.P09` is active and incomplete; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is complete; `S1.P09.S01` is complete; The next step is P09 scope planning; no successor Slice is authorized.
+  `S1.P08.S04` is complete; `S1.P09.S01` is complete; `S1.P09.S02` is complete; The next step is P09 scope planning; no successor Slice is authorized.
 
 `S1.P05.S01` publishes one new production module,
 `faultatlas.domain.history`, exporting exactly
@@ -1212,7 +1212,7 @@ exercised: `S1.P06` implementation has begun with `S1.P06.S01`.
 `S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and `S1.P09` is active and incomplete; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is complete; `S1.P09.S01` is complete; The next step is P09 scope planning; no successor Slice is authorized.
+  `S1.P08.S04` is complete; `S1.P09.S01` is complete; `S1.P09.S02` is complete; The next step is P09 scope planning; no successor Slice is authorized.
 
 `S1.P06.S01` publishes one new production module, `faultatlas.domain.fault`,
 whose initial `__all__` is exactly `FaultInstanceIdentity` and
@@ -2332,7 +2332,7 @@ became `S1.P06.S10` work.
 `S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and `S1.P09` is active and incomplete; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is complete; `S1.P09.S01` is complete; The next step is P09 scope planning; no successor Slice is authorized.
+  `S1.P08.S04` is complete; `S1.P09.S01` is complete; `S1.P09.S02` is complete; The next step is P09 scope planning; no successor Slice is authorized.
 
 `S1.P07.S01` publishes one new production module, `faultatlas.domain.pattern`,
 whose initial `__all__` is exactly `FaultPatternIdentity` and
@@ -2771,7 +2771,7 @@ No later schema is authorized by this closed P07 route:
 `S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and `S1.P09` is active and incomplete; `S1.P08.S01` is complete and
 `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is complete; `S1.P09.S01` is complete; The next step is P09 scope planning; no successor Slice is authorized. `S1.P10` is not started.
+  `S1.P08.S04` is complete; `S1.P09.S01` is complete; `S1.P09.S02` is complete; The next step is P09 scope planning; no successor Slice is authorized. `S1.P10` is not started.
 
 S01 publishes nine supplied assessment records in `faultatlas.domain.assessment`
 and the pure `faultatlas.assessment.inspect_assessment` consumer. The caller
@@ -2884,13 +2884,14 @@ O01's wrong-root cross-provider reference stays a discrepancy, not an inferred a
 At the P08 closure, `S1.P09` was next and not started; a separate
 product/architecture Phase-start conversation was required. That closure
 authorized no P09 implementation, schema or confidence evaluator. The separately
-authorized `S1.P09` is active and incomplete; `S1.P09.S01` is complete; The next step is P09 scope planning; no successor Slice is authorized. `S1.P10` is not started.
+authorized `S1.P09` is active and incomplete; `S1.P09.S01` is complete; `S1.P09.S02` is complete; The next step is P09 scope planning; no successor Slice is authorized. `S1.P10` is not started.
 
 ## S1.P09 — Provenance, Confidence & Review
 
-`S1.P09` is active and incomplete; `S1.P09.S01` is complete; The next step is P09 scope planning; no successor Slice is authorized.
+`S1.P09` is active and incomplete; `S1.P09.S01` is complete; `S1.P09.S02` is complete; The next step is P09 scope planning; no successor Slice is authorized.
 
 1. `S1.P09.S01` — Bounded supplied assessment review and pure inspection (complete)
+2. `S1.P09.S02` — Supplied review attribution and source association (complete)
 
 The [S01 contract](contracts/s1-p09-s01-supplied-review.md) records the accepted
 `CAL-P09-20260915-A` / SD01 design basis and original inherited obligations.
@@ -2901,6 +2902,15 @@ freshness, approval, a confidence scale, conflict resolution or review lifecycle
 The original 17 deferred records retain their states, owners, consequences and
 decision points; this increment does not resolve them. P09 follow-up scope needs
 separate discussion and authorization.
+
+The [S02 contract](contracts/s1-p09-s02-review-attribution.md) adds a supplied
+attribution assertion around one complete existing review. It separates the
+new assertion supplier, attributed reviewer label and optional complete evidence
+record reference. The pure inspector retains ordered competing/duplicate
+assertions, with 0–8 records and a 9 MiB complete view. Unknown reviewer and no
+supplied source association remain explicit, without account identity, source
+availability, support, authentication or review lifecycle. All S01 production
+behavior and the seventeen inherited records remain unchanged.
 
 ## Preserved later Stage 1 phases
 - **S1.P10 — Persistence, Serialization & Contract Corpus**
@@ -3284,7 +3294,7 @@ inference, promotion or changes to either endpoint owner.
 bounded supplied Pattern composition with explicit full-record reference
 integrity and root attachment closure, without inferred edges.
 
-Production Python sources are 30.
+Production Python sources are 32.
 `S1.P05` is complete: `S1.P05.S01`, `S1.P05.S02` including the `S1.P05.S02.C01`
 correction, `S1.P05.S03`, `S1.P05.S04`, `S1.P05.S05`, `S1.P05.S06`,
 `S1.P05.S07`, `S1.P05.S08` including the `S1.P05.S08.C01` correction,
@@ -3305,7 +3315,7 @@ complete, and `S1.P06.S12` is complete, and `S1.P07` is complete;
 `S1.P08` is complete in its bounded supplied-assessment/file/CLI scope; S1 remains active and `S1.P09` is active and incomplete; `S1.P08.S01` is complete and
   `S1.P08.S02` is complete and
   `S1.P08.S03` is complete and
-  `S1.P08.S04` is complete; `S1.P09.S01` is complete; The next step is P09 scope planning; no successor Slice is authorized. `S1.P04.S10`
+  `S1.P08.S04` is complete; `S1.P09.S01` is complete; `S1.P09.S02` is complete; The next step is P09 scope planning; no successor Slice is authorized. `S1.P04.S10`
 changed no production source: it published the sealed Phase closure under
 `reference_corpus/contracts/repository-snapshot/closures/s1-p04-phase-closure`,
 recording 77 locks, seven finalized deferred entries with `self_owned_open ==
@@ -3337,7 +3347,7 @@ The nine frozen strict records consume the existing P07 propositions, P04 snapsh
 and scope, and P03 durable-record reference. The pure view checks the complete
 requested basis and preserves all attribution, missing material and unopined
 conditions without performing file I/O or certifying a supplied opinion. Production
-Python sources are 30; the P07 eight exports and twelve UUID-root identities stay
+Python sources are 32; the P07 eight exports and twelve UUID-root identities stay
 unchanged. `faultatlas.assessment_file` exports exactly `AssessmentFileError`,
 `inspect_assessment_file`, and `save_assessment_as_new`. It consumes the public S01
 owner and inspector, reads one explicitly selected local v1 file, and publishes
@@ -3357,6 +3367,16 @@ The pure consumer accepts 0–32 records in an exact tuple and returns the compl
 non-authoritative view within 16 MiB, embedding the unchanged P08 inspector once.
 All 28 pre-S01 production files retain their original bytes. P08 format, file
 APIs, CLI, package-root exports and dependencies remain unchanged.
+
+`faultatlas.domain.assessment_review_attribution` exports only
+`SuppliedAssessmentReviewAttribution`, and `faultatlas.assessment_review_attribution`
+exports only `inspect_assessment_review_attributions`. The model requires
+`review`, `reviewer`, `source` and `attribution`; it reuses the complete S01
+review, existing attribution and durable-record reference owners. Value binding
+does not assign occurrence identity or prove source access/availability. S02
+adds exactly two production modules; all thirty pre-S02 production files retain
+their preceding bytes. Package-root exports, P08 file APIs/CLI and dependencies
+remain unchanged.
 
 The minimal CLI and governed Python foundation belong to the S0 operational
 baseline. Environment-only commits remain a development-maintenance track and
