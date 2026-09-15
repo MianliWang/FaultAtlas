@@ -41,6 +41,7 @@ sentence, and every route item is self-contained.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -50,8 +51,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = REPOSITORY_ROOT / "docs/roadmap.md"
 
 # The authoritative current state this module reconciles prose against.
-# P06, bounded P07 and bounded P08 are complete. P09 requires a separate
-# Phase-start discussion; no Phase is active.
+# P06 and bounded P07/P08 are complete. P09 has delivered S01 only;
+# follow-up scope planning authorizes no successor Slice.
 #
 # The completed Slices carry two roles and are therefore two tuples. The route
 # block `_route_entries` parses is the `S1.P06` route alone, which holds exactly
@@ -73,7 +74,13 @@ P07_COMPLETE_SLICES = (
     "S1.P07.S09",
 )
 P08_COMPLETE_SLICES = ("S1.P08.S01", "S1.P08.S02", "S1.P08.S03", "S1.P08.S04")
-COMPLETE_SLICES = (*P06_ROUTE_SLICES, *P07_COMPLETE_SLICES, *P08_COMPLETE_SLICES)
+P09_COMPLETE_SLICES = ("S1.P09.S01",)
+COMPLETE_SLICES = (
+    *P06_ROUTE_SLICES,
+    *P07_COMPLETE_SLICES,
+    *P08_COMPLETE_SLICES,
+    *P09_COMPLETE_SLICES,
+)
 COMPLETE_PHASES = (
     "S1.P00",
     "S1.P01",
@@ -86,9 +93,9 @@ COMPLETE_PHASES = (
     "S1.P08",
 )
 # The four-unit P08 route is complete in its bounded supplied-workflow scope.
-NEXT_UNIT = "S1.P09"
+LIVE_GATE = "The next step is P09 scope planning; no successor Slice is authorized"
 NOT_STARTED_SLICES: tuple[str, ...] = ()
-NOT_STARTED_PHASES = ("S1.P09", "S1.P10")
+NOT_STARTED_PHASES = ("S1.P10",)
 CORRECTION = "S1.P06.S07.C01"
 
 # A Slice token, deliberately excluding a `.C01` correction suffix: a
@@ -96,9 +103,9 @@ CORRECTION = "S1.P06.S07.C01"
 SLICE_TOKEN = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)`")
 GATE_CLAIM = re.compile(r"`(S1\.P\d\d(?:\.S\d\d)?)` is next and not started")
 ACTIVE_PHASE = re.compile(r"`(S1\.P\d\d)` is active and incomplete")
-# S1 remains active between bounded P08 closure and separate P09 planning.
-ACTIVE_PHASES_EXPECTED: frozenset[str] = frozenset()
-NO_ACTIVE_CLAIM = "S1 remains active and no Phase is currently active"
+# S1 and P09 remain active after the first supplied-review increment.
+ACTIVE_PHASES_EXPECTED = frozenset({"S1.P09"})
+ACTIVE_CLAIM = "`S1.P09` is active and incomplete"
 
 
 def _text() -> str:
@@ -112,35 +119,36 @@ def _flat(text: str) -> str:
 def assert_local_live_gate(text: str) -> None:
     """A caller's bounded paragraph/sentence must carry its own current gate."""
     assert "`S1.P06` is complete" in text, "missing local P06 phase completion"
-    assert f"`{NEXT_UNIT}` is next and not started" in text, text
+    assert LIVE_GATE in text, "missing local scope-planning gate"
+    assert "`S1.P09.S01` is complete" in text, "missing local S01 completion"
+    assert "no Phase is currently active" not in text, "stale no-active-Phase claim"
     assert f"`{COMPLETE_PHASES[-1]}` is complete" in text, (
         "missing local completed Phase"
     )
     assert set(ACTIVE_PHASE.findall(text)) == ACTIVE_PHASES_EXPECTED, (
         "local active Phase set"
     )
-    assert NO_ACTIVE_CLAIM in text, "missing explicit no-active-Phase claim"
+    assert ACTIVE_CLAIM in text, "missing explicit active-Phase claim"
 
 
 def assert_current_phase_lifecycle() -> None:
     """Delegate current Phase/gate checks to the bounded Current status owner."""
     section = _section("Current status")
+    assert "`S1.P09.S01` is complete" in section, "missing current S01 completion"
+    assert "no Phase is currently active" not in section, "stale no-active-Phase claim"
     assert f"`{COMPLETE_PHASES[-1]}` is complete" in section, (
         "missing current completed Phase"
     )
-    assert f"`{NEXT_UNIT}` is next and not started" in section, (
-        "missing current-status gate"
-    )
+    assert LIVE_GATE in section, "missing current-status gate"
     assert set(ACTIVE_PHASE.findall(section)) == ACTIVE_PHASES_EXPECTED, (
         "current active Phase set"
     )
-    assert NO_ACTIVE_CLAIM in section, "missing explicit no-active-Phase claim"
-    assert "`S1.P09` through `S1.P10` remain not started" in section, (
+    assert ACTIVE_CLAIM in section, "missing explicit active-Phase claim"
+    assert "`S1.P10` is not started" in section, (
         "missing current not-started Phase range"
     )
     for unit in (
         *ACTIVE_PHASES_EXPECTED,
-        NEXT_UNIT,
         *NOT_STARTED_SLICES,
         *NOT_STARTED_PHASES,
     ):
@@ -149,11 +157,9 @@ def assert_current_phase_lifecycle() -> None:
         )
 
 
-def test_every_next_gate_line_names_the_current_unit() -> None:
-    lines = [line for line in _text().splitlines() if "next and not started" in line]
-    assert lines
-    for line in lines:
-        assert f"`{NEXT_UNIT}`" in line, line
+def test_no_current_next_not_started_unit_is_invented() -> None:
+    assert not GATE_CLAIM.findall(_text())
+    assert LIVE_GATE in _flat(_text())
 
 
 def test_a_summary_must_state_its_own_completed_phase() -> None:
@@ -215,13 +221,10 @@ def test_the_current_status_section_states_the_authoritative_lifecycle() -> None
     assert_current_phase_lifecycle()
     for slice_id in COMPLETE_SLICES:
         assert f"`{slice_id}` is complete" in section, slice_id
-    assert f"`{NEXT_UNIT}` is next and not started" in section, (
-        "missing current-status gate"
-    )
-    assert "`S1.P09` through `S1.P10` remain not started" in section
+    assert LIVE_GATE in section, "missing current-status gate"
+    assert "`S1.P10` is not started" in section
     for unit in (
         *ACTIVE_PHASES_EXPECTED,
-        NEXT_UNIT,
         *NOT_STARTED_SLICES,
         *NOT_STARTED_PHASES,
     ):
@@ -252,11 +255,11 @@ def test_the_correction_is_not_a_gate_and_not_a_phase(  # noqa: D401
 
 
 def test_the_document_names_one_live_gate_and_one_active_phase() -> None:
-    """Exactly P08 is active, and its next Slice is the unique live gate."""
+    """Only P09 is active; scope planning does not invent a next Slice."""
     flat = _flat(_text())
     gates = set(GATE_CLAIM.findall(flat))
 
-    assert gates == {NEXT_UNIT}, sorted(gates)
+    assert not gates, sorted(gates)
     assert set(ACTIVE_PHASE.findall(flat)) == ACTIVE_PHASES_EXPECTED
 
 
@@ -291,6 +294,7 @@ PHASE_SLICE_COUNT = {
     # numbers nine positions, so a claim about `S1.P07.S10` is still refused.
     "S1.P07": 9,
     "S1.P08": 4,
+    "S1.P09": 1,
 }
 KNOWN_CORRECTIONS = frozenset(
     {
@@ -479,8 +483,6 @@ def _allowed_states(unit: str) -> set[str] | None:  # noqa: PLR0911
         # A published correction is complete, and never a gate.
         return {"complete"}
     phase = unit.partition(".S")[0]
-    if unit == NEXT_UNIT:
-        return {"next", "not_started"}
     if phase in COMPLETE_PHASES:
         # A completed Phase and every Slice of it are complete; a Slice number
         # the Phase does not contain was already refused by `_is_known_unit`.
@@ -692,16 +694,12 @@ def test_every_lifecycle_sentence_carries_its_own_live_gate() -> None:
     for start, sentence in lifecycle:
         for slice_id in COMPLETE_SLICES:
             assert f"`{slice_id}` is complete" in sentence, (start, slice_id)
-        assert f"`{NEXT_UNIT}` is next and not started" in sentence, (
-            f"missing local gate at line {start}"
-        )
+        assert LIVE_GATE in sentence, f"missing local gate at line {start}"
         assert f"`{COMPLETE_PHASES[-1]}` is complete" in sentence, start
         assert set(ACTIVE_PHASE.findall(sentence)) == ACTIVE_PHASES_EXPECTED, start
-        assert NO_ACTIVE_CLAIM in sentence, (
-            "missing explicit local no-active-Phase claim"
-        )
+        assert ACTIVE_CLAIM in sentence, "missing explicit local active-Phase claim"
         # The next gate is not complete; no active Phase is fabricated.
-        for unit in (*ACTIVE_PHASES_EXPECTED, NEXT_UNIT, *NOT_STARTED_SLICES):
+        for unit in (*ACTIVE_PHASES_EXPECTED, *NOT_STARTED_SLICES):
             assert f"`{unit}` is complete" not in sentence, (start, unit)
 
 
@@ -713,7 +711,7 @@ def test_no_sentence_anywhere_calls_a_not_started_unit_complete() -> None:
     summary.
     """
     for start, sentence in _sentences():
-        for unit in (NEXT_UNIT, *NOT_STARTED_SLICES, *NOT_STARTED_PHASES):
+        for unit in (*NOT_STARTED_SLICES, *NOT_STARTED_PHASES):
             assert f"`{unit}` is complete" not in sentence, (start, unit)
             assert f"`{unit}` was completed" not in sentence, (start, unit)
 
@@ -974,7 +972,7 @@ def test_correct_later_ownership_is_preserved() -> None:
         "which became `S1.P06.S10` work",
         "the historical default branch remains unknown and owned by `S2`",
         "which remains `S5` ownership",
-        "`S1.P09` through `S1.P10` remain not started",
+        "`S1.P10` is not started",
     ):
         assert statement in flat, statement
 
@@ -1163,7 +1161,7 @@ def test_the_roadmap_route_is_closed_at_the_published_slice() -> None:
     assert "`S1.P07.S10`" not in roadmap
     for unit in P07_COMPLETE_SLICES:
         assert f"`{unit}` is complete" in roadmap
-    for unit in (NEXT_UNIT, *NOT_STARTED_SLICES):
+    for unit in (*ACTIVE_PHASES_EXPECTED, *NOT_STARTED_SLICES):
         assert f"`{unit}` is complete" not in roadmap, unit
 
 
@@ -1193,7 +1191,7 @@ def test_the_p07_route_states_the_authoritative_state_for_every_position() -> No
 
     for unit in P07_COMPLETE_SLICES:
         assert entries[unit] == "complete", unit
-    assert NEXT_UNIT not in entries
+    assert not ACTIVE_PHASES_EXPECTED.intersection(entries)
     assert set(entries) == set(P07_COMPLETE_SLICES)
     states = [state for _, _, _, state in rows]
     assert states.count("complete") == len(P07_COMPLETE_SLICES)
@@ -1219,15 +1217,13 @@ def test_an_appendix_cannot_repair_the_current_status_section(
     start = original.index("## Current status")
     end = original.index("\n## ", start + 1)
     section = original[start:end]
-    claim = f"`{NEXT_UNIT}` is next and not started"
+    claim = LIVE_GATE
     assert claim in section
     if change == "missing":
         replacement = section.replace(claim, "gate omitted")
         message = "missing current-status gate"
     elif change == "wrong_gate":
-        replacement = section.replace(
-            claim, claim.replace(NEXT_UNIT, COMPLETE_PHASES[-1])
-        )
+        replacement = section.replace(claim, claim.replace("P09", "P08"))
         message = "missing current-status gate"
     elif change == "missing_phase":
         completion = f"`{COMPLETE_PHASES[-1]}` is complete"
@@ -1235,15 +1231,15 @@ def test_an_appendix_cannot_repair_the_current_status_section(
         replacement = section.replace(completion, "phase omitted")
         message = "missing current completed Phase"
     elif change == "missing_active":
-        replacement = section.replace(NO_ACTIVE_CLAIM, "active Phase omitted")
-        message = "missing explicit no-active-Phase claim"
+        replacement = section.replace(ACTIVE_CLAIM, "active Phase omitted")
+        message = "current active Phase set"
     elif change == "missing_later":
         replacement = section.replace(
-            "`S1.P09` through `S1.P10` remain not started", "later Phase range omitted"
+            "`S1.P10` is not started", "later Phase range omitted"
         )
         message = "missing current not-started Phase range"
     else:
-        replacement = section + f"\n`{NEXT_UNIT}` is complete.\n"
+        replacement = section + "\n`S1.P09` is complete.\n"
         message = "contradictory current-status completion"
     altered = (
         original[:start]
@@ -1263,7 +1259,7 @@ def test_a_later_sentence_cannot_rescue_a_missing_local_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original = _text()
-    claim = f"`{NEXT_UNIT}` is next and not started"
+    claim = LIVE_GATE
     assert claim in original
     altered = original.replace(claim, "gate omitted", 1)
     monkeypatch.setattr(__name__ + "._text", lambda: altered)
@@ -1271,21 +1267,163 @@ def test_a_later_sentence_cannot_rescue_a_missing_local_gate(
         test_every_lifecycle_sentence_carries_its_own_live_gate()
 
 
+def _assert_historical_p08_handoff(handoff: object) -> None:
+    assert handoff == {
+        "completed_phase": "S1.P08",
+        "completed_slices": ["S1.P08.S01", "S1.P08.S02", "S1.P08.S03", "S1.P08.S04"],
+        "active_phases": [],
+        "stage": "S1 active",
+        "next": "S1.P09",
+        "next_state": "not_started",
+        "eligibility": "separate product/architecture Phase-start discussion and planning only",
+        "implementation_authorized": False,
+        "P10": "not_started",
+        "generic_confidence_review": "P09 retains unimplemented generic responsibility; supplied attribution is not a confidence evaluator",
+    }, "historical P08 handoff"
+
+
 def test_p08_closed_workflow_has_no_active_phase_and_p09_planning_gate() -> None:
-    assert ACTIVE_PHASES_EXPECTED == frozenset()
-    assert NO_ACTIVE_CLAIM in _section("Current status")
-    assert NEXT_UNIT == "S1.P09"
-    assert _allowed_states("S1.P08.S01") == {"complete"}
-    assert _allowed_states("S1.P08.S02") == {"complete"}
-    assert _allowed_states("S1.P08.S03") == {"complete"}
-    assert _allowed_states("S1.P08.S04") == {"complete"}
-    assert _allowed_states("S1.P09") == {"next", "not_started"}
-    assert _allowed_states("S1.P09.S01") is None
+    # Sealed P08 exit:06 retains this exact node; it is now historical only.
+    path = (
+        REPOSITORY_ROOT
+        / "reference_corpus/contracts/transfer-applicability/closures/s1-p08-phase-closure/closure.json"
+    )
+    _assert_historical_p08_handoff(json.loads(path.read_bytes())["handoff"])
+
+
+@pytest.mark.parametrize(
+    "field,bad",
+    (
+        ("completed_slices", ["S1.P08.S01"]),
+        ("active_phases", ["S1.P09"]),
+        ("next_state", "active"),
+        ("implementation_authorized", True),
+    ),
+)
+def test_historical_p08_handoff_rejects_changed_facts(field: str, bad: object) -> None:
+    path = (
+        REPOSITORY_ROOT
+        / "reference_corpus/contracts/transfer-applicability/closures/s1-p08-phase-closure/closure.json"
+    )
+    handoff = json.loads(path.read_bytes())["handoff"]
+    _assert_historical_p08_handoff(handoff)
+    handoff[field] = bad
+    with pytest.raises(AssertionError, match="historical P08 handoff"):
+        _assert_historical_p08_handoff(handoff)
+
+
+def test_p09_s01_is_complete_with_no_successor_authorization() -> None:
+    assert _allowed_states("S1.P09") == {"active"}
+    assert _allowed_states("S1.P09.S01") == {"complete"}
+    assert _allowed_states("S1.P09.S02") is None
+    assert _allowed_states("S1.P10") == {"not_started"}
     assert_current_phase_lifecycle()
     assert_local_live_gate(_lifecycle_sentences()[0][1])
 
 
-@pytest.mark.parametrize("phase", ("S1.P07", "S1.P09"))
+REVIEW_SUMMARY_HEADINGS = (
+    "S1.P08 — Transfer & Applicability Model",
+    "S1.P09 — Provenance, Confidence & Review",
+)
+
+
+def _assert_current_review_summary(heading: str) -> None:
+    # The opening summary's first sentence cannot borrow from later prose.
+    body = _text().split("## " + heading + "\n", 1)[1].lstrip()
+    sentence = _flat(body.split("\n\n", 1)[0]).split(". ", 1)[0]
+    for clause, label in (
+        (ACTIVE_CLAIM, "P09 active state"),
+        ("`S1.P09.S01` is complete", "S01 completion"),
+        (LIVE_GATE, "scope-planning gate"),
+    ):
+        assert clause in sentence, f"review summary missing {label}: {heading}"
+
+
+@pytest.mark.parametrize("heading", REVIEW_SUMMARY_HEADINGS)
+def test_current_p08_and_p09_review_summaries_are_sentence_local(heading: str) -> None:
+    _assert_current_review_summary(heading)
+
+
+@pytest.mark.parametrize("heading", REVIEW_SUMMARY_HEADINGS)
+@pytest.mark.parametrize("change", ("active", "slice", "gate", "split"))
+def test_later_valid_prose_cannot_rescue_a_review_summary(
+    monkeypatch: pytest.MonkeyPatch, heading: str, change: str
+) -> None:
+    _assert_current_review_summary(heading)
+    original = _text()
+    start = original.index("## " + heading + "\n")
+    body_start = start + len("## " + heading + "\n\n")
+    end = original.index("\n\n", body_start)
+    summary = original[body_start:end]
+    if change == "split":
+        assert ACTIVE_CLAIM + "; " in summary
+        changed = summary.replace(ACTIVE_CLAIM + "; ", ACTIVE_CLAIM + ". ", 1)
+        label = "S01 completion"
+    else:
+        clause, label = {
+            "active": (ACTIVE_CLAIM, "P09 active state"),
+            "slice": ("`S1.P09.S01` is complete", "S01 completion"),
+            "gate": (LIVE_GATE, "scope-planning gate"),
+        }[change]
+        assert clause in summary
+        changed = summary.replace(clause, "clause omitted", 1)
+    altered = original[:body_start] + changed + ". " + summary + original[end:]
+    altered += "\n\n## Valid appendix\n" + summary + "\n"
+    monkeypatch.setattr(__name__ + "._text", lambda: altered)
+    with pytest.raises(AssertionError, match="review summary missing " + label):
+        _assert_current_review_summary(heading)
+
+
+@pytest.mark.parametrize(
+    "old,new,message",
+    (
+        ("`S1.P09.S01` is complete", "S01 omitted", "missing current S01 completion"),
+        (LIVE_GATE, "scope gate omitted", "missing current-status gate"),
+        (ACTIVE_CLAIM, "`S1.P09` is next and not started", "current active Phase set"),
+        (
+            ACTIVE_CLAIM,
+            "S1 remains active and no Phase is currently active",
+            "stale no-active-Phase claim",
+        ),
+    ),
+)
+def test_p09_current_clauses_cannot_be_borrowed_from_an_appendix(
+    monkeypatch: pytest.MonkeyPatch, old: str, new: str, message: str
+) -> None:
+    original = _text()
+    start = original.index("## Current status")
+    end = original.index("\n## ", start + 1)
+    section = original[start:end]
+    assert old in _flat(section)
+    # These particular clauses are not line-wrapped in the current summary.
+    assert old in section
+    changed = original[:start] + section.replace(old, new) + original[end:]
+    monkeypatch.setattr(
+        __name__ + "._text", lambda: changed + "\n\n## Valid appendix\n" + section
+    )
+    with pytest.raises(AssertionError, match=message):
+        assert_current_phase_lifecycle()
+
+
+@pytest.mark.parametrize(
+    "claim",
+    (
+        "`S1.P09.S02` is next",
+        "`S1.P09.S02` is complete",
+        "`S1.P09.S01` is active and incomplete",
+    ),
+)
+def test_no_successor_or_wrong_slice_state_is_authorized(
+    monkeypatch: pytest.MonkeyPatch, claim: str
+) -> None:
+    original = _text()
+    test_every_present_tense_state_claim_matches_the_authoritative_state()
+    monkeypatch.setattr(__name__ + "._text", lambda: original + "\n" + claim + ".\n")
+    with pytest.raises(AssertionError):
+        test_every_present_tense_state_claim_matches_the_authoritative_state()
+
+
+@pytest.mark.parametrize("phase", ("S1.P07", "S1.P10"))
 def test_an_active_phase_cannot_be_hidden_by_a_valid_appendix(
     monkeypatch: pytest.MonkeyPatch, phase: str
 ) -> None:
