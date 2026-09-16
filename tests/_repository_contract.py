@@ -8,6 +8,7 @@ PRODUCTION_FILES = frozenset(
         "src/faultatlas/assessment.py",
         "src/faultatlas/assessment_review.py",
         "src/faultatlas/assessment_review_attribution.py",
+        "src/faultatlas/assessment_review_document.py",
         "src/faultatlas/assessment_file.py",
         "src/faultatlas/domain/assessment.py",
         "src/faultatlas/domain/assessment_review.py",
