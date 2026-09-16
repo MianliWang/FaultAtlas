@@ -82,6 +82,73 @@ support. Unknown reviewer, missing source association and unavailable source
 bytes are distinct concepts. No account identity, source-availability verdict,
 authentication, confidence or lifecycle is inferred.
 
+## Portable review document bytes
+
+A library recipient can reopen a complete supplied review document, inspect it and
+return canonical bytes. This complete synthetic example uses the published format:
+
+```python
+from faultatlas.assessment_review_document import (
+    decode_assessment_review_document,
+    encode_assessment_review_document,
+    inspect_assessment_review_document,
+)
+
+received = b"""{
+  "format": "faultatlas-supplied-review",
+  "version": 1,
+  "review": {
+    "assessment": {
+      "attribution": {
+        "supplier": "Assessment assembler",
+        "rationale": "Synthetic assessment."
+      },
+      "basis": {
+        "source": {
+          "invariant": "00000000-0000-4000-8000-000000000002",
+          "invariant_statement": "An expression is evaluated once."
+        },
+        "target": {
+          "snapshot": {
+            "repository": {
+              "provider": "github",
+              "provider_repository_id": "1001"
+            },
+            "revision": {
+              "kind": "commit",
+              "algorithm": "sha1",
+              "full_digest": "1111111111111111111111111111111111111111"
+            }
+          },
+          "declared_host": "github.com",
+          "declared_visibility": "public"
+        }
+      }
+    },
+    "scope": "Only the supplied statement was considered.",
+    "judgment": "No execution evidence was assessed.",
+    "attribution": {
+      "supplier": "Review relay",
+      "rationale": "Newly authored example judgment; no historical authorship is claimed."
+    }
+  },
+  "attributions": []
+}
+"""
+review, attributions = decode_assessment_review_document(received)
+view = inspect_assessment_review_document(received)
+canonical = encode_assessment_review_document(review, attributions)
+assert decode_assessment_review_document(canonical) == (review, attributions)
+assert inspect_assessment_review_document(canonical) == view
+```
+
+The [document contract](docs/contracts/s1-p09-s03-review-document.md) defines one
+review and up to eight complete attribution assertions, a strict JSON intake and
+16 MiB byte limits. Canonicalization includes owning defaults; it preserves values
+and order, not the input's original spelling. The caller transports these bytes.
+This API does not load P08 assessment files, select or write files, add CLI commands,
+retrieve sources or establish identity, evidence support, confidence or review state.
+
 ## Requirements
 
 - WSL or Linux (the canonical development workflow is VS Code/Codex in WSL)
